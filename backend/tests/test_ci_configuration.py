@@ -39,6 +39,10 @@ def test_ci_triggers_permissions_concurrency_and_parallel_jobs():
         step.get("run") for step in workflow["jobs"]["security"]["steps"] if "run" in step
     }
     assert "bash scripts/check.sh gitleaks" in security_runs
+    security_step_names = [step["name"] for step in workflow["jobs"]["security"]["steps"]]
+    assert security_step_names.index(
+        "Scan complete history with reproducible Gitleaks CLI"
+    ) < security_step_names.index("Scan complete Git history with Gitleaks")
     for job in workflow["jobs"].values():
         assert "needs" not in job
         assert "continue-on-error" not in json.dumps(job)
