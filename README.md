@@ -160,7 +160,7 @@ xianwen_geo_v1_dev_package/
 - 数据库迁移必须可回滚，生产环境禁止手工改表。
 
 ## 10. 本地开发（XW-0001）
-状态：Code complete; Docker Compose integration pending.
+状态：XW-0001 and XW-0002 integration verified.
 
 
 要求：
@@ -183,3 +183,19 @@ PostgreSQL、Redis、Django API、Celery Worker 和 Next.js 前端。
 
 质量检查：运行 `.\scripts\check.ps1`，或分别使用 `backend/` 与 `frontend/`
 README 中列出的命令。
+## 11. 配置、日志和错误框架（XW-0002）
+
+状态：XW-0001 and XW-0002 integration verified.
+
+XW-0002 提供后续业务模块统一复用的工程边界：
+
+- local、test、production 分环境 Django 配置
+- 规范 UUID `request_id` 请求上下文
+- `/api/v1` JSON 成功与错误 Envelope
+- DRF 全局异常映射和简体中文错误消息
+- local 可读日志、test 降噪、production 单行 JSON 日志
+- 递归敏感字段脱敏
+
+local 允许 SQLite/LocMem 安全回退，test 使用隔离配置。production 必须显式提供
+密钥、PostgreSQL、Redis、主机和来源配置，并拒绝 DEBUG、SQLite、LocMem、
+通配符主机及弱密钥。前端公开环境变量由 `frontend/lib/env.ts` 集中校验。
