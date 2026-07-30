@@ -1,6 +1,6 @@
 import os
 
-from celery import Celery
+from celery import Celery  # type: ignore[import-untyped]  # Celery does not publish py.typed.
 
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
 
