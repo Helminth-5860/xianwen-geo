@@ -15,7 +15,8 @@ LOG_RECORD_STANDARD_FIELDS = frozenset(logging.LogRecord("", 0, "", 0, "", (), N
 class RequestContextFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         if not getattr(record, "request_id", None):
-            record.request_id = get_request_id() or "-"
+            request = getattr(record, "request", None)
+            record.request_id = getattr(request, "request_id", None) or get_request_id() or "-"
 
         if isinstance(record.msg, (dict, list, tuple)):
             record.msg = redact_sensitive_data(record.msg)

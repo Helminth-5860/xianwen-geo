@@ -231,7 +231,7 @@ POSIX 环境使用 `./scripts/check.sh all`。也可传入 `backend`、`frontend
 GitHub Action 升级时，必须从官方仓库 release 核对完整 40 字符提交 SHA，同时更新
 workflow 的版本注释，再运行结构测试和 actionlint。建立远程仓库后，应把
 `Backend`、`Frontend`、`Security`、`Docker Compose` 配置为 `develop` 的
-Required Checks。当前仓库没有 remote，真实 Pull Request workflow 尚未执行。
+Required Checks。远程私有仓库已建立，XW-0003 Pull Request workflow 已完成真实验收。当前套餐不支持私有仓库分支保护，人工管理规则见 `docs/14-CI-BASELINE.md`。
 
 若迁移到 GitLab、Gitee 或其他 CI 平台，只替换流水线入口，继续调用本地检查脚本，
 不要复制检查逻辑。故障可用相应脚本模式本地复现；更多细节见
