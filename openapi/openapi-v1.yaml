@@ -1,0 +1,573 @@
+openapi: 3.1.0
+info:
+  title: 显问 GEO 智能体系统 API
+  version: 1.0.0
+  description: |
+    V1 API 启动骨架。实现过程中必须持续补全 schemas、examples、权限和错误响应。
+servers:
+  - url: /api/v1
+security:
+  - cookieAuth: []
+tags:
+  - name: System
+  - name: Auth
+  - name: Me
+  - name: Plans
+  - name: Subjects
+  - name: Documents
+  - name: Keywords
+  - name: Questions
+  - name: GEO
+  - name: Articles
+  - name: Images
+  - name: Publishing
+  - name: Reports
+  - name: Assistant
+  - name: Admin
+paths:
+  /health:
+    get:
+      tags: [System]
+      security: []
+      summary: 服务及依赖健康检查
+      responses:
+        '200':
+          description: API、数据库和 Redis 均可用
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, service, checks]
+                properties:
+                  status: {type: string, enum: [ok]}
+                  service: {type: string}
+                  checks:
+                    type: object
+                    additionalProperties: {type: boolean}
+        '503':
+          description: 数据库或 Redis 不可用
+  /auth/register:
+    post:
+      tags: [Auth]
+      security: []
+      summary: 手机号注册并建立登录会话
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: 注册成功，账号待审核
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserEnvelope'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+  /auth/login/password:
+    post:
+      tags: [Auth]
+      security: []
+      summary: 手机号密码登录
+      responses:
+        '200':
+          description: 登录成功
+        '401':
+          description: 凭证错误
+  /me:
+    get:
+      tags: [Me]
+      summary: 当前用户和套餐摘要
+      responses:
+        '200':
+          description: 当前用户信息
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserEnvelope'
+  /plans:
+    get:
+      tags: [Plans]
+      security: []
+      summary: 展示套餐列表
+      responses:
+        '200':
+          description: 套餐列表
+  /package-applications:
+    post:
+      tags: [Plans]
+      summary: 申请开通套餐
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [plan_id]
+              properties:
+                plan_id: {type: string, format: uuid}
+                contact_name: {type: string}
+                contact_phone: {type: string}
+                note: {type: string}
+      responses:
+        '201': {description: 已提交}
+  /subjects:
+    get:
+      tags: [Subjects]
+      summary: 主体列表
+      responses:
+        '200': {description: 主体列表}
+    post:
+      tags: [Subjects]
+      summary: 创建主体草稿
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSubjectRequest'
+      responses:
+        '201': {description: 创建成功}
+        '409':
+          $ref: '#/components/responses/BusinessConflict'
+  /subjects/{subjectId}:
+    parameters:
+      - $ref: '#/components/parameters/SubjectId'
+    get:
+      tags: [Subjects]
+      summary: 当前主体详情
+      responses:
+        '200': {description: 主体详情}
+        '404': {description: 不存在或无权访问}
+  /subjects/{subjectId}/commit:
+    parameters:
+      - $ref: '#/components/parameters/SubjectId'
+    post:
+      tags: [Subjects]
+      summary: 校验草稿并创建主体资料版本
+      responses:
+        '201': {description: 新资料版本}
+        '422':
+          $ref: '#/components/responses/ValidationError'
+  /subjects/{subjectId}/keywords/generate:
+    parameters:
+      - $ref: '#/components/parameters/SubjectId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+    post:
+      tags: [Keywords]
+      summary: 生成关键词
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/KeywordGenerationRequest'
+      responses:
+        '202':
+          description: 关键词生成任务已创建
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskEnvelope'
+        '409':
+          $ref: '#/components/responses/BusinessConflict'
+  /subjects/{subjectId}/distillations:
+    parameters:
+      - $ref: '#/components/parameters/SubjectId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+    post:
+      tags: [Keywords]
+      summary: 发起关键词蒸馏
+      responses:
+        '202':
+          description: 关键词蒸馏任务已创建
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskEnvelope'
+  /subjects/{subjectId}/question-banks/generate:
+    parameters:
+      - $ref: '#/components/parameters/SubjectId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+    post:
+      tags: [Questions]
+      summary: 生成问题库
+      responses:
+        '202':
+          description: 问题库生成任务已创建
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskEnvelope'
+  /subjects/{subjectId}/geo/estimate:
+    parameters:
+      - $ref: '#/components/parameters/SubjectId'
+    post:
+      tags: [GEO]
+      summary: 估算检测点
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GeoDetectionSelection'
+      responses:
+        '200':
+          description: 估算结果
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeoEstimateEnvelope'
+  /subjects/{subjectId}/geo/detections:
+    parameters:
+      - $ref: '#/components/parameters/SubjectId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+    post:
+      tags: [GEO]
+      summary: 创建 GEO 检测任务
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GeoDetectionSelection'
+      responses:
+        '202':
+          description: GEO 检测任务已创建
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskEnvelope'
+        '409':
+          $ref: '#/components/responses/BusinessConflict'
+  /geo/detections/{detectionId}:
+    parameters:
+      - name: detectionId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    get:
+      tags: [GEO]
+      summary: 检测任务进度
+      responses:
+        '200':
+          description: 检测任务当前进度
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskEnvelope'
+  /geo/detections/{detectionId}/cancel:
+    parameters:
+      - name: detectionId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    post:
+      tags: [GEO]
+      summary: 取消尚未开始的调用
+      responses:
+        '200': {description: 已受理取消}
+        '409':
+          $ref: '#/components/responses/BusinessConflict'
+  /geo/reports/{reportId}:
+    parameters:
+      - name: reportId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    get:
+      tags: [Reports]
+      summary: GEO 报告首页数据
+      responses:
+        '200': {description: 报告数据}
+  /geo/reports/{reportId}/strategies:
+    parameters:
+      - name: reportId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+      - $ref: '#/components/parameters/IdempotencyKey'
+    post:
+      tags: [Reports]
+      summary: 生成 GEO 改善策略
+      responses:
+        '202':
+          description: 改善策略生成任务已创建
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskEnvelope'
+  /assistant/respond:
+    post:
+      tags: [Assistant]
+      summary: 显问 AI 助手单次回复，不保存聊天记录
+      responses:
+        '200': {description: 助手回复}
+        '409':
+          $ref: '#/components/responses/BusinessConflict'
+  /subjects/{subjectId}/articles:
+    parameters:
+      - $ref: '#/components/parameters/SubjectId'
+    get:
+      tags: [Articles]
+      summary: 文章列表
+      responses:
+        '200': {description: 文章列表}
+    post:
+      tags: [Articles]
+      summary: 创建文章草稿
+      responses:
+        '201': {description: 文章草稿}
+  /articles/{articleId}/generate:
+    parameters:
+      - name: articleId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+      - $ref: '#/components/parameters/IdempotencyKey'
+    post:
+      tags: [Articles]
+      summary: 生成正文并冻结文章额度
+      responses:
+        '202':
+          description: 文章生成任务已创建
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskEnvelope'
+  /articles/{articleId}/channel-adaptations:
+    parameters:
+      - name: articleId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+      - $ref: '#/components/parameters/IdempotencyKey'
+    post:
+      tags: [Publishing]
+      summary: 批量生成渠道适配稿
+      responses:
+        '202':
+          description: 渠道适配任务已创建
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskEnvelope'
+  /subjects/{subjectId}/images/generate:
+    parameters:
+      - $ref: '#/components/parameters/SubjectId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+    post:
+      tags: [Images]
+      summary: 生成一张或一组图片
+      responses:
+        '202':
+          description: 图片生成任务已创建
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskEnvelope'
+  /publication-checks:
+    post:
+      tags: [Publishing]
+      summary: 即时检测发布链接
+      responses:
+        '200': {description: 发布成功、失败或暂时无法判断}
+  /geo/reports/{reportId}/exports:
+    parameters:
+      - name: reportId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+      - $ref: '#/components/parameters/IdempotencyKey'
+    post:
+      tags: [Reports]
+      summary: 生成 PDF、Word 或 Excel
+      responses:
+        '202':
+          description: 报告导出任务已创建
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskEnvelope'
+  /geo/reports/{reportId}/shares:
+    parameters:
+      - name: reportId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    post:
+      tags: [Reports]
+      summary: 创建完整报告分享链接
+      responses:
+        '201': {description: 分享创建成功}
+  /admin/users:
+    get:
+      tags: [Admin]
+      summary: 后台用户列表
+      responses:
+        '200': {description: 用户列表}
+        '403': {description: 权限不足}
+  /admin/api-credentials:
+    get:
+      tags: [Admin]
+      summary: API 密钥掩码列表，仅超级管理员
+      responses:
+        '200': {description: 只返回掩码和状态}
+        '403': {description: 非超级管理员禁止}
+    post:
+      tags: [Admin]
+      summary: 新增 API 密钥，明文只在请求中出现
+      responses:
+        '201': {description: 保存后只返回掩码}
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: xianwen_session
+  parameters:
+    SubjectId:
+      name: subjectId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 16
+        maxLength: 128
+  responses:
+    ValidationError:
+      description: 参数校验失败
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    BusinessConflict:
+      description: 业务状态冲突、额度不足或超限
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+  schemas:
+    EnvelopeBase:
+      type: object
+      required: [success, request_id]
+      properties:
+        success: {type: boolean}
+        request_id: {type: string, format: uuid}
+    ErrorEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          properties:
+            error:
+              type: object
+              required: [code, message]
+              properties:
+                code: {type: string}
+                message: {type: string}
+                details: {type: object, additionalProperties: true}
+    RegisterRequest:
+      type: object
+      required: [phone, nickname, sms_code, password]
+      properties:
+        phone: {type: string}
+        nickname: {type: string, minLength: 1, maxLength: 50}
+        sms_code: {type: string, minLength: 4, maxLength: 8}
+        password: {type: string, minLength: 8, maxLength: 128}
+    User:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        phone_masked: {type: string}
+        nickname: {type: string}
+        approval_status:
+          type: string
+          enum: [pending, approved, rejected]
+        account_status:
+          type: string
+          enum: [active, frozen, cancel_pending, cancelled]
+    UserEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/User'
+    CreateSubjectRequest:
+      type: object
+      required: [subject_type_id, name]
+      properties:
+        subject_type_id: {type: string, format: uuid}
+        name: {type: string}
+        fields: {type: object, additionalProperties: true}
+    KeywordGenerationRequest:
+      type: object
+      required: [target_count]
+      properties:
+        target_count: {type: integer, minimum: 1}
+        include_short: {type: boolean, default: false}
+        include_long_tail: {type: boolean, default: false}
+        include_regional: {type: boolean, default: false}
+        regions:
+          type: array
+          items: {type: string}
+        regenerate: {type: boolean, default: false}
+    GeoDetectionSelection:
+      type: object
+      required: [question_ids, model_ids]
+      properties:
+        question_ids:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: {type: string, format: uuid}
+        model_ids:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: {type: string, format: uuid}
+    GeoEstimateEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                question_count: {type: integer}
+                model_count: {type: integer}
+                required_detection_points: {type: integer}
+                available_detection_points: {type: integer}
+                can_submit: {type: boolean}
+    AsyncTask:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        type: {type: string}
+        status:
+          type: string
+          enum: [draft, queued, running, reviewing, partial, succeeded, failed, cancelled, expired]
+        progress: {type: integer, minimum: 0, maximum: 100}
+        result_id: {type: [string, 'null'], format: uuid}
+        user_message: {type: string}
+        quota:
+          type: object
+          properties:
+            type: {type: string}
+            frozen: {type: integer}
+            deducted: {type: integer}
+            refunded: {type: integer}
+    TaskEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/AsyncTask'

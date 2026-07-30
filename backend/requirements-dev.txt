@@ -1,0 +1,6 @@
+-r requirements.txt
+openapi-spec-validator==0.9.0
+pytest==9.1.1
+pytest-django==4.12.0
+ruff==0.16.0
+
