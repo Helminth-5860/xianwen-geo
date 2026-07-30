@@ -8,6 +8,7 @@
 - 文件上传：预签名 COS 上传或受控 multipart 初始化接口
 - 时间：ISO 8601 UTC
 - ID：UUID 字符串
+- 请求标识：可通过 `X-Request-ID` 传入规范 UUID；响应头与 JSON `request_id` 完全一致
 - 分页：游标或页码制统一一种；V1 建议页码制 `page/page_size`
 - 异步任务：提交后返回业务任务 ID 和状态查询地址
 - 幂等：所有扣额度或创建任务的 POST 要求 `Idempotency-Key`
@@ -67,6 +68,9 @@
 | AUTH_REQUIRED | 401 | 未登录 |
 | CSRF_FAILED | 403 | CSRF 失败 |
 | PERMISSION_DENIED | 403 | 权限不足 |
+| RESOURCE_NOT_FOUND | 404 | 资源不存在或不可访问 |
+| METHOD_NOT_ALLOWED | 405 | 请求方法不允许 |
+| INVALID_JSON | 400 | JSON 请求体无法解析 |
 | ACCOUNT_PENDING_REVIEW | 403 | 账号待审核 |
 | ACCOUNT_FROZEN | 403 | 账号冻结 |
 | PLAN_REQUIRED | 403 | 未开套餐 |
@@ -80,6 +84,7 @@
 | RESOURCE_VERSION_CONFLICT | 409 | 编辑版本冲突 |
 | VALIDATION_ERROR | 422 | 参数错误 |
 | EXTERNAL_API_ERROR | 502 | 外部模型调用错误 |
+| INTERNAL_ERROR | 500 | 服务器内部错误 |
 | SERVICE_TEMPORARILY_UNAVAILABLE | 503 | 服务临时不可用 |
 | RATE_LIMITED | 429 | 频率限制 |
 

@@ -33,19 +33,20 @@ paths:
       responses:
         '200':
           description: API、数据库和 Redis 均可用
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
           content:
             application/json:
               schema:
-                type: object
-                required: [status, service, checks]
-                properties:
-                  status: {type: string, enum: [ok]}
-                  service: {type: string}
-                  checks:
-                    type: object
-                    additionalProperties: {type: boolean}
+                $ref: '#/components/schemas/HealthEnvelope'
+              example:
+                success: true
+                data:
+                  status: ok
+                request_id: 24c5291c-9172-49e5-a970-d3a41426dff3
         '503':
-          description: 数据库或 Redis 不可用
+          $ref: '#/components/responses/ServiceUnavailable'
   /auth/register:
     post:
       tags: [Auth]
@@ -427,6 +428,13 @@ components:
       type: apiKey
       in: cookie
       name: xianwen_session
+  headers:
+    RequestId:
+      description: 本次请求的规范 UUID；与响应体 request_id 完全一致
+      required: true
+      schema:
+        type: string
+        format: uuid
   parameters:
     SubjectId:
       name: subjectId
@@ -441,15 +449,110 @@ components:
         type: string
         minLength: 16
         maxLength: 128
+    RequestId:
+      name: X-Request-ID
+      in: header
+      required: false
+      description: 可选规范 UUID；非法值由服务端替换
+      schema:
+        type: string
+        format: uuid
   responses:
     ValidationError:
       description: 参数校验失败
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorEnvelope'
     BusinessConflict:
       description: 业务状态冲突、额度不足或超限
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    AuthRequired:
+      description: 未认证或认证凭证无效
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    PermissionDenied:
+      description: 权限不足
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    CsrfFailed:
+      description: CSRF 验证失败
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    ResourceNotFound:
+      description: 资源不存在或不可访问
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    MethodNotAllowed:
+      description: 请求方法不允许
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    InvalidJson:
+      description: JSON 请求体无法解析
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    RateLimited:
+      description: 请求频率超过限制
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    InternalError:
+      description: 服务器内部错误
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    ServiceUnavailable:
+      description: 数据库或 Redis 不可用
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
       content:
         application/json:
           schema:
@@ -465,14 +568,46 @@ components:
       allOf:
         - $ref: '#/components/schemas/EnvelopeBase'
         - type: object
+          required: [error]
           properties:
+            success:
+              type: boolean
+              const: false
             error:
               type: object
-              required: [code, message]
+              required: [code, message, details]
               properties:
-                code: {type: string}
+                code:
+                  $ref: '#/components/schemas/ErrorCode'
                 message: {type: string}
                 details: {type: object, additionalProperties: true}
+    ErrorCode:
+      type: string
+      enum:
+        - AUTH_REQUIRED
+        - PERMISSION_DENIED
+        - CSRF_FAILED
+        - RESOURCE_NOT_FOUND
+        - METHOD_NOT_ALLOWED
+        - INVALID_JSON
+        - VALIDATION_ERROR
+        - RATE_LIMITED
+        - INTERNAL_ERROR
+        - SERVICE_TEMPORARILY_UNAVAILABLE
+    HealthEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          required: [data]
+          properties:
+            success:
+              type: boolean
+              const: true
+            data:
+              type: object
+              required: [status]
+              properties:
+                status: {type: string, const: ok}
     RegisterRequest:
       type: object
       required: [phone, nickname, sms_code, password]

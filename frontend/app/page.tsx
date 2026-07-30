@@ -5,6 +5,7 @@ import { Button, Card, ConfigProvider, Space, Tag, Typography } from "antd";
 import zhCN from "antd/locale/zh_CN";
 
 import { SITE_DESCRIPTION, SITE_NAME } from "@/lib/site";
+import { publicEnvironment } from "@/lib/env";
 
 const { Paragraph, Text, Title } = Typography;
 
@@ -22,7 +23,7 @@ export default function Home() {
             <Button type="primary" href="/api/health">
               检查前端状态
             </Button>
-            <Button href="http://localhost:8000/api/v1/health/">检查后端状态</Button>
+            <Button href={`${publicEnvironment.apiBaseUrl}/health/`}>检查后端状态</Button>
           </Space>
         </section>
 

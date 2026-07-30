@@ -33,6 +33,7 @@ services:
       context: ./backend
     environment:
       APP_ENV: ${APP_ENV:-local}
+      DJANGO_SETTINGS_MODULE: config.settings
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?请先复制 .env.example 为 .env}
       DJANGO_DEBUG: ${DJANGO_DEBUG:-false}
       RUN_MIGRATIONS: "true"
@@ -76,6 +77,7 @@ services:
         "--concurrency=2",
       ]
     environment:
+      DJANGO_SETTINGS_MODULE: config.settings
       APP_ENV: ${APP_ENV:-local}
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?请先复制 .env.example 为 .env}
       DJANGO_DEBUG: "false"
@@ -94,8 +96,10 @@ services:
     build:
       context: ./frontend
       args:
+        NEXT_PUBLIC_APP_ENV: ${APP_ENV:-local}
         NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000/api/v1}
     environment:
+      NEXT_PUBLIC_APP_ENV: ${APP_ENV:-local}
       NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000/api/v1}
     ports:
       - "3000:3000"
