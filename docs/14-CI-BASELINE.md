@@ -24,6 +24,8 @@ GitHub Actions 均固定到已核验发布版本的完整提交 SHA。
 - 手工触发 `workflow_dispatch`
 
 同一工作流、同一 Git ref 仅保留最新运行。全局权限为只读 `contents: read`。
+Security Job 额外使用最小 `pull-requests: read`，仅供 Gitleaks Action 在 PR 事件中读取
+提交列表；评论和结果构件均禁用，不授予任何写权限。
 四个独立任务并行执行，均无 `continue-on-error`：
 
 1. backend：Ruff、mypy、Django check、迁移漂移、Pytest、OpenAPI 3.1、pip-audit

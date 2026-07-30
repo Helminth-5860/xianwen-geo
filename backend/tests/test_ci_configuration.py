@@ -26,6 +26,10 @@ def test_ci_triggers_permissions_concurrency_and_parallel_jobs():
     assert workflow["on"]["push"]["branches"] == ["develop"]
     assert "workflow_dispatch" in workflow["on"]
     assert workflow["permissions"] == {"contents": "read"}
+    assert workflow["jobs"]["security"]["permissions"] == {
+        "contents": "read",
+        "pull-requests": "read",
+    }
     assert workflow["concurrency"] == {
         "group": "${{ github.workflow }}-${{ github.ref }}",
         "cancel-in-progress": "true",
