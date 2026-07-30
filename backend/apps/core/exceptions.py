@@ -28,8 +28,11 @@ def normalize_validation_errors(detail: Any) -> dict[str, Any]:
     return {"fields": normalize(detail)}
 
 
-def api_exception_handler(exc: Exception, context: dict) -> Response:
+def api_exception_handler(exc: Exception, context: dict[str, Any]) -> Response:
     request = context.get("request")
+    code: ErrorCode
+    status_code: int
+    details: dict[str, Any]
 
     if isinstance(exc, (exceptions.NotAuthenticated, exceptions.AuthenticationFailed)):
         code = ErrorCode.AUTH_REQUIRED
@@ -58,7 +61,8 @@ def api_exception_handler(exc: Exception, context: dict) -> Response:
     elif isinstance(exc, exceptions.Throttled):
         code = ErrorCode.RATE_LIMITED
         status_code = status.HTTP_429_TOO_MANY_REQUESTS
-        details = {"retry_after": exc.wait} if exc.wait is not None else {}
+        retry_after = getattr(exc, "wait", None)
+        details = {"retry_after": retry_after} if retry_after is not None else {}
     else:
         code = ErrorCode.INTERNAL_ERROR
         status_code = status.HTTP_500_INTERNAL_SERVER_ERROR

@@ -3,6 +3,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 import dj_database_url
+from dj_database_url import DBConfig
 from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parents[2]
@@ -26,7 +27,7 @@ def require_env(name: str) -> str:
     return value
 
 
-def database_from_url(url: str, *, conn_max_age: int) -> dict:
+def database_from_url(url: str, *, conn_max_age: int) -> DBConfig:
     return dj_database_url.parse(
         url,
         conn_max_age=conn_max_age,

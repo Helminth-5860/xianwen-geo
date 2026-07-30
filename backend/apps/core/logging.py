@@ -46,7 +46,7 @@ class JsonFormatter(logging.Formatter):
 
         if record.exc_info:
             payload["exception"] = self.formatException(record.exc_info)
-            payload.setdefault("exception_type", record.exc_info[0].__name__)
+            payload.setdefault("exception_type", type(record.exc_info[1]).__name__)
 
         return json.dumps(
             redact_sensitive_data(payload),

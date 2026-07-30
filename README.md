@@ -199,3 +199,40 @@ XW-0002 提供后续业务模块统一复用的工程边界：
 local 允许 SQLite/LocMem 安全回退，test 使用隔离配置。production 必须显式提供
 密钥、PostgreSQL、Redis、主机和来源配置，并拒绝 DEBUG、SQLite、LocMem、
 通配符主机及弱密钥。前端公开环境变量由 `frontend/lib/env.ts` 集中校验。
+
+## 12. 持续集成基线（XW-0003）
+
+CI 使用 Python 3.12 和 Node.js 24.18.0。Node.js 的唯一版本来源为
+`frontend/.nvmrc`，本地开发、GitHub Actions、`package.json` 和前端 Docker
+镜像必须保持一致。
+
+安装依赖：
+
+```powershell
+cd backend
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+
+cd ..\frontend
+npm ci
+```
+
+运行全部本地门禁：
+
+```powershell
+.\scripts\check.ps1 all
+```
+
+POSIX 环境使用 `./scripts/check.sh all`。也可传入 `backend`、`frontend`、
+`security`、`docker`、`git`、`actionlint` 或 `gitleaks` 单独复现 CI 层。
+详细的触发条件、检查项、缓存及敏感信息边界见
+`docs/14-CI-BASELINE.md`。
+
+GitHub Action 升级时，必须从官方仓库 release 核对完整 40 字符提交 SHA，同时更新
+workflow 的版本注释，再运行结构测试和 actionlint。建立远程仓库后，应把
+`Backend`、`Frontend`、`Security`、`Docker Compose` 配置为 `develop` 的
+Required Checks。当前仓库没有 remote，真实 Pull Request workflow 尚未执行。
+
+若迁移到 GitLab、Gitee 或其他 CI 平台，只替换流水线入口，继续调用本地检查脚本，
+不要复制检查逻辑。故障可用相应脚本模式本地复现；更多细节见
+`docs/14-CI-BASELINE.md`。
