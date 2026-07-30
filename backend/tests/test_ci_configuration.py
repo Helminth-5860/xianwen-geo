@@ -35,6 +35,10 @@ def test_ci_triggers_permissions_concurrency_and_parallel_jobs():
         "cancel-in-progress": "true",
     }
     assert set(workflow["jobs"]) == {"backend", "frontend", "security", "docker"}
+    security_runs = {
+        step.get("run") for step in workflow["jobs"]["security"]["steps"] if "run" in step
+    }
+    assert "bash scripts/check.sh gitleaks" in security_runs
     for job in workflow["jobs"].values():
         assert "needs" not in job
         assert "continue-on-error" not in json.dumps(job)

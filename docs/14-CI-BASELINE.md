@@ -30,7 +30,7 @@ Security Job 额外使用最小 `pull-requests: read`，仅供 Gitleaks Action �
 
 1. backend：Ruff、mypy、Django check、迁移漂移、Pytest、OpenAPI 3.1、pip-audit
 2. frontend：ESLint、Prettier、TypeScript、Vitest、production build、npm audit
-3. security：Git 清洁规则、完整历史 Gitleaks、actionlint
+3. security：Git 清洁规则、Gitleaks Action、固定 CLI 完整历史扫描、actionlint
 4. docker：Compose 配置解析，并构建 api、celery、frontend
 
 ## 本地复现
