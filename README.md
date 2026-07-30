@@ -160,7 +160,7 @@ xianwen_geo_v1_dev_package/
 - 数据库迁移必须可回滚，生产环境禁止手工改表。
 
 ## 10. 本地开发（XW-0001）
-状态：Code complete; Docker Compose integration pending.
+状态：XW-0001 and XW-0002 integration verified.
 
 
 要求：
@@ -185,7 +185,7 @@ PostgreSQL、Redis、Django API、Celery Worker 和 Next.js 前端。
 README 中列出的命令。
 ## 11. 配置、日志和错误框架（XW-0002）
 
-状态：Code and local tests complete; Docker Compose integration pending.
+状态：XW-0001 and XW-0002 integration verified.
 
 XW-0002 提供后续业务模块统一复用的工程边界：
 
