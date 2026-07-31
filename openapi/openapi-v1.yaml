@@ -65,6 +65,38 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CsrfEnvelope'
+  /auth/sms/send:
+    post:
+      tags: [Auth]
+      security: []
+      summary: 发送注册、登录或密码重置短信验证码
+      description: 响应不包含验证码、账号存在性、Provider 结果或具体限流阈值。
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SmsSendRequest'
+      responses:
+        '200':
+          description: 发送请求已由短信 Provider 接受
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SmsSendEnvelope'
+        '403':
+          $ref: '#/components/responses/CsrfFailed'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /auth/login/password:
     post:
       tags: [Auth]
@@ -675,6 +707,37 @@ components:
               required: [csrf_token]
               properties:
                 csrf_token: {type: string}
+    SmsPurpose:
+      type: string
+      enum: [register, login, password_reset]
+    SmsSendRequest:
+      type: object
+      additionalProperties: false
+      required: [phone, purpose]
+      properties:
+        phone:
+          type: string
+          description: 中国大陆手机号；允许 +86、0086、空格和短横线等价格式
+          examples: ['13800138000', '+8613800138000']
+        purpose:
+          $ref: '#/components/schemas/SmsPurpose'
+    SmsSendEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          required: [data]
+          properties:
+            success:
+              type: boolean
+              const: true
+            data:
+              type: object
+              additionalProperties: false
+              required: [sent, expires_in, resend_after]
+              properties:
+                sent: {type: boolean, const: true}
+                expires_in: {type: integer, const: 300}
+                resend_after: {type: integer, const: 60}
     PasswordLoginRequest:
       type: object
       additionalProperties: false

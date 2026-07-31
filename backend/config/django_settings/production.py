@@ -11,6 +11,7 @@ from .base import *
 APP_ENV = "production"
 
 SECRET_KEY = require_env("DJANGO_SECRET_KEY")
+SMS_VERIFICATION_HMAC_KEY = require_env("SMS_VERIFICATION_HMAC_KEY")
 weak_secret_markers = {
     "changeme",
     "change-me",
@@ -21,6 +22,25 @@ weak_secret_markers = {
 }
 if len(SECRET_KEY) < 50 or SECRET_KEY.lower() in weak_secret_markers:
     raise ImproperlyConfigured("DJANGO_SECRET_KEY is too weak for production.")
+if len(SMS_VERIFICATION_HMAC_KEY) < 50 or SMS_VERIFICATION_HMAC_KEY.lower() in weak_secret_markers:
+    raise ImproperlyConfigured("SMS_VERIFICATION_HMAC_KEY is too weak for production.")
+if SMS_VERIFICATION_HMAC_KEY == SECRET_KEY:
+    raise ImproperlyConfigured("SMS_VERIFICATION_HMAC_KEY must not reuse DJANGO_SECRET_KEY.")
+for forbidden_variable in ("DATABASE_URL", "REDIS_URL"):
+    configured_url = os.getenv(forbidden_variable, "")
+    configured_password = urlsplit(configured_url).password if configured_url else None
+    if SMS_VERIFICATION_HMAC_KEY in {configured_url, configured_password}:
+        raise ImproperlyConfigured(
+            f"SMS_VERIFICATION_HMAC_KEY must not reuse {forbidden_variable} credentials."
+        )
+
+SMS_PROVIDER = os.getenv("SMS_PROVIDER", "unconfigured").strip().lower()
+if SMS_PROVIDER == "mock":
+    raise ImproperlyConfigured("Mock SMS provider is forbidden in production.")
+if TRUSTED_PROXY_HOPS > 0 and not TRUSTED_PROXY_NETWORKS:
+    raise ImproperlyConfigured(
+        "TRUSTED_PROXY_CIDRS is required when TRUSTED_PROXY_HOPS is enabled."
+    )
 
 DEBUG = env_bool("DJANGO_DEBUG", False)
 if DEBUG:

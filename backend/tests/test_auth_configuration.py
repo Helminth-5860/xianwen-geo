@@ -43,3 +43,16 @@ def test_fresh_migration_uses_custom_user_without_auth_user_table(db):
     assert "auth_user" not in tables
     assert "django_session" in tables
     assert "auth_permission" in tables
+
+
+def test_frozen_sms_verification_defaults():
+    assert settings.SMS_CODE_TTL_SECONDS == 300
+    assert settings.SMS_RESEND_COOLDOWN_SECONDS == 60
+    assert settings.SMS_MAX_ATTEMPTS == 5
+    assert settings.SMS_LIMIT_COMBINATION_COUNT == 5
+    assert settings.SMS_LIMIT_COMBINATION_WINDOW_SECONDS == 900
+    assert settings.SMS_LIMIT_PHONE_COUNT == 10
+    assert settings.SMS_LIMIT_PHONE_WINDOW_SECONDS == 3600
+    assert settings.SMS_LIMIT_IP_COUNT == 60
+    assert settings.SMS_LIMIT_IP_WINDOW_SECONDS == 3600
+    assert settings.TRUSTED_PROXY_HOPS == 0

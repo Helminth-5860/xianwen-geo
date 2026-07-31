@@ -202,6 +202,8 @@ function Invoke-DockerChecks {
         DATABASE_URL = "postgresql://ci_user:ci-only-password@postgres:5432/ci_db"
         REDIS_URL = "redis://redis:6379/0"
         CELERY_BROKER_URL = "redis://redis:6379/1"
+        SMS_PROVIDER = "mock"
+        SMS_VERIFICATION_HMAC_KEY = "ci-only-sms-hmac-key-with-more-than-fifty-characters-000000"
         ALLOWED_HOSTS = "localhost,api"
         CSRF_TRUSTED_ORIGINS = "http://localhost:3000"
         CORS_ALLOWED_ORIGINS = "http://localhost:3000"
