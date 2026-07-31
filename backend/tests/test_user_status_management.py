@@ -33,11 +33,10 @@ def create_user(phone="13800138000", **kwargs):
 
 
 def create_admin(phone="13900139000", **kwargs):
-    return User.objects.create_user(
+    return User.objects.create_superuser(
         phone=phone,
         nickname="审核管理员",
         password=PASSWORD,
-        is_staff=True,
         **kwargs,
     )
 
@@ -293,11 +292,11 @@ def test_staff_and_superuser_cannot_be_business_status_targets():
                 {"decision": "approve"},
                 format="json",
             ).status_code
-            == 403
+            == 404
         )
         assert (
             client.post(f"/api/v1/admin/users/{target.id}/freeze", {}, format="json").status_code
-            == 403
+            == 404
         )
 
 

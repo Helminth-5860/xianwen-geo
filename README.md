@@ -251,3 +251,9 @@ XW-0104 提供独立的审核状态和账号状态机、追加式状态历史、
 
 管理员 API 仅允许有效 staff 使用，不提前建设完整 RBAC。完整接口、并发、迁移、日志和
 回滚边界见 `docs/18-USER-APPROVAL-ACCOUNT-STATUS.md`。
+## 18. 管理员 RBAC 与客户数据范围（XW-0105）
+
+XW-0105 在唯一 User 认证身份之上提供 AdminProfile、单角色 RBAC、显式菜单/动作权限、
+own/role/all 客户范围、管理员 Session 即时撤销和防 ABA 的客户当前归属。超级管理员能力固定
+由 is_superuser 识别，普通角色不能模拟。实现与 PostgreSQL 并发验收方式见
+`docs/19-ADMIN-RBAC-DATA-SCOPE.md`。

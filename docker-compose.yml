@@ -127,6 +127,32 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  rbac-tests:
+    profiles: ["rbac-test"]
+    build:
+      context: ./backend
+      target: test
+    command:
+      ["python", "-m", "pytest", "tests/test_admin_rbac_postgres.py", "--ds=config.settings", "-q", "-p", "no:cacheprovider"]
+    environment:
+      APP_ENV: local
+      DJANGO_SETTINGS_MODULE: config.settings
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?请先复制 .env.example 为 .env}
+      DJANGO_DEBUG: "false"
+      ALLOWED_HOSTS: localhost,127.0.0.1
+      CSRF_TRUSTED_ORIGINS: http://localhost:3000
+      CORS_ALLOWED_ORIGINS: http://localhost:3000
+      DATABASE_URL: ${DATABASE_URL:?请先复制 .env.example 为 .env}
+      REDIS_URL: ${REDIS_URL:?请先复制 .env.example 为 .env}
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:?请先复制 .env.example 为 .env}
+      SMS_PROVIDER: mock
+      SMS_VERIFICATION_HMAC_KEY: ${SMS_VERIFICATION_HMAC_KEY:?请配置随机本地短信 HMAC 密钥}
+      RUN_MIGRATIONS: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
   frontend:
     build:
       context: ./frontend

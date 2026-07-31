@@ -1,0 +1,290 @@
+from math import ceil
+
+from django.db import IntegrityError
+from django.utils.decorators import method_decorator
+from django.views.decorators.csrf import csrf_protect
+from rest_framework.exceptions import NotFound
+from rest_framework.response import Response
+from rest_framework.status import HTTP_201_CREATED, HTTP_409_CONFLICT
+from rest_framework.views import APIView
+
+from apps.core.responses import error_response
+
+from .models import AdminPermission, AdminProfile, AdminRole
+from .permissions import HasAdminPermission, resolve_admin_context
+from .scopes import scoped_customer_or_404
+from .serializers import (
+    AdminCreateSerializer,
+    AdminProfileSerializer,
+    AdminUpdateSerializer,
+    AssignmentSerializer,
+    AssignmentUpdateSerializer,
+    PermissionSerializer,
+    RoleCreateSerializer,
+    RoleSerializer,
+    RoleUpdateSerializer,
+    VersionSerializer,
+)
+from .services import (
+    AdminHasAssignedCustomers,
+    AdminStateConflict,
+    AdminVersionConflict,
+    AssignmentVersionConflict,
+    LastSuperuserProtected,
+    RoleInUse,
+    RoleVersionConflict,
+    assign_customer,
+    change_admin_status,
+    create_admin,
+    create_role,
+    disable_role,
+    update_admin,
+    update_role,
+)
+
+
+def _conflict(exc, request):
+    from apps.core.error_codes import ErrorCode
+
+    return error_response(
+        ErrorCode(exc.code),
+        status_code=HTTP_409_CONFLICT,
+        request=request,
+    )
+
+
+def _page(queryset, serializer, request):
+    page = max(int(request.query_params.get("page", 1)), 1)
+    page_size = min(max(int(request.query_params.get("page_size", 20)), 1), 100)
+    count = queryset.count()
+    offset = (page - 1) * page_size
+    return {
+        "results": serializer(queryset[offset : offset + page_size], many=True).data,
+        "pagination": {
+            "page": page,
+            "page_size": page_size,
+            "count": count,
+            "total_pages": ceil(count / page_size) if count else 0,
+        },
+    }
+
+
+class AdminMeView(APIView):
+    required_permission = "admin.dashboard.view"
+    permission_classes = [HasAdminPermission]
+
+    def get(self, request):
+        context = request.admin_context
+        profile_data = AdminProfileSerializer(context.profile).data
+        return Response(
+            {
+                **profile_data,
+                "admin_version": profile_data.pop("version"),
+                "data_scope": context.profile.role.data_scope
+                if context.profile.role
+                else AdminRole.DataScope.ALL,
+                "permission_keys": sorted(context.permission_keys),
+                "menu_keys": sorted(context.menu_keys),
+            }
+        )
+
+
+@method_decorator(csrf_protect, name="dispatch")
+class AdminListCreateView(APIView):
+    required_permission = "admins.list"
+    permission_classes = [HasAdminPermission]
+
+    def get(self, request):
+        queryset = AdminProfile.objects.select_related("user", "role").order_by("created_at", "id")
+        return Response(_page(queryset, AdminProfileSerializer, request))
+
+    @method_decorator(csrf_protect)
+    def post(self, request):
+        self.required_permission = "admins.create"
+        self.check_permissions(request)
+        serializer = AdminCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            profile = create_admin(
+                actor_id=request.user.pk,
+                request_id=request.request_id,
+                **serializer.validated_data,
+            )
+        except IntegrityError:
+            from apps.core.error_codes import ErrorCode
+
+            return error_response(
+                ErrorCode.ACCOUNT_ALREADY_EXISTS, status_code=HTTP_409_CONFLICT, request=request
+            )
+        return Response(AdminProfileSerializer(profile).data, status=HTTP_201_CREATED)
+
+
+@method_decorator(csrf_protect, name="dispatch")
+class AdminDetailView(APIView):
+    required_permission = "admins.view"
+    permission_classes = [HasAdminPermission]
+
+    def _get(self, profile_id):
+        try:
+            return AdminProfile.objects.select_related("user", "role").get(pk=profile_id)
+        except AdminProfile.DoesNotExist as exc:
+            raise NotFound from exc
+
+    def get(self, request, profile_id):
+        return Response(AdminProfileSerializer(self._get(profile_id)).data)
+
+    @method_decorator(csrf_protect)
+    def patch(self, request, profile_id):
+        self.required_permission = "admins.update"
+        self.check_permissions(request)
+        serializer = AdminUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            profile = update_admin(
+                actor_id=request.user.pk,
+                profile_id=profile_id,
+                request_id=request.request_id,
+                **serializer.validated_data,
+            )
+        except AdminVersionConflict as exc:
+            return _conflict(exc, request)
+        return Response(AdminProfileSerializer(profile).data)
+
+
+@method_decorator(csrf_protect, name="dispatch")
+class AdminStatusView(APIView):
+    required_permission = "admins.disable"
+    permission_classes = [HasAdminPermission]
+    action = ""
+
+    @method_decorator(csrf_protect)
+    def post(self, request, profile_id):
+        serializer = VersionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            profile = change_admin_status(
+                actor_id=request.user.pk,
+                profile_id=profile_id,
+                action=self.action,
+                expected_version=serializer.validated_data["expected_version"],
+                request_id=request.request_id,
+            )
+        except (
+            AdminStateConflict,
+            AdminVersionConflict,
+            AdminHasAssignedCustomers,
+            LastSuperuserProtected,
+        ) as exc:
+            return _conflict(exc, request)
+        return Response(AdminProfileSerializer(profile).data)
+
+
+@method_decorator(csrf_protect, name="dispatch")
+class RoleListCreateView(APIView):
+    required_permission = "roles.list"
+    permission_classes = [HasAdminPermission]
+
+    def get(self, request):
+        return Response(_page(AdminRole.objects.all(), RoleSerializer, request))
+
+    @method_decorator(csrf_protect)
+    def post(self, request):
+        self.required_permission = "roles.create"
+        self.check_permissions(request)
+        serializer = RoleCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        role = create_role(
+            actor_id=request.user.pk, request_id=request.request_id, **serializer.validated_data
+        )
+        return Response(RoleSerializer(role).data, status=HTTP_201_CREATED)
+
+
+@method_decorator(csrf_protect, name="dispatch")
+class RoleDetailView(APIView):
+    required_permission = "roles.view"
+    permission_classes = [HasAdminPermission]
+
+    def _get(self, role_id):
+        try:
+            return AdminRole.objects.get(pk=role_id)
+        except AdminRole.DoesNotExist as exc:
+            raise NotFound from exc
+
+    def get(self, request, role_id):
+        return Response(RoleSerializer(self._get(role_id)).data)
+
+    @method_decorator(csrf_protect)
+    def patch(self, request, role_id):
+        self.required_permission = "roles.update"
+        self.check_permissions(request)
+        serializer = RoleUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            role = update_role(
+                actor_id=request.user.pk,
+                role_id=role_id,
+                request_id=request.request_id,
+                **serializer.validated_data,
+            )
+        except RoleVersionConflict as exc:
+            return _conflict(exc, request)
+        return Response(RoleSerializer(role).data)
+
+
+@method_decorator(csrf_protect, name="dispatch")
+class RoleDisableView(APIView):
+    required_permission = "roles.disable"
+    permission_classes = [HasAdminPermission]
+
+    @method_decorator(csrf_protect)
+    def post(self, request, role_id):
+        serializer = VersionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            role = disable_role(
+                actor_id=request.user.pk,
+                role_id=role_id,
+                expected_version=serializer.validated_data["expected_version"],
+                request_id=request.request_id,
+            )
+        except (RoleVersionConflict, RoleInUse) as exc:
+            return _conflict(exc, request)
+        return Response(RoleSerializer(role).data)
+
+
+class PermissionListView(APIView):
+    required_permission = "roles.list"
+    permission_classes = [HasAdminPermission]
+
+    def get(self, request):
+        return Response(PermissionSerializer(AdminPermission.objects.all(), many=True).data)
+
+
+@method_decorator(csrf_protect, name="dispatch")
+class CustomerAssignmentView(APIView):
+    required_permission = "users.assign"
+    permission_classes = [HasAdminPermission]
+
+    @method_decorator(csrf_protect)
+    def put(self, request, customer_id):
+        context = resolve_admin_context(request.user)
+        if context is None:
+            raise NotFound
+        customer = scoped_customer_or_404(request.user, context, customer_id)
+        serializer = AssignmentUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            assignment = assign_customer(
+                actor=request.user,
+                context=context,
+                customer=customer,
+                request_id=request.request_id,
+                **serializer.validated_data,
+            )
+        except AssignmentVersionConflict as exc:
+            return _conflict(exc, request)
+        return Response(AssignmentSerializer(assignment).data)
+
+
+def status_view(action):
+    return type(f"Admin{action.title()}View", (AdminStatusView,), {"action": action})
