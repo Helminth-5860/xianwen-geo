@@ -29,8 +29,6 @@ from apps.admin_rbac.services import (
     update_role,
 )
 from apps.users.models import User
-from apps.users.sms.providers import MockSmsProvider, get_sms_provider
-from apps.users.sms.service import send_verification_code
 
 pytestmark = pytest.mark.django_db(transaction=True)
 PASSWORD = "Correct-Horse-Battery-2026!"
@@ -84,15 +82,11 @@ def browser_client():
     return client, response.json()["data"]["csrf_token"]
 
 
-def sms_login_with_real_redis(phone):
-    provider = get_sms_provider()
-    assert isinstance(provider, MockSmsProvider)
-    send_verification_code(phone, "login", "127.0.0.1", provider=provider)
-    code = provider.outbox[-1].code
+def admin_password_login(phone):
     client, csrf = browser_client()
     response = client.post(
-        "/api/v1/auth/login/sms",
-        {"phone": phone, "sms_code": code},
+        "/api/v1/admin/auth/login/password",
+        {"phone": phone, "password": PASSWORD},
         format="json",
         HTTP_X_CSRFTOKEN=csrf,
     )
@@ -206,7 +200,7 @@ def test_postgresql_lock_with_assignment_is_not_blocked():
     CustomerAssignment.objects.create(customer=customer, owner_admin=owner)
     old_client, csrf = browser_client()
     password_login = old_client.post(
-        "/api/v1/auth/login/password",
+        "/api/v1/admin/auth/login/password",
         {"phone": owner.user.phone, "password": PASSWORD},
         format="json",
         HTTP_X_CSRFTOKEN=csrf,
@@ -224,7 +218,7 @@ def test_postgresql_lock_with_assignment_is_not_blocked():
     assert changed.customer_assignments.get().customer_id == customer.id
     assert old_client.get("/api/v1/me").status_code == 401
 
-    _, locked_sms = sms_login_with_real_redis(owner.user.phone)
+    _, locked_sms = admin_password_login(owner.user.phone)
     assert locked_sms.status_code == 403
     assert locked_sms.json()["error"]["code"] == "ACCOUNT_UNAVAILABLE"
 
@@ -237,7 +231,7 @@ def test_postgresql_lock_with_assignment_is_not_blocked():
         request_id=uuid.uuid4(),
     )
     assert changed.admin_status == AdminProfile.Status.ACTIVE
-    new_client, unlocked_sms = sms_login_with_real_redis(owner.user.phone)
+    new_client, unlocked_sms = admin_password_login(owner.user.phone)
     assert unlocked_sms.status_code == 200
     assert new_client.get("/api/v1/me").status_code == 200
     assert old_client.get("/api/v1/me").status_code == 401
@@ -320,7 +314,7 @@ def test_postgresql_own_role_all_scopes_and_phone_filter_remain_closed():
     client = APIClient(enforce_csrf_checks=True)
     csrf = client.get("/api/v1/auth/csrf").json()["data"]["csrf_token"]
     login = client.post(
-        "/api/v1/auth/login/password",
+        "/api/v1/admin/auth/login/password",
         {"phone": own_admin.user.phone, "password": PASSWORD},
         format="json",
         HTTP_X_CSRFTOKEN=csrf,
