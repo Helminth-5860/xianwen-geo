@@ -16,6 +16,16 @@ Seed 管理，明确区分 menu/action，普通角色不能绑定 superuser-only
 Session 立即失效，恢复后也不会重新有效。disable 要求先转交客户；紧急 lock 不受客户归属
 阻止。最后一个有效超级管理员由 PostgreSQL 确定顺序行锁保护。
 
+
+### Permission 状态的受控变更
+
+Permission 状态只能通过 `admin_rbac.services.set_permission_status()` 修改；运维入口为：
+
+```bash
+python manage.py sync_admin_rbac --apply --permission-key users.review --permission-status inactive
+```
+
+禁止直接调用 `AdminPermission.save()` 修改状态。active -> inactive 会在同一 PostgreSQL 事务内锁定 Permission，并用数据库原子递增撤销实际绑定该权限的普通管理员 Session；重复停用幂等，重新启用不会恢复旧 Session。catalog 同步命令的状态选项复用同一服务，PostgreSQL 仍是唯一永久事实源。
 ## 客户范围
 
 `CustomerAssignment` 保留一行当前归属和单调 version。`owner_admin=null` 表示未分配，不
@@ -46,3 +56,14 @@ Session 立即失效，恢复后也不会重新有效。disable 要求先转交�
 
 优先 revert 应用提交。逆向迁移会删除角色、权限绑定、管理员资料、当前客户归属和最小
 RBAC 事件，执行前必须备份。回滚不会创建或恢复任何密码、Cookie 或 Session。
+
+### 0002 数据迁移的回滚限制
+
+`0002_seed_catalog_and_profiles` 有意使用 `RunPython.noop`，不提供可能错误恢复权限的危险反向写入：
+
+- 单独回退 0002 不恢复迁移时被安全收敛的普通 staff 身份。
+- 单独回退 0002 不删除 Permission Seed 或 AdminProfile。
+- 完整回退 0001 会删除全部 RBAC 表、归属和 RBAC 事件证据。
+- 生产环境优先采用前向修复或从经过验证的备份恢复，不应盲目执行逆向迁移。
+- 任何逆向迁移前必须审查影响并完成可恢复备份。
+- 本任务及回滚验证均未连接腾讯云 PostgreSQL。

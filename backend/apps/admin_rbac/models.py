@@ -1,6 +1,7 @@
 import uuid
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
 
 
@@ -73,6 +74,17 @@ class AdminPermission(models.Model):  # noqa: DJ008
                 name="admin_permission_valid_status",
             ),
         ]
+
+    def save(self, *args, **kwargs):
+        if self.pk and not self._state.adding:
+            previous_status = (
+                type(self).objects.filter(pk=self.pk).values_list("status", flat=True).first()
+            )
+            if previous_status is not None and previous_status != self.status:
+                raise ValidationError(
+                    "权限状态必须通过 admin_rbac.services.set_permission_status() 修改。"
+                )
+        return super().save(*args, **kwargs)
 
 
 class AdminProfile(models.Model):  # noqa: DJ008

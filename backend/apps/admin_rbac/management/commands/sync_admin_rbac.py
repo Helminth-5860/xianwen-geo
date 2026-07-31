@@ -1,4 +1,4 @@
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.db.models import Q
 
@@ -6,6 +6,7 @@ from apps.users.models import User
 
 from ...catalog import PERMISSION_CATALOG
 from ...models import AdminPermission, AdminProfile
+from ...services import set_permission_status
 
 
 class Command(BaseCommand):
@@ -13,11 +14,27 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument("--apply", action="store_true", help="实际写入；默认 dry-run。")
+        parser.add_argument("--permission-key")
+        parser.add_argument(
+            "--permission-status",
+            choices=AdminPermission.Status.values,
+            help="通过受控服务修改目录权限状态；必须与 --apply 同时使用。",
+        )
 
     @transaction.atomic
     def handle(self, *args, **options):
         apply_changes = options["apply"]
+        permission_key = options["permission_key"]
+        permission_status = options["permission_status"]
+        if bool(permission_key) != bool(permission_status):
+            raise CommandError("--permission-key 与 --permission-status 必须同时提供。")
+        if permission_key and not apply_changes:
+            raise CommandError("修改权限状态必须显式指定 --apply。")
+
         catalog_keys = {item.key for item in PERMISSION_CATALOG}
+        if permission_key and permission_key not in catalog_keys:
+            raise CommandError("只能修改 catalog 中已声明的权限。")
+
         extra_keys = list(
             AdminPermission.objects.exclude(key__in=catalog_keys).values_list("key", flat=True)
         )
@@ -28,16 +45,35 @@ class Command(BaseCommand):
                 "name": item.name,
                 "module": item.module,
                 "permission_type": item.permission_type,
-                "status": AdminPermission.Status.ACTIVE,
                 "sort_order": item.sort_order,
                 "superuser_only": item.superuser_only,
             }
-            if current is None or any(
+            metadata_changed = current is None or any(
                 getattr(current, key) != value for key, value in expected.items()
-            ):
+            )
+            if metadata_changed:
                 changes += 1
                 if apply_changes:
-                    AdminPermission.objects.update_or_create(key=item.key, defaults=expected)
+                    if current is None:
+                        current = AdminPermission.objects.create(
+                            key=item.key,
+                            status=AdminPermission.Status.ACTIVE,
+                            **expected,
+                        )
+                    else:
+                        for key, value in expected.items():
+                            setattr(current, key, value)
+                        current.save(update_fields=list(expected))
+
+            if item.key == permission_key and current is not None:
+                if current.status != permission_status:
+                    changes += 1
+                    if apply_changes:
+                        set_permission_status(
+                            permission_key=item.key,
+                            status=permission_status,
+                        )
+
         for user in User.objects.filter(
             Q(is_staff=True) | Q(is_superuser=True), admin_profile__isnull=True
         ):

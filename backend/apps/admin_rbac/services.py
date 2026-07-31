@@ -49,6 +49,35 @@ class AssignmentVersionConflict(DomainConflict):
     code = "ASSIGNMENT_VERSION_CONFLICT"
 
 
+@transaction.atomic
+def set_permission_status(*, permission_key: str, status: str) -> AdminPermission:
+    if status not in AdminPermission.Status.values:
+        raise ValueError("无效的权限状态。")
+    permission = AdminPermission.objects.select_for_update().get(key=permission_key)
+    if permission.status == status:
+        return permission
+
+    previous_status = permission.status
+    AdminPermission.objects.filter(pk=permission.pk).update(status=status)
+    permission.status = status
+    if (
+        previous_status == AdminPermission.Status.ACTIVE
+        and status == AdminPermission.Status.INACTIVE
+    ):
+        role_ids = list(
+            AdminRolePermission.objects.filter(
+                permission=permission,
+                role__status=AdminRole.Status.ACTIVE,
+            ).values_list("role_id", flat=True)
+        )
+        if role_ids:
+            User.objects.filter(
+                is_superuser=False,
+                admin_profile__role_id__in=role_ids,
+            ).update(session_version=F("session_version") + 1)
+    return permission
+
+
 def _event(*, actor, target, target_type, event_type, before, after, request_id):
     return AdminRbacEvent.objects.create(
         actor=actor,

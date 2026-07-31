@@ -1,12 +1,6 @@
 "use client";
 
-import {
-  ArrowLeftOutlined,
-  CheckOutlined,
-  LockOutlined,
-  StopOutlined,
-  UnlockOutlined,
-} from "@ant-design/icons";
+import { ArrowLeftOutlined } from "@ant-design/icons";
 import {
   Alert,
   Button,
@@ -21,6 +15,8 @@ import {
 } from "antd";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+
+import { UserStatusActions } from "@/components/admin/user-status-actions";
 
 import {
   type AdminUser,
@@ -147,47 +143,14 @@ export default function AdminUserDetailPage() {
                 </Descriptions.Item>
               )}
             </Descriptions>
-            <Space wrap className="admin-actions">
-              {user.approval_status === "pending" && (
-                <>
-                  <Button
-                    type="primary"
-                    icon={<CheckOutlined />}
-                    loading={submitting}
-                    onClick={() => void act(() => reviewAdminUser(userId, "approve"))}
-                  >
-                    通过审核
-                  </Button>
-                  <Button
-                    danger
-                    icon={<StopOutlined />}
-                    disabled={submitting}
-                    onClick={() => setRejectOpen(true)}
-                  >
-                    拒绝审核
-                  </Button>
-                </>
-              )}
-              {user.account_status === "active" && (
-                <Button
-                  danger
-                  icon={<LockOutlined />}
-                  disabled={submitting}
-                  onClick={() => confirmAccountAction("freeze")}
-                >
-                  冻结账号
-                </Button>
-              )}
-              {user.account_status === "frozen" && (
-                <Button
-                  icon={<UnlockOutlined />}
-                  disabled={submitting}
-                  onClick={() => confirmAccountAction("unfreeze")}
-                >
-                  解冻账号
-                </Button>
-              )}
-            </Space>
+            <UserStatusActions
+              user={user}
+              submitting={submitting}
+              onApprove={() => void act(() => reviewAdminUser(userId, "approve"))}
+              onReject={() => setRejectOpen(true)}
+              onFreeze={() => confirmAccountAction("freeze")}
+              onUnfreeze={() => confirmAccountAction("unfreeze")}
+            />
           </>
         )}
       </Card>

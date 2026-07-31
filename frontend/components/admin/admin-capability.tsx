@@ -7,7 +7,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 import { getAdminContext, type AdminContext } from "@/lib/admin-rbac-client";
 import { userMessage } from "@/lib/auth-client";
 
-const Context = createContext<AdminContext | null>(null);
+export const AdminCapabilityContext = createContext<AdminContext | null>(null);
 
 const MENU_ITEMS = [
   ["menu.admin.dashboard", "/admin", "工作台"],
@@ -27,7 +27,7 @@ export function AdminCapabilityProvider({ children }: { children: ReactNode }) {
   if (error) return <Alert type="error" showIcon message="无权访问后台" description={error} />;
   if (!context) return <Spin description="正在校验后台权限" />;
   return (
-    <Context.Provider value={context}>
+    <AdminCapabilityContext.Provider value={context}>
       <nav aria-label="后台菜单">
         <Space wrap>
           {MENU_ITEMS.filter(([key]) => context.menu_keys.includes(key)).map(
@@ -40,8 +40,8 @@ export function AdminCapabilityProvider({ children }: { children: ReactNode }) {
         </Space>
       </nav>
       {children}
-    </Context.Provider>
+    </AdminCapabilityContext.Provider>
   );
 }
 
-export const useAdminCapabilities = () => useContext(Context);
+export const useAdminCapabilities = () => useContext(AdminCapabilityContext);

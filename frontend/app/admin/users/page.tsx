@@ -17,6 +17,8 @@ import {
 import type { TableProps } from "antd";
 import { useCallback, useEffect, useState } from "react";
 
+import { useAdminCapabilities } from "@/components/admin/admin-capability";
+
 import { type AdminUser, type PageData, getAdminUsers, userMessage } from "@/lib/auth-client";
 
 const { Title } = Typography;
@@ -67,6 +69,9 @@ export default function AdminUsersPage() {
   const [data, setData] = useState<PageData<AdminUser> | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const capabilities = useAdminCapabilities();
+  const canReview = Boolean(capabilities?.permission_keys.includes("users.review"));
+  const canFreeze = Boolean(capabilities?.permission_keys.includes("users.freeze"));
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -102,6 +107,20 @@ export default function AdminUsersPage() {
         </Button>
       </Space>
       {error && <Alert type="error" showIcon message="无法加载审核数据" description={error} />}
+      {(!canReview || !canFreeze) && (
+        <Alert
+          type="info"
+          showIcon
+          message="部分用户管理操作不可用"
+          description={
+            !canReview && !canFreeze
+              ? "当前账号没有用户审核和账号冻结权限。"
+              : !canReview
+                ? "当前账号没有用户审核权限。"
+                : "当前账号没有账号冻结权限。"
+          }
+        />
+      )}
       <Card>
         <Form
           form={form}

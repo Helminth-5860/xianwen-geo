@@ -130,3 +130,26 @@ def test_compose_gate_builds_only_application_services():
     assert "build api celery frontend" in shell_checks
     assert "docker compose up" not in shell_checks
     assert "docker compose push" not in shell_checks
+
+
+def test_docker_job_runs_reproducible_postgresql_rbac_suite():
+    workflow = load_workflow()
+    docker_steps = workflow["jobs"]["docker"]["steps"]
+    runs = [step.get("run") for step in docker_steps]
+    names = [step["name"] for step in docker_steps]
+
+    assert "Run PostgreSQL RBAC tests" in names
+    assert "bash scripts/test-postgres-rbac.sh" in runs
+    script = (REPO_ROOT / "scripts" / "test-postgres-rbac.sh").read_text(encoding="utf-8")
+    assert "--profile rbac-test" in script
+    assert "run --rm --build rbac-tests" in script
+    assert "down --volumes --remove-orphans" in script
+    powershell_script = (REPO_ROOT / "scripts" / "test-postgres-rbac.ps1").read_text(
+        encoding="utf-8"
+    )
+    core_command = (
+        "docker compose --project-name xianwen-rbac-test --profile rbac-test "
+        "run --rm --build rbac-tests"
+    )
+    assert core_command in " ".join(script.replace("\\\n", "").split())
+    assert core_command in " ".join(powershell_script.split())

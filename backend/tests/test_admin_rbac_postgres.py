@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 from django.core.management import call_command
 from django.db import close_old_connections, connection, connections
+from django_redis import get_redis_connection
 from rest_framework.test import APIClient
 
 from apps.admin_rbac.models import (
@@ -28,6 +29,8 @@ from apps.admin_rbac.services import (
     update_role,
 )
 from apps.users.models import User
+from apps.users.sms.providers import MockSmsProvider, get_sms_provider
+from apps.users.sms.service import send_verification_code
 
 pytestmark = pytest.mark.django_db(transaction=True)
 PASSWORD = "Correct-Horse-Battery-2026!"
@@ -37,6 +40,17 @@ PASSWORD = "Correct-Horse-Battery-2026!"
 def seed_permission_catalog():
     # Transactional tests flush data migrations between cases; restore the immutable catalog.
     call_command("sync_admin_rbac", "--apply", verbosity=0)
+
+
+@pytest.fixture(autouse=True)
+def clear_test_redis():
+    if connection.vendor != "postgresql":
+        yield
+        return
+    client = get_redis_connection("default")
+    client.flushdb()
+    yield
+    client.flushdb()
 
 
 def require_postgresql():
@@ -61,6 +75,28 @@ def run_parallel(*operations):
 
 def make_superuser(phone):
     return User.objects.create_superuser(phone=phone, nickname="超级管理员", password=PASSWORD)
+
+
+def browser_client():
+    client = APIClient(enforce_csrf_checks=True)
+    response = client.get("/api/v1/auth/csrf")
+    assert response.status_code == 200
+    return client, response.json()["data"]["csrf_token"]
+
+
+def sms_login_with_real_redis(phone):
+    provider = get_sms_provider()
+    assert isinstance(provider, MockSmsProvider)
+    send_verification_code(phone, "login", "127.0.0.1", provider=provider)
+    code = provider.outbox[-1].code
+    client, csrf = browser_client()
+    response = client.post(
+        "/api/v1/auth/login/sms",
+        {"phone": phone, "sms_code": code},
+        format="json",
+        HTTP_X_CSRFTOKEN=csrf,
+    )
+    return client, response
 
 
 def test_postgresql_role_version_allows_only_one_concurrent_update():
@@ -168,6 +204,15 @@ def test_postgresql_lock_with_assignment_is_not_blocked():
     )
     customer = User.objects.create_user(phone="13800138000", nickname="客户", password=PASSWORD)
     CustomerAssignment.objects.create(customer=customer, owner_admin=owner)
+    old_client, csrf = browser_client()
+    password_login = old_client.post(
+        "/api/v1/auth/login/password",
+        {"phone": owner.user.phone, "password": PASSWORD},
+        format="json",
+        HTTP_X_CSRFTOKEN=csrf,
+    )
+    assert password_login.status_code == 200
+
     changed = change_admin_status(
         actor_id=actor.id,
         profile_id=owner.id,
@@ -177,6 +222,25 @@ def test_postgresql_lock_with_assignment_is_not_blocked():
     )
     assert changed.admin_status == AdminProfile.Status.LOCKED
     assert changed.customer_assignments.get().customer_id == customer.id
+    assert old_client.get("/api/v1/me").status_code == 401
+
+    _, locked_sms = sms_login_with_real_redis(owner.user.phone)
+    assert locked_sms.status_code == 403
+    assert locked_sms.json()["error"]["code"] == "ACCOUNT_UNAVAILABLE"
+
+    get_redis_connection("default").flushdb()
+    changed = change_admin_status(
+        actor_id=actor.id,
+        profile_id=owner.id,
+        action="unlock",
+        expected_version=2,
+        request_id=uuid.uuid4(),
+    )
+    assert changed.admin_status == AdminProfile.Status.ACTIVE
+    new_client, unlocked_sms = sms_login_with_real_redis(owner.user.phone)
+    assert unlocked_sms.status_code == 200
+    assert new_client.get("/api/v1/me").status_code == 200
+    assert old_client.get("/api/v1/me").status_code == 401
 
 
 def test_postgresql_own_role_all_scopes_and_phone_filter_remain_closed():

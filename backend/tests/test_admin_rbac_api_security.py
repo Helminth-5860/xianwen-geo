@@ -11,7 +11,7 @@ from apps.admin_rbac.models import (
     CustomerAssignment,
 )
 from apps.admin_rbac.permissions import resolve_admin_context
-from apps.admin_rbac.services import create_admin
+from apps.admin_rbac.services import create_admin, set_permission_status
 from apps.users.models import User
 
 PASSWORD = "Correct-Horse-Battery-2026!"
@@ -80,8 +80,7 @@ def test_inactive_permission_and_invalid_admin_invariants_fail_closed():
         role_id=role.id,
         request_id=uuid.uuid4(),
     )
-    permission.status = AdminPermission.Status.INACTIVE
-    permission.save(update_fields=["status"])
+    set_permission_status(permission_key=permission.key, status=AdminPermission.Status.INACTIVE)
 
     context = resolve_admin_context(profile.user)
     assert context is not None

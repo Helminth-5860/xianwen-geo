@@ -97,3 +97,5 @@ jobs:
           fetch-depth: 0
       - name: Validate and build Compose services
         run: bash scripts/check.sh docker
+      - name: Run PostgreSQL RBAC tests
+        run: bash scripts/test-postgres-rbac.sh

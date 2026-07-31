@@ -257,3 +257,4 @@ XW-0105 在唯一 User 认证身份之上提供 AdminProfile、单角色 RBAC、
 own/role/all 客户范围、管理员 Session 即时撤销和防 ABA 的客户当前归属。超级管理员能力固定
 由 is_superuser 识别，普通角色不能模拟。实现与 PostgreSQL 并发验收方式见
 `docs/19-ADMIN-RBAC-DATA-SCOPE.md`。
+RBAC 的 0002 Seed 迁移反向操作为 `RunPython.noop`：单独回退不会恢复普通 staff，也不会删除 Permission Seed/Profile；完整回退 0001 会删除 RBAC 表及证据。生产逆向迁移前必须审查、备份，优先采用前向修复或备份恢复，且不得连接腾讯云数据库进行验证。
