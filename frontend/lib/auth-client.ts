@@ -59,7 +59,7 @@ export async function readEnvelope<T>(response: Response): Promise<T> {
   return payload.data;
 }
 
-async function getCsrfToken(): Promise<string> {
+export async function getCsrfToken(): Promise<string> {
   const response = await fetch(`${publicEnvironment.apiBaseUrl}/auth/csrf`, {
     method: "GET",
     credentials: "include",
@@ -93,6 +93,24 @@ export async function post<T>(path: string, body: Record<string, unknown>): Prom
   return readEnvelope<T>(response);
 }
 
+export async function write<T>(
+  method: "PATCH" | "PUT",
+  path: string,
+  body: Record<string, unknown>,
+) {
+  const csrfToken = await getCsrfToken();
+  const response = await fetch(`${publicEnvironment.apiBaseUrl}${path}`, {
+    method,
+    credentials: "include",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      "X-CSRFToken": csrfToken,
+    },
+    body: JSON.stringify(body),
+  });
+  return readEnvelope<T>(response);
+}
 export function sendSms(phone: string, purpose: SmsPurpose) {
   return post<{ sent: true; expires_in: number; resend_after: number }>("/auth/sms/send", {
     phone,

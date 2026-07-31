@@ -65,6 +65,7 @@ INSTALLED_APPS = [
     "rest_framework",
     "apps.core",
     "apps.users",
+    "apps.admin_rbac",
 ]
 
 MIDDLEWARE = [

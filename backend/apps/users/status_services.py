@@ -47,12 +47,19 @@ NOTIFICATION_TEMPLATES = {
 }
 
 
-def _locked_active_staff(actor_id) -> User:
+def _locked_active_staff(actor_id, permission_key: str) -> User:
     try:
         actor = User.objects.select_for_update().get(pk=actor_id)
     except User.DoesNotExist as exc:
         raise PermissionDenied from exc
     if not actor.is_active or not actor.is_staff:
+        raise PermissionDenied
+    from apps.admin_rbac.permissions import resolve_admin_context
+
+    context = resolve_admin_context(actor)
+    if context is None or (
+        not actor.is_superuser and permission_key not in context.permission_keys
+    ):
         raise PermissionDenied
     return actor
 
@@ -117,7 +124,7 @@ def review_user(
     reason: str,
     request_id: UUID | str,
 ) -> StatusChangeResult:
-    actor = _locked_active_staff(actor_id)
+    actor = _locked_active_staff(actor_id, "users.review")
     user = _locked_target(user_id)
     _ensure_business_target(user)
     if user.approval_status != User.ApprovalStatus.PENDING:
@@ -213,7 +220,7 @@ def change_account_status(
     reason: str,
     request_id: UUID | str,
 ) -> StatusChangeResult:
-    actor = _locked_active_staff(actor_id)
+    actor = _locked_active_staff(actor_id, "users.freeze")
     user = _locked_target(user_id)
     _ensure_business_target(user)
     clean_reason = validate_safe_plain_text(

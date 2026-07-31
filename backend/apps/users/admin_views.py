@@ -1,6 +1,5 @@
 from math import ceil
 
-from django.shortcuts import get_object_or_404
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_protect
 from rest_framework.response import Response
@@ -11,11 +10,12 @@ from rest_framework.status import (
 )
 from rest_framework.views import APIView
 
+from apps.admin_rbac.permissions import HasAdminPermission
+from apps.admin_rbac.scopes import scoped_customer_or_404, scoped_customers
 from apps.core.error_codes import ErrorCode
 from apps.core.responses import error_response
 
 from .models import User
-from .permissions import IsActiveStaff
 from .serializers import (
     AccountStatusActionSerializer,
     AdminUserDetailSerializer,
@@ -54,13 +54,14 @@ def _page_data(queryset, serializer_class, *, page: int, page_size: int) -> dict
 
 
 class AdminUserListView(APIView):
-    permission_classes = [IsActiveStaff]
+    permission_classes = [HasAdminPermission]
+    required_permission = "users.list"
 
     def get(self, request):
         query_serializer = AdminUserListQuerySerializer(data=request.query_params)
         query_serializer.is_valid(raise_exception=True)
         query = query_serializer.validated_data
-        users = _business_users()
+        users = scoped_customers(request.user, request.admin_context)
         if "approval_status" in query:
             users = users.filter(approval_status=query["approval_status"])
         if "account_status" in query:
@@ -79,18 +80,20 @@ class AdminUserListView(APIView):
 
 
 class AdminUserDetailView(APIView):
-    permission_classes = [IsActiveStaff]
+    permission_classes = [HasAdminPermission]
+    required_permission = "users.view"
 
     def get(self, request, user_id):
-        user = get_object_or_404(_business_users(), pk=user_id)
+        user = scoped_customer_or_404(request.user, request.admin_context, user_id)
         return Response(AdminUserDetailSerializer(user).data)
 
 
 class AdminUserHistoryView(APIView):
-    permission_classes = [IsActiveStaff]
+    permission_classes = [HasAdminPermission]
+    required_permission = "users.history.view"
 
     def get(self, request, user_id):
-        user = get_object_or_404(_business_users(), pk=user_id)
+        user = scoped_customer_or_404(request.user, request.admin_context, user_id)
         query_serializer = PaginationSerializer(data=request.query_params)
         query_serializer.is_valid(raise_exception=True)
         query = query_serializer.validated_data
@@ -107,9 +110,11 @@ class AdminUserHistoryView(APIView):
 
 @method_decorator(csrf_protect, name="dispatch")
 class AdminUserReviewView(APIView):
-    permission_classes = [IsActiveStaff]
+    permission_classes = [HasAdminPermission]
+    required_permission = "users.review"
 
     def post(self, request, user_id):
+        scoped_customer_or_404(request.user, request.admin_context, user_id)
         serializer = ReviewUserSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
@@ -143,10 +148,12 @@ class AdminUserReviewView(APIView):
 
 
 class _AdminAccountStatusView(APIView):
-    permission_classes = [IsActiveStaff]
+    permission_classes = [HasAdminPermission]
+    required_permission = "users.freeze"
     action = ""
 
     def post(self, request, user_id):
+        scoped_customer_or_404(request.user, request.admin_context, user_id)
         serializer = AccountStatusActionSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:

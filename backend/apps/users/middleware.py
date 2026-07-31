@@ -19,4 +19,15 @@ class SessionVersionMiddleware:
             )
             if not valid_version:
                 logout(request)
+            else:
+                from apps.admin_rbac.models import AdminProfile
+                from apps.admin_rbac.permissions import resolve_admin_context
+
+                is_admin_identity = (
+                    AdminProfile.objects.filter(user=user).exists()
+                    or user.is_staff
+                    or user.is_superuser
+                )
+                if is_admin_identity and resolve_admin_context(user) is None:
+                    logout(request)
         return self.get_response(request)

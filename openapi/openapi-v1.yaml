@@ -900,7 +900,109 @@ paths:
       summary: 新增 API 密钥，明文只在请求中出现
       responses:
         '201': {description: 保存后只返回掩码}
+  /admin/me:
+    get:
+      tags: [Admin]
+      summary: 当前管理员能力与菜单
+      responses:
+        '200': {description: 管理员上下文, content: {application/json: {schema: {$ref: '#/components/schemas/AdminContextEnvelope'}}}}
+        '403': {$ref: '#/components/responses/PermissionDenied'}
+  /admin/admins:
+    get:
+      tags: [Admin]
+      summary: 管理员列表
+      responses:
+        '200': {description: 管理员分页列表}
+        '403': {$ref: '#/components/responses/PermissionDenied'}
+    post:
+      tags: [Admin]
+      summary: 创建普通管理员
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AdminCreateRequest'}}}}
+      responses:
+        '201': {description: 已创建}
+        '403': {$ref: '#/components/responses/PermissionDenied'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /admin/admins/{adminId}:
+    parameters: [{$ref: '#/components/parameters/AdminId'}]
+    get:
+      tags: [Admin]
+      summary: 管理员详情
+      responses: {'200': {description: 管理员详情}, '404': {$ref: '#/components/responses/ResourceNotFound'}}
+    patch:
+      tags: [Admin]
+      summary: 修改管理员资料或角色
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AdminUpdateRequest'}}}}
+      responses: {'200': {description: 已更新}, '409': {description: ADMIN_VERSION_CONFLICT}}
+  /admin/admins/{adminId}/disable:
+    $ref: '#/components/pathItems/AdminStatusAction'
+  /admin/admins/{adminId}/enable:
+    $ref: '#/components/pathItems/AdminStatusAction'
+  /admin/admins/{adminId}/lock:
+    $ref: '#/components/pathItems/AdminStatusAction'
+  /admin/admins/{adminId}/unlock:
+    $ref: '#/components/pathItems/AdminStatusAction'
+  /admin/roles:
+    get:
+      tags: [Admin]
+      summary: 角色列表
+      responses: {'200': {description: 角色分页列表}}
+    post:
+      tags: [Admin]
+      summary: 创建角色
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/RoleCreateRequest'}}}}
+      responses: {'201': {description: 已创建}, '403': {$ref: '#/components/responses/PermissionDenied'}}
+  /admin/roles/{roleId}:
+    parameters: [{$ref: '#/components/parameters/RoleId'}]
+    get:
+      tags: [Admin]
+      summary: 角色详情
+      responses: {'200': {description: 角色详情}}
+    patch:
+      tags: [Admin]
+      summary: 更新角色、数据范围和权限
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/RoleUpdateRequest'}}}}
+      responses: {'200': {description: 已更新}, '409': {description: ROLE_VERSION_CONFLICT}}
+  /admin/roles/{roleId}/disable:
+    post:
+      tags: [Admin]
+      summary: 停用未被使用的角色
+      parameters: [{$ref: '#/components/parameters/RoleId'}, {$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ExpectedVersionRequest'}}}}
+      responses: {'200': {description: 已停用}, '409': {description: ROLE_IN_USE 或 ROLE_VERSION_CONFLICT}}
+  /admin/permissions:
+    get:
+      tags: [Admin]
+      summary: 只读稳定权限目录
+      responses: {'200': {description: 权限目录}}
+  /admin/users/{userId}/assignment:
+    put:
+      tags: [Admin]
+      summary: 分配、转交或解除客户负责人
+      parameters: [{$ref: '#/components/parameters/UserId'}, {$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AssignmentUpdateRequest'}}}}
+      responses: {'200': {description: 当前归属}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {description: ASSIGNMENT_VERSION_CONFLICT}}
 components:
+  pathItems:
+    AdminStatusAction:
+      parameters:
+        - $ref: '#/components/parameters/AdminId'
+      post:
+        tags: [Admin]
+        summary: 管理员状态转换
+        parameters:
+          - $ref: '#/components/parameters/CsrfToken'
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ExpectedVersionRequest'}
+        responses:
+          '200': {description: 状态已更新}
+          '409': {description: ADMIN_STATE_CONFLICT、ADMIN_VERSION_CONFLICT、ADMIN_HAS_ASSIGNED_CUSTOMERS 或 LAST_SUPERUSER_PROTECTED}
   securitySchemes:
     cookieAuth:
       type: apiKey
@@ -914,6 +1016,16 @@ components:
         type: string
         format: uuid
   parameters:
+    AdminId:
+      name: adminId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    RoleId:
+      name: roleId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
     SubjectId:
       name: subjectId
       in: path
@@ -1528,3 +1640,86 @@ components:
           properties:
             data:
               $ref: '#/components/schemas/AsyncTask'
+    AdminRoleSummary:
+      type: [object, 'null']
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        status: {type: string, enum: [active, inactive]}
+        data_scope: {type: string, enum: [own, role, all]}
+        version: {type: integer, minimum: 1}
+        permission_keys: {type: array, items: {type: string}}
+    AdminProfile:
+      type: object
+      required: [id, nickname, phone_masked, is_superuser, admin_status, version]
+      properties:
+        id: {type: string, format: uuid}
+        nickname: {type: string}
+        phone_masked: {type: string}
+        is_superuser: {type: boolean}
+        admin_status: {type: string, enum: [active, disabled, locked]}
+        version: {type: integer, minimum: 1}
+        role: {$ref: '#/components/schemas/AdminRoleSummary'}
+    AdminContextEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          properties:
+            data:
+              allOf:
+                - $ref: '#/components/schemas/AdminProfile'
+                - type: object
+                  properties:
+                    admin_version: {type: integer, minimum: 1}
+                    data_scope: {type: string, enum: [own, role, all]}
+                    permission_keys: {type: array, items: {type: string}}
+                    menu_keys: {type: array, items: {type: string}}
+    AdminCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [phone, nickname, password, role_id]
+      properties:
+        phone: {type: string}
+        nickname: {type: string, maxLength: 50}
+        password: {type: string, format: password, writeOnly: true}
+        role_id: {type: string, format: uuid}
+    AdminUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version]
+      properties:
+        expected_version: {type: integer, minimum: 1}
+        nickname: {type: string, maxLength: 50}
+        role_id: {type: string, format: uuid}
+    ExpectedVersionRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version]
+      properties:
+        expected_version: {type: integer, minimum: 1}
+    RoleCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [name, data_scope]
+      properties:
+        name: {type: string, maxLength: 80}
+        description: {type: string, maxLength: 500}
+        data_scope: {type: string, enum: [own, role, all]}
+    RoleUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version]
+      properties:
+        expected_version: {type: integer, minimum: 1}
+        name: {type: string, maxLength: 80}
+        description: {type: string, maxLength: 500}
+        data_scope: {type: string, enum: [own, role, all]}
+        permission_keys: {type: array, uniqueItems: true, items: {type: string}}
+    AssignmentUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [owner_admin_id, expected_version]
+      properties:
+        owner_admin_id: {type: [string, 'null'], format: uuid}
+        expected_version: {type: integer, minimum: 0}
+        reason: {type: string, maxLength: 200}

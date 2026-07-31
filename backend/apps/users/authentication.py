@@ -21,6 +21,14 @@ def start_browser_session(request, user_id) -> User:
     user = User.objects.select_for_update().get(pk=user_id)
     if not user.is_active or user.account_status not in User.ACTIVE_ACCOUNT_STATUSES:
         raise AccountUnavailable
+    from apps.admin_rbac.models import AdminProfile
+    from apps.admin_rbac.permissions import resolve_admin_context
+
+    has_admin_profile = AdminProfile.objects.filter(user=user).exists()
+    if (has_admin_profile or user.is_staff or user.is_superuser) and resolve_admin_context(
+        user
+    ) is None:
+        raise AccountUnavailable
     login(
         request,
         user,
