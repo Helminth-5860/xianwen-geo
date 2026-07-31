@@ -194,9 +194,9 @@ class SuperuserSecurityUpdateSerializer(SecurityMutationSerializer):
 
 
 class IpAllowlistCreateSerializer(SecurityMutationSerializer):
-    network_cidr = serializers.CharField(max_length=64, trim_whitespace=True)
+    network_cidr = serializers.CharField(max_length=64, trim_whitespace=False)
     label = serializers.CharField(  # type: ignore[assignment]
-        max_length=100, required=False, allow_blank=True
+        max_length=100, required=False, allow_blank=True, default=""
     )
 
     def validate_network_cidr(self, value):

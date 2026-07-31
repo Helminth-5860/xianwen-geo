@@ -904,37 +904,56 @@ paths:
     post:
       tags: [Admin]
       security: []
-      summary: administrator security 2FA administrator security challengeadministrator security Session
+      summary: 管理员密码认证；按策略返回完整会话或临时二次验证 challenge
       parameters: [{$ref: '#/components/parameters/CsrfToken'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AdminPasswordLoginRequest'}}}}
       responses:
-        '200': {description: administrator security, content: {application/json: {schema: {$ref: '#/components/schemas/AdminPasswordLoginEnvelope'}}}}
+        '200': {description: 管理员认证步骤成功, content: {application/json: {schema: {$ref: '#/components/schemas/AdminPasswordLoginEnvelope'}}}}
         '401': {$ref: '#/components/responses/AuthRequired'}
-        '403': {description: CSRFadministrator security IP administrator security}
+        '403': {description: CSRF 失败、管理员入口限制或 IP 不允许}
+        '422': {$ref: '#/components/responses/ValidationError'}
         '429': {$ref: '#/components/responses/RateLimited'}
         '503': {$ref: '#/components/responses/ServiceUnavailable'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /admin/auth/login/sms/send:
     post:
       tags: [Admin]
       security: []
-      summary: administrator security challenge administrator security
+      summary: 为有效管理员登录 challenge 发送短信验证码
       parameters: [{$ref: '#/components/parameters/CsrfToken'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AdminChallengeRequest'}}}}
-      responses: {'200': {description: administrator security}, '401': {description: challenge administrator security}, '403': {$ref: '#/components/responses/CsrfFailed'}, '429': {$ref: '#/components/responses/RateLimited'}, '503': {$ref: '#/components/responses/ServiceUnavailable'}}
+      responses:
+        '200': {description: 短信发送已受理}
+        '401': {description: challenge 无效、过期或上下文不匹配}
+        '403': {$ref: '#/components/responses/CsrfFailed'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /admin/auth/login/sms/verify:
     post:
       tags: [Admin]
       security: []
-      summary: administrator security challenge administrator security Session
+      summary: 验证管理员登录 challenge 并建立完整 Session
       parameters: [{$ref: '#/components/parameters/CsrfToken'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AdminChallengeVerifyRequest'}}}}
-      responses: {'200': {description: administrator security}, '401': {description: challenge administrator security}, '403': {$ref: '#/components/responses/CsrfFailed'}, '503': {$ref: '#/components/responses/ServiceUnavailable'}}
+      responses:
+        '200': {description: 管理员完整 Session 已建立}
+        '401': {description: challenge 或验证码无效、过期、已消费或上下文不匹配}
+        '403': {$ref: '#/components/responses/CsrfFailed'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /admin/auth/logout:
     post:
       tags: [Admin]
-      summary: administrator security Session
+      summary: 注销当前管理员 Session
       parameters: [{$ref: '#/components/parameters/CsrfToken'}]
-      responses: {'200': {description: administrator security}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/CsrfFailed'}}
+      responses:
+        '200': {description: 管理员 Session 已注销}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/CsrfFailed'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /admin/me:
     get:
       tags: [Admin]
@@ -976,7 +995,7 @@ paths:
       tags: [Admin]
       summary: administrator security session_version administrator security Session
       parameters: [{$ref: '#/components/parameters/CsrfToken'}]
-      responses: {'200': {description: administrator security Session administrator security}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}}
+      responses: {'200': {description: 当前或目标管理员的既有 Session 已撤销}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '500': {$ref: '#/components/responses/InternalError'}}
   /admin/admins/{adminId}/disable:
     $ref: '#/components/pathItems/AdminStatusAction'
   /admin/admins/{adminId}/enable:
@@ -1017,54 +1036,66 @@ paths:
       responses: {'200': {description: 已停用}, '409': {description: ROLE_IN_USE 或 ROLE_VERSION_CONFLICT}}
   /admin/roles/{roleId}/security:
     parameters: [{$ref: '#/components/parameters/RoleId'}]
-    get: {tags: [Admin], summary: administrator security 2FA/IP administrator security, responses: {'200': {description: administrator security}, '403': {$ref: '#/components/responses/PermissionDenied'}}}
+    get:
+      tags: [Admin]
+      summary: 查询角色二次验证与 IP 白名单策略
+      responses: {'200': {description: 角色安全策略}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '500': {$ref: '#/components/responses/InternalError'}}
     patch:
       tags: [Admin]
-      summary: administrator security Session
+      summary: 原子更新角色安全策略并撤销旧 Session/challenge
       parameters: [{$ref: '#/components/parameters/CsrfToken'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/RoleSecurityMutation'}}}}
-      responses: {'200': {description: administrator security}, '403': {description: administrator securityCSRFadministrator securitycurrent_password administrator security IP administrator security}, '409': {description: SECURITY_POLICY_VERSION_CONFLICT administrator security}, '429': {$ref: '#/components/responses/RateLimited'}, '503': {$ref: '#/components/responses/ServiceUnavailable'}}
+      responses: {'200': {description: 角色安全策略已更新}, '403': {description: 权限、CSRF、密码再验证或 IP 检查失败}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {description: SECURITY_POLICY_VERSION_CONFLICT 或锁出确认缺失}, '422': {$ref: '#/components/responses/ValidationError'}, '429': {$ref: '#/components/responses/RateLimited'}, '503': {$ref: '#/components/responses/ServiceUnavailable'}, '500': {$ref: '#/components/responses/InternalError'}}
   /admin/roles/{roleId}/ip-allowlist:
     parameters: [{$ref: '#/components/parameters/RoleId'}]
-    get: {tags: [Admin], summary: administrator security IP administrator security, responses: {'200': {description: administrator security}}}
+    get:
+      tags: [Admin]
+      summary: 查询角色 IP 白名单条目
+      responses: {'200': {description: 角色 IP 白名单条目}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '500': {$ref: '#/components/responses/InternalError'}}
     post:
       tags: [Admin]
-      summary: administrator security CIDR administrator security
+      summary: 新增或恢复角色 CIDR 条目
       parameters: [{$ref: '#/components/parameters/CsrfToken'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/IpAllowlistCreateRequest'}}}}
-      responses: {'201': {description: administrator security}, '409': {description: administrator security}, '422': {$ref: '#/components/responses/ValidationError'}}
+      responses: {'201': {description: 角色 CIDR 条目已保存}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {description: 安全策略版本冲突或锁出确认缺失}, '422': {$ref: '#/components/responses/ValidationError'}, '429': {$ref: '#/components/responses/RateLimited'}, '503': {$ref: '#/components/responses/ServiceUnavailable'}, '500': {$ref: '#/components/responses/InternalError'}}
   /admin/roles/{roleId}/ip-allowlist/{entryId}:
     parameters: [{$ref: '#/components/parameters/RoleId'}, {name: entryId, in: path, required: true, schema: {type: string, format: uuid}}]
     patch:
       tags: [Admin]
-      summary: administrator security CIDR administrator security DELETE
+      summary: 更新角色 CIDR 条目状态；不物理删除
       parameters: [{$ref: '#/components/parameters/CsrfToken'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/IpAllowlistUpdateRequest'}}}}
-      responses: {'200': {description: administrator security}, '409': {description: administrator security}, '422': {$ref: '#/components/responses/ValidationError'}}
+      responses: {'200': {description: 角色 CIDR 条目已更新}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {description: 安全策略版本冲突或锁出确认缺失}, '422': {$ref: '#/components/responses/ValidationError'}, '429': {$ref: '#/components/responses/RateLimited'}, '503': {$ref: '#/components/responses/ServiceUnavailable'}, '500': {$ref: '#/components/responses/InternalError'}}
   /admin/security/superuser:
-    get: {tags: [Admin], summary: administrator security 2FA administrator security, responses: {'200': {description: administrator security}, '403': {$ref: '#/components/responses/PermissionDenied'}}}
+    get:
+      tags: [Admin]
+      summary: 查询当前超级管理员强制 2FA 与 IP 白名单策略
+      responses: {'200': {description: 超级管理员安全策略}, '403': {$ref: '#/components/responses/PermissionDenied'}, '500': {$ref: '#/components/responses/InternalError'}}
     patch:
       tags: [Admin]
-      summary: administrator security IP administrator security
+      summary: 更新当前超级管理员 IP 白名单策略；2FA 始终开启
       parameters: [{$ref: '#/components/parameters/CsrfToken'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/SuperuserSecurityMutation'}}}}
-      responses: {'200': {description: administrator security}, '403': {description: administrator securityCSRF administrator security current_password administrator security}, '409': {description: administrator security}}
+      responses: {'200': {description: 超级管理员安全策略已更新}, '403': {description: 权限、CSRF、密码再验证或 IP 检查失败}, '409': {description: 安全策略版本冲突或锁出确认缺失}, '422': {$ref: '#/components/responses/ValidationError'}, '429': {$ref: '#/components/responses/RateLimited'}, '503': {$ref: '#/components/responses/ServiceUnavailable'}, '500': {$ref: '#/components/responses/InternalError'}}
   /admin/security/superuser/ip-allowlist:
-    get: {tags: [Admin], summary: administrator security IP administrator security, responses: {'200': {description: administrator security}}}
+    get:
+      tags: [Admin]
+      summary: 查询当前超级管理员 IP 白名单条目
+      responses: {'200': {description: 超级管理员 IP 白名单条目}, '403': {$ref: '#/components/responses/PermissionDenied'}, '500': {$ref: '#/components/responses/InternalError'}}
     post:
       tags: [Admin]
-      summary: administrator security CIDR
+      summary: 新增或恢复超级管理员 CIDR 条目
       parameters: [{$ref: '#/components/parameters/CsrfToken'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/IpAllowlistCreateRequest'}}}}
-      responses: {'201': {description: administrator security}, '409': {description: administrator security}, '422': {$ref: '#/components/responses/ValidationError'}}
+      responses: {'201': {description: 超级管理员 CIDR 条目已保存}, '403': {$ref: '#/components/responses/PermissionDenied'}, '409': {description: 安全策略版本冲突或锁出确认缺失}, '422': {$ref: '#/components/responses/ValidationError'}, '429': {$ref: '#/components/responses/RateLimited'}, '503': {$ref: '#/components/responses/ServiceUnavailable'}, '500': {$ref: '#/components/responses/InternalError'}}
   /admin/security/superuser/ip-allowlist/{entryId}:
     parameters: [{name: entryId, in: path, required: true, schema: {type: string, format: uuid}}]
     patch:
       tags: [Admin]
-      summary: administrator security CIDRadministrator security DELETE
+      summary: 更新超级管理员 CIDR 条目状态；不物理删除
       parameters: [{$ref: '#/components/parameters/CsrfToken'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/IpAllowlistUpdateRequest'}}}}
-      responses: {'200': {description: administrator security}, '409': {description: administrator security}, '422': {$ref: '#/components/responses/ValidationError'}}
+      responses: {'200': {description: 超级管理员 CIDR 条目已更新}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {description: 安全策略版本冲突或锁出确认缺失}, '422': {$ref: '#/components/responses/ValidationError'}, '429': {$ref: '#/components/responses/RateLimited'}, '503': {$ref: '#/components/responses/ServiceUnavailable'}, '500': {$ref: '#/components/responses/InternalError'}}
   /admin/permissions:
     get:
       tags: [Admin]
@@ -1756,7 +1787,7 @@ components:
               required: [requires_2fa]
               properties:
                 requires_2fa: {type: boolean}
-                challenge_id: {type: string, writeOnly: true, description: administrator security}
+                challenge_id: {type: string, description: 仅用于本次管理员二次验证的临时标识}
                 expires_in: {type: integer, const: 300}
     AdminChallengeRequest:
       type: object
@@ -1771,7 +1802,7 @@ components:
           properties:
             sms_code:
               type: string
-              pattern: '^[0-9]{6}'
+              pattern: '^[0-9]{6}$'
               writeOnly: true
     SecurityMutationBase:
       type: object

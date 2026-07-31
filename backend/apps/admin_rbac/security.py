@@ -42,6 +42,7 @@ ADMIN_ROLE_SECURITY_VERSION_KEY = "_xianwen_admin_role_security_version"
 ADMIN_POLICY_VERSION_KEY = "_xianwen_admin_policy_version"
 ADMIN_AUTH_FACTORS_KEY = "_xianwen_admin_auth_factors"
 ADMIN_IP_FINGERPRINT_KEY = "_xianwen_admin_ip_fingerprint"
+ADMIN_CHALLENGE_BINDING_KEY = "_xianwen_admin_challenge_binding"
 
 
 class AdminSecurityUnavailable(Exception):
@@ -432,8 +433,19 @@ class AdminChallengeStore:
         return result.decode() if isinstance(result, bytes) else str(result)
 
 
-def _challenge_payload(snapshot: AdminSecuritySnapshot) -> dict[str, object]:
+def _browser_binding(request, *, rotate: bool = False) -> str:
+    raw = request.session.get(ADMIN_CHALLENGE_BINDING_KEY)
+    if rotate or not isinstance(raw, str) or len(raw) < 32:
+        raw = secrets.token_urlsafe(32)
+        request.session[ADMIN_CHALLENGE_BINDING_KEY] = raw
+    return _hmac("browser-session-binding", raw)
+
+
+def _challenge_payload(
+    snapshot: AdminSecuritySnapshot, *, browser_binding: str
+) -> dict[str, object]:
     return {
+        "browser_binding": browser_binding,
         "user_id": str(snapshot.user.pk),
         "session_version": snapshot.user.session_version,
         "profile_id": str(snapshot.profile.pk),
@@ -452,15 +464,19 @@ def _challenge_payload(snapshot: AdminSecuritySnapshot) -> dict[str, object]:
     }
 
 
-def create_admin_challenge(snapshot: AdminSecuritySnapshot, *, store=None) -> str:
+def create_admin_challenge(snapshot: AdminSecuritySnapshot, request, *, store=None) -> str:
     challenge_id = secrets.token_urlsafe(32)
-    (store or AdminChallengeStore()).create(challenge_id, _challenge_payload(snapshot))
+    payload = _challenge_payload(snapshot, browser_binding=_browser_binding(request, rotate=True))
+    (store or AdminChallengeStore()).create(challenge_id, payload)
     return challenge_id
 
 
-def _snapshot_matches_payload(snapshot: AdminSecuritySnapshot, payload: dict[str, object]) -> bool:
-    expected = _challenge_payload(snapshot)
+def _snapshot_matches_payload(
+    snapshot: AdminSecuritySnapshot, payload: dict[str, object], request
+) -> bool:
+    expected = _challenge_payload(snapshot, browser_binding=_browser_binding(request))
     for key in (
+        "browser_binding",
         "user_id",
         "session_version",
         "profile_id",
@@ -491,9 +507,9 @@ def snapshot_for_challenge(challenge_id: str, request, *, store=None):
     try:
         user = User.objects.get(pk=user_id)
         snapshot = security_snapshot(user, request)
-    except (User.DoesNotExist, ValueError) as exc:
+    except (User.DoesNotExist, ValueError, AdminIpNotAllowed) as exc:
         raise AdminChallengeInvalid from exc
-    if not _snapshot_matches_payload(snapshot, payload):
+    if not _snapshot_matches_payload(snapshot, payload, request):
         raise AdminChallengeInvalid
     return snapshot, payload, resolved_store
 

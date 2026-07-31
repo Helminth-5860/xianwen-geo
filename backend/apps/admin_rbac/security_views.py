@@ -26,7 +26,13 @@ from apps.users.services import (
 )
 from apps.users.sms.exceptions import SmsRateLimited, SmsServiceUnavailable
 
-from .models import AdminProfile, AdminRole, SuperuserSecurityPolicy
+from .models import (
+    AdminProfile,
+    AdminRole,
+    RoleIpAllowlistEntry,
+    SuperuserIpAllowlistEntry,
+    SuperuserSecurityPolicy,
+)
 from .permissions import HasAdminSession, HasSuperuserAdminSession
 from .security import (
     AdminChallengeExpired,
@@ -179,7 +185,7 @@ class AdminPasswordLoginView(APIView):
         )
         if snapshot.require_sms_2fa:
             try:
-                challenge_id = create_admin_challenge(snapshot)
+                challenge_id = create_admin_challenge(snapshot, request)
             except AdminSecurityUnavailable:
                 return _admin_failure(
                     ErrorCode.SERVICE_TEMPORARILY_UNAVAILABLE,
@@ -339,6 +345,8 @@ class RoleSecurityView(APIView):
                 request=request,
                 **serializer.validated_data,
             )
+        except AdminRole.DoesNotExist as exc:
+            raise NotFound from exc
         except (
             SecurityPolicyVersionConflict,
             LockoutConfirmationRequired,
@@ -362,11 +370,11 @@ class RoleIpAllowlistView(APIView):
     permission_classes = [HasSuperuserAdminSession]
 
     def get(self, request, role_id):
-        return Response(
-            RoleIpAllowlistSerializer(
-                AdminRole.objects.get(pk=role_id).ip_allowlist_entries.all(), many=True
-            ).data
-        )
+        try:
+            role = AdminRole.objects.get(pk=role_id)
+        except AdminRole.DoesNotExist as exc:
+            raise NotFound from exc
+        return Response(RoleIpAllowlistSerializer(role.ip_allowlist_entries.all(), many=True).data)
 
     @method_decorator(csrf_protect)
     def post(self, request, role_id):
@@ -379,6 +387,8 @@ class RoleIpAllowlistView(APIView):
                 request=request,
                 **serializer.validated_data,
             )
+        except AdminRole.DoesNotExist as exc:
+            raise NotFound from exc
         except (
             SecurityPolicyVersionConflict,
             LockoutConfirmationRequired,
@@ -413,6 +423,8 @@ class RoleIpAllowlistDetailView(APIView):
                 request=request,
                 **serializer.validated_data,
             )
+        except (AdminRole.DoesNotExist, RoleIpAllowlistEntry.DoesNotExist) as exc:
+            raise NotFound from exc
         except (
             SecurityPolicyVersionConflict,
             LockoutConfirmationRequired,
@@ -513,6 +525,8 @@ class SuperuserIpAllowlistDetailView(APIView):
                 request=request,
                 **serializer.validated_data,
             )
+        except SuperuserIpAllowlistEntry.DoesNotExist as exc:
+            raise NotFound from exc
         except (
             SecurityPolicyVersionConflict,
             LockoutConfirmationRequired,

@@ -136,7 +136,8 @@ def test_disabled_locked_enable_unlock_sms_login_http_and_old_sessions(monkeypat
     profile.role.security_version += 1
     profile.role.save(update_fields=["require_sms_2fa", "security_version"])
     monkeypatch.setattr(
-        "apps.admin_rbac.security_views.create_admin_challenge", lambda snapshot: "challenge"
+        "apps.admin_rbac.security_views.create_admin_challenge",
+        lambda snapshot, request: "challenge",
     )
     monkeypatch.setattr(
         "apps.admin_rbac.security_views.send_admin_second_factor",

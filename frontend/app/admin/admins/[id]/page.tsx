@@ -96,7 +96,11 @@ export default function AdminAccountDetailPage() {
                   onConfirm={async () => {
                     try {
                       await forceLogoutAdmin(admin.id);
-                      setError("已撤销该管理员全部旧会话。");
+                      setError(
+                        admin.id === capabilities?.id
+                          ? "已撤销当前会话；下一次请求将要求重新登录。"
+                          : "已撤销该管理员全部旧会话。",
+                      );
                     } catch (reason) {
                       setError(userMessage(reason));
                     }

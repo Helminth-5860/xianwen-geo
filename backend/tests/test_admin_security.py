@@ -56,7 +56,8 @@ def ordinary_admin(*, require_sms_2fa=False):
 def test_superuser_password_step_always_requires_sms_without_django_login(monkeypatch):
     user = superuser()
     monkeypatch.setattr(
-        "apps.admin_rbac.security_views.create_admin_challenge", lambda snapshot: "opaque-challenge"
+        "apps.admin_rbac.security_views.create_admin_challenge",
+        lambda snapshot, request: "opaque-challenge",
     )
     client, csrf = csrf_client()
 
@@ -95,7 +96,8 @@ def test_ordinary_role_2fa_switch_controls_password_completion(monkeypatch):
     role.security_version += 1
     role.save(update_fields=["require_sms_2fa", "security_version"])
     monkeypatch.setattr(
-        "apps.admin_rbac.security_views.create_admin_challenge", lambda snapshot: "next-challenge"
+        "apps.admin_rbac.security_views.create_admin_challenge",
+        lambda snapshot, request: "next-challenge",
     )
     second, csrf2 = csrf_client()
     challenged = second.post(
@@ -273,7 +275,7 @@ def test_invalid_cidr_is_stable_422_and_redis_failure_closes_admin_login(monkeyp
 
     monkeypatch.setattr(
         "apps.admin_rbac.security_views.create_admin_challenge",
-        lambda snapshot: (_ for _ in ()).throw(AdminSecurityUnavailable()),
+        lambda snapshot, request: (_ for _ in ()).throw(AdminSecurityUnavailable()),
     )
     client, csrf = csrf_client()
     unavailable = client.post(
@@ -330,6 +332,62 @@ def test_current_password_reauth_is_short_lived_rate_limited(settings):
     assert limited.json()["error"]["code"] == "RATE_LIMITED"
     role.refresh_from_db()
     assert role.require_sms_2fa is False
+
+
+@pytest.mark.django_db
+def test_admin_security_missing_role_and_allowlist_entries_are_stable_404():
+    actor = User.objects.create_superuser(
+        phone="13900139099", nickname="404 超级管理员", password=PASSWORD
+    )
+    client = authenticate_admin_client(
+        APIClient(REMOTE_ADDR="198.51.100.99"), actor, ip_address="198.51.100.99"
+    )
+    missing = uuid.uuid4()
+    mutation = {
+        "current_password": PASSWORD,
+        "expected_security_version": 1,
+        "require_sms_2fa": True,
+    }
+    create_entry = {
+        "network_cidr": "203.0.113.8",
+        "current_password": PASSWORD,
+        "expected_security_version": 1,
+    }
+    assert client.get(f"/api/v1/admin/roles/{missing}/security").status_code == 404
+    assert (
+        client.patch(f"/api/v1/admin/roles/{missing}/security", mutation, format="json").status_code
+        == 404
+    )
+    assert client.get(f"/api/v1/admin/roles/{missing}/ip-allowlist").status_code == 404
+    assert (
+        client.post(
+            f"/api/v1/admin/roles/{missing}/ip-allowlist", create_entry, format="json"
+        ).status_code
+        == 404
+    )
+
+    role = AdminRole.objects.create(name="404 边界角色", data_scope=AdminRole.DataScope.ALL)
+    update_entry = {
+        "status": "inactive",
+        "current_password": PASSWORD,
+        "expected_security_version": role.security_version,
+    }
+    assert (
+        client.patch(
+            f"/api/v1/admin/roles/{role.id}/ip-allowlist/{missing}",
+            update_entry,
+            format="json",
+        ).status_code
+        == 404
+    )
+    assert (
+        client.patch(
+            f"/api/v1/admin/security/superuser/ip-allowlist/{missing}",
+            update_entry,
+            format="json",
+        ).status_code
+        == 404
+    )
 
 
 def test_admin_redis_script_recovers_from_noscript():
