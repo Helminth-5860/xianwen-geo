@@ -5,6 +5,7 @@ from django.core.cache import cache
 from django.db import DatabaseError
 from rest_framework.test import APIClient
 
+from apps.users.authentication import SESSION_VERSION_KEY
 from apps.users.models import LoginEvent, User
 from apps.users.sms.exceptions import SmsServiceUnavailable
 
@@ -118,6 +119,8 @@ def test_registration_consumes_code_creates_pending_user_and_logs_in(monkeypatch
     assert response.json()["request_id"] == response["X-Request-ID"]
     assert response.cookies["xianwen_session"].value != old_session_key
     assert client.get(ME_PATH).status_code == 200
+
+    assert client.session[SESSION_VERSION_KEY] == user.session_version
 
 
 @pytest.mark.django_db
@@ -253,6 +256,7 @@ def test_sms_login_respects_account_but_not_approval_status(
     assert event.login_method == LoginEvent.LoginMethod.SMS
     if expected_status == 200:
         assert event.success is True
+        assert client.session[SESSION_VERSION_KEY] == user.session_version
         assert response.json()["data"]["id"] == str(user.id)
         assert client.get(ME_PATH).status_code == 200
     else:

@@ -5,6 +5,7 @@ from django.core.cache import cache
 from django.utils import timezone
 from rest_framework.test import APIClient
 
+from apps.users.authentication import SESSION_VERSION_KEY
 from apps.users.models import LoginEvent, User
 
 STRONG_PASSWORD = "Correct-Horse-Battery-2026!"
@@ -111,6 +112,7 @@ def test_successful_password_login_rotates_session_and_sets_browser_cookie(user)
     expiry_delta = authenticated_session.get_expiry_date() - timezone.now()
     assert timedelta(hours=11, minutes=59) <= expiry_delta <= timedelta(hours=12)
     assert LoginEvent.objects.get().success is True
+    assert authenticated_session[SESSION_VERSION_KEY] == user.session_version
 
 
 @pytest.mark.django_db

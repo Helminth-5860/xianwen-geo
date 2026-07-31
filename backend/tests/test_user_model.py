@@ -111,7 +111,7 @@ def test_create_superuser_sets_required_django_flags():
         (User.AccountStatus.CANCELLED, False),
     ],
 )
-def test_account_status_service_atomically_synchronizes_is_active(
+def test_account_status_helper_synchronizes_is_active(
     account_status,
     expected_active,
 ):
@@ -121,10 +121,8 @@ def test_account_status_service_atomically_synchronizes_is_active(
         password=STRONG_PASSWORD,
     )
 
-    user.set_account_status(account_status)
-    user.refresh_from_db()
-
-    assert user.account_status == account_status
+    user.account_status = account_status
+    user.synchronize_active_state()
     assert user.is_active is expected_active
 
 

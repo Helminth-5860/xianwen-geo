@@ -1,4 +1,4 @@
-from django.contrib.auth import login, logout
+from django.contrib.auth import logout
 from django.middleware.csrf import get_token
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_protect, ensure_csrf_cookie
@@ -18,6 +18,7 @@ from rest_framework.views import APIView
 from apps.core.error_codes import ErrorCode
 from apps.core.responses import error_response
 
+from .authentication import AccountUnavailable, start_browser_session
 from .models import LoginEvent, User
 from .rate_limits import LoginRateLimitUnavailable
 from .serializers import (
@@ -90,15 +91,6 @@ def _clear_valid_submission(request, limiter, keys):
     except LoginRateLimitUnavailable:
         return _service_unavailable(request)
     return None
-
-
-def _start_browser_session(request, user: User) -> None:
-    login(
-        request,
-        user,
-        backend="django.contrib.auth.backends.ModelBackend",
-    )
-    request.session.set_expiry(0)
 
 
 @method_decorator(csrf_protect, name="dispatch")
@@ -188,7 +180,14 @@ class RegistrationView(APIView):
             )
 
         try:
-            _start_browser_session(request, user)
+            user = start_browser_session(request, user.pk)
+        except AccountUnavailable:
+            logout(request)
+            return error_response(
+                ErrorCode.ACCOUNT_UNAVAILABLE,
+                status_code=HTTP_403_FORBIDDEN,
+                request=request,
+            )
         except Exception:
             logout(request)
             raise
@@ -277,12 +276,19 @@ class PasswordLoginView(APIView):
         if user is None:
             raise RuntimeError("成功认证缺少用户。")
         try:
-            _start_browser_session(request, user)
+            user = start_browser_session(request, user.pk)
             record_password_login_event(
                 normalized_phone=normalized_phone,
                 user=user,
                 success=True,
                 failure_reason="",
+                request=request,
+            )
+        except AccountUnavailable:
+            logout(request)
+            return error_response(
+                ErrorCode.ACCOUNT_UNAVAILABLE,
+                status_code=HTTP_403_FORBIDDEN,
                 request=request,
             )
         except Exception:
@@ -369,13 +375,20 @@ class SmsLoginView(APIView):
             )
 
         try:
-            _start_browser_session(request, user)
+            user = start_browser_session(request, user.pk)
             record_login_event(
                 normalized_phone=normalized_phone,
                 user=user,
                 login_method=LoginEvent.LoginMethod.SMS,
                 success=True,
                 failure_reason="",
+                request=request,
+            )
+        except AccountUnavailable:
+            logout(request)
+            return error_response(
+                ErrorCode.ACCOUNT_UNAVAILABLE,
+                status_code=HTTP_403_FORBIDDEN,
                 request=request,
             )
         except Exception:

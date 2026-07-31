@@ -2,7 +2,6 @@ from typing import TYPE_CHECKING, Any
 
 from django.contrib.auth.base_user import BaseUserManager
 from django.contrib.auth.password_validation import validate_password
-from django.db import transaction
 
 from .phone_numbers import normalize_phone
 
@@ -41,12 +40,3 @@ class UserManager(BaseUserManager["User"]):
         if extra_fields.get("is_superuser") is not True:
             raise ValueError("超级管理员必须设置 is_superuser=True。")
         return self._create_user(phone, password, **extra_fields)
-
-    @transaction.atomic
-    def set_account_status(self, user_id, account_status: str) -> "User":
-        user = self.select_for_update().get(pk=user_id)
-        user.account_status = account_status
-        user.synchronize_active_state()
-        user.full_clean()
-        user.save(update_fields=["account_status", "is_active", "updated_at"])
-        return user

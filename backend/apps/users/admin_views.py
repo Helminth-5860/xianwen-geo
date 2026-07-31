@@ -1,0 +1,176 @@
+from math import ceil
+
+from django.shortcuts import get_object_or_404
+from django.utils.decorators import method_decorator
+from django.views.decorators.csrf import csrf_protect
+from rest_framework.response import Response
+from rest_framework.status import (
+    HTTP_200_OK,
+    HTTP_409_CONFLICT,
+    HTTP_422_UNPROCESSABLE_ENTITY,
+)
+from rest_framework.views import APIView
+
+from apps.core.error_codes import ErrorCode
+from apps.core.responses import error_response
+
+from .models import User
+from .permissions import IsActiveStaff
+from .serializers import (
+    AccountStatusActionSerializer,
+    AdminUserDetailSerializer,
+    AdminUserListQuerySerializer,
+    AdminUserListSerializer,
+    PaginationSerializer,
+    ReviewUserSerializer,
+    UserStatusEventSerializer,
+)
+from .status_services import (
+    AccountStateConflict,
+    ApprovalReasonRequired,
+    ApprovalStateConflict,
+    change_account_status,
+    review_user,
+)
+
+
+def _business_users():
+    return User.objects.filter(is_staff=False, is_superuser=False)
+
+
+def _page_data(queryset, serializer_class, *, page: int, page_size: int) -> dict:
+    count = queryset.count()
+    offset = (page - 1) * page_size
+    items = queryset[offset : offset + page_size]
+    return {
+        "results": serializer_class(items, many=True).data,
+        "pagination": {
+            "page": page,
+            "page_size": page_size,
+            "count": count,
+            "total_pages": ceil(count / page_size) if count else 0,
+        },
+    }
+
+
+class AdminUserListView(APIView):
+    permission_classes = [IsActiveStaff]
+
+    def get(self, request):
+        query_serializer = AdminUserListQuerySerializer(data=request.query_params)
+        query_serializer.is_valid(raise_exception=True)
+        query = query_serializer.validated_data
+        users = _business_users()
+        if "approval_status" in query:
+            users = users.filter(approval_status=query["approval_status"])
+        if "account_status" in query:
+            users = users.filter(account_status=query["account_status"])
+        if "phone" in query:
+            users = users.filter(phone=query["phone"])
+        users = users.order_by("created_at", "id")
+        return Response(
+            _page_data(
+                users,
+                AdminUserListSerializer,
+                page=query["page"],
+                page_size=query["page_size"],
+            )
+        )
+
+
+class AdminUserDetailView(APIView):
+    permission_classes = [IsActiveStaff]
+
+    def get(self, request, user_id):
+        user = get_object_or_404(_business_users(), pk=user_id)
+        return Response(AdminUserDetailSerializer(user).data)
+
+
+class AdminUserHistoryView(APIView):
+    permission_classes = [IsActiveStaff]
+
+    def get(self, request, user_id):
+        user = get_object_or_404(_business_users(), pk=user_id)
+        query_serializer = PaginationSerializer(data=request.query_params)
+        query_serializer.is_valid(raise_exception=True)
+        query = query_serializer.validated_data
+        events = user.status_events.select_related("actor").order_by("created_at", "id")
+        return Response(
+            _page_data(
+                events,
+                UserStatusEventSerializer,
+                page=query["page"],
+                page_size=query["page_size"],
+            )
+        )
+
+
+@method_decorator(csrf_protect, name="dispatch")
+class AdminUserReviewView(APIView):
+    permission_classes = [IsActiveStaff]
+
+    def post(self, request, user_id):
+        serializer = ReviewUserSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        if data.get("reason_required"):
+            return error_response(
+                ErrorCode.APPROVAL_REASON_REQUIRED,
+                status_code=HTTP_422_UNPROCESSABLE_ENTITY,
+                request=request,
+            )
+        try:
+            result = review_user(
+                actor_id=request.user.pk,
+                user_id=user_id,
+                decision=data["decision"],
+                reason=data.get("reason", ""),
+                request_id=request.request_id,
+            )
+        except ApprovalReasonRequired:
+            return error_response(
+                ErrorCode.APPROVAL_REASON_REQUIRED,
+                status_code=HTTP_422_UNPROCESSABLE_ENTITY,
+                request=request,
+            )
+        except ApprovalStateConflict:
+            return error_response(
+                ErrorCode.APPROVAL_STATE_CONFLICT,
+                status_code=HTTP_409_CONFLICT,
+                request=request,
+            )
+        return Response(AdminUserDetailSerializer(result.user).data, status=HTTP_200_OK)
+
+
+class _AdminAccountStatusView(APIView):
+    permission_classes = [IsActiveStaff]
+    action = ""
+
+    def post(self, request, user_id):
+        serializer = AccountStatusActionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            result = change_account_status(
+                actor_id=request.user.pk,
+                user_id=user_id,
+                action=self.action,
+                reason=serializer.validated_data.get("reason", ""),
+                request_id=request.request_id,
+            )
+        except AccountStateConflict:
+            return error_response(
+                ErrorCode.ACCOUNT_STATE_CONFLICT,
+                status_code=HTTP_409_CONFLICT,
+                request=request,
+            )
+        return Response(AdminUserDetailSerializer(result.user).data)
+
+
+@method_decorator(csrf_protect, name="dispatch")
+class AdminUserFreezeView(_AdminAccountStatusView):
+    action = "freeze"
+
+
+@method_decorator(csrf_protect, name="dispatch")
+class AdminUserUnfreezeView(_AdminAccountStatusView):
+    action = "unfreeze"

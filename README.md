@@ -243,3 +243,11 @@ XW-0103 在现有 HttpOnly Session、CSRF 和 Redis 短信挑战基础上提供�
 密码重置及对应前端页面。login/password_reset 发送采用 anti-enumeration 抑制策略，验证码、
 密码、完整手机号和 Cookie 不进入响应或日志。详细边界见
 `docs/17-REGISTRATION-SMS-LOGIN-PASSWORD-RESET.md`。
+## 17. 用户审核与账号状态管理（XW-0104）
+
+XW-0104 提供独立的审核状态和账号状态机、追加式状态历史、最小站内通知、管理员审核页面，
+以及基于用户级 `session_version` 的全量 Session 撤销。冻结会使全部旧 Cookie 在下一次请求
+时失效；解冻不会恢复旧会话。
+
+管理员 API 仅允许有效 staff 使用，不提前建设完整 RBAC。完整接口、并发、迁移、日志和
+回滚边界见 `docs/18-USER-APPROVAL-ACCOUNT-STATUS.md`。
