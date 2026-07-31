@@ -42,6 +42,7 @@ def send_verification_code(
     *,
     provider: SmsProvider | None = None,
     store: SmsVerificationStore | None = None,
+    suppress_delivery: bool = False,
 ) -> SmsSendResult:
     normalized_phone = normalize_phone(phone)
     resolved_purpose = parse_sms_purpose(purpose)
@@ -54,6 +55,13 @@ def send_verification_code(
     ip_fp = ip_fingerprint(ip_address)
     combination_fp = combination_fingerprint(normalized_phone, ip_address)
     keys = sms_redis_keys(phone_fp, ip_fp, combination_fp, resolved_purpose)
+    if suppress_delivery:
+        resolved_store.reserve_suppressed(keys)
+        return SmsSendResult(
+            expires_in=settings.SMS_CODE_TTL_SECONDS,
+            resend_after=settings.SMS_RESEND_COOLDOWN_SECONDS,
+        )
+
     generation_id = str(uuid4())
     code = generate_verification_code()
     code_digest = verification_code_digest(

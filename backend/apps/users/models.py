@@ -94,6 +94,7 @@ class User(AbstractBaseUser, PermissionsMixin):
 class LoginEvent(models.Model):
     class LoginMethod(models.TextChoices):
         PASSWORD = "password", "密码"
+        SMS = "sms", "短信验证码"
 
     class FailureReason(models.TextChoices):
         INVALID_CREDENTIALS = "invalid_credentials", "凭证错误"

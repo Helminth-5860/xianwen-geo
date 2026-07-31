@@ -3,7 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 
 from apps.users.sms.exceptions import SmsServiceUnavailable
-from apps.users.sms.providers import MockSmsProvider
+from apps.users.sms.providers import MockSmsProvider, UnavailableSmsProvider
 from apps.users.sms.purposes import SmsPurpose
 from apps.users.sms.security import verification_code_digest
 from apps.users.sms.service import send_verification_code, verify_and_consume
@@ -113,3 +113,39 @@ def test_old_provider_result_cannot_activate_new_generation():
 
     assert not store.activate(keys.code, "old-generation")
     assert store.activate(keys.code, "new-generation")
+
+
+def test_suppressed_delivery_uses_limits_without_provider_or_challenge(monkeypatch):
+    store = MemorySmsStore()
+    provider = MockSmsProvider()
+    send_with_code(monkeypatch, store, provider, "438921", "login")
+    assert provider.outbox
+
+    send_verification_code(
+        "13800138000",
+        "login",
+        "192.0.2.1",
+        provider=provider,
+        store=store,
+        suppress_delivery=True,
+    )
+
+    assert len(provider.outbox) == 1
+    assert not verify_and_consume("13800138000", "login", "438921", store=store)
+    assert store.reserve_calls == 2
+
+
+def test_suppressed_delivery_still_fails_when_provider_is_unavailable():
+    store = MemorySmsStore()
+
+    with pytest.raises(SmsServiceUnavailable):
+        send_verification_code(
+            "13800138000",
+            "password_reset",
+            "192.0.2.1",
+            provider=UnavailableSmsProvider(),
+            store=store,
+            suppress_delivery=True,
+        )
+
+    assert store.reserve_calls == 0

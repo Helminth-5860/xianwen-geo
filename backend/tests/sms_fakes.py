@@ -20,6 +20,11 @@ class MemorySmsStore:
                 "attempts": 0,
             }
 
+    def reserve_suppressed(self, keys: SmsRedisKeys) -> None:
+        with self._lock:
+            self.reserve_calls += 1
+            self.challenges.pop(keys.code, None)
+
     def activate(self, code_key: str, generation_id: str) -> bool:
         with self._lock:
             challenge = self.challenges.get(code_key)

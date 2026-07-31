@@ -17,10 +17,6 @@ class LoginRateLimitKeys:
     ip: str
 
 
-def _cache_key(scope: str, fingerprint: str, suffix: str) -> str:
-    return f"auth:password-login:{scope}:{fingerprint}:{suffix}"
-
-
 def login_rate_limit_keys(normalized_phone: str, ip_address: str) -> LoginRateLimitKeys:
     phone_hash = phone_fingerprint(normalized_phone)
     ip_hash = hmac_fingerprint("ip", ip_address)
@@ -33,7 +29,8 @@ def login_rate_limit_keys(normalized_phone: str, ip_address: str) -> LoginRateLi
 
 
 class LoginRateLimiter:
-    def __init__(self):
+    def __init__(self, namespace: str = "password-login"):
+        self.namespace = namespace
         self.window_seconds = settings.LOGIN_RATE_LIMIT_WINDOW_SECONDS
         self.lock_seconds = settings.LOGIN_RATE_LIMIT_LOCK_SECONDS
         self.thresholds = {
@@ -42,10 +39,13 @@ class LoginRateLimiter:
             "ip": settings.LOGIN_RATE_LIMIT_IP_FAILURES,
         }
 
+    def _cache_key(self, scope: str, fingerprint: str, suffix: str) -> str:
+        return f"auth:{self.namespace}:{scope}:{fingerprint}:{suffix}"
+
     def ensure_allowed(self, keys: LoginRateLimitKeys) -> None:
         try:
             if any(
-                cache.get(_cache_key(scope, fingerprint, "lock"))
+                cache.get(self._cache_key(scope, fingerprint, "lock"))
                 for scope, fingerprint in vars(keys).items()
             ):
                 raise PermissionError
@@ -58,14 +58,14 @@ class LoginRateLimiter:
         limited = False
         try:
             for scope, fingerprint in vars(keys).items():
-                counter_key = _cache_key(scope, fingerprint, "failures")
+                counter_key = self._cache_key(scope, fingerprint, "failures")
                 if cache.add(counter_key, 1, timeout=self.window_seconds):
                     count = 1
                 else:
                     count = cache.incr(counter_key)
                 if count >= self.thresholds[scope]:
                     cache.set(
-                        _cache_key(scope, fingerprint, "lock"),
+                        self._cache_key(scope, fingerprint, "lock"),
                         1,
                         timeout=self.lock_seconds,
                     )
@@ -78,8 +78,8 @@ class LoginRateLimiter:
         try:
             cache.delete_many(
                 [
-                    _cache_key("combination", keys.combination, "failures"),
-                    _cache_key("combination", keys.combination, "lock"),
+                    self._cache_key("combination", keys.combination, "failures"),
+                    self._cache_key("combination", keys.combination, "lock"),
                 ]
             )
         except Exception as exc:

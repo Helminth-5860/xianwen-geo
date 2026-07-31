@@ -16,16 +16,13 @@ def test_openapi_exposes_only_implemented_auth_endpoints():
         "/auth/csrf",
         "/auth/login/password",
         "/auth/sms/send",
+        "/auth/register",
+        "/auth/login/sms",
+        "/auth/password/reset",
         "/auth/logout",
         "/me",
     ):
         assert path in paths
-    for unavailable_path in (
-        "/auth/register",
-        "/auth/login/sms",
-        "/auth/password/reset",
-    ):
-        assert unavailable_path not in paths
 
 
 def test_openapi_documents_session_csrf_and_minimum_user_data():
@@ -69,3 +66,40 @@ def test_openapi_documents_sms_send_contract():
         "expires_in",
         "resend_after",
     }
+
+
+def test_openapi_documents_registration_sms_login_and_password_reset():
+    specification = load_openapi()
+    paths = specification["paths"]
+    schemas = specification["components"]["schemas"]
+    error_codes = set(schemas["ErrorCode"]["enum"])
+
+    expected_responses = {
+        "/auth/register": {"201", "403", "409", "422", "429", "500", "503"},
+        "/auth/login/sms": {"200", "401", "403", "422", "429", "500", "503"},
+        "/auth/password/reset": {"200", "403", "422", "429", "500", "503"},
+    }
+    for path, responses in expected_responses.items():
+        operation = paths[path]["post"]
+        assert operation["security"] == []
+        assert operation["parameters"] == [{"$ref": "#/components/parameters/CsrfToken"}]
+        assert set(operation["responses"]) == responses
+
+    assert set(schemas["RegistrationRequest"]["required"]) == {
+        "phone",
+        "nickname",
+        "sms_code",
+        "password",
+    }
+    assert set(schemas["SmsLoginRequest"]["required"]) == {"phone", "sms_code"}
+    assert set(schemas["PasswordResetRequest"]["required"]) == {
+        "phone",
+        "sms_code",
+        "new_password",
+    }
+    assert {
+        "ACCOUNT_ALREADY_EXISTS",
+        "AUTH_CREDENTIALS_INVALID",
+        "ACCOUNT_UNAVAILABLE",
+        "VERIFICATION_CODE_INVALID",
+    } <= error_codes

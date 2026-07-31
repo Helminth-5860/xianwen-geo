@@ -236,3 +236,10 @@ Required Checks。远程私有仓库已建立，XW-0003 Pull Request workflow �
 若迁移到 GitLab、Gitee 或其他 CI 平台，只替换流水线入口，继续调用本地检查脚本，
 不要复制检查逻辑。故障可用相应脚本模式本地复现；更多细节见
 `docs/14-CI-BASELINE.md`。
+
+## 16. 注册、短信登录和密码重置（XW-0103）
+
+XW-0103 在现有 HttpOnly Session、CSRF 和 Redis 短信挑战基础上提供注册、密码/短信登录、
+密码重置及对应前端页面。login/password_reset 发送采用 anti-enumeration 抑制策略，验证码、
+密码、完整手机号和 Cookie 不进入响应或日志。详细边界见
+`docs/17-REGISTRATION-SMS-LOGIN-PASSWORD-RESET.md`。
