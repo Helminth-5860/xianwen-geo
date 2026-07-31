@@ -47,47 +47,96 @@ paths:
                 request_id: 24c5291c-9172-49e5-a970-d3a41426dff3
         '503':
           $ref: '#/components/responses/ServiceUnavailable'
-  /auth/register:
+  /auth/csrf:
+    get:
+      tags: [Auth]
+      security: []
+      summary: 获取用于会话认证写请求的 CSRF Token
+      responses:
+        '200':
+          description: CSRF Token 已生成，并设置可由前端读取的 xianwen_csrf Cookie
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+            Set-Cookie:
+              description: xianwen_csrf Cookie；production 使用 Secure
+              schema: {type: string}
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CsrfEnvelope'
+  /auth/login/password:
     post:
       tags: [Auth]
       security: []
-      summary: 手机号注册并建立登录会话
+      summary: 中国大陆手机号与密码登录
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/RegisterRequest'
+              $ref: '#/components/schemas/PasswordLoginRequest'
       responses:
-        '201':
-          description: 注册成功，账号待审核
+        '200':
+          description: 登录成功，建立最长 12 小时的浏览器会话
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+            Set-Cookie:
+              description: HttpOnly xianwen_session Cookie
+              schema: {type: string}
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/UserEnvelope'
+        '401':
+          $ref: '#/components/responses/AuthRequired'
+        '403':
+          $ref: '#/components/responses/CsrfFailed'
         '422':
           $ref: '#/components/responses/ValidationError'
-  /auth/login/password:
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /auth/logout:
     post:
       tags: [Auth]
-      security: []
-      summary: 手机号密码登录
+      summary: 退出当前会话
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
       responses:
         '200':
-          description: 登录成功
+          description: 当前会话已失效
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LogoutEnvelope'
         '401':
-          description: 凭证错误
+          $ref: '#/components/responses/AuthRequired'
+        '403':
+          $ref: '#/components/responses/CsrfFailed'
   /me:
     get:
       tags: [Me]
-      summary: 当前用户和套餐摘要
+      summary: 当前用户的最小账号状态
       responses:
         '200':
           description: 当前用户信息
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/UserEnvelope'
+        '401':
+          $ref: '#/components/responses/AuthRequired'
   /plans:
     get:
       tags: [Plans]
@@ -457,6 +506,13 @@ components:
       schema:
         type: string
         format: uuid
+    CsrfToken:
+      name: X-CSRFToken
+      in: header
+      required: true
+      description: 从 xianwen_csrf Cookie 读取的 CSRF Token
+      schema:
+        type: string
   responses:
     ValidationError:
       description: 参数校验失败
@@ -608,16 +664,41 @@ components:
               required: [status]
               properties:
                 status: {type: string, const: ok}
-    RegisterRequest:
+    CsrfEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: object
+              required: [csrf_token]
+              properties:
+                csrf_token: {type: string}
+    PasswordLoginRequest:
       type: object
-      required: [phone, nickname, sms_code, password]
+      additionalProperties: false
+      required: [phone, password]
       properties:
-        phone: {type: string}
-        nickname: {type: string, minLength: 1, maxLength: 50}
-        sms_code: {type: string, minLength: 4, maxLength: 8}
-        password: {type: string, minLength: 8, maxLength: 128}
+        phone:
+          type: string
+          description: 中国大陆手机号，允许 +86、0086、空格和短横线等价格式
+          examples: ['13800138000', '+8613800138000']
+        password: {type: string, minLength: 10, maxLength: 128, format: password}
+    LogoutEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: object
+              required: [logged_out]
+              properties:
+                logged_out: {type: boolean, const: true}
     User:
       type: object
+      required: [id, phone_masked, nickname, approval_status, account_status]
       properties:
         id: {type: string, format: uuid}
         phone_masked: {type: string}

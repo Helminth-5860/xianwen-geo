@@ -56,6 +56,7 @@ INSTALLED_APPS = [
     "corsheaders",
     "rest_framework",
     "apps.core",
+    "apps.users",
 ]
 
 MIDDLEWARE = [
@@ -91,7 +92,10 @@ WSGI_APPLICATION = "config.wsgi.application"
 
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
-    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
+    {
+        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
+        "OPTIONS": {"min_length": 10},
+    },
     {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
@@ -106,12 +110,32 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_NAME = "xianwen_session"
+SESSION_COOKIE_AGE = 12 * 60 * 60
+SESSION_COOKIE_PATH = "/"
+SESSION_COOKIE_DOMAIN = None
+SESSION_COOKIE_SAMESITE = "Lax"
+SESSION_EXPIRE_AT_BROWSER_CLOSE = True
+SESSION_SAVE_EVERY_REQUEST = False
+CSRF_COOKIE_NAME = "xianwen_csrf"
+CSRF_COOKIE_HTTPONLY = False
+CSRF_COOKIE_PATH = "/"
+CSRF_COOKIE_DOMAIN = None
+CSRF_COOKIE_SAMESITE = "Lax"
 SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = "DENY"
 CORS_ALLOW_CREDENTIALS = True
 CSRF_FAILURE_VIEW = "apps.core.exceptions.csrf_failure"
 
+AUTH_USER_MODEL = "users.User"
+LOGIN_RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("LOGIN_RATE_LIMIT_WINDOW_SECONDS", "900"))
+LOGIN_RATE_LIMIT_LOCK_SECONDS = int(os.getenv("LOGIN_RATE_LIMIT_LOCK_SECONDS", "900"))
+LOGIN_RATE_LIMIT_COMBINATION_FAILURES = int(os.getenv("LOGIN_RATE_LIMIT_COMBINATION_FAILURES", "5"))
+LOGIN_RATE_LIMIT_PHONE_FAILURES = int(os.getenv("LOGIN_RATE_LIMIT_PHONE_FAILURES", "10"))
+LOGIN_RATE_LIMIT_IP_FAILURES = int(os.getenv("LOGIN_RATE_LIMIT_IP_FAILURES", "30"))
+
 REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": ["apps.users.authentication.ApiSessionAuthentication"],
     "DEFAULT_RENDERER_CLASSES": ["apps.core.renderers.ApiJSONRenderer"],
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
     "EXCEPTION_HANDLER": "apps.core.exceptions.api_exception_handler",

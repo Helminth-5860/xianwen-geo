@@ -96,9 +96,16 @@ Gitee CI 或其他平台，只替换流水线入口，并继续调用这些脚�
 
 ## 分支保护与故障复现
 
-建立远程仓库后，应将 `Backend`、`Frontend`、`Security` 和 `Docker Compose`
-四个 Job 配置为 `develop` 分支的 Required Checks，并禁止失败时合并。
-当前仓库没有 remote，因此真实 Pull Request 工作流仍待验收。
+GitHub 私有仓库已完成真实 Pull Request 工作流验收。当前套餐不支持为私有仓库
+配置分支保护或 Ruleset，因此在平台能力可用前执行以下人工规则：
+
+- `develop` 禁止直接提交，所有业务变更必须通过 Pull Request。
+- `Backend`、`Frontend`、`Security` 和 `Docker Compose` 未全部成功不得合并。
+- 禁止 force push `develop`。
+- 禁止删除 `develop`。
+
+平台能力可用后，应将四个 Job 配置为 Required Checks，并启用禁止 force push
+和禁止删除的分支规则，不得通过公开仓库或降低门禁绕过套餐限制。
 
 门禁失败时先在本地运行对应模式，例如 `check.ps1 backend` 或
 `check.sh frontend`；安全与 Docker 问题分别用 `security`、`docker` 模式复现。
