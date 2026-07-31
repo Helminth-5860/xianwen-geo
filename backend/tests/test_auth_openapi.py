@@ -8,13 +8,14 @@ def load_openapi():
     return safe_load(path.read_text(encoding="utf-8"))
 
 
-def test_openapi_exposes_only_implemented_xw_0101_auth_endpoints():
+def test_openapi_exposes_only_implemented_auth_endpoints():
     specification = load_openapi()
     paths = specification["paths"]
 
     for path in (
         "/auth/csrf",
         "/auth/login/password",
+        "/auth/sms/send",
         "/auth/logout",
         "/me",
     ):
@@ -23,7 +24,6 @@ def test_openapi_exposes_only_implemented_xw_0101_auth_endpoints():
         "/auth/register",
         "/auth/login/sms",
         "/auth/password/reset",
-        "/auth/sms/send",
     ):
         assert unavailable_path not in paths
 
@@ -52,4 +52,20 @@ def test_openapi_documents_session_csrf_and_minimum_user_data():
         "nickname",
         "approval_status",
         "account_status",
+    }
+
+
+def test_openapi_documents_sms_send_contract():
+    specification = load_openapi()
+    operation = specification["paths"]["/auth/sms/send"]["post"]
+    schemas = specification["components"]["schemas"]
+
+    assert operation["security"] == []
+    assert operation["parameters"] == [{"$ref": "#/components/parameters/CsrfToken"}]
+    assert set(operation["responses"]) == {"200", "403", "422", "429", "503"}
+    assert schemas["SmsPurpose"]["enum"] == ["register", "login", "password_reset"]
+    assert set(schemas["SmsSendEnvelope"]["allOf"][1]["properties"]["data"]["properties"]) == {
+        "sent",
+        "expires_in",
+        "resend_after",
     }

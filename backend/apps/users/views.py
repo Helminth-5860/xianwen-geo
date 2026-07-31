@@ -16,15 +16,53 @@ from apps.core.responses import error_response
 
 from .models import LoginEvent
 from .rate_limits import LoginRateLimitUnavailable
-from .serializers import CurrentUserSerializer, PasswordLoginSerializer
+from .serializers import CurrentUserSerializer, PasswordLoginSerializer, SmsSendSerializer
 from .services import (
     authenticate_password,
     login_rate_limiter,
     rate_limit_keys,
     record_password_login_event,
 )
+from .sms.exceptions import SmsRateLimited, SmsServiceUnavailable
+from .sms.security import client_ip_address
+from .sms.service import send_verification_code
 
 INVALID_CREDENTIALS_MESSAGE = "手机号或密码不正确"
+
+
+@method_decorator(csrf_protect, name="dispatch")
+class SmsSendView(APIView):
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = SmsSendSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            result = send_verification_code(
+                serializer.validated_data["phone"],
+                serializer.validated_data["purpose"],
+                client_ip_address(request),
+            )
+        except SmsRateLimited:
+            return error_response(
+                ErrorCode.RATE_LIMITED,
+                status_code=HTTP_429_TOO_MANY_REQUESTS,
+                request=request,
+            )
+        except SmsServiceUnavailable:
+            return error_response(
+                ErrorCode.SERVICE_TEMPORARILY_UNAVAILABLE,
+                status_code=HTTP_503_SERVICE_UNAVAILABLE,
+                request=request,
+            )
+        return Response(
+            {
+                "sent": True,
+                "expires_in": result.expires_in,
+                "resend_after": result.resend_after,
+            }
+        )
 
 
 @method_decorator(ensure_csrf_cookie, name="dispatch")

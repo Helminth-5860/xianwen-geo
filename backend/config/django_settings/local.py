@@ -7,6 +7,7 @@ from .base import *
 
 APP_ENV = "local"
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "local-test-key-not-for-deployment")
+SMS_PROVIDER = os.getenv("SMS_PROVIDER", "mock").strip().lower()
 DEBUG = env_bool("DJANGO_DEBUG", True)
 ALLOWED_HOSTS = env_list("ALLOWED_HOSTS", "localhost,127.0.0.1")
 CSRF_TRUSTED_ORIGINS = env_list("CSRF_TRUSTED_ORIGINS", "http://localhost:3000")

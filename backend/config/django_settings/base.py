@@ -1,4 +1,5 @@
 import os
+from ipaddress import ip_network
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -24,6 +25,13 @@ def require_env(name: str) -> str:
     value = os.getenv(name, "").strip()
     if not value:
         raise ImproperlyConfigured(f"{name} is required.")
+    return value
+
+
+def positive_env_int(name: str, default: int) -> int:
+    value = int(os.getenv(name, str(default)))
+    if value <= 0:
+        raise ImproperlyConfigured(f"{name} must be positive.")
     return value
 
 
@@ -133,6 +141,27 @@ LOGIN_RATE_LIMIT_LOCK_SECONDS = int(os.getenv("LOGIN_RATE_LIMIT_LOCK_SECONDS", "
 LOGIN_RATE_LIMIT_COMBINATION_FAILURES = int(os.getenv("LOGIN_RATE_LIMIT_COMBINATION_FAILURES", "5"))
 LOGIN_RATE_LIMIT_PHONE_FAILURES = int(os.getenv("LOGIN_RATE_LIMIT_PHONE_FAILURES", "10"))
 LOGIN_RATE_LIMIT_IP_FAILURES = int(os.getenv("LOGIN_RATE_LIMIT_IP_FAILURES", "30"))
+SMS_PROVIDER = os.getenv("SMS_PROVIDER", "unconfigured").strip().lower()
+SMS_VERIFICATION_HMAC_KEY = os.getenv(
+    "SMS_VERIFICATION_HMAC_KEY", "local-test-sms-hmac-key-not-for-production"
+).strip()
+if len(SMS_VERIFICATION_HMAC_KEY) < 32:
+    raise ImproperlyConfigured("SMS_VERIFICATION_HMAC_KEY is too weak; minimum length is 32.")
+SMS_CODE_TTL_SECONDS = positive_env_int("SMS_CODE_TTL_SECONDS", 300)
+SMS_RESEND_COOLDOWN_SECONDS = positive_env_int("SMS_RESEND_COOLDOWN_SECONDS", 60)
+SMS_MAX_ATTEMPTS = positive_env_int("SMS_MAX_ATTEMPTS", 5)
+SMS_LIMIT_COMBINATION_COUNT = positive_env_int("SMS_LIMIT_COMBINATION_COUNT", 5)
+SMS_LIMIT_COMBINATION_WINDOW_SECONDS = positive_env_int("SMS_LIMIT_COMBINATION_WINDOW_SECONDS", 900)
+SMS_LIMIT_PHONE_COUNT = positive_env_int("SMS_LIMIT_PHONE_COUNT", 10)
+SMS_LIMIT_PHONE_WINDOW_SECONDS = positive_env_int("SMS_LIMIT_PHONE_WINDOW_SECONDS", 3600)
+SMS_LIMIT_IP_COUNT = positive_env_int("SMS_LIMIT_IP_COUNT", 60)
+SMS_LIMIT_IP_WINDOW_SECONDS = positive_env_int("SMS_LIMIT_IP_WINDOW_SECONDS", 3600)
+TRUSTED_PROXY_HOPS = int(os.getenv("TRUSTED_PROXY_HOPS", "0"))
+if TRUSTED_PROXY_HOPS < 0:
+    raise ImproperlyConfigured("TRUSTED_PROXY_HOPS cannot be negative.")
+TRUSTED_PROXY_NETWORKS = tuple(
+    ip_network(value, strict=False) for value in env_list("TRUSTED_PROXY_CIDRS")
+)
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": ["apps.users.authentication.ApiSessionAuthentication"],

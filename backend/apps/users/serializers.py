@@ -3,6 +3,18 @@ from rest_framework import serializers
 
 from .models import User
 from .phone_numbers import mask_phone, normalize_phone
+from .sms.purposes import SmsPurpose
+
+
+class SmsSendSerializer(serializers.Serializer):
+    phone = serializers.CharField(max_length=32, trim_whitespace=True)
+    purpose = serializers.ChoiceField(choices=[purpose.value for purpose in SmsPurpose])
+
+    def validate_phone(self, value: str) -> str:
+        try:
+            return normalize_phone(value)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError(exc.message, code=exc.code) from exc
 
 
 class PasswordLoginSerializer(serializers.Serializer):
