@@ -6,6 +6,7 @@ export type AccountUser = Readonly<{
   phone_masked: string;
   approval_status: "pending" | "approved" | "rejected";
   account_status: "active" | "frozen" | "cancel_pending" | "cancelled";
+  approval_reason?: string;
 }>;
 
 export type SmsPurpose = "register" | "login" | "password_reset";
@@ -42,7 +43,7 @@ export class AuthApiError extends Error {
   }
 }
 
-async function readEnvelope<T>(response: Response): Promise<T> {
+export async function readEnvelope<T>(response: Response): Promise<T> {
   let payload: SuccessEnvelope<T> | ErrorEnvelope;
   try {
     payload = (await response.json()) as SuccessEnvelope<T> | ErrorEnvelope;
@@ -68,7 +69,16 @@ async function getCsrfToken(): Promise<string> {
   return data.csrf_token;
 }
 
-async function post<T>(path: string, body: Record<string, string>): Promise<T> {
+export async function get<T>(path: string): Promise<T> {
+  const response = await fetch(`${publicEnvironment.apiBaseUrl}${path}`, {
+    method: "GET",
+    credentials: "include",
+    headers: { Accept: "application/json" },
+  });
+  return readEnvelope<T>(response);
+}
+
+export async function post<T>(path: string, body: Record<string, unknown>): Promise<T> {
   const csrfToken = await getCsrfToken();
   const response = await fetch(`${publicEnvironment.apiBaseUrl}${path}`, {
     method: "POST",
@@ -118,6 +128,98 @@ export function resetPassword(input: { phone: string; smsCode: string; newPasswo
     sms_code: input.smsCode,
     new_password: input.newPassword,
   });
+}
+export type AdminUser = Readonly<{
+  id: string;
+  nickname: string;
+  phone_masked: string;
+  approval_status: AccountUser["approval_status"];
+  account_status: AccountUser["account_status"];
+  approval_reason?: string | null;
+  approved_at: string | null;
+  created_at: string;
+}>;
+
+export type StatusEvent = Readonly<{
+  id: string;
+  status_domain: "approval" | "account";
+  event_type: "approved" | "rejected" | "resubmitted" | "frozen" | "unfrozen";
+  from_value: string;
+  to_value: string;
+  reason: string;
+  actor_id: string | null;
+  request_id: string;
+  created_at: string;
+}>;
+
+export type AccountNotification = Readonly<{
+  id: string;
+  notification_type:
+    "approval_approved" | "approval_rejected" | "account_frozen" | "account_unfrozen";
+  title: string;
+  safe_summary: string;
+  read_at: string | null;
+  created_at: string;
+}>;
+
+export type PageData<T> = Readonly<{
+  results: T[];
+  pagination: {
+    page: number;
+    page_size: number;
+    count: number;
+    total_pages: number;
+  };
+}>;
+
+export function getCurrentUser() {
+  return get<AccountUser>("/me");
+}
+
+export function resubmitApproval(nickname?: string) {
+  return post<AccountUser>("/me/approval/resubmit", nickname === undefined ? {} : { nickname });
+}
+
+export function getNotifications(page = 1) {
+  return get<PageData<AccountNotification>>(`/notifications?page=${page}`);
+}
+
+export function markNotificationRead(notificationId: string) {
+  return post<AccountNotification>(`/notifications/${notificationId}/read`, {});
+}
+
+export function getAdminUsers(params: {
+  approvalStatus?: string;
+  accountStatus?: string;
+  phone?: string;
+  page?: number;
+}) {
+  const query = new URLSearchParams();
+  if (params.approvalStatus) query.set("approval_status", params.approvalStatus);
+  if (params.accountStatus) query.set("account_status", params.accountStatus);
+  if (params.phone) query.set("phone", params.phone);
+  query.set("page", String(params.page ?? 1));
+  return get<PageData<AdminUser>>(`/admin/users?${query.toString()}`);
+}
+
+export function getAdminUser(userId: string) {
+  return get<AdminUser>(`/admin/users/${userId}`);
+}
+
+export function getAdminUserHistory(userId: string) {
+  return get<PageData<StatusEvent>>(`/admin/users/${userId}/history`);
+}
+
+export function reviewAdminUser(userId: string, decision: "approve" | "reject", reason = "") {
+  return post<AdminUser>(`/admin/users/${userId}/review`, { decision, reason });
+}
+
+export function freezeAdminUser(userId: string) {
+  return post<AdminUser>(`/admin/users/${userId}/freeze`, {});
+}
+
+export function unfreezeAdminUser(userId: string) {
+  return post<AdminUser>(`/admin/users/${userId}/unfreeze`, {});
 }
 
 export function userMessage(error: unknown): string {

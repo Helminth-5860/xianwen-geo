@@ -44,6 +44,14 @@ class User(AbstractBaseUser, PermissionsMixin):
     )
     approval_reason: models.TextField = models.TextField(blank=True)
     approved_at: models.DateTimeField = models.DateTimeField(null=True, blank=True)
+    approved_by: models.ForeignKey = models.ForeignKey(
+        "self",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="approved_users",
+    )
+    session_version: models.PositiveBigIntegerField = models.PositiveBigIntegerField(default=1)
     is_staff: models.BooleanField = models.BooleanField(default=False)
     is_active: models.BooleanField = models.BooleanField(default=True)
     created_at: models.DateTimeField = models.DateTimeField(auto_now_add=True, db_index=True)
@@ -83,12 +91,6 @@ class User(AbstractBaseUser, PermissionsMixin):
         self.phone = normalize_phone(self.phone)
         self.synchronize_active_state()
         return super().save(*args, **kwargs)
-
-    def set_account_status(self, account_status: str) -> None:
-        updated = type(self).objects.set_account_status(self.pk, account_status)
-        self.account_status = updated.account_status
-        self.is_active = updated.is_active
-        self.updated_at = updated.updated_at
 
 
 class LoginEvent(models.Model):
@@ -131,6 +133,109 @@ class LoginEvent(models.Model):
                 fields=("phone_fingerprint", "created_at"),
                 name="login_phone_created_idx",
             )
+        ]
+
+    def __str__(self) -> str:
+        return str(self.id)
+
+
+class UserStatusEvent(models.Model):
+    class StatusDomain(models.TextChoices):
+        APPROVAL = "approval", "审核状态"
+        ACCOUNT = "account", "账号状态"
+
+    class EventType(models.TextChoices):
+        APPROVED = "approved", "审核通过"
+        REJECTED = "rejected", "审核拒绝"
+        RESUBMITTED = "resubmitted", "重新提交"
+        FROZEN = "frozen", "账号冻结"
+        UNFROZEN = "unfrozen", "账号解冻"
+
+    id: models.UUIDField = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user: models.ForeignKey = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="status_events",
+    )
+    status_domain: models.CharField = models.CharField(max_length=16, choices=StatusDomain.choices)
+    event_type: models.CharField = models.CharField(max_length=16, choices=EventType.choices)
+    from_value: models.CharField = models.CharField(max_length=16)
+    to_value: models.CharField = models.CharField(max_length=16)
+    reason: models.CharField = models.CharField(max_length=500, blank=True)
+    actor: models.ForeignKey = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="performed_status_events",
+    )
+    request_id: models.UUIDField = models.UUIDField(db_index=True)
+    created_at: models.DateTimeField = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "user_status_events"
+        ordering = ("-created_at", "-id")
+        indexes = [
+            models.Index(fields=("user", "created_at"), name="status_user_created_idx"),
+            models.Index(fields=("status_domain", "created_at"), name="status_domain_created_idx"),
+            models.Index(fields=("event_type", "created_at"), name="status_event_created_idx"),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(
+                        status_domain="approval",
+                        from_value__in=["pending", "approved", "rejected"],
+                        to_value__in=["pending", "approved", "rejected"],
+                    )
+                    | models.Q(
+                        status_domain="account",
+                        from_value__in=["active", "frozen", "cancel_pending", "cancelled"],
+                        to_value__in=["active", "frozen", "cancel_pending", "cancelled"],
+                    )
+                ),
+                name="status_event_domain_values_valid",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return str(self.id)
+
+
+class Notification(models.Model):
+    class NotificationType(models.TextChoices):
+        APPROVAL_APPROVED = "approval_approved", "审核通过"
+        APPROVAL_REJECTED = "approval_rejected", "审核拒绝"
+        ACCOUNT_FROZEN = "account_frozen", "账号冻结"
+        ACCOUNT_UNFROZEN = "account_unfrozen", "账号解冻"
+
+    id: models.UUIDField = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    recipient: models.ForeignKey = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="notifications",
+    )
+    notification_type: models.CharField = models.CharField(
+        max_length=32,
+        choices=NotificationType.choices,
+    )
+    title: models.CharField = models.CharField(max_length=100)
+    safe_summary: models.CharField = models.CharField(max_length=200)
+    related_status_event: models.ForeignKey = models.ForeignKey(
+        UserStatusEvent,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="notifications",
+    )
+    read_at: models.DateTimeField = models.DateTimeField(null=True, blank=True)
+    created_at: models.DateTimeField = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        db_table = "notifications"
+        ordering = ("-created_at", "-id")
+        indexes = [
+            models.Index(fields=("recipient", "created_at"), name="notification_user_created_idx")
         ]
 
     def __str__(self) -> str:

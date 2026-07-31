@@ -4,6 +4,7 @@ import { ApiOutlined, CheckCircleFilled, CloudServerOutlined } from "@ant-design
 import { Alert, Button, Card, ConfigProvider, Space, Tag, Typography } from "antd";
 import zhCN from "antd/locale/zh_CN";
 import { useSyncExternalStore } from "react";
+import { AccountOverview } from "@/components/account/account-overview";
 
 import { publicEnvironment } from "@/lib/env";
 import { SITE_DESCRIPTION, SITE_NAME } from "@/lib/site";
@@ -65,4 +66,5 @@ export default function Home() {
       </main>
     </ConfigProvider>
   );
+  <AccountOverview />;
 }

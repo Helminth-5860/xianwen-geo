@@ -1,12 +1,11 @@
-import unicodedata
-
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
-from .models import User
+from .models import Notification, User, UserStatusEvent
 from .phone_numbers import mask_phone, normalize_phone
 from .sms.purposes import SmsPurpose
+from .validators import validate_nickname, validate_safe_plain_text
 
 
 class NormalizedPhoneSerializer(serializers.Serializer):
@@ -51,12 +50,7 @@ class RegistrationSerializer(SmsCodeSerializer):
     )
 
     def validate_nickname(self, value: str) -> str:
-        nickname = value.strip()
-        if not nickname:
-            raise serializers.ValidationError("请输入昵称。", code="blank")
-        if any(unicodedata.category(character).startswith("C") for character in nickname):
-            raise serializers.ValidationError("昵称不能包含控制字符。", code="invalid")
-        return nickname
+        return validate_nickname(value)
 
     def validate(self, attrs):
         provisional_user = User(phone=attrs["phone"], nickname=attrs["nickname"])
@@ -90,6 +84,7 @@ class PasswordResetSerializer(SmsCodeSerializer):
 
 class CurrentUserSerializer(serializers.ModelSerializer):
     phone_masked = serializers.SerializerMethodField()
+    approval_reason = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -99,7 +94,166 @@ class CurrentUserSerializer(serializers.ModelSerializer):
             "phone_masked",
             "approval_status",
             "account_status",
+            "approval_reason",
         )
 
     def get_phone_masked(self, user: User) -> str:
         return mask_phone(user.phone)
+
+    def get_approval_reason(self, user: User) -> str | None:
+        if user.approval_status == User.ApprovalStatus.REJECTED:
+            return user.approval_reason
+        return None
+
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        if representation["approval_reason"] is None:
+            representation.pop("approval_reason")
+        return representation
+
+
+class ApprovalResubmitSerializer(serializers.Serializer):
+    nickname = serializers.CharField(max_length=50, required=False, trim_whitespace=False)
+
+    def validate(self, attrs):
+        unexpected_fields = set(self.initial_data) - {"nickname"}
+        if unexpected_fields:
+            raise serializers.ValidationError(
+                {"non_field_errors": ["重新提交不能修改手机号或其他账号字段。"]}
+            )
+        return attrs
+
+    def validate_nickname(self, value: str) -> str:
+        return validate_nickname(value)
+
+
+class PaginationSerializer(serializers.Serializer):
+    page = serializers.IntegerField(min_value=1, default=1)
+    page_size = serializers.IntegerField(min_value=1, max_value=100, default=20)
+
+
+class AdminUserListQuerySerializer(NormalizedPhoneSerializer):
+    phone = serializers.CharField(max_length=32, required=False, trim_whitespace=True)
+    approval_status = serializers.ChoiceField(
+        choices=User.ApprovalStatus.values,
+        required=False,
+    )
+    account_status = serializers.ChoiceField(
+        choices=User.AccountStatus.values,
+        required=False,
+    )
+    page = serializers.IntegerField(min_value=1, default=1)
+    page_size = serializers.IntegerField(min_value=1, max_value=100, default=20)
+
+
+class AdminUserListSerializer(serializers.ModelSerializer):
+    phone_masked = serializers.SerializerMethodField()
+
+    class Meta:
+        model = User
+        fields = (
+            "id",
+            "nickname",
+            "phone_masked",
+            "approval_status",
+            "account_status",
+            "approved_at",
+            "created_at",
+        )
+
+    def get_phone_masked(self, user: User) -> str:
+        return mask_phone(user.phone)
+
+
+class AdminUserDetailSerializer(AdminUserListSerializer):
+    approval_reason = serializers.SerializerMethodField()
+
+    class Meta:
+        model = User
+        fields = (
+            "id",
+            "nickname",
+            "phone_masked",
+            "approval_status",
+            "account_status",
+            "approved_at",
+            "created_at",
+            "approval_reason",
+        )
+
+    def get_approval_reason(self, user: User) -> str | None:
+        if user.approval_status == User.ApprovalStatus.REJECTED:
+            return user.approval_reason
+        return None
+
+
+class UserStatusEventSerializer(serializers.ModelSerializer):
+    actor_id = serializers.UUIDField(read_only=True, allow_null=True)
+
+    class Meta:
+        model = UserStatusEvent
+        fields = (
+            "id",
+            "status_domain",
+            "event_type",
+            "from_value",
+            "to_value",
+            "reason",
+            "actor_id",
+            "request_id",
+            "created_at",
+        )
+
+
+class ReviewUserSerializer(serializers.Serializer):
+    decision = serializers.ChoiceField(choices=("approve", "reject"))
+    reason = serializers.CharField(
+        max_length=500,
+        required=False,
+        allow_blank=True,
+        trim_whitespace=False,
+    )
+
+    def validate(self, attrs):
+        decision = attrs["decision"]
+        reason = attrs.get("reason", "")
+        if decision == "reject" and not reason.strip():
+            attrs["reason_required"] = True
+            return attrs
+        attrs["reason"] = validate_safe_plain_text(
+            reason,
+            field_label="拒绝原因",
+            max_length=500,
+            required=decision == "reject",
+        )
+        return attrs
+
+
+class AccountStatusActionSerializer(serializers.Serializer):
+    reason = serializers.CharField(
+        max_length=500,
+        required=False,
+        allow_blank=True,
+        trim_whitespace=False,
+    )
+
+    def validate_reason(self, value: str) -> str:
+        return validate_safe_plain_text(
+            value,
+            field_label="操作原因",
+            max_length=500,
+            required=False,
+        )
+
+
+class NotificationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Notification
+        fields = (
+            "id",
+            "notification_type",
+            "title",
+            "safe_summary",
+            "read_at",
+            "created_at",
+        )

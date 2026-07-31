@@ -295,6 +295,82 @@ paths:
                 $ref: '#/components/schemas/UserEnvelope'
         '401':
           $ref: '#/components/responses/AuthRequired'
+  /me/approval/resubmit:
+    post:
+      tags: [Me]
+      summary: 审核拒绝用户重新提交资料
+      description: 仅 rejected 用户可调用；可选更新昵称，不能修改手机号。
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApprovalResubmitRequest'
+      responses:
+        '200':
+          description: 已重新提交，审核状态变为 pending
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserEnvelope'
+        '401':
+          $ref: '#/components/responses/AuthRequired'
+        '403':
+          $ref: '#/components/responses/CsrfFailed'
+        '409':
+          $ref: '#/components/responses/ApprovalStateConflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+  /notifications:
+    get:
+      tags: [Me]
+      summary: 当前用户的账号状态通知
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: 仅返回当前用户的通知
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationPageEnvelope'
+        '401':
+          $ref: '#/components/responses/AuthRequired'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+  /notifications/{notificationId}/read:
+    parameters:
+      - $ref: '#/components/parameters/NotificationId'
+    post:
+      tags: [Me]
+      summary: 标记自己的通知为已读
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      responses:
+        '200':
+          description: 通知已标记为已读；重复调用返回当前通知
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationEnvelope'
+        '401':
+          $ref: '#/components/responses/AuthRequired'
+        '403':
+          $ref: '#/components/responses/CsrfFailed'
+        '404':
+          $ref: '#/components/responses/ResourceNotFound'
   /plans:
     get:
       tags: [Plans]
@@ -613,10 +689,205 @@ paths:
   /admin/users:
     get:
       tags: [Admin]
-      summary: 后台用户列表
+      summary: 管理员用户审核列表
+      description: 仅有效 staff 可访问；完整手机号只用于精确筛选，响应始终脱敏。
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - name: approval_status
+          in: query
+          schema:
+            $ref: '#/components/schemas/ApprovalStatus'
+        - name: account_status
+          in: query
+          schema:
+            $ref: '#/components/schemas/AccountStatus'
+        - name: phone
+          in: query
+          description: 完整手机号，规范化后精确匹配；不会写入请求日志。
+          schema: {type: string}
       responses:
-        '200': {description: 用户列表}
-        '403': {description: 权限不足}
+        '200':
+          description: 稳定按 created_at、id 排序的用户分页
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUserPageEnvelope'
+        '401':
+          $ref: '#/components/responses/AuthRequired'
+        '403':
+          $ref: '#/components/responses/PermissionDenied'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+  /admin/users/{userId}:
+    parameters:
+      - $ref: '#/components/parameters/UserId'
+    get:
+      tags: [Admin]
+      summary: 管理员查看用户审核详情
+      responses:
+        '200':
+          description: 用户最小详情；仅 rejected 状态展示当前拒绝原因
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUserEnvelope'
+        '401':
+          $ref: '#/components/responses/AuthRequired'
+        '403':
+          $ref: '#/components/responses/PermissionDenied'
+        '404':
+          $ref: '#/components/responses/ResourceNotFound'
+  /admin/users/{userId}/history:
+    parameters:
+      - $ref: '#/components/parameters/UserId'
+    get:
+      tags: [Admin]
+      summary: 用户审核及账号状态追加式历史
+      description: 普通 API 只读，不提供更新或删除操作。
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: 状态历史分页
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserStatusEventPageEnvelope'
+        '401':
+          $ref: '#/components/responses/AuthRequired'
+        '403':
+          $ref: '#/components/responses/PermissionDenied'
+        '404':
+          $ref: '#/components/responses/ResourceNotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+  /admin/users/{userId}/review:
+    parameters:
+      - $ref: '#/components/parameters/UserId'
+    post:
+      tags: [Admin]
+      summary: 通过或拒绝待审核用户
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReviewUserRequest'
+      responses:
+        '200':
+          description: 审核状态、历史和通知已在同一事务提交
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUserEnvelope'
+        '401':
+          $ref: '#/components/responses/AuthRequired'
+        '403':
+          description: CSRF 失败、非有效 staff 或目标为 staff/superuser
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '404':
+          $ref: '#/components/responses/ResourceNotFound'
+        '409':
+          $ref: '#/components/responses/ApprovalStateConflict'
+        '422':
+          description: 参数校验失败或拒绝原因缺失
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /admin/users/{userId}/freeze:
+    parameters:
+      - $ref: '#/components/parameters/UserId'
+    post:
+      tags: [Admin]
+      summary: 冻结 active 用户并撤销全部旧 Session
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AccountStatusActionRequest'
+      responses:
+        '200':
+          description: 用户已冻结，旧 Session 下一次访问均按匿名处理
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUserEnvelope'
+        '401':
+          $ref: '#/components/responses/AuthRequired'
+        '403':
+          $ref: '#/components/responses/PermissionDenied'
+        '404':
+          $ref: '#/components/responses/ResourceNotFound'
+        '409':
+          $ref: '#/components/responses/AccountStateConflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+  /admin/users/{userId}/unfreeze:
+    parameters:
+      - $ref: '#/components/parameters/UserId'
+    post:
+      tags: [Admin]
+      summary: 解冻 frozen 用户，不恢复任何旧 Session
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AccountStatusActionRequest'
+      responses:
+        '200':
+          description: 用户已解冻，必须重新登录
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUserEnvelope'
+        '401':
+          $ref: '#/components/responses/AuthRequired'
+        '403':
+          $ref: '#/components/responses/PermissionDenied'
+        '404':
+          $ref: '#/components/responses/ResourceNotFound'
+        '409':
+          $ref: '#/components/responses/AccountStateConflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
   /admin/api-credentials:
     get:
       tags: [Admin]
@@ -671,6 +942,33 @@ components:
       description: 从 xianwen_csrf Cookie 读取的 CSRF Token
       schema:
         type: string
+    UserId:
+      name: userId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    NotificationId:
+      name: notificationId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    Page:
+      name: page
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PageSize:
+      name: page_size
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
   responses:
     ValidationError:
       description: 参数校验失败
@@ -683,6 +981,24 @@ components:
             $ref: '#/components/schemas/ErrorEnvelope'
     BusinessConflict:
       description: 业务状态冲突、额度不足或超限
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    ApprovalStateConflict:
+      description: 当前审核状态不允许此操作
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    AccountStateConflict:
+      description: 当前账号状态不允许此操作
       headers:
         X-Request-ID:
           $ref: '#/components/headers/RequestId'
@@ -829,6 +1145,9 @@ components:
         - AUTH_CREDENTIALS_INVALID
         - ACCOUNT_UNAVAILABLE
         - ACCOUNT_ALREADY_EXISTS
+        - APPROVAL_STATE_CONFLICT
+        - ACCOUNT_STATE_CONFLICT
+        - APPROVAL_REASON_REQUIRED
         - PERMISSION_DENIED
         - CSRF_FAILED
         - RESOURCE_NOT_FOUND
@@ -969,11 +1288,10 @@ components:
         phone_masked: {type: string}
         nickname: {type: string}
         approval_status:
-          type: string
-          enum: [pending, approved, rejected]
+          $ref: '#/components/schemas/ApprovalStatus'
         account_status:
-          type: string
-          enum: [active, frozen, cancel_pending, cancelled]
+          $ref: '#/components/schemas/AccountStatus'
+        approval_reason: {type: [string, 'null'], maxLength: 500}
     UserEnvelope:
       allOf:
         - $ref: '#/components/schemas/EnvelopeBase'
@@ -981,6 +1299,164 @@ components:
           properties:
             data:
               $ref: '#/components/schemas/User'
+    ApprovalStatus:
+      type: string
+      enum: [pending, approved, rejected]
+    AccountStatus:
+      type: string
+      enum: [active, frozen, cancel_pending, cancelled]
+    ApprovalResubmitRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        nickname: {type: string, minLength: 1, maxLength: 50}
+    AdminUser:
+      type: object
+      additionalProperties: false
+      required:
+        [id, nickname, phone_masked, approval_status, account_status, approved_at, created_at]
+      properties:
+        id: {type: string, format: uuid}
+        nickname: {type: string, maxLength: 50}
+        phone_masked: {type: string, example: '+86 138****8000'}
+        approval_status:
+          $ref: '#/components/schemas/ApprovalStatus'
+        account_status:
+          $ref: '#/components/schemas/AccountStatus'
+        approval_reason: {type: [string, 'null'], maxLength: 500}
+        approved_at: {type: [string, 'null'], format: date-time}
+        created_at: {type: string, format: date-time}
+    Pagination:
+      type: object
+      additionalProperties: false
+      required: [page, page_size, count, total_pages]
+      properties:
+        page: {type: integer, minimum: 1}
+        page_size: {type: integer, minimum: 1, maximum: 100}
+        count: {type: integer, minimum: 0}
+        total_pages: {type: integer, minimum: 0}
+    AdminUserEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          required: [data]
+          properties:
+            success: {type: boolean, const: true}
+            data:
+              $ref: '#/components/schemas/AdminUser'
+    AdminUserPageEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          required: [data]
+          properties:
+            success: {type: boolean, const: true}
+            data:
+              type: object
+              additionalProperties: false
+              required: [results, pagination]
+              properties:
+                results:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/AdminUser'
+                pagination:
+                  $ref: '#/components/schemas/Pagination'
+    UserStatusEvent:
+      type: object
+      additionalProperties: false
+      required:
+        [id, status_domain, event_type, from_value, to_value, reason, actor_id, request_id, created_at]
+      properties:
+        id: {type: string, format: uuid}
+        status_domain: {type: string, enum: [approval, account]}
+        event_type: {type: string, enum: [approved, rejected, resubmitted, frozen, unfrozen]}
+        from_value: {type: string}
+        to_value: {type: string}
+        reason: {type: string, maxLength: 500}
+        actor_id: {type: [string, 'null'], format: uuid}
+        request_id: {type: string, format: uuid}
+        created_at: {type: string, format: date-time}
+    UserStatusEventPageEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          required: [data]
+          properties:
+            success: {type: boolean, const: true}
+            data:
+              type: object
+              additionalProperties: false
+              required: [results, pagination]
+              properties:
+                results:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/UserStatusEvent'
+                pagination:
+                  $ref: '#/components/schemas/Pagination'
+    ReviewUserRequest:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [decision]
+          properties:
+            decision: {type: string, const: approve}
+            reason: {type: string, maxLength: 500}
+        - type: object
+          additionalProperties: false
+          required: [decision, reason]
+          properties:
+            decision: {type: string, const: reject}
+            reason: {type: string, minLength: 1, maxLength: 500}
+    AccountStatusActionRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        reason: {type: string, maxLength: 500}
+    Notification:
+      type: object
+      additionalProperties: false
+      required: [id, notification_type, title, safe_summary, read_at, created_at]
+      properties:
+        id: {type: string, format: uuid}
+        notification_type:
+          type: string
+          enum: [approval_approved, approval_rejected, account_frozen, account_unfrozen]
+        title: {type: string, maxLength: 100}
+        safe_summary:
+          type: string
+          maxLength: 200
+          description: 固定安全模板，不包含拒绝原因正文。
+        read_at: {type: [string, 'null'], format: date-time}
+        created_at: {type: string, format: date-time}
+    NotificationEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          required: [data]
+          properties:
+            success: {type: boolean, const: true}
+            data:
+              $ref: '#/components/schemas/Notification'
+    NotificationPageEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          required: [data]
+          properties:
+            success: {type: boolean, const: true}
+            data:
+              type: object
+              additionalProperties: false
+              required: [results, pagination]
+              properties:
+                results:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/Notification'
+                pagination:
+                  $ref: '#/components/schemas/Pagination'
     CreateSubjectRequest:
       type: object
       required: [subject_type_id, name]
