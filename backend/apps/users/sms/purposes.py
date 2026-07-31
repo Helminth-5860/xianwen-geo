@@ -5,6 +5,14 @@ class SmsPurpose(StrEnum):
     REGISTER = "register"
     LOGIN = "login"
     PASSWORD_RESET = "password_reset"
+    ADMIN_LOGIN_2FA = "admin_login_2fa"
+
+
+PUBLIC_SMS_PURPOSES = (
+    SmsPurpose.REGISTER,
+    SmsPurpose.LOGIN,
+    SmsPurpose.PASSWORD_RESET,
+)
 
 
 def parse_sms_purpose(value: object) -> SmsPurpose:

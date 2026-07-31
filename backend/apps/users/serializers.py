@@ -4,7 +4,7 @@ from rest_framework import serializers
 
 from .models import Notification, User, UserStatusEvent
 from .phone_numbers import mask_phone, normalize_phone
-from .sms.purposes import SmsPurpose
+from .sms.purposes import PUBLIC_SMS_PURPOSES
 from .validators import validate_nickname, validate_safe_plain_text
 
 
@@ -19,7 +19,7 @@ class NormalizedPhoneSerializer(serializers.Serializer):
 
 
 class SmsSendSerializer(NormalizedPhoneSerializer):
-    purpose = serializers.ChoiceField(choices=[purpose.value for purpose in SmsPurpose])
+    purpose = serializers.ChoiceField(choices=[purpose.value for purpose in PUBLIC_SMS_PURPOSES])
 
 
 class PasswordLoginSerializer(NormalizedPhoneSerializer):

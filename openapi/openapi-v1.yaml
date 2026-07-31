@@ -900,6 +900,41 @@ paths:
       summary: 新增 API 密钥，明文只在请求中出现
       responses:
         '201': {description: 保存后只返回掩码}
+  /admin/auth/login/password:
+    post:
+      tags: [Admin]
+      security: []
+      summary: administrator security 2FA administrator security challengeadministrator security Session
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AdminPasswordLoginRequest'}}}}
+      responses:
+        '200': {description: administrator security, content: {application/json: {schema: {$ref: '#/components/schemas/AdminPasswordLoginEnvelope'}}}}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {description: CSRFadministrator security IP administrator security}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+  /admin/auth/login/sms/send:
+    post:
+      tags: [Admin]
+      security: []
+      summary: administrator security challenge administrator security
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AdminChallengeRequest'}}}}
+      responses: {'200': {description: administrator security}, '401': {description: challenge administrator security}, '403': {$ref: '#/components/responses/CsrfFailed'}, '429': {$ref: '#/components/responses/RateLimited'}, '503': {$ref: '#/components/responses/ServiceUnavailable'}}
+  /admin/auth/login/sms/verify:
+    post:
+      tags: [Admin]
+      security: []
+      summary: administrator security challenge administrator security Session
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AdminChallengeVerifyRequest'}}}}
+      responses: {'200': {description: administrator security}, '401': {description: challenge administrator security}, '403': {$ref: '#/components/responses/CsrfFailed'}, '503': {$ref: '#/components/responses/ServiceUnavailable'}}
+  /admin/auth/logout:
+    post:
+      tags: [Admin]
+      summary: administrator security Session
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      responses: {'200': {description: administrator security}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/CsrfFailed'}}
   /admin/me:
     get:
       tags: [Admin]
@@ -935,6 +970,13 @@ paths:
       parameters: [{$ref: '#/components/parameters/CsrfToken'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AdminUpdateRequest'}}}}
       responses: {'200': {description: 已更新}, '409': {description: ADMIN_VERSION_CONFLICT}}
+  /admin/admins/{adminId}/force-logout:
+    parameters: [{$ref: '#/components/parameters/AdminId'}]
+    post:
+      tags: [Admin]
+      summary: administrator security session_version administrator security Session
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      responses: {'200': {description: administrator security Session administrator security}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}}
   /admin/admins/{adminId}/disable:
     $ref: '#/components/pathItems/AdminStatusAction'
   /admin/admins/{adminId}/enable:
@@ -973,6 +1015,56 @@ paths:
       parameters: [{$ref: '#/components/parameters/RoleId'}, {$ref: '#/components/parameters/CsrfToken'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ExpectedVersionRequest'}}}}
       responses: {'200': {description: 已停用}, '409': {description: ROLE_IN_USE 或 ROLE_VERSION_CONFLICT}}
+  /admin/roles/{roleId}/security:
+    parameters: [{$ref: '#/components/parameters/RoleId'}]
+    get: {tags: [Admin], summary: administrator security 2FA/IP administrator security, responses: {'200': {description: administrator security}, '403': {$ref: '#/components/responses/PermissionDenied'}}}
+    patch:
+      tags: [Admin]
+      summary: administrator security Session
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/RoleSecurityMutation'}}}}
+      responses: {'200': {description: administrator security}, '403': {description: administrator securityCSRFadministrator securitycurrent_password administrator security IP administrator security}, '409': {description: SECURITY_POLICY_VERSION_CONFLICT administrator security}, '429': {$ref: '#/components/responses/RateLimited'}, '503': {$ref: '#/components/responses/ServiceUnavailable'}}
+  /admin/roles/{roleId}/ip-allowlist:
+    parameters: [{$ref: '#/components/parameters/RoleId'}]
+    get: {tags: [Admin], summary: administrator security IP administrator security, responses: {'200': {description: administrator security}}}
+    post:
+      tags: [Admin]
+      summary: administrator security CIDR administrator security
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/IpAllowlistCreateRequest'}}}}
+      responses: {'201': {description: administrator security}, '409': {description: administrator security}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /admin/roles/{roleId}/ip-allowlist/{entryId}:
+    parameters: [{$ref: '#/components/parameters/RoleId'}, {name: entryId, in: path, required: true, schema: {type: string, format: uuid}}]
+    patch:
+      tags: [Admin]
+      summary: administrator security CIDR administrator security DELETE
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/IpAllowlistUpdateRequest'}}}}
+      responses: {'200': {description: administrator security}, '409': {description: administrator security}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /admin/security/superuser:
+    get: {tags: [Admin], summary: administrator security 2FA administrator security, responses: {'200': {description: administrator security}, '403': {$ref: '#/components/responses/PermissionDenied'}}}
+    patch:
+      tags: [Admin]
+      summary: administrator security IP administrator security
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/SuperuserSecurityMutation'}}}}
+      responses: {'200': {description: administrator security}, '403': {description: administrator securityCSRF administrator security current_password administrator security}, '409': {description: administrator security}}
+  /admin/security/superuser/ip-allowlist:
+    get: {tags: [Admin], summary: administrator security IP administrator security, responses: {'200': {description: administrator security}}}
+    post:
+      tags: [Admin]
+      summary: administrator security CIDR
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/IpAllowlistCreateRequest'}}}}
+      responses: {'201': {description: administrator security}, '409': {description: administrator security}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /admin/security/superuser/ip-allowlist/{entryId}:
+    parameters: [{name: entryId, in: path, required: true, schema: {type: string, format: uuid}}]
+    patch:
+      tags: [Admin]
+      summary: administrator security CIDRadministrator security DELETE
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/IpAllowlistUpdateRequest'}}}}
+      responses: {'200': {description: administrator security}, '409': {description: administrator security}, '422': {$ref: '#/components/responses/ValidationError'}}
   /admin/permissions:
     get:
       tags: [Admin]
@@ -1256,6 +1348,13 @@ components:
         - AUTH_REQUIRED
         - AUTH_CREDENTIALS_INVALID
         - ACCOUNT_UNAVAILABLE
+        - ADMIN_LOGIN_REQUIRED
+        - ADMIN_AUTH_CHALLENGE_INVALID
+        - ADMIN_AUTH_CHALLENGE_EXPIRED
+        - ADMIN_IP_NOT_ALLOWED
+        - ADMIN_REAUTH_FAILED
+        - SECURITY_POLICY_VERSION_CONFLICT
+        - IP_ALLOWLIST_LOCKOUT_CONFIRMATION_REQUIRED
         - ACCOUNT_ALREADY_EXISTS
         - APPROVAL_STATE_CONFLICT
         - ACCOUNT_STATE_CONFLICT
@@ -1640,6 +1739,163 @@ components:
           properties:
             data:
               $ref: '#/components/schemas/AsyncTask'
+    AdminPasswordLoginRequest:
+      type: object
+      additionalProperties: false
+      required: [phone, password]
+      properties:
+        phone: {type: string}
+        password: {type: string, format: password, writeOnly: true}
+    AdminPasswordLoginEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          properties:
+            data:
+              type: object
+              required: [requires_2fa]
+              properties:
+                requires_2fa: {type: boolean}
+                challenge_id: {type: string, writeOnly: true, description: administrator security}
+                expires_in: {type: integer, const: 300}
+    AdminChallengeRequest:
+      type: object
+      additionalProperties: false
+      required: [challenge_id]
+      properties: {challenge_id: {type: string, writeOnly: true}}
+    AdminChallengeVerifyRequest:
+      allOf:
+        - $ref: '#/components/schemas/AdminChallengeRequest'
+        - type: object
+          required: [sms_code]
+          properties:
+            sms_code:
+              type: string
+              pattern: '^[0-9]{6}'
+              writeOnly: true
+    SecurityMutationBase:
+      type: object
+      additionalProperties: false
+      required: [current_password, expected_security_version]
+      properties:
+        current_password: {type: string, format: password, writeOnly: true}
+        expected_security_version: {type: integer, minimum: 1}
+        confirm_lockout: {type: boolean, default: false}
+    RoleSecurityMutation:
+      allOf:
+        - $ref: '#/components/schemas/SecurityMutationBase'
+        - type: object
+          properties:
+            require_sms_2fa: {type: boolean}
+            ip_allowlist_enabled: {type: boolean}
+    SuperuserSecurityMutation:
+      allOf:
+        - $ref: '#/components/schemas/SecurityMutationBase'
+        - type: object
+          properties:
+            ip_allowlist_enabled: {type: boolean}
+    IpAllowlistCreateRequest:
+      allOf:
+        - $ref: '#/components/schemas/SecurityMutationBase'
+        - type: object
+          required: [network_cidr]
+          properties:
+            network_cidr: {type: string, maxLength: 64}
+            label: {type: string, maxLength: 100}
+    IpAllowlistUpdateRequest:
+      allOf:
+        - $ref: '#/components/schemas/SecurityMutationBase'
+        - type: object
+          required: [status]
+          properties:
+            status: {type: string, enum: [active, inactive]}
+            label: {type: string, maxLength: 100}
+    AdminRoleSummary:
+      type: [object, 'null']
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        status: {type: string, enum: [active, inactive]}
+        data_scope: {type: string, enum: [own, role, all]}
+        version: {type: integer, minimum: 1}
+        require_sms_2fa: {type: boolean}
+        ip_allowlist_enabled: {type: boolean}
+        security_version: {type: integer, minimum: 1}
+        permission_keys: {type: array, items: {type: string}}
+    AdminProfile:
+      type: object
+      required: [id, nickname, phone_masked, is_superuser, admin_status, version]
+      properties:
+        id: {type: string, format: uuid}
+        nickname: {type: string}
+        phone_masked: {type: string}
+        is_superuser: {type: boolean}
+        admin_status: {type: string, enum: [active, disabled, locked]}
+        version: {type: integer, minimum: 1}
+        role: {$ref: '#/components/schemas/AdminRoleSummary'}
+    AdminContextEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          properties:
+            data:
+              allOf:
+                - $ref: '#/components/schemas/AdminProfile'
+                - type: object
+                  properties:
+                    admin_version: {type: integer, minimum: 1}
+                    data_scope: {type: string, enum: [own, role, all]}
+                    permission_keys: {type: array, items: {type: string}}
+                    menu_keys: {type: array, items: {type: string}}
+    AdminCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [phone, nickname, password, role_id]
+      properties:
+        phone: {type: string}
+        nickname: {type: string, maxLength: 50}
+        password: {type: string, format: password, writeOnly: true}
+        role_id: {type: string, format: uuid}
+    AdminUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version]
+      properties:
+        expected_version: {type: integer, minimum: 1}
+        nickname: {type: string, maxLength: 50}
+        role_id: {type: string, format: uuid}
+    ExpectedVersionRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version]
+      properties:
+        expected_version: {type: integer, minimum: 1}
+    RoleCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [name, data_scope]
+      properties:
+        name: {type: string, maxLength: 80}
+        description: {type: string, maxLength: 500}
+        data_scope: {type: string, enum: [own, role, all]}
+    RoleUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version]
+      properties:
+        expected_version: {type: integer, minimum: 1}
+        name: {type: string, maxLength: 80}
+        description: {type: string, maxLength: 500}
+        data_scope: {type: string, enum: [own, role, all]}
+        permission_keys: {type: array, uniqueItems: true, items: {type: string}}
+    AssignmentUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [owner_admin_id, expected_version]
+      properties:
+        owner_admin_id: {type: [string, 'null'], format: uuid}
+        expected_version: {type: integer, minimum: 0}
+        reason: {type: string, maxLength: 200}
     AdminRoleSummary:
       type: [object, 'null']
       properties:

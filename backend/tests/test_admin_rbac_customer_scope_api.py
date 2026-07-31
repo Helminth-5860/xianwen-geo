@@ -13,6 +13,7 @@ from apps.admin_rbac.models import (
 )
 from apps.admin_rbac.services import create_admin
 from apps.users.models import User
+from tests.admin_session_helpers import authenticate_admin_client
 
 PASSWORD = "Correct-Horse-Battery-2026!"
 
@@ -33,7 +34,7 @@ class ScopeFixture:
 
 def client_for(user):
     client = APIClient()
-    client.force_authenticate(user)
+    authenticate_admin_client(client, user)
     return client
 
 

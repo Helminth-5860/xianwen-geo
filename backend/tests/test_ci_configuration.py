@@ -153,3 +153,28 @@ def test_docker_job_runs_reproducible_postgresql_rbac_suite():
     )
     assert core_command in " ".join(script.replace("\\\n", "").split())
     assert core_command in " ".join(powershell_script.split())
+
+
+def test_docker_job_runs_reproducible_postgresql_redis_admin_security_suite():
+    workflow = load_workflow()
+    docker_steps = workflow["jobs"]["docker"]["steps"]
+    runs = [step.get("run") for step in docker_steps]
+    names = [step["name"] for step in docker_steps]
+
+    assert "Run PostgreSQL/Redis administrator security tests" in names
+    assert "bash scripts/test-admin-security.sh" in runs
+    shell_script = (REPO_ROOT / "scripts" / "test-admin-security.sh").read_text(encoding="utf-8")
+    powershell_script = (REPO_ROOT / "scripts" / "test-admin-security.ps1").read_text(
+        encoding="utf-8"
+    )
+    core_command = (
+        "docker compose --project-name xianwen-admin-security-test "
+        "--profile admin-security-test run --rm --build admin-security-tests"
+    )
+    assert "tests/test_admin_security_postgres.py" in (REPO_ROOT / "docker-compose.yml").read_text(
+        encoding="utf-8"
+    )
+    assert core_command in " ".join(shell_script.replace("\\\n", "").split())
+    assert core_command in " ".join(powershell_script.split())
+    assert "down --volumes --remove-orphans" in shell_script
+    assert "down --volumes --remove-orphans" in powershell_script

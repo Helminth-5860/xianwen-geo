@@ -21,6 +21,9 @@ class AdminRole(models.Model):  # noqa: DJ008
     status = models.CharField(max_length=16, choices=Status.choices, default=Status.ACTIVE)
     data_scope = models.CharField(max_length=16, choices=DataScope.choices)
     version = models.PositiveBigIntegerField(default=1)
+    require_sms_2fa = models.BooleanField(default=False)
+    ip_allowlist_enabled = models.BooleanField(default=False)
+    security_version = models.PositiveBigIntegerField(default=1)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -38,6 +41,10 @@ class AdminRole(models.Model):  # noqa: DJ008
             ),
             models.CheckConstraint(
                 condition=models.Q(version__gte=1), name="admin_role_version_gte_1"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(security_version__gte=1),
+                name="admin_role_security_version_gte_1",
             ),
         ]
 
@@ -191,4 +198,131 @@ class AdminRbacEvent(models.Model):  # noqa: DJ008
         ordering = ("-created_at", "-id")
         indexes = [
             models.Index(fields=("target_type", "target_id", "created_at"), name="rbac_target_idx")
+        ]
+
+
+class IpAllowlistStatus(models.TextChoices):
+    ACTIVE = "active", "启用"
+    INACTIVE = "inactive", "停用"
+
+
+class RoleIpAllowlistEntry(models.Model):  # noqa: DJ008
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    role = models.ForeignKey(
+        AdminRole, on_delete=models.CASCADE, related_name="ip_allowlist_entries"
+    )
+    network_cidr = models.CharField(max_length=64)
+    ip_version = models.PositiveSmallIntegerField()
+    label = models.CharField(max_length=100, blank=True)
+    status = models.CharField(
+        max_length=16, choices=IpAllowlistStatus.choices, default=IpAllowlistStatus.ACTIVE
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "admin_role_ip_allowlist_entries"
+        ordering = ("network_cidr", "id")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("role", "network_cidr"), name="admin_role_ip_cidr_unique"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(ip_version__in=(4, 6)), name="admin_role_ip_version_valid"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(status__in=("active", "inactive")),
+                name="admin_role_ip_status_valid",
+            ),
+        ]
+
+
+class SuperuserSecurityPolicy(models.Model):  # noqa: DJ008
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="superuser_security_policy",
+    )
+    ip_allowlist_enabled = models.BooleanField(default=False)
+    security_version = models.PositiveBigIntegerField(default=1)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "superuser_security_policies"
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(security_version__gte=1),
+                name="superuser_security_version_gte_1",
+            )
+        ]
+
+
+class SuperuserIpAllowlistEntry(models.Model):  # noqa: DJ008
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    policy = models.ForeignKey(
+        SuperuserSecurityPolicy,
+        on_delete=models.CASCADE,
+        related_name="ip_allowlist_entries",
+    )
+    network_cidr = models.CharField(max_length=64)
+    ip_version = models.PositiveSmallIntegerField()
+    label = models.CharField(max_length=100, blank=True)
+    status = models.CharField(
+        max_length=16, choices=IpAllowlistStatus.choices, default=IpAllowlistStatus.ACTIVE
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "superuser_ip_allowlist_entries"
+        ordering = ("network_cidr", "id")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("policy", "network_cidr"), name="superuser_ip_cidr_unique"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(ip_version__in=(4, 6)), name="superuser_ip_version_valid"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(status__in=("active", "inactive")),
+                name="superuser_ip_status_valid",
+            ),
+        ]
+
+
+class AdminSecurityEvent(models.Model):  # noqa: DJ008
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="admin_security_events_as_actor",
+    )
+    subject = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="admin_security_events_as_subject",
+    )
+    event_type = models.CharField(max_length=64, db_index=True)
+    request_id = models.UUIDField(db_index=True)
+    ip_fingerprint = models.CharField(max_length=64, blank=True)
+    user_agent_digest = models.CharField(max_length=64, blank=True)
+    admin_profile_version = models.PositiveBigIntegerField(null=True, blank=True)
+    role_version = models.PositiveBigIntegerField(null=True, blank=True)
+    role_security_version = models.PositiveBigIntegerField(null=True, blank=True)
+    policy_version = models.PositiveBigIntegerField(null=True, blank=True)
+    stable_failure_reason = models.CharField(max_length=64, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "admin_security_events"
+        ordering = ("-created_at", "-id")
+        indexes = [
+            models.Index(fields=("subject", "created_at"), name="admin_sec_subject_idx"),
+            models.Index(fields=("event_type", "created_at"), name="admin_sec_event_idx"),
         ]

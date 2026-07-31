@@ -7,6 +7,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   changeAdminStatus,
   getAdmin,
+  forceLogoutAdmin,
   getRoles,
   updateAdmin,
   type AdminProfile,
@@ -87,6 +88,22 @@ export default function AdminAccountDetailPage() {
                   </Form.Item>
                   <Button htmlType="submit">保存资料与角色</Button>
                 </Form>
+              )}
+              {capabilities?.permission_keys.includes("admins.disable") && (
+                <Popconfirm
+                  title="确认强制退出该管理员全部设备？"
+                  description="操作通过 session_version 撤销全部旧会话，不会修改账号状态。"
+                  onConfirm={async () => {
+                    try {
+                      await forceLogoutAdmin(admin.id);
+                      setError("已撤销该管理员全部旧会话。");
+                    } catch (reason) {
+                      setError(userMessage(reason));
+                    }
+                  }}
+                >
+                  <Button danger>强制退出全部设备</Button>
+                </Popconfirm>
               )}
               {capabilities?.permission_keys.includes("admins.disable") && (
                 <Space wrap>

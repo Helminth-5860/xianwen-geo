@@ -8,7 +8,7 @@ import { useState, useSyncExternalStore } from "react";
 import { AuthShell, SubmitButton } from "@/components/auth/auth-shell";
 import { phoneRules, SmsCodeField } from "@/components/auth/sms-code-field";
 import { useSmsCode } from "@/hooks/use-sms-code";
-import { loginWithPassword, loginWithSms, userMessage } from "@/lib/auth-client";
+import { AuthApiError, loginWithPassword, loginWithSms, userMessage } from "@/lib/auth-client";
 import { focusFirstInvalidField } from "@/lib/form-focus";
 
 const { Text } = Typography;
@@ -27,6 +27,7 @@ export default function LoginPage() {
   const [mode, setMode] = useState<LoginMode>("password");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [adminLoginRequired, setAdminLoginRequired] = useState(false);
   const resetComplete = useSyncExternalStore(
     () => () => undefined,
     () => new URLSearchParams(window.location.search).get("reset") === "success",
@@ -35,6 +36,7 @@ export default function LoginPage() {
 
   const submit = async (values: LoginValues) => {
     setError("");
+    setAdminLoginRequired(false);
     setSubmitting(true);
     try {
       const user =
@@ -43,6 +45,9 @@ export default function LoginPage() {
           : await loginWithSms(values.phone, values.smsCode || "");
       router.push(user.approval_status === "pending" ? "/?account=pending" : "/");
     } catch (reason) {
+      setAdminLoginRequired(
+        reason instanceof AuthApiError && reason.code === "ADMIN_LOGIN_REQUIRED",
+      );
       setError(userMessage(reason));
     } finally {
       setSubmitting(false);
@@ -62,6 +67,9 @@ export default function LoginPage() {
     >
       {resetComplete && <Alert type="success" showIcon message="密码已重置，请使用新密码登录" />}
       {error && <Alert type="error" showIcon message={error} role="alert" />}
+      {adminLoginRequired && (
+        <Alert type="info" showIcon message={<Link href="/admin/login">前往管理员安全登录</Link>} />
+      )}
       <Segmented<LoginMode>
         block
         value={mode}

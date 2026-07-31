@@ -258,3 +258,6 @@ own/role/all 客户范围、管理员 Session 即时撤销和防 ABA 的客户�
 由 is_superuser 识别，普通角色不能模拟。实现与 PostgreSQL 并发验收方式见
 `docs/19-ADMIN-RBAC-DATA-SCOPE.md`。
 RBAC 的 0002 Seed 迁移反向操作为 `RunPython.noop`：单独回退不会恢复普通 staff，也不会删除 Permission Seed/Profile；完整回退 0001 会删除 RBAC 表及证据。生产逆向迁移前必须审查、备份，优先采用前向修复或备份恢复，且不得连接腾讯云数据库进行验证。
+## 19. 管理员 2FA 与 IP 白名单（XW-0106）
+
+XW-0106 增加独立管理员密码/短信登录、不可持久化的 Redis 两阶段 challenge、管理员安全 Session 上下文、角色及超级管理员 IPv4/IPv6 白名单、追加式安全事件、全部设备强制退出和服务器控制台紧急恢复。管理员身份不能从普通登录入口绕过；超级管理员短信 2FA 永久强制，production 未配置真实短信 Provider 时失败关闭。实现、迁移回滚限制和 PostgreSQL/Redis 专属验收见 `docs/20-ADMIN-2FA-IP-ALLOWLIST.md`。
