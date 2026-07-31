@@ -83,6 +83,13 @@ Lua 使用 `EVALSHA`，遇到 `NOSCRIPT` 自动重新加载。
 接口 `AllowAny`，但作为状态修改请求强制真实 CSRF。三种用途响应一致，不查询或暴露账号
 是否存在；不返回验证码、Provider 结果或具体限流阈值。
 
+## XW-0103 用途策略扩展
+
+XW-0103 保持公开成功 Envelope 不变，并在发送前增加内部用途策略：register 始终真实发送；
+login/password_reset 对不存在或 cancelled 账号抑制发送。抑制路径仍原子消耗相同冷却和三维
+周期限流，但不创建挑战、不调用 Provider，并删除该用途旧挑战。Provider 明确不可用仍返回
+503。该策略用于阻止不存在账号取得可消费挑战，详情见
+`17-REGISTRATION-SMS-LOGIN-PASSWORD-RESET.md`。
 ## 默认限流
 
 - 手机号与 IP 组合：15 分钟 5 次

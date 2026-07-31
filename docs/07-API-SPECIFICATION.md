@@ -115,6 +115,16 @@
 
 返回用户状态 `pending`，同时建立登录会话。
 
+### 4.2 XW-0103 认证行为
+
+- 注册：验证码消费后创建 pending/active 用户并自动建立 Session；重复手机号此时才返回
+  `409 ACCOUNT_ALREADY_EXISTS`。
+- 短信登录：无效验证码和不存在账号统一 `401 AUTH_CREDENTIALS_INVALID`；冻结或注销账号
+  返回 `403 ACCOUNT_UNAVAILABLE`。
+- 密码重置：不存在或已注销账号在验证码有效时返回通用成功；不自动登录，旧 Session 因
+  Django session auth hash 变化失效。
+- login/password_reset 短信发送对不存在或已注销账号执行内部抑制，但公开响应与真实发送一致。
+- 三个匿名 POST 均要求真实 CSRF，Redis 不可用时失败关闭。
 ## 5. 当前用户与设置
 
 | 方法 | 路径 | 说明 |

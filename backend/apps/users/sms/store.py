@@ -51,6 +51,41 @@ redis.call("EXPIRE", code_key, tonumber(ARGV[3]))
 return "reserved"
 """
 
+SUPPRESS_SCRIPT = """
+local code_key = KEYS[1]
+local cooldown_key = KEYS[2]
+local phone_limit_key = KEYS[3]
+local ip_limit_key = KEYS[4]
+local combination_limit_key = KEYS[5]
+
+if redis.call("EXISTS", cooldown_key) == 1 then
+  return "rate_limited"
+end
+
+local limits = {
+  {phone_limit_key, tonumber(ARGV[1]), tonumber(ARGV[2])},
+  {ip_limit_key, tonumber(ARGV[3]), tonumber(ARGV[4])},
+  {combination_limit_key, tonumber(ARGV[5]), tonumber(ARGV[6])}
+}
+for _, item in ipairs(limits) do
+  local current = tonumber(redis.call("GET", item[1]) or "0")
+  if current >= item[2] then
+    return "rate_limited"
+  end
+end
+
+for _, item in ipairs(limits) do
+  local count = redis.call("INCR", item[1])
+  if count == 1 then
+    redis.call("EXPIRE", item[1], item[3])
+  end
+end
+
+redis.call("SET", cooldown_key, "1", "EX", tonumber(ARGV[7]))
+redis.call("DEL", code_key)
+return "suppressed"
+"""
+
 ACTIVATE_SCRIPT = """
 if redis.call("HGET", KEYS[1], "generation_id") ~= ARGV[1] then
   return "stale"
@@ -102,6 +137,8 @@ class SmsRedisKeys:
 class SmsVerificationStore(Protocol):
     def reserve(self, keys: SmsRedisKeys, generation_id: str, code_digest: str) -> None: ...
 
+    def reserve_suppressed(self, keys: SmsRedisKeys) -> None: ...
+
     def activate(self, code_key: str, generation_id: str) -> bool: ...
 
     def invalidate(self, code_key: str, generation_id: str) -> None: ...
@@ -136,6 +173,7 @@ class RedisLuaScript:
 
 class RedisSmsVerificationStore:
     reserve_script = RedisLuaScript(RESERVE_SCRIPT)
+    suppress_script = RedisLuaScript(SUPPRESS_SCRIPT)
     activate_script = RedisLuaScript(ACTIVATE_SCRIPT)
     invalidate_script = RedisLuaScript(INVALIDATE_SCRIPT)
     verify_script = RedisLuaScript(VERIFY_SCRIPT)
@@ -167,6 +205,29 @@ class RedisSmsVerificationStore:
                 settings.SMS_LIMIT_IP_WINDOW_SECONDS,
                 settings.SMS_LIMIT_COMBINATION_COUNT,
                 settings.SMS_LIMIT_COMBINATION_WINDOW_SECONDS,
+            ],
+        )
+        if _decode(result) == "rate_limited":
+            raise SmsRateLimited
+
+    def reserve_suppressed(self, keys: SmsRedisKeys) -> None:
+        result = self.suppress_script.execute(
+            self.client,
+            [
+                keys.code,
+                keys.cooldown,
+                keys.phone_limit,
+                keys.ip_limit,
+                keys.combination_limit,
+            ],
+            [
+                settings.SMS_LIMIT_PHONE_COUNT,
+                settings.SMS_LIMIT_PHONE_WINDOW_SECONDS,
+                settings.SMS_LIMIT_IP_COUNT,
+                settings.SMS_LIMIT_IP_WINDOW_SECONDS,
+                settings.SMS_LIMIT_COMBINATION_COUNT,
+                settings.SMS_LIMIT_COMBINATION_WINDOW_SECONDS,
+                settings.SMS_RESEND_COOLDOWN_SECONDS,
             ],
         )
         if _decode(result) == "rate_limited":

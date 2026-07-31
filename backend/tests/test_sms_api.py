@@ -3,6 +3,7 @@ import logging
 import pytest
 from rest_framework.test import APIClient
 
+from apps.users.models import User
 from apps.users.sms.exceptions import SmsRateLimited, SmsServiceUnavailable
 from apps.users.sms.service import SmsSendResult
 
@@ -150,7 +151,7 @@ def test_forged_forwarded_for_cannot_change_untrusted_client_ip(monkeypatch, set
     settings.TRUSTED_PROXY_NETWORKS = ()
     seen_ips = []
 
-    def rate_by_ip(phone, purpose, ip_address):
+    def rate_by_ip(phone, purpose, ip_address, **kwargs):
         seen_ips.append(ip_address)
         if seen_ips.count(ip_address) > 1:
             raise SmsRateLimited
@@ -184,3 +185,52 @@ def test_mock_outbox_has_no_public_http_route():
     response = APIClient().get("/api/v1/auth/sms/outbox")
 
     assert response.status_code == 404
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("purpose", "user_status", "expected_suppressed"),
+    [
+        ("register", None, False),
+        ("register", User.AccountStatus.ACTIVE, False),
+        ("login", None, True),
+        ("login", User.AccountStatus.ACTIVE, False),
+        ("login", User.AccountStatus.CANCELLED, True),
+        ("password_reset", None, True),
+        ("password_reset", User.AccountStatus.FROZEN, False),
+        ("password_reset", User.AccountStatus.CANCELLED, True),
+    ],
+)
+def test_sms_send_applies_purpose_aware_suppression(
+    monkeypatch, purpose, user_status, expected_suppressed
+):
+    if user_status:
+        User.objects.create_user(
+            phone="13800138000",
+            nickname="用途策略用户",
+            password="Correct-Horse-Battery-2026!",
+            account_status=user_status,
+        )
+    observed = []
+
+    def send(phone, resolved_purpose, ip_address, *, suppress_delivery=False, **kwargs):
+        observed.append((phone, resolved_purpose, ip_address, suppress_delivery))
+        return SmsSendResult(expires_in=300, resend_after=60)
+
+    monkeypatch.setattr("apps.users.views.send_verification_code", send)
+    client, token = csrf_client()
+    response = client.post(
+        SMS_SEND_PATH,
+        {"phone": "13800138000", "purpose": purpose},
+        format="json",
+        HTTP_X_CSRFTOKEN=token,
+        REMOTE_ADDR="192.0.2.20",
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"] == {
+        "sent": True,
+        "expires_in": 300,
+        "resend_after": 60,
+    }
+    assert observed == [("+8613800138000", purpose, "192.0.2.20", expected_suppressed)]

@@ -2,13 +2,18 @@ from dataclasses import dataclass
 from functools import lru_cache
 
 from django.contrib.auth.hashers import check_password, make_password
-from django.db import transaction
+from django.db import IntegrityError, transaction
 
 from apps.core.request_ids import validate_request_id
 
 from .models import LoginEvent, User
 from .phone_numbers import phone_fingerprint
 from .rate_limits import LoginRateLimiter, LoginRateLimitKeys
+from .sms.purposes import SmsPurpose, parse_sms_purpose
+
+
+class AccountAlreadyExists(Exception):
+    pass
 
 
 @dataclass(frozen=True)
@@ -50,7 +55,9 @@ def authenticate_password(normalized_phone: str, password: str) -> PasswordAuthe
 
 
 def client_ip_address(request) -> str:
-    return request.META.get("REMOTE_ADDR", "") or "0.0.0.0"
+    from .sms.security import client_ip_address as trusted_client_ip_address
+
+    return trusted_client_ip_address(request)
 
 
 def request_user_agent(request) -> str:
@@ -58,10 +65,11 @@ def request_user_agent(request) -> str:
 
 
 @transaction.atomic
-def record_password_login_event(
+def record_login_event(
     *,
     normalized_phone: str,
     user: User | None,
+    login_method: str,
     success: bool,
     failure_reason: str,
     request,
@@ -72,12 +80,30 @@ def record_password_login_event(
     return LoginEvent.objects.create(
         user=user,
         phone_fingerprint=phone_fingerprint(normalized_phone),
-        login_method=LoginEvent.LoginMethod.PASSWORD,
+        login_method=login_method,
         success=success,
         failure_reason=failure_reason,
         ip_address=client_ip_address(request),
         user_agent=request_user_agent(request),
         request_id=request_id,
+    )
+
+
+def record_password_login_event(
+    *,
+    normalized_phone: str,
+    user: User | None,
+    success: bool,
+    failure_reason: str,
+    request,
+) -> LoginEvent:
+    return record_login_event(
+        normalized_phone=normalized_phone,
+        user=user,
+        login_method=LoginEvent.LoginMethod.PASSWORD,
+        success=success,
+        failure_reason=failure_reason,
+        request=request,
     )
 
 
@@ -89,3 +115,56 @@ def rate_limit_keys(request, normalized_phone: str) -> LoginRateLimitKeys:
 
 def login_rate_limiter() -> LoginRateLimiter:
     return LoginRateLimiter()
+
+
+def verification_submission_limiter(purpose: SmsPurpose | str) -> LoginRateLimiter:
+    resolved_purpose = parse_sms_purpose(purpose)
+    return LoginRateLimiter(namespace=f"verification-{resolved_purpose.value}")
+
+
+def should_deliver_sms(normalized_phone: str, purpose: SmsPurpose | str) -> bool:
+    resolved_purpose = parse_sms_purpose(purpose)
+    if resolved_purpose is SmsPurpose.REGISTER:
+        return True
+    return (
+        User.objects.filter(phone=normalized_phone)
+        .exclude(account_status=User.AccountStatus.CANCELLED)
+        .exists()
+    )
+
+
+def create_registered_user(*, phone: str, nickname: str, password: str) -> User:
+    if User.objects.filter(phone=phone).exists():
+        raise AccountAlreadyExists
+    try:
+        with transaction.atomic():
+            return User.objects.create_user(
+                phone=phone,
+                nickname=nickname,
+                password=password,
+                approval_status=User.ApprovalStatus.PENDING,
+                account_status=User.AccountStatus.ACTIVE,
+                is_active=True,
+            )
+    except IntegrityError as exc:
+        raise AccountAlreadyExists from exc
+
+
+def sms_login_user(normalized_phone: str) -> User | None:
+    try:
+        return User.objects.get(phone=normalized_phone)
+    except User.DoesNotExist:
+        return None
+
+
+@transaction.atomic
+def reset_user_password(*, normalized_phone: str, new_password: str) -> bool:
+    try:
+        user = User.objects.select_for_update().get(phone=normalized_phone)
+    except User.DoesNotExist:
+        return False
+    if user.account_status == User.AccountStatus.CANCELLED:
+        return False
+    user.set_password(new_password)
+    user.save(update_fields=["password", "updated_at"])
+    return True
