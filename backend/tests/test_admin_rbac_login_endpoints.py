@@ -5,6 +5,7 @@ from django.core.cache import cache
 from rest_framework.test import APIClient
 
 from apps.admin_rbac.models import AdminRole
+from apps.admin_rbac.security import security_snapshot
 from apps.admin_rbac.services import change_admin_status, create_admin
 from apps.users.models import User
 
@@ -21,7 +22,7 @@ def csrf_client():
 
 def password_login(client, token, phone):
     return client.post(
-        "/api/v1/auth/login/password",
+        "/api/v1/admin/auth/login/password",
         {"phone": phone, "password": PASSWORD},
         format="json",
         HTTP_X_CSRFTOKEN=token,
@@ -29,9 +30,20 @@ def password_login(client, token, phone):
 
 
 def sms_login(client, token, phone):
+    password_response = password_login(client, token, phone)
+    if password_response.status_code != 200:
+        return password_response
+    challenge_id = password_response.json()["data"]["challenge_id"]
+    sent = client.post(
+        "/api/v1/admin/auth/login/sms/send",
+        {"challenge_id": challenge_id},
+        format="json",
+        HTTP_X_CSRFTOKEN=token,
+    )
+    assert sent.status_code == 200
     return client.post(
-        "/api/v1/auth/login/sms",
-        {"phone": phone, "sms_code": "438921"},
+        "/api/v1/admin/auth/login/sms/verify",
+        {"challenge_id": challenge_id, "sms_code": "438921"},
         format="json",
         HTTP_X_CSRFTOKEN=token,
     )
@@ -120,7 +132,21 @@ def test_disabled_locked_enable_unlock_password_login_http_and_old_sessions():
 @pytest.mark.django_db
 def test_disabled_locked_enable_unlock_sms_login_http_and_old_sessions(monkeypatch):
     actor, profile = admin_fixture()
-    monkeypatch.setattr("apps.users.views.verify_and_consume", lambda *args, **kwargs: True)
+    profile.role.require_sms_2fa = True
+    profile.role.security_version += 1
+    profile.role.save(update_fields=["require_sms_2fa", "security_version"])
+    monkeypatch.setattr(
+        "apps.admin_rbac.security_views.create_admin_challenge",
+        lambda snapshot, request: "challenge",
+    )
+    monkeypatch.setattr(
+        "apps.admin_rbac.security_views.send_admin_second_factor",
+        lambda challenge_id, request: security_snapshot(profile.user, request),
+    )
+    monkeypatch.setattr(
+        "apps.admin_rbac.security_views.verify_admin_second_factor",
+        lambda challenge_id, code, request: security_snapshot(profile.user, request),
+    )
     old_client, old_csrf = csrf_client()
     assert sms_login(old_client, old_csrf, profile.user.phone).status_code == 200
 

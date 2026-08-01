@@ -13,6 +13,7 @@ from apps.admin_rbac.models import (
 from apps.admin_rbac.permissions import resolve_admin_context
 from apps.admin_rbac.services import create_admin, set_permission_status
 from apps.users.models import User
+from tests.admin_session_helpers import authenticate_admin_client
 
 PASSWORD = "Correct-Horse-Battery-2026!"
 CSRF_PATH = "/api/v1/auth/csrf"
@@ -27,23 +28,17 @@ def create_superuser(phone="13900139000"):
     )
 
 
-def browser_client(phone):
+def browser_client(user):
     client = APIClient(enforce_csrf_checks=True)
-    csrf = client.get(CSRF_PATH).json()["data"]["csrf_token"]
-    response = client.post(
-        LOGIN_PATH,
-        {"phone": phone, "password": PASSWORD},
-        format="json",
-        HTTP_X_CSRFTOKEN=csrf,
-    )
-    assert response.status_code == 200
+    client.get(CSRF_PATH)
+    authenticate_admin_client(client, user)
     return client
 
 
 @pytest.mark.django_db
 def test_rbac_writes_require_real_csrf_and_keep_envelope_request_id():
     actor = create_superuser()
-    client = browser_client(actor.phone)
+    client = browser_client(actor)
     path = "/api/v1/admin/roles"
     payload = {"name": "客服", "description": "", "data_scope": "own"}
 
@@ -86,7 +81,7 @@ def test_inactive_permission_and_invalid_admin_invariants_fail_closed():
     assert context is not None
     assert "users.list" not in context.permission_keys
     client = APIClient()
-    client.force_authenticate(profile.user)
+    authenticate_admin_client(client, profile.user)
     assert client.get("/api/v1/admin/users").status_code == 403
     assert client.get("/api/v1/admin/admins").status_code == 403
 
@@ -121,7 +116,7 @@ def test_exact_phone_filter_and_object_lookup_never_escape_own_scope():
     CustomerAssignment.objects.create(customer=visible, owner_admin=profile)
 
     client = APIClient()
-    client.force_authenticate(profile.user)
+    authenticate_admin_client(client, profile.user)
     filtered = client.get("/api/v1/admin/users", {"phone": hidden.phone})
 
     assert filtered.status_code == 200
@@ -134,7 +129,7 @@ def test_exact_phone_filter_and_object_lookup_never_escape_own_scope():
 def test_admin_api_never_returns_complete_phone_or_password_fields():
     actor = create_superuser()
     client = APIClient()
-    client.force_authenticate(actor)
+    authenticate_admin_client(client, actor)
 
     response = client.get("/api/v1/admin/me")
     serialized = response.json()

@@ -34,6 +34,7 @@ from apps.admin_rbac.services import (
 )
 from apps.users.authentication import AccountUnavailable, start_browser_session
 from apps.users.models import User
+from tests.admin_session_helpers import authenticate_admin_client
 
 PASSWORD = "Correct-Horse-Battery-2026!"
 
@@ -350,7 +351,7 @@ def test_own_role_all_and_unassigned_scopes_include_locked_owner_for_role_scope(
 def test_admin_me_and_xw0104_permissions_are_enforced():
     actor = superuser()
     client = APIClient()
-    client.force_authenticate(actor)
+    authenticate_admin_client(client, actor)
     me = client.get("/api/v1/admin/me")
     assert me.status_code == 200
     assert "phone" not in me.json()["data"]
@@ -365,7 +366,7 @@ def test_admin_me_and_xw0104_permissions_are_enforced():
         request_id=uuid.uuid4(),
     )
     ordinary = APIClient()
-    ordinary.force_authenticate(profile.user)
+    authenticate_admin_client(ordinary, profile.user)
     assert ordinary.get("/api/v1/admin/users").status_code == 200
     assert (
         ordinary.post(

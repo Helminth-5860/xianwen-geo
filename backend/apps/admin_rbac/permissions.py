@@ -51,8 +51,38 @@ class HasAdminPermission(BasePermission):
         required = getattr(view, "required_permission", None)
         if not required or required not in CATALOG_BY_KEY:
             return False
+        from .security import validate_admin_session
+
+        security_snapshot = validate_admin_session(request)
+        if security_snapshot is None:
+            return False
+        context = resolve_admin_context(request.user)
+        if context is None:
+            return False
+        request.admin_security_snapshot = security_snapshot
+        request.admin_context = context
+        return request.user.is_superuser or required in context.permission_keys
+
+
+class HasAdminSession(BasePermission):
+    message = "需要完成管理员安全认证"
+
+    def has_permission(self, request, view) -> bool:
+        from .security import validate_admin_session
+
+        snapshot = validate_admin_session(request)
+        if snapshot is None:
+            return False
+        request.admin_security_snapshot = snapshot
         context = resolve_admin_context(request.user)
         if context is None:
             return False
         request.admin_context = context
-        return request.user.is_superuser or required in context.permission_keys
+        return True
+
+
+class HasSuperuserAdminSession(HasAdminSession):
+    message = "只有超级管理员可以执行此操作"
+
+    def has_permission(self, request, view) -> bool:
+        return super().has_permission(request, view) and request.user.is_superuser

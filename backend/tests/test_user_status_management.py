@@ -16,6 +16,7 @@ from apps.users.status_services import (
     resubmit_approval,
     review_user,
 )
+from tests.admin_session_helpers import authenticate_admin_client
 
 PASSWORD = "Correct-Horse-Battery-2026!"
 CSRF_PATH = "/api/v1/auth/csrf"
@@ -43,6 +44,8 @@ def create_admin(phone="13900139000", **kwargs):
 
 def authenticated_client(user):
     client = APIClient()
+    if user.is_superuser:
+        return authenticate_admin_client(client, user)
     client.force_authenticate(user=user)
     return client
 
@@ -50,6 +53,9 @@ def authenticated_client(user):
 def browser_client(phone="13800138000"):
     client = APIClient(enforce_csrf_checks=True)
     csrf = client.get(CSRF_PATH).json()["data"]["csrf_token"]
+    user = User.objects.filter(phone=phone).first()
+    if user is not None and user.is_superuser:
+        return authenticate_admin_client(client, user)
     response = client.post(
         LOGIN_PATH,
         {"phone": phone, "password": PASSWORD},

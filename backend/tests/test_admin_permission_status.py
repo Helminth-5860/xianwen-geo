@@ -23,7 +23,7 @@ def csrf_client():
 
 def login(client, token, phone):
     return client.post(
-        "/api/v1/auth/login/password",
+        "/api/v1/admin/auth/login/password",
         {"phone": phone, "password": PASSWORD},
         format="json",
         HTTP_X_CSRFTOKEN=token,

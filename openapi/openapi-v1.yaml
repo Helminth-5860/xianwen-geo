@@ -900,6 +900,60 @@ paths:
       summary: 新增 API 密钥，明文只在请求中出现
       responses:
         '201': {description: 保存后只返回掩码}
+  /admin/auth/login/password:
+    post:
+      tags: [Admin]
+      security: []
+      summary: 管理员密码认证；按策略返回完整会话或临时二次验证 challenge
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AdminPasswordLoginRequest'}}}}
+      responses:
+        '200': {description: 管理员认证步骤成功, content: {application/json: {schema: {$ref: '#/components/schemas/AdminPasswordLoginEnvelope'}}}}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {description: CSRF 失败、管理员入口限制或 IP 不允许}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /admin/auth/login/sms/send:
+    post:
+      tags: [Admin]
+      security: []
+      summary: 为有效管理员登录 challenge 发送短信验证码
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AdminChallengeRequest'}}}}
+      responses:
+        '200': {description: 短信发送已受理}
+        '401': {description: challenge 无效、过期或上下文不匹配}
+        '403': {$ref: '#/components/responses/CsrfFailed'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /admin/auth/login/sms/verify:
+    post:
+      tags: [Admin]
+      security: []
+      summary: 验证管理员登录 challenge 并建立完整 Session
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AdminChallengeVerifyRequest'}}}}
+      responses:
+        '200': {description: 管理员完整 Session 已建立}
+        '401': {description: challenge 或验证码无效、过期、已消费或上下文不匹配}
+        '403': {$ref: '#/components/responses/CsrfFailed'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /admin/auth/logout:
+    post:
+      tags: [Admin]
+      summary: 注销当前管理员 Session
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      responses:
+        '200': {description: 管理员 Session 已注销}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/CsrfFailed'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /admin/me:
     get:
       tags: [Admin]
@@ -935,6 +989,13 @@ paths:
       parameters: [{$ref: '#/components/parameters/CsrfToken'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AdminUpdateRequest'}}}}
       responses: {'200': {description: 已更新}, '409': {description: ADMIN_VERSION_CONFLICT}}
+  /admin/admins/{adminId}/force-logout:
+    parameters: [{$ref: '#/components/parameters/AdminId'}]
+    post:
+      tags: [Admin]
+      summary: administrator security session_version administrator security Session
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      responses: {'200': {description: 当前或目标管理员的既有 Session 已撤销}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '500': {$ref: '#/components/responses/InternalError'}}
   /admin/admins/{adminId}/disable:
     $ref: '#/components/pathItems/AdminStatusAction'
   /admin/admins/{adminId}/enable:
@@ -973,6 +1034,68 @@ paths:
       parameters: [{$ref: '#/components/parameters/RoleId'}, {$ref: '#/components/parameters/CsrfToken'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ExpectedVersionRequest'}}}}
       responses: {'200': {description: 已停用}, '409': {description: ROLE_IN_USE 或 ROLE_VERSION_CONFLICT}}
+  /admin/roles/{roleId}/security:
+    parameters: [{$ref: '#/components/parameters/RoleId'}]
+    get:
+      tags: [Admin]
+      summary: 查询角色二次验证与 IP 白名单策略
+      responses: {'200': {description: 角色安全策略}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '500': {$ref: '#/components/responses/InternalError'}}
+    patch:
+      tags: [Admin]
+      summary: 原子更新角色安全策略并撤销旧 Session/challenge
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/RoleSecurityMutation'}}}}
+      responses: {'200': {description: 角色安全策略已更新}, '403': {description: 权限、CSRF、密码再验证或 IP 检查失败}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {description: SECURITY_POLICY_VERSION_CONFLICT 或锁出确认缺失}, '422': {$ref: '#/components/responses/ValidationError'}, '429': {$ref: '#/components/responses/RateLimited'}, '503': {$ref: '#/components/responses/ServiceUnavailable'}, '500': {$ref: '#/components/responses/InternalError'}}
+  /admin/roles/{roleId}/ip-allowlist:
+    parameters: [{$ref: '#/components/parameters/RoleId'}]
+    get:
+      tags: [Admin]
+      summary: 查询角色 IP 白名单条目
+      responses: {'200': {description: 角色 IP 白名单条目}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '500': {$ref: '#/components/responses/InternalError'}}
+    post:
+      tags: [Admin]
+      summary: 新增或恢复角色 CIDR 条目
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/IpAllowlistCreateRequest'}}}}
+      responses: {'201': {description: 角色 CIDR 条目已保存}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {description: 安全策略版本冲突或锁出确认缺失}, '422': {$ref: '#/components/responses/ValidationError'}, '429': {$ref: '#/components/responses/RateLimited'}, '503': {$ref: '#/components/responses/ServiceUnavailable'}, '500': {$ref: '#/components/responses/InternalError'}}
+  /admin/roles/{roleId}/ip-allowlist/{entryId}:
+    parameters: [{$ref: '#/components/parameters/RoleId'}, {name: entryId, in: path, required: true, schema: {type: string, format: uuid}}]
+    patch:
+      tags: [Admin]
+      summary: 更新角色 CIDR 条目状态；不物理删除
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/IpAllowlistUpdateRequest'}}}}
+      responses: {'200': {description: 角色 CIDR 条目已更新}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {description: 安全策略版本冲突或锁出确认缺失}, '422': {$ref: '#/components/responses/ValidationError'}, '429': {$ref: '#/components/responses/RateLimited'}, '503': {$ref: '#/components/responses/ServiceUnavailable'}, '500': {$ref: '#/components/responses/InternalError'}}
+  /admin/security/superuser:
+    get:
+      tags: [Admin]
+      summary: 查询当前超级管理员强制 2FA 与 IP 白名单策略
+      responses: {'200': {description: 超级管理员安全策略}, '403': {$ref: '#/components/responses/PermissionDenied'}, '500': {$ref: '#/components/responses/InternalError'}}
+    patch:
+      tags: [Admin]
+      summary: 更新当前超级管理员 IP 白名单策略；2FA 始终开启
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/SuperuserSecurityMutation'}}}}
+      responses: {'200': {description: 超级管理员安全策略已更新}, '403': {description: 权限、CSRF、密码再验证或 IP 检查失败}, '409': {description: 安全策略版本冲突或锁出确认缺失}, '422': {$ref: '#/components/responses/ValidationError'}, '429': {$ref: '#/components/responses/RateLimited'}, '503': {$ref: '#/components/responses/ServiceUnavailable'}, '500': {$ref: '#/components/responses/InternalError'}}
+  /admin/security/superuser/ip-allowlist:
+    get:
+      tags: [Admin]
+      summary: 查询当前超级管理员 IP 白名单条目
+      responses: {'200': {description: 超级管理员 IP 白名单条目}, '403': {$ref: '#/components/responses/PermissionDenied'}, '500': {$ref: '#/components/responses/InternalError'}}
+    post:
+      tags: [Admin]
+      summary: 新增或恢复超级管理员 CIDR 条目
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/IpAllowlistCreateRequest'}}}}
+      responses: {'201': {description: 超级管理员 CIDR 条目已保存}, '403': {$ref: '#/components/responses/PermissionDenied'}, '409': {description: 安全策略版本冲突或锁出确认缺失}, '422': {$ref: '#/components/responses/ValidationError'}, '429': {$ref: '#/components/responses/RateLimited'}, '503': {$ref: '#/components/responses/ServiceUnavailable'}, '500': {$ref: '#/components/responses/InternalError'}}
+  /admin/security/superuser/ip-allowlist/{entryId}:
+    parameters: [{name: entryId, in: path, required: true, schema: {type: string, format: uuid}}]
+    patch:
+      tags: [Admin]
+      summary: 更新超级管理员 CIDR 条目状态；不物理删除
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/IpAllowlistUpdateRequest'}}}}
+      responses: {'200': {description: 超级管理员 CIDR 条目已更新}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {description: 安全策略版本冲突或锁出确认缺失}, '422': {$ref: '#/components/responses/ValidationError'}, '429': {$ref: '#/components/responses/RateLimited'}, '503': {$ref: '#/components/responses/ServiceUnavailable'}, '500': {$ref: '#/components/responses/InternalError'}}
   /admin/permissions:
     get:
       tags: [Admin]
@@ -1256,6 +1379,13 @@ components:
         - AUTH_REQUIRED
         - AUTH_CREDENTIALS_INVALID
         - ACCOUNT_UNAVAILABLE
+        - ADMIN_LOGIN_REQUIRED
+        - ADMIN_AUTH_CHALLENGE_INVALID
+        - ADMIN_AUTH_CHALLENGE_EXPIRED
+        - ADMIN_IP_NOT_ALLOWED
+        - ADMIN_REAUTH_FAILED
+        - SECURITY_POLICY_VERSION_CONFLICT
+        - IP_ALLOWLIST_LOCKOUT_CONFIRMATION_REQUIRED
         - ACCOUNT_ALREADY_EXISTS
         - APPROVAL_STATE_CONFLICT
         - ACCOUNT_STATE_CONFLICT
@@ -1640,6 +1770,163 @@ components:
           properties:
             data:
               $ref: '#/components/schemas/AsyncTask'
+    AdminPasswordLoginRequest:
+      type: object
+      additionalProperties: false
+      required: [phone, password]
+      properties:
+        phone: {type: string}
+        password: {type: string, format: password, writeOnly: true}
+    AdminPasswordLoginEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          properties:
+            data:
+              type: object
+              required: [requires_2fa]
+              properties:
+                requires_2fa: {type: boolean}
+                challenge_id: {type: string, description: 仅用于本次管理员二次验证的临时标识}
+                expires_in: {type: integer, const: 300}
+    AdminChallengeRequest:
+      type: object
+      additionalProperties: false
+      required: [challenge_id]
+      properties: {challenge_id: {type: string, writeOnly: true}}
+    AdminChallengeVerifyRequest:
+      allOf:
+        - $ref: '#/components/schemas/AdminChallengeRequest'
+        - type: object
+          required: [sms_code]
+          properties:
+            sms_code:
+              type: string
+              pattern: '^[0-9]{6}$'
+              writeOnly: true
+    SecurityMutationBase:
+      type: object
+      additionalProperties: false
+      required: [current_password, expected_security_version]
+      properties:
+        current_password: {type: string, format: password, writeOnly: true}
+        expected_security_version: {type: integer, minimum: 1}
+        confirm_lockout: {type: boolean, default: false}
+    RoleSecurityMutation:
+      allOf:
+        - $ref: '#/components/schemas/SecurityMutationBase'
+        - type: object
+          properties:
+            require_sms_2fa: {type: boolean}
+            ip_allowlist_enabled: {type: boolean}
+    SuperuserSecurityMutation:
+      allOf:
+        - $ref: '#/components/schemas/SecurityMutationBase'
+        - type: object
+          properties:
+            ip_allowlist_enabled: {type: boolean}
+    IpAllowlistCreateRequest:
+      allOf:
+        - $ref: '#/components/schemas/SecurityMutationBase'
+        - type: object
+          required: [network_cidr]
+          properties:
+            network_cidr: {type: string, maxLength: 64}
+            label: {type: string, maxLength: 100}
+    IpAllowlistUpdateRequest:
+      allOf:
+        - $ref: '#/components/schemas/SecurityMutationBase'
+        - type: object
+          required: [status]
+          properties:
+            status: {type: string, enum: [active, inactive]}
+            label: {type: string, maxLength: 100}
+    AdminRoleSummary:
+      type: [object, 'null']
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        status: {type: string, enum: [active, inactive]}
+        data_scope: {type: string, enum: [own, role, all]}
+        version: {type: integer, minimum: 1}
+        require_sms_2fa: {type: boolean}
+        ip_allowlist_enabled: {type: boolean}
+        security_version: {type: integer, minimum: 1}
+        permission_keys: {type: array, items: {type: string}}
+    AdminProfile:
+      type: object
+      required: [id, nickname, phone_masked, is_superuser, admin_status, version]
+      properties:
+        id: {type: string, format: uuid}
+        nickname: {type: string}
+        phone_masked: {type: string}
+        is_superuser: {type: boolean}
+        admin_status: {type: string, enum: [active, disabled, locked]}
+        version: {type: integer, minimum: 1}
+        role: {$ref: '#/components/schemas/AdminRoleSummary'}
+    AdminContextEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          properties:
+            data:
+              allOf:
+                - $ref: '#/components/schemas/AdminProfile'
+                - type: object
+                  properties:
+                    admin_version: {type: integer, minimum: 1}
+                    data_scope: {type: string, enum: [own, role, all]}
+                    permission_keys: {type: array, items: {type: string}}
+                    menu_keys: {type: array, items: {type: string}}
+    AdminCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [phone, nickname, password, role_id]
+      properties:
+        phone: {type: string}
+        nickname: {type: string, maxLength: 50}
+        password: {type: string, format: password, writeOnly: true}
+        role_id: {type: string, format: uuid}
+    AdminUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version]
+      properties:
+        expected_version: {type: integer, minimum: 1}
+        nickname: {type: string, maxLength: 50}
+        role_id: {type: string, format: uuid}
+    ExpectedVersionRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version]
+      properties:
+        expected_version: {type: integer, minimum: 1}
+    RoleCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [name, data_scope]
+      properties:
+        name: {type: string, maxLength: 80}
+        description: {type: string, maxLength: 500}
+        data_scope: {type: string, enum: [own, role, all]}
+    RoleUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version]
+      properties:
+        expected_version: {type: integer, minimum: 1}
+        name: {type: string, maxLength: 80}
+        description: {type: string, maxLength: 500}
+        data_scope: {type: string, enum: [own, role, all]}
+        permission_keys: {type: array, uniqueItems: true, items: {type: string}}
+    AssignmentUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [owner_admin_id, expected_version]
+      properties:
+        owner_admin_id: {type: [string, 'null'], format: uuid}
+        expected_version: {type: integer, minimum: 0}
+        reason: {type: string, maxLength: 200}
     AdminRoleSummary:
       type: [object, 'null']
       properties:

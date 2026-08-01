@@ -99,3 +99,5 @@ jobs:
         run: bash scripts/check.sh docker
       - name: Run PostgreSQL RBAC tests
         run: bash scripts/test-postgres-rbac.sh
+      - name: Run PostgreSQL/Redis administrator security tests
+        run: bash scripts/test-admin-security.sh

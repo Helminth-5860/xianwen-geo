@@ -48,6 +48,9 @@ export default function AdminRoleDetailPage() {
         <Space direction="vertical" size="large" style={{ width: "100%" }}>
           <Button href="/admin/roles">返回角色列表</Button>
           <Typography.Title level={2}>角色权限配置</Typography.Title>
+          {capabilities?.permission_keys.includes("roles.update") && (
+            <Button href={`/admin/roles/${id}/security`}>登录安全与 IP 白名单</Button>
+          )}
           {error && <Alert type="error" message={error} />}
           {capabilities?.permission_keys.includes("roles.update") && (
             <Form

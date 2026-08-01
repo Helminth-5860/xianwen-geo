@@ -275,6 +275,21 @@ class PasswordLoginView(APIView):
         user = result.user
         if user is None:
             raise RuntimeError("成功认证缺少用户。")
+        from apps.admin_rbac.security import admin_identity
+
+        if admin_identity(user):
+            record_password_login_event(
+                normalized_phone=normalized_phone,
+                user=user,
+                success=False,
+                failure_reason=LoginEvent.FailureReason.INACTIVE_ACCOUNT,
+                request=request,
+            )
+            return error_response(
+                ErrorCode.ADMIN_LOGIN_REQUIRED,
+                status_code=HTTP_403_FORBIDDEN,
+                request=request,
+            )
         try:
             user = start_browser_session(request, user.pk)
             record_password_login_event(
@@ -356,6 +371,22 @@ class SmsLoginView(APIView):
                 message=SMS_CREDENTIALS_MESSAGE,
             )
 
+        from apps.admin_rbac.security import admin_identity
+
+        if admin_identity(user):
+            record_login_event(
+                normalized_phone=normalized_phone,
+                user=user,
+                login_method=LoginEvent.LoginMethod.SMS,
+                success=False,
+                failure_reason=LoginEvent.FailureReason.INACTIVE_ACCOUNT,
+                request=request,
+            )
+            return error_response(
+                ErrorCode.ADMIN_LOGIN_REQUIRED,
+                status_code=HTTP_403_FORBIDDEN,
+                request=request,
+            )
         unavailable = _clear_valid_submission(request, limiter, keys)
         if unavailable:
             return unavailable

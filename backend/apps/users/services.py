@@ -126,11 +126,15 @@ def should_deliver_sms(normalized_phone: str, purpose: SmsPurpose | str) -> bool
     resolved_purpose = parse_sms_purpose(purpose)
     if resolved_purpose is SmsPurpose.REGISTER:
         return True
-    return (
-        User.objects.filter(phone=normalized_phone)
-        .exclude(account_status=User.AccountStatus.CANCELLED)
-        .exists()
-    )
+    user = User.objects.filter(phone=normalized_phone).first()
+    if user is None or user.account_status == User.AccountStatus.CANCELLED:
+        return False
+    if resolved_purpose is SmsPurpose.LOGIN:
+        from apps.admin_rbac.security import admin_identity
+
+        if admin_identity(user):
+            return False
+    return True
 
 
 def create_registered_user(*, phone: str, nickname: str, password: str) -> User:
