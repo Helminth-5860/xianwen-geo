@@ -88,6 +88,7 @@ def test_admin_list_detail_filters_phone_and_minimizes_fields():
         "phone_masked": "+86 138****8000",
         "approval_status": "pending",
         "account_status": "active",
+        "status_version": 1,
         "approved_at": None,
         "created_at": result["created_at"],
     }
@@ -154,7 +155,12 @@ def test_review_approve_and_reject_create_append_only_history_and_safe_notificat
     )
     rejected = client.post(
         f"/api/v1/admin/users/{rejected_user.id}/review",
-        {"decision": "reject", "reason": "主体资料不完整"},
+        {
+            "decision": "reject",
+            "reason": "主体资料不完整",
+            "expected_version": rejected_user.status_version,
+            "confirmed": True,
+        },
         format="json",
     )
 
@@ -193,11 +199,24 @@ def test_reject_requires_safe_reason_and_repeat_review_conflicts():
     client = authenticated_client(admin)
     path = f"/api/v1/admin/users/{user.id}/review"
 
-    missing = client.post(path, {"decision": "reject"}, format="json")
-    html = client.post(path, {"decision": "reject", "reason": "<b>拒绝</b>"}, format="json")
+    controls = {"expected_version": user.status_version, "confirmed": True}
+    missing = client.post(path, {"decision": "reject", **controls}, format="json")
+    html = client.post(
+        path, {"decision": "reject", "reason": "<b>拒绝</b>", **controls}, format="json"
+    )
     first = client.post(path, {"decision": "approve"}, format="json")
     assert missing.json()["error"]["message"] == "拒绝审核时必须填写原因"
-    repeat = client.post(path, {"decision": "reject", "reason": "重复操作"}, format="json")
+    user.refresh_from_db()
+    repeat = client.post(
+        path,
+        {
+            "decision": "reject",
+            "reason": "重复操作",
+            "expected_version": user.status_version,
+            "confirmed": True,
+        },
+        format="json",
+    )
 
     assert missing.status_code == 422
     assert missing.json()["error"]["code"] == "APPROVAL_REASON_REQUIRED"
@@ -215,7 +234,12 @@ def test_rejected_user_can_resubmit_with_optional_nickname_and_retains_history()
     admin_client = authenticated_client(admin)
     admin_client.post(
         f"/api/v1/admin/users/{user.id}/review",
-        {"decision": "reject", "reason": "资料需要补充"},
+        {
+            "decision": "reject",
+            "reason": "资料需要补充",
+            "expected_version": user.status_version,
+            "confirmed": True,
+        },
         format="json",
     )
     user.refresh_from_db()
@@ -301,7 +325,11 @@ def test_staff_and_superuser_cannot_be_business_status_targets():
             == 404
         )
         assert (
-            client.post(f"/api/v1/admin/users/{target.id}/freeze", {}, format="json").status_code
+            client.post(
+                f"/api/v1/admin/users/{target.id}/freeze",
+                {"expected_version": target.status_version, "confirmed": True},
+                format="json",
+            ).status_code
             == 404
         )
 
@@ -314,12 +342,22 @@ def test_notifications_are_isolated_and_read_requires_csrf_with_browser_session(
     admin_client = authenticated_client(admin)
     admin_client.post(
         f"/api/v1/admin/users/{first.id}/review",
-        {"decision": "reject", "reason": "第一位用户原因"},
+        {
+            "decision": "reject",
+            "reason": "第一位用户原因",
+            "expected_version": first.status_version,
+            "confirmed": True,
+        },
         format="json",
     )
     admin_client.post(
         f"/api/v1/admin/users/{second.id}/review",
-        {"decision": "reject", "reason": "第二位用户原因"},
+        {
+            "decision": "reject",
+            "reason": "第二位用户原因",
+            "expected_version": second.status_version,
+            "confirmed": True,
+        },
         format="json",
     )
     first_client = browser_client()
@@ -362,13 +400,23 @@ def test_admin_and_resubmit_writes_require_real_csrf():
 
     missing_admin_csrf = admin_client.post(
         review_path,
-        {"decision": "reject", "reason": "需要补充资料"},
+        {
+            "decision": "reject",
+            "reason": "需要补充资料",
+            "expected_version": target.status_version,
+            "confirmed": True,
+        },
         format="json",
     )
     admin_csrf = admin_client.cookies["xianwen_csrf"].value
     reviewed = admin_client.post(
         review_path,
-        {"decision": "reject", "reason": "需要补充资料"},
+        {
+            "decision": "reject",
+            "reason": "需要补充资料",
+            "expected_version": target.status_version,
+            "confirmed": True,
+        },
         format="json",
         HTTP_X_CSRFTOKEN=admin_csrf,
     )
@@ -405,7 +453,11 @@ def test_freeze_invalidates_multiple_sessions_and_unfreeze_does_not_restore_them
     second = browser_client()
     admin_client = authenticated_client(admin)
 
-    frozen = admin_client.post(f"/api/v1/admin/users/{user.id}/freeze", {}, format="json")
+    frozen = admin_client.post(
+        f"/api/v1/admin/users/{user.id}/freeze",
+        {"expected_version": user.status_version, "confirmed": True},
+        format="json",
+    )
     assert frozen.status_code == 200
     assert first.get(ME_PATH).status_code == 401
     assert second.get(ME_PATH).status_code == 401

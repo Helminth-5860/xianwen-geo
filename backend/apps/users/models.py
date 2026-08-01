@@ -52,6 +52,7 @@ class User(AbstractBaseUser, PermissionsMixin):
         related_name="approved_users",
     )
     session_version: models.PositiveBigIntegerField = models.PositiveBigIntegerField(default=1)
+    status_version: models.PositiveBigIntegerField = models.PositiveBigIntegerField(default=1)
     is_staff: models.BooleanField = models.BooleanField(default=False)
     is_active: models.BooleanField = models.BooleanField(default=True)
     created_at: models.DateTimeField = models.DateTimeField(auto_now_add=True, db_index=True)
@@ -78,7 +79,11 @@ class User(AbstractBaseUser, PermissionsMixin):
                     )
                 ),
                 name="user_account_status_active_consistent",
-            )
+            ),
+            models.CheckConstraint(
+                condition=models.Q(status_version__gte=1),
+                name="user_status_version_gte_1",
+            ),
         ]
 
     def __str__(self) -> str:

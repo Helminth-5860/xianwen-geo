@@ -21,7 +21,8 @@ describe("管理员 RBAC 和数据范围页面", () => {
   it("前端实现版本冲突和客户归属冲突提示", () => {
     const admin = read("../app/admin/admins/[id]/page.tsx");
     const role = read("../app/admin/roles/[id]/page.tsx");
-    expect(admin).toContain("ADMIN_HAS_ASSIGNED_CUSTOMERS");
+    expect(admin).toContain('modes["admin.disable"]');
+    expect(admin).toContain("approval_id");
     expect(admin).toContain("expected_version");
     expect(role).toContain("expected_version");
     expect(role).toContain("版本冲突");

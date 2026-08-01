@@ -12,11 +12,13 @@ export type Role = Readonly<{
 
 export type AdminProfile = Readonly<{
   id: string;
+  user_id: string;
   nickname: string;
   phone_masked: string;
   is_superuser: boolean;
   admin_status: "active" | "disabled" | "locked";
   version: number;
+  logout_version: number;
   role: Role | null;
 }>;
 
@@ -44,17 +46,84 @@ export const createAdmin = (body: Record<string, unknown>) =>
   post<AdminProfile>("/admin/admins", body);
 export const updateAdmin = (id: string, body: Record<string, unknown>) =>
   write<AdminProfile>("PATCH", `/admin/admins/${id}`, body);
-export const changeAdminStatus = (id: string, action: string, expectedVersion: number) =>
-  post<AdminProfile>(`/admin/admins/${id}/${action}`, {
+export type RiskCredentials = Readonly<{
+  confirmed: true;
+  current_password: string;
+}>;
+
+export type CustomerAssignment = Readonly<{
+  id: string | null;
+  customer_id: string;
+  owner_admin_id: string | null;
+  owner_nickname: string | null;
+  owner_phone_masked: string;
+  version: number;
+  assigned_at: string | null;
+}>;
+
+export const getCustomerAssignment = (customerId: string) =>
+  get<CustomerAssignment>(`/admin/users/${customerId}/assignment`);
+
+export const changeCustomerAssignment = (
+  customerId: string,
+  ownerAdminId: string | null,
+  expectedVersion: number,
+  reason: string,
+  credentials: RiskCredentials,
+) =>
+  write<import("./risk-client").RiskExecution<CustomerAssignment>>(
+    "PUT",
+    `/admin/users/${customerId}/assignment`,
+    {
+      owner_admin_id: ownerAdminId,
+      expected_version: expectedVersion,
+      reason,
+      ...credentials,
+    },
+  );
+
+export const changeAdminStatus = (
+  id: string,
+  action: string,
+  expectedVersion: number,
+  credentials: Partial<RiskCredentials> = {},
+) =>
+  post<import("./risk-client").RiskExecution<AdminProfile>>(`/admin/admins/${id}/${action}`, {
     expected_version: expectedVersion,
+    ...credentials,
+  });
+export const changeAdminRole = (
+  id: string,
+  roleId: string,
+  expectedVersion: number,
+  credentials: RiskCredentials,
+) =>
+  post<import("./risk-client").RiskExecution<AdminProfile>>(`/admin/admins/${id}/role`, {
+    role_id: roleId,
+    expected_version: expectedVersion,
+    ...credentials,
   });
 export const getRoles = () => get<PageData<Role>>("/admin/roles");
 export const getRole = (id: string) => get<Role>(`/admin/roles/${id}`);
 export const createRole = (body: Record<string, unknown>) => post<Role>("/admin/roles", body);
 export const updateRole = (id: string, body: Record<string, unknown>) =>
   write<Role>("PATCH", `/admin/roles/${id}`, body);
-export const disableRole = (id: string, expectedVersion: number) =>
-  post<Role>(`/admin/roles/${id}/disable`, { expected_version: expectedVersion });
+export const replaceRolePermissions = (
+  id: string,
+  permissionKeys: string[],
+  expectedVersion: number,
+  credentials: RiskCredentials,
+) =>
+  write<import("./risk-client").RiskExecution<Role>>("PUT", `/admin/roles/${id}/permissions`, {
+    permission_keys: permissionKeys,
+    expected_version: expectedVersion,
+    ...credentials,
+  });
+export const disableRole = (id: string, expectedVersion: number, credentials: RiskCredentials) =>
+  post<import("./risk-client").RiskExecution<Role>>(`/admin/roles/${id}/disable`, {
+    expected_version: expectedVersion,
+    ...credentials,
+  });
 export const getPermissions = () => get<CatalogPermission[]>("/admin/permissions");
 export type AdminLoginPasswordResult =
   | Readonly<{ requires_2fa: true; challenge_id: string; expires_in: number }>
@@ -132,5 +201,12 @@ export const updateSuperuserIpAllowlistEntry = (entryId: string, body: Record<st
     `/admin/security/superuser/ip-allowlist/${entryId}`,
     body,
   );
-export const forceLogoutAdmin = (id: string) =>
-  post<{ logged_out: true; admin_id: string }>(`/admin/admins/${id}/force-logout`, {});
+export const forceLogoutAdmin = (
+  id: string,
+  expectedVersion: number,
+  credentials: RiskCredentials,
+) =>
+  post<import("./risk-client").RiskExecution<{ logged_out: true; admin_id: string }>>(
+    `/admin/admins/${id}/force-logout`,
+    { expected_version: expectedVersion, ...credentials },
+  );

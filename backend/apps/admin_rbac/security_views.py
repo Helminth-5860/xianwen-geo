@@ -6,6 +6,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.status import (
     HTTP_201_CREATED,
+    HTTP_202_ACCEPTED,
     HTTP_401_UNAUTHORIZED,
     HTTP_403_FORBIDDEN,
     HTTP_409_CONFLICT,
@@ -34,6 +35,8 @@ from .models import (
     SuperuserSecurityPolicy,
 )
 from .permissions import HasAdminSession, HasSuperuserAdminSession
+from .risk_services import RiskError, perform_risk_action
+from .risk_views import risk_error_response
 from .security import (
     AdminChallengeExpired,
     AdminChallengeInvalid,
@@ -46,20 +49,11 @@ from .security import (
     SecurityPolicyVersionConflict,
     clear_admin_session,
     create_admin_challenge,
-    force_logout_admin,
     record_security_event,
     security_snapshot,
     send_admin_second_factor,
     start_admin_session,
     verify_admin_second_factor,
-)
-from .security_services import (
-    create_role_ip_entry,
-    create_superuser_ip_entry,
-    update_role_ip_entry,
-    update_role_security,
-    update_superuser_ip_entry,
-    update_superuser_security,
 )
 from .serializers import (
     AdminChallengeSerializer,
@@ -72,6 +66,7 @@ from .serializers import (
     SuperuserIpAllowlistSerializer,
     SuperuserSecurityPolicySerializer,
     SuperuserSecurityUpdateSerializer,
+    VersionSerializer,
 )
 
 
@@ -338,13 +333,25 @@ class RoleSecurityView(APIView):
     def patch(self, request, role_id):
         serializer = RoleSecurityUpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
         try:
-            role = update_role_security(
-                actor_id=request.user.pk,
-                role_id=role_id,
+            result = perform_risk_action(
                 request=request,
-                **serializer.validated_data,
+                action_key="role.security.update",
+                target_id=role_id,
+                target_version=data["expected_security_version"],
+                raw_payload={
+                    key: value
+                    for key, value in data.items()
+                    if key not in {"current_password", "expected_security_version"}
+                },
+                current_password=data["current_password"],
             )
+            if result.approval_required:
+                return Response(result.data, status=HTTP_202_ACCEPTED)
+            role = AdminRole.objects.get(pk=role_id)
+        except RiskError as exc:
+            return risk_error_response(exc, request)
         except AdminRole.DoesNotExist as exc:
             raise NotFound from exc
         except (
@@ -380,13 +387,27 @@ class RoleIpAllowlistView(APIView):
     def post(self, request, role_id):
         serializer = IpAllowlistCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
         try:
-            entry, role = create_role_ip_entry(
-                actor_id=request.user.pk,
-                role_id=role_id,
+            result = perform_risk_action(
                 request=request,
-                **serializer.validated_data,
+                action_key="role.ip_allowlist.update",
+                target_id=role_id,
+                target_version=data["expected_security_version"],
+                raw_payload={
+                    "operation": "create",
+                    "network_cidr": data["network_cidr"],
+                    "label": data.get("label", ""),
+                    "confirm_lockout": data["confirm_lockout"],
+                },
+                current_password=data["current_password"],
             )
+            if result.approval_required:
+                return Response(result.data, status=HTTP_202_ACCEPTED)
+            entry = RoleIpAllowlistEntry.objects.get(pk=result.data["entry_id"], role_id=role_id)
+            role = AdminRole.objects.get(pk=role_id)
+        except RiskError as exc:
+            return risk_error_response(exc, request)
         except AdminRole.DoesNotExist as exc:
             raise NotFound from exc
         except (
@@ -415,14 +436,28 @@ class RoleIpAllowlistDetailView(APIView):
     def patch(self, request, role_id, entry_id):
         serializer = IpAllowlistUpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
         try:
-            entry, role = update_role_ip_entry(
-                actor_id=request.user.pk,
-                role_id=role_id,
-                entry_id=entry_id,
+            result = perform_risk_action(
                 request=request,
-                **serializer.validated_data,
+                action_key="role.ip_allowlist.update",
+                target_id=role_id,
+                target_version=data["expected_security_version"],
+                raw_payload={
+                    "operation": "update",
+                    "entry_id": entry_id,
+                    "status": data["status"],
+                    "label": data.get("label", ""),
+                    "confirm_lockout": data["confirm_lockout"],
+                },
+                current_password=data["current_password"],
             )
+            if result.approval_required:
+                return Response(result.data, status=HTTP_202_ACCEPTED)
+            entry = RoleIpAllowlistEntry.objects.get(pk=entry_id, role_id=role_id)
+            role = AdminRole.objects.get(pk=role_id)
+        except RiskError as exc:
+            return risk_error_response(exc, request)
         except (AdminRole.DoesNotExist, RoleIpAllowlistEntry.DoesNotExist) as exc:
             raise NotFound from exc
         except (
@@ -456,10 +491,25 @@ class SuperuserSecurityView(APIView):
     def patch(self, request):
         serializer = SuperuserSecurityUpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
         try:
-            policy = update_superuser_security(
-                actor_id=request.user.pk, request=request, **serializer.validated_data
+            result = perform_risk_action(
+                request=request,
+                action_key="superuser.ip_allowlist.update",
+                target_id=request.user.pk,
+                target_version=data["expected_security_version"],
+                raw_payload={
+                    "operation": "policy",
+                    "ip_allowlist_enabled": data["ip_allowlist_enabled"],
+                    "confirm_lockout": data["confirm_lockout"],
+                },
+                current_password=data["current_password"],
             )
+            if result.approval_required:
+                return Response(result.data, status=HTTP_202_ACCEPTED)
+            policy = SuperuserSecurityPolicy.objects.get(user=request.user)
+        except RiskError as exc:
+            return risk_error_response(exc, request)
         except (
             SecurityPolicyVersionConflict,
             LockoutConfirmationRequired,
@@ -488,10 +538,27 @@ class SuperuserIpAllowlistView(APIView):
     def post(self, request):
         serializer = IpAllowlistCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
         try:
-            entry, policy = create_superuser_ip_entry(
-                actor_id=request.user.pk, request=request, **serializer.validated_data
+            result = perform_risk_action(
+                request=request,
+                action_key="superuser.ip_allowlist.update",
+                target_id=request.user.pk,
+                target_version=data["expected_security_version"],
+                raw_payload={
+                    "operation": "create",
+                    "network_cidr": data["network_cidr"],
+                    "label": data.get("label", ""),
+                    "confirm_lockout": data["confirm_lockout"],
+                },
+                current_password=data["current_password"],
             )
+            if result.approval_required:
+                return Response(result.data, status=HTTP_202_ACCEPTED)
+            entry = SuperuserIpAllowlistEntry.objects.get(pk=result.data["entry_id"])
+            policy = SuperuserSecurityPolicy.objects.get(user=request.user)
+        except RiskError as exc:
+            return risk_error_response(exc, request)
         except (
             SecurityPolicyVersionConflict,
             LockoutConfirmationRequired,
@@ -518,13 +585,28 @@ class SuperuserIpAllowlistDetailView(APIView):
     def patch(self, request, entry_id):
         serializer = IpAllowlistUpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
         try:
-            entry, policy = update_superuser_ip_entry(
-                actor_id=request.user.pk,
-                entry_id=entry_id,
+            result = perform_risk_action(
                 request=request,
-                **serializer.validated_data,
+                action_key="superuser.ip_allowlist.update",
+                target_id=request.user.pk,
+                target_version=data["expected_security_version"],
+                raw_payload={
+                    "operation": "update",
+                    "entry_id": entry_id,
+                    "status": data["status"],
+                    "label": data.get("label", ""),
+                    "confirm_lockout": data["confirm_lockout"],
+                },
+                current_password=data["current_password"],
             )
+            if result.approval_required:
+                return Response(result.data, status=HTTP_202_ACCEPTED)
+            entry = SuperuserIpAllowlistEntry.objects.get(pk=entry_id)
+            policy = SuperuserSecurityPolicy.objects.get(user=request.user)
+        except RiskError as exc:
+            return risk_error_response(exc, request)
         except SuperuserIpAllowlistEntry.DoesNotExist as exc:
             raise NotFound from exc
         except (
@@ -552,8 +634,28 @@ class AdminForceLogoutView(APIView):
     def post(self, request, profile_id):
         if not request.user.is_superuser:
             return _admin_failure(ErrorCode.PERMISSION_DENIED, HTTP_403_FORBIDDEN, request)
+        serializer = VersionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
         try:
-            profile = force_logout_admin(actor=request.user, profile_id=profile_id, request=request)
+            result = perform_risk_action(
+                request=request,
+                action_key="admin.force_logout",
+                target_id=profile_id,
+                target_version=data["expected_version"],
+                raw_payload={},
+                confirmed=data["confirmed"],
+                current_password=data["current_password"],
+            )
+        except (
+            RiskError,
+            AdminReauthFailed,
+            AdminReauthRateLimited,
+            AdminSecurityUnavailable,
+        ) as exc:
+            return risk_error_response(exc, request)
         except AdminProfile.DoesNotExist as exc:
             raise NotFound from exc
-        return Response({"logged_out": True, "admin_id": str(profile.pk)})
+        if result.approval_required:
+            return Response(result.data, status=HTTP_202_ACCEPTED)
+        return Response(result.data)

@@ -101,3 +101,5 @@ jobs:
         run: bash scripts/test-postgres-rbac.sh
       - name: Run PostgreSQL/Redis administrator security tests
         run: bash scripts/test-admin-security.sh
+      - name: Run PostgreSQL/Redis high-risk approval tests
+        run: bash scripts/test-risk-approval.sh

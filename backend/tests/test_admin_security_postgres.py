@@ -38,6 +38,7 @@ def require_postgresql():
 @pytest.fixture(autouse=True)
 def real_infrastructure():
     require_postgresql()
+    call_command("sync_admin_rbac", "--apply", verbosity=0)
     redis = get_redis_connection("default")
     redis.ping()
     redis.flushdb()
@@ -626,7 +627,7 @@ def test_superuser_allowlist_full_api_and_every_request_enforcement(settings):
         REMOTE_ADDR="127.0.0.1",
     )
     assert conflict.status_code == 409
-    assert conflict.json()["error"]["code"] == "SECURITY_POLICY_VERSION_CONFLICT"
+    assert conflict.json()["error"]["code"] == "APPROVAL_STALE"
 
     lockout_user = make_superuser("13900139016")
     lockout_policy = lockout_user.superuser_security_policy
@@ -760,7 +761,7 @@ def test_superuser_emergency_recovery_and_self_force_logout_are_session_only():
     profile = user.admin_profile
     forced = fresh_client.post(
         f"/api/v1/admin/admins/{profile.id}/force-logout",
-        {},
+        {"expected_version": before_force, "confirmed": True},
         format="json",
         HTTP_X_CSRFTOKEN=fresh_csrf,
         HTTP_USER_AGENT="xw-0106-postgres",

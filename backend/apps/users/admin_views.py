@@ -5,13 +5,21 @@ from django.views.decorators.csrf import csrf_protect
 from rest_framework.response import Response
 from rest_framework.status import (
     HTTP_200_OK,
+    HTTP_202_ACCEPTED,
     HTTP_409_CONFLICT,
     HTTP_422_UNPROCESSABLE_ENTITY,
 )
 from rest_framework.views import APIView
 
 from apps.admin_rbac.permissions import HasAdminPermission
+from apps.admin_rbac.risk_services import RiskError, perform_risk_action
+from apps.admin_rbac.risk_views import risk_error_response
 from apps.admin_rbac.scopes import scoped_customer_or_404, scoped_customers
+from apps.admin_rbac.security import (
+    AdminReauthFailed,
+    AdminReauthRateLimited,
+    AdminSecurityUnavailable,
+)
 from apps.core.error_codes import ErrorCode
 from apps.core.responses import error_response
 
@@ -21,6 +29,7 @@ from .serializers import (
     AdminUserDetailSerializer,
     AdminUserListQuerySerializer,
     AdminUserListSerializer,
+    FreezeStatusActionSerializer,
     PaginationSerializer,
     ReviewUserSerializer,
     UserStatusEventSerializer,
@@ -125,13 +134,35 @@ class AdminUserReviewView(APIView):
                 request=request,
             )
         try:
-            result = review_user(
-                actor_id=request.user.pk,
-                user_id=user_id,
-                decision=data["decision"],
-                reason=data.get("reason", ""),
-                request_id=request.request_id,
-            )
+            if data["decision"] == "reject":
+                risk_result = perform_risk_action(
+                    request=request,
+                    action_key="user.review.reject",
+                    target_id=user_id,
+                    target_version=data["expected_version"],
+                    raw_payload={"reason": data.get("reason", "")},
+                    confirmed=data["confirmed"],
+                    current_password=data["current_password"],
+                )
+                if risk_result.approval_required:
+                    return Response(risk_result.data, status=HTTP_202_ACCEPTED)
+                user = User.objects.get(pk=user_id)
+            else:
+                result = review_user(
+                    actor_id=request.user.pk,
+                    user_id=user_id,
+                    decision=data["decision"],
+                    reason=data.get("reason", ""),
+                    request_id=request.request_id,
+                )
+                user = result.user
+        except (
+            RiskError,
+            AdminReauthFailed,
+            AdminReauthRateLimited,
+            AdminSecurityUnavailable,
+        ) as exc:
+            return risk_error_response(exc, request)
         except ApprovalReasonRequired:
             return error_response(
                 ErrorCode.APPROVAL_REASON_REQUIRED,
@@ -144,7 +175,7 @@ class AdminUserReviewView(APIView):
                 status_code=HTTP_409_CONFLICT,
                 request=request,
             )
-        return Response(AdminUserDetailSerializer(result.user).data, status=HTTP_200_OK)
+        return Response(AdminUserDetailSerializer(user).data, status=HTTP_200_OK)
 
 
 class _AdminAccountStatusView(APIView):
@@ -154,23 +185,51 @@ class _AdminAccountStatusView(APIView):
 
     def post(self, request, user_id):
         scoped_customer_or_404(request.user, request.admin_context, user_id)
-        serializer = AccountStatusActionSerializer(data=request.data)
+        serializer_class = (
+            FreezeStatusActionSerializer
+            if self.action == "freeze"
+            else AccountStatusActionSerializer
+        )
+        serializer = serializer_class(data=request.data)
         serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
         try:
-            result = change_account_status(
-                actor_id=request.user.pk,
-                user_id=user_id,
-                action=self.action,
-                reason=serializer.validated_data.get("reason", ""),
-                request_id=request.request_id,
-            )
+            if self.action == "freeze":
+                risk_result = perform_risk_action(
+                    request=request,
+                    action_key="user.freeze",
+                    target_id=user_id,
+                    target_version=data["expected_version"],
+                    raw_payload={"reason": data.get("reason", "")},
+                    confirmed=data["confirmed"],
+                    current_password=data["current_password"],
+                )
+                if risk_result.approval_required:
+                    return Response(risk_result.data, status=HTTP_202_ACCEPTED)
+                user = User.objects.get(pk=user_id)
+            else:
+                result = change_account_status(
+                    actor_id=request.user.pk,
+                    user_id=user_id,
+                    action=self.action,
+                    reason=data.get("reason", ""),
+                    request_id=request.request_id,
+                )
+                user = result.user
+        except (
+            RiskError,
+            AdminReauthFailed,
+            AdminReauthRateLimited,
+            AdminSecurityUnavailable,
+        ) as exc:
+            return risk_error_response(exc, request)
         except AccountStateConflict:
             return error_response(
                 ErrorCode.ACCOUNT_STATE_CONFLICT,
                 status_code=HTTP_409_CONFLICT,
                 request=request,
             )
-        return Response(AdminUserDetailSerializer(result.user).data)
+        return Response(AdminUserDetailSerializer(user).data)
 
 
 @method_decorator(csrf_protect, name="dispatch")

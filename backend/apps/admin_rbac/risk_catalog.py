@@ -1,0 +1,151 @@
+from dataclasses import dataclass
+
+CONFIRM = "confirm"
+PASSWORD = "password"
+TWO_PERSON = "two_person"
+MODE_STRENGTH = {CONFIRM: 1, PASSWORD: 2, TWO_PERSON: 3}
+CATALOG_VERSION = 1
+
+
+@dataclass(frozen=True)
+class RiskActionDefinition:
+    key: str
+    name: str
+    module: str
+    target_type: str
+    supported_modes: tuple[str, ...]
+    default_mode: str
+    minimum_mode: str
+    handler_key: str
+
+
+RISK_ACTION_CATALOG = (
+    RiskActionDefinition(
+        "admin.disable",
+        "停用管理员",
+        "admins",
+        "admin_profile",
+        (PASSWORD, TWO_PERSON),
+        TWO_PERSON,
+        PASSWORD,
+        "admin.disable",
+    ),
+    RiskActionDefinition(
+        "admin.lock",
+        "锁定管理员",
+        "admins",
+        "admin_profile",
+        (PASSWORD, TWO_PERSON),
+        PASSWORD,
+        PASSWORD,
+        "admin.lock",
+    ),
+    RiskActionDefinition(
+        "admin.role.change",
+        "变更管理员角色",
+        "admins",
+        "admin_profile",
+        (PASSWORD, TWO_PERSON),
+        TWO_PERSON,
+        PASSWORD,
+        "admin.role.change",
+    ),
+    RiskActionDefinition(
+        "admin.force_logout",
+        "强制管理员退出",
+        "admins",
+        "admin_profile",
+        (CONFIRM, PASSWORD, TWO_PERSON),
+        CONFIRM,
+        CONFIRM,
+        "admin.force_logout",
+    ),
+    RiskActionDefinition(
+        "role.permissions.replace",
+        "替换角色权限",
+        "roles",
+        "admin_role",
+        (TWO_PERSON,),
+        TWO_PERSON,
+        TWO_PERSON,
+        "role.permissions.replace",
+    ),
+    RiskActionDefinition(
+        "role.disable",
+        "停用角色",
+        "roles",
+        "admin_role",
+        (PASSWORD, TWO_PERSON),
+        PASSWORD,
+        PASSWORD,
+        "role.disable",
+    ),
+    RiskActionDefinition(
+        "role.security.update",
+        "更新角色登录安全策略",
+        "roles",
+        "admin_role",
+        (PASSWORD,),
+        PASSWORD,
+        PASSWORD,
+        "role.security.update",
+    ),
+    RiskActionDefinition(
+        "role.ip_allowlist.update",
+        "更新角色 IP 白名单",
+        "roles",
+        "admin_role",
+        (PASSWORD,),
+        PASSWORD,
+        PASSWORD,
+        "role.ip_allowlist.update",
+    ),
+    RiskActionDefinition(
+        "superuser.ip_allowlist.update",
+        "更新超级管理员 IP 白名单",
+        "security",
+        "superuser_policy",
+        (PASSWORD,),
+        PASSWORD,
+        PASSWORD,
+        "superuser.ip_allowlist.update",
+    ),
+    RiskActionDefinition(
+        "customer.assignment.change",
+        "变更客户负责人",
+        "users",
+        "customer_assignment",
+        (CONFIRM, PASSWORD, TWO_PERSON),
+        PASSWORD,
+        CONFIRM,
+        "customer.assignment.change",
+    ),
+    RiskActionDefinition(
+        "user.freeze",
+        "冻结用户",
+        "users",
+        "user",
+        (CONFIRM, PASSWORD, TWO_PERSON),
+        CONFIRM,
+        CONFIRM,
+        "user.freeze",
+    ),
+    RiskActionDefinition(
+        "user.review.reject",
+        "拒绝用户审核",
+        "users",
+        "user",
+        (CONFIRM, PASSWORD, TWO_PERSON),
+        CONFIRM,
+        CONFIRM,
+        "user.review.reject",
+    ),
+)
+RISK_ACTION_BY_KEY = {item.key: item for item in RISK_ACTION_CATALOG}
+
+
+def mode_is_valid(definition: RiskActionDefinition, mode: str) -> bool:
+    return (
+        mode in definition.supported_modes
+        and MODE_STRENGTH[mode] >= MODE_STRENGTH[definition.minimum_mode]
+    )

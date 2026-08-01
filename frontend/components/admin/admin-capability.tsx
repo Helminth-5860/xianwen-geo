@@ -15,6 +15,9 @@ const MENU_ITEMS = [
   ["menu.admin.admins", "/admin/admins", "管理员"],
   ["menu.admin.roles", "/admin/roles", "角色"],
   ["menu.admin.admins", "/admin/security", "安全策略"],
+  ["menu.admin.approvals", "/admin/approvals", "高风险审批"],
+  ["menu.admin.audit", "/admin/audit", "统一审计"],
+  ["menu.admin.risk-policies", "/admin/risk-policies", "风险策略"],
 ] as const;
 
 export function AdminCapabilityProvider({ children }: { children: ReactNode }) {
