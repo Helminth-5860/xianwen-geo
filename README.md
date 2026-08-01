@@ -287,3 +287,11 @@ CustomerAssignment 动态应用 own/role/all 范围，contact/close 经统一风
 `.\scripts\test-plan-applications.ps1`；Seed reverse 为 noop，trigger reverse 只移除保护，生产逆向
 迁移前必须审查并备份，优先前向修复或备份恢复。完整设计与回滚边界见
 [docs/23-PLAN-APPLICATIONS.md](docs/23-PLAN-APPLICATIONS.md)。
+## 用户订阅（XW-0112）
+
+订阅事实由 PostgreSQL Subscription 和追加式 SubscriptionEvent 保存。正式订阅只能
+从套餐申请激活，试用只能由管理员审核发放；三项写操作均固定双人审批。用户通过
+GET /api/v1/subscription 只读当前有效订阅，响应不会暴露完整权益快照或 digest。
+
+状态、锁顺序、数据库触发器、权限和回滚边界见
+[docs/24-SUBSCRIPTIONS.md](docs/24-SUBSCRIPTIONS.md)。

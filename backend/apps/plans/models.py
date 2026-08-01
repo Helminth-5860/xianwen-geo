@@ -341,6 +341,7 @@ class PlanApplication(models.Model):  # noqa: DJ008
         CONTACTED = "contacted", "已联系"
         CLOSED = "closed", "已关闭"
         CANCELLED = "cancelled", "已取消"
+        ACTIVATED = "activated", "已开通"
 
     class Source(models.TextChoices):
         USER_WEB = "user_web", "用户网页"
@@ -378,6 +379,14 @@ class PlanApplication(models.Model):  # noqa: DJ008
         related_name="closed_plan_applications",
     )
     cancelled_at = models.DateTimeField(null=True, blank=True)
+    activated_at = models.DateTimeField(null=True, blank=True)
+    activated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="activated_plan_applications",
+    )
     version = models.PositiveBigIntegerField(default=1)
     idempotency_key_digest = models.CharField(max_length=64)
     request_digest = models.CharField(max_length=64)
@@ -404,7 +413,9 @@ class PlanApplication(models.Model):  # noqa: DJ008
                 name="plan_app_single_open",
             ),
             models.CheckConstraint(
-                condition=models.Q(status__in=("pending", "contacted", "closed", "cancelled")),
+                condition=models.Q(
+                    status__in=("pending", "contacted", "closed", "cancelled", "activated")
+                ),
                 name="plan_app_valid_status",
             ),
             models.CheckConstraint(
@@ -428,16 +439,32 @@ class PlanApplication(models.Model):  # noqa: DJ008
                         contacted_at__isnull=True,
                         closed_at__isnull=True,
                         cancelled_at__isnull=True,
+                        activated_at__isnull=True,
                     )
                     | models.Q(
                         status="contacted",
                         contacted_at__isnull=False,
                         closed_at__isnull=True,
                         cancelled_at__isnull=True,
+                        activated_at__isnull=True,
                     )
-                    | models.Q(status="closed", closed_at__isnull=False, cancelled_at__isnull=True)
                     | models.Q(
-                        status="cancelled", cancelled_at__isnull=False, closed_at__isnull=True
+                        status="closed",
+                        closed_at__isnull=False,
+                        cancelled_at__isnull=True,
+                        activated_at__isnull=True,
+                    )
+                    | models.Q(
+                        status="cancelled",
+                        cancelled_at__isnull=False,
+                        closed_at__isnull=True,
+                        activated_at__isnull=True,
+                    )
+                    | models.Q(
+                        status="activated",
+                        activated_at__isnull=False,
+                        closed_at__isnull=True,
+                        cancelled_at__isnull=True,
                     )
                 ),
                 name="plan_app_status_times",
@@ -459,6 +486,8 @@ class PlanApplicationEvent(models.Model):  # noqa: DJ008
         CONTACTED = "contacted", "已联系"
         CLOSED = "closed", "已关闭"
         CANCELLED = "cancelled", "已取消"
+
+        ACTIVATED = "activated", "已开通"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     application = models.ForeignKey(
@@ -489,12 +518,14 @@ class PlanApplicationEvent(models.Model):  # noqa: DJ008
         constraints = [
             models.CheckConstraint(
                 condition=models.Q(
-                    event_type__in=("submitted", "contacted", "closed", "cancelled")
+                    event_type__in=("submitted", "contacted", "closed", "cancelled", "activated")
                 ),
                 name="plan_app_event_valid_type",
             ),
             models.CheckConstraint(
-                condition=models.Q(to_status__in=("pending", "contacted", "closed", "cancelled")),
+                condition=models.Q(
+                    to_status__in=("pending", "contacted", "closed", "cancelled", "activated")
+                ),
                 name="plan_app_event_valid_status",
             ),
         ]
@@ -506,3 +537,205 @@ class PlanApplicationEvent(models.Model):  # noqa: DJ008
 
     def delete(self, *args, **kwargs):
         raise TypeError("套餐申请事件不允许删除。")
+
+
+class SubscriptionQuerySet(models.QuerySet):
+    def delete(self):
+        raise TypeError("订阅不允许删除。")
+
+
+class Subscription(models.Model):  # noqa: DJ008
+    class Status(models.TextChoices):
+        ACTIVE = "active", "生效中"
+        EXPIRED = "expired", "已到期"
+        TERMINATED = "terminated", "已终止"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="subscriptions",
+    )
+    source_application = models.OneToOneField(
+        PlanApplication,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="subscription",
+    )
+    plan = models.ForeignKey(Plan, on_delete=models.PROTECT, related_name="subscriptions")
+    plan_version = models.ForeignKey(
+        PlanVersion,
+        on_delete=models.PROTECT,
+        related_name="subscriptions",
+    )
+    plan_version_no = models.PositiveBigIntegerField()
+    entitlement_snapshot = models.JSONField()
+    entitlement_digest = models.CharField(max_length=64)
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.ACTIVE)
+    starts_at = models.DateTimeField()
+    ends_at = models.DateTimeField()
+    cycle_anchor_day = models.PositiveSmallIntegerField()
+    is_trial = models.BooleanField()
+    opened_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="opened_subscriptions",
+    )
+    opening_note = models.CharField(max_length=500, blank=True)
+    activated_at = models.DateTimeField()
+    expired_at = models.DateTimeField(null=True, blank=True)
+    terminated_at = models.DateTimeField(null=True, blank=True)
+    terminated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="terminated_subscriptions",
+    )
+    termination_reason = models.CharField(max_length=500, blank=True)
+    version = models.PositiveBigIntegerField(default=1)
+    request_id = models.UUIDField(db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    objects = SubscriptionQuerySet.as_manager()
+
+    class Meta:
+        db_table = "subscriptions"
+        ordering = ("-created_at", "-id")
+        indexes = [
+            models.Index(fields=("user", "status", "created_at"), name="subscription_user_idx"),
+            models.Index(fields=("status", "ends_at"), name="subscription_expiry_idx"),
+            models.Index(fields=("plan", "status", "created_at"), name="subscription_plan_idx"),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=("user",),
+                condition=models.Q(status="active"),
+                name="subscription_single_active",
+            ),
+            models.UniqueConstraint(
+                fields=("user",),
+                condition=models.Q(is_trial=True),
+                name="subscription_single_trial_history",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(status__in=("active", "expired", "terminated")),
+                name="subscription_valid_status",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(starts_at__lt=models.F("ends_at")),
+                name="subscription_valid_window",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(cycle_anchor_day__gte=1) & models.Q(cycle_anchor_day__lte=31),
+                name="subscription_anchor_range",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(version__gte=1),
+                name="subscription_version_gte_1",
+            ),
+            models.CheckConstraint(
+                condition=~models.Q(entitlement_digest=""),
+                name="subscription_digest_present",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(is_trial=True, source_application__isnull=True)
+                    | models.Q(is_trial=False, source_application__isnull=False)
+                ),
+                name="subscription_source_by_trial",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(
+                        status="active",
+                        expired_at__isnull=True,
+                        terminated_at__isnull=True,
+                        termination_reason="",
+                    )
+                    | models.Q(
+                        status="expired",
+                        expired_at__isnull=False,
+                        terminated_at__isnull=True,
+                        termination_reason="",
+                    )
+                    | models.Q(
+                        status="terminated",
+                        expired_at__isnull=True,
+                        terminated_at__isnull=False,
+                        terminated_by__isnull=False,
+                        termination_reason__gt="",
+                    )
+                ),
+                name="subscription_status_times",
+            ),
+        ]
+
+    def delete(self, *args, **kwargs):
+        raise TypeError("订阅不允许删除。")
+
+
+class AppendOnlySubscriptionEventQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        raise TypeError("订阅事件不允许更新。")
+
+    def delete(self):
+        raise TypeError("订阅事件不允许删除。")
+
+
+class SubscriptionEvent(models.Model):  # noqa: DJ008
+    class EventType(models.TextChoices):
+        ACTIVATED = "activated", "已生效"
+        EXPIRED = "expired", "已到期"
+        TERMINATED = "terminated", "已终止"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    subscription = models.ForeignKey(
+        Subscription,
+        on_delete=models.PROTECT,
+        related_name="events",
+    )
+    event_type = models.CharField(max_length=16, choices=EventType.choices)
+    from_status = models.CharField(max_length=16, blank=True)
+    to_status = models.CharField(max_length=16, choices=Subscription.Status.choices)
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="subscription_events",
+    )
+    safe_summary = models.CharField(max_length=200)
+    request_id = models.UUIDField(db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = AppendOnlySubscriptionEventQuerySet.as_manager()
+
+    class Meta:
+        db_table = "subscription_events"
+        ordering = ("created_at", "id")
+        indexes = [
+            models.Index(fields=("subscription", "created_at"), name="subscription_event_idx")
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(event_type__in=("activated", "expired", "terminated")),
+                name="subscription_event_valid_type",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(to_status__in=("active", "expired", "terminated")),
+                name="subscription_event_valid_status",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk and not self._state.adding:
+            raise TypeError("订阅事件不允许更新。")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise TypeError("订阅事件不允许删除。")

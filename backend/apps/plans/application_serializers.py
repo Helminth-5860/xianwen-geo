@@ -57,6 +57,7 @@ class PlanApplicationUserSerializer(serializers.ModelSerializer):
             "contacted_at",
             "closed_at",
             "cancelled_at",
+            "activated_at",
             "version",
             "created_at",
             "updated_at",
@@ -116,5 +117,7 @@ class PlanApplicationAdminDetailSerializer(PlanApplicationAdminListSerializer):
             "closed_at",
             "closed_by_id",
             "cancelled_at",
+            "activated_at",
+            "activated_by_id",
             "events",
         )

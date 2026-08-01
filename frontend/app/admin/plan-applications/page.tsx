@@ -37,6 +37,7 @@ export default function AdminPlanApplicationsPage() {
               { value: "contacted", label: "已联系" },
               { value: "closed", label: "已关闭" },
               { value: "cancelled", label: "已取消" },
+              { value: "activated", label: "已开通" },
             ]}
           />
           <Input

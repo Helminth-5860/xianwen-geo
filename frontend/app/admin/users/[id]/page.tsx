@@ -7,6 +7,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { useAdminCapabilities } from "@/components/admin/admin-capability";
 import { CustomerAssignmentActions } from "@/components/admin/customer-assignment-actions";
+import { TrialGrantAction } from "@/components/admin/trial-grant-action";
 import {
   getAdmins,
   getCustomerAssignment,
@@ -156,6 +157,16 @@ export default function AdminUserDetailPage() {
               }
               onUnfreeze={() => void act(() => unfreezeAdminUser(userId))}
             />
+            {user.approval_status === "approved" && user.account_status === "active" && (
+              <TrialGrantAction
+                userId={user.id}
+                expectedVersion={user.status_version}
+                onApproval={(approval) =>
+                  setError("已创建试用审批请求 " + approval.approval_id + "，当前尚未执行。")
+                }
+                onError={setError}
+              />
+            )}
           </>
         )}
       </Card>

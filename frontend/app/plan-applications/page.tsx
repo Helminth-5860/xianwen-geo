@@ -17,6 +17,7 @@ const labels: Record<PlanApplicationStatus, string> = {
   contacted: "已联系",
   closed: "已关闭",
   cancelled: "已取消",
+  activated: "已开通",
 };
 
 export default function PlanApplicationsPage() {

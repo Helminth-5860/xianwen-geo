@@ -9,6 +9,14 @@ from .application_views import (
     PlanApplicationDetailView,
     PlanApplicationListCreateView,
 )
+from .subscription_views import (
+    AdminGrantTrialView,
+    AdminOpenSubscriptionView,
+    AdminSubscriptionDetailView,
+    AdminSubscriptionListView,
+    AdminTerminateSubscriptionView,
+    CurrentSubscriptionView,
+)
 from .views import (
     AdminPlanArchiveView,
     AdminPlanCopyView,
@@ -101,6 +109,32 @@ urlpatterns = [
         "admin/plan-applications/<uuid:application_id>/close",
         AdminPlanApplicationCloseView.as_view(),
         name="admin-plan-application-close",
+    ),
+    path("subscription", CurrentSubscriptionView.as_view(), name="current-subscription"),
+    path(
+        "admin/subscriptions",
+        AdminSubscriptionListView.as_view(),
+        name="admin-subscription-list",
+    ),
+    path(
+        "admin/subscriptions/<uuid:subscription_id>",
+        AdminSubscriptionDetailView.as_view(),
+        name="admin-subscription-detail",
+    ),
+    path(
+        "admin/plan-applications/<uuid:application_id>/activate",
+        AdminOpenSubscriptionView.as_view(),
+        name="admin-plan-application-activate",
+    ),
+    path(
+        "admin/users/<uuid:user_id>/subscriptions/trial",
+        AdminGrantTrialView.as_view(),
+        name="admin-grant-trial",
+    ),
+    path(
+        "admin/subscriptions/<uuid:subscription_id>/terminate",
+        AdminTerminateSubscriptionView.as_view(),
+        name="admin-subscription-terminate",
     ),
     path("plans", PublicPlanListView.as_view(), name="public-plan-list"),
     path("plans/<uuid:plan_id>", PublicPlanDetailView.as_view(), name="public-plan-detail"),

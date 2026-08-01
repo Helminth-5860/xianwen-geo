@@ -4,7 +4,7 @@ CONFIRM = "confirm"
 PASSWORD = "password"
 TWO_PERSON = "two_person"
 MODE_STRENGTH = {CONFIRM: 1, PASSWORD: 2, TWO_PERSON: 3}
-CATALOG_VERSION = 3
+CATALOG_VERSION = 4
 
 
 @dataclass(frozen=True)
@@ -259,6 +259,36 @@ RISK_ACTION_CATALOG = (
         CONFIRM,
         CONFIRM,
         "plan_application.close",
+    ),
+    RiskActionDefinition(
+        "subscription.open",
+        "开通正式订阅",
+        "subscriptions",
+        "plan_application",
+        (TWO_PERSON,),
+        TWO_PERSON,
+        TWO_PERSON,
+        "subscription.open",
+    ),
+    RiskActionDefinition(
+        "subscription.grant_trial",
+        "发放试用订阅",
+        "subscriptions",
+        "user",
+        (TWO_PERSON,),
+        TWO_PERSON,
+        TWO_PERSON,
+        "subscription.grant_trial",
+    ),
+    RiskActionDefinition(
+        "subscription.terminate",
+        "终止订阅",
+        "subscriptions",
+        "subscription",
+        (TWO_PERSON,),
+        TWO_PERSON,
+        TWO_PERSON,
+        "subscription.terminate",
     ),
 )
 RISK_ACTION_BY_KEY = {item.key: item for item in RISK_ACTION_CATALOG}

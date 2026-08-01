@@ -15,6 +15,7 @@ const getPlanApplications = vi.fn();
 const cancelPlanApplication = vi.fn();
 const getAdminPlanApplication = vi.fn();
 const changeAdminPlanApplication = vi.fn();
+const openSubscriptionFromApplication = vi.fn();
 const getRiskActions = vi.fn();
 
 vi.mock("next/navigation", () => ({
@@ -35,6 +36,8 @@ vi.mock("../lib/plans-client", async () => {
     cancelPlanApplication: (...args: unknown[]) => cancelPlanApplication(...args),
     getAdminPlanApplication: (...args: unknown[]) => getAdminPlanApplication(...args),
     changeAdminPlanApplication: (...args: unknown[]) => changeAdminPlanApplication(...args),
+    openSubscriptionFromApplication: (...args: unknown[]) =>
+      openSubscriptionFromApplication(...args),
   };
 });
 vi.mock("../lib/risk-client", async () => {
@@ -126,6 +129,10 @@ beforeEach(() => {
     status: "contacted",
     version: 2,
   });
+  openSubscriptionFromApplication.mockResolvedValue({
+    approval_required: true,
+    approval_id: "approval-1",
+  });
 });
 afterEach(() => {
   cleanup();
@@ -205,5 +212,32 @@ describe("套餐申请真实交互", () => {
     expect(await screen.findByText("当前账号没有处理此申请的权限")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "标记已联系" })).toBeNull();
     expect(screen.queryByRole("button", { name: "关闭申请" })).toBeNull();
+  });
+  it("subscriptions.open capability 控制开通并提交双人审批 payload", async () => {
+    const context = {
+      permission_keys: ["subscriptions.open"],
+      menu_keys: ["menu.admin.plan-applications"],
+    } as never;
+    render(
+      <AdminCapabilityContext.Provider value={context}>
+        <AdminPlanApplicationDetailPage />
+      </AdminCapabilityContext.Provider>,
+    );
+    await userEvent.click(await screen.findByRole("button", { name: "开通订阅" }));
+    expect(await screen.findByText("开通订阅（固定双人审批）")).toBeTruthy();
+    await userEvent.click(screen.getByLabelText("确认离线套餐或退役版本仍需开通"));
+    await userEvent.type(screen.getByLabelText("特殊状态开通原因"), "客户已书面确认");
+    await userEvent.click(screen.getByRole("button", { name: "发起审批" }));
+    await waitFor(() =>
+      expect(openSubscriptionFromApplication).toHaveBeenCalledWith(
+        "application-1",
+        1,
+        expect.objectContaining({
+          confirmUnavailable: true,
+          unavailableReason: "客户已书面确认",
+        }),
+      ),
+    );
+    expect(await screen.findByText(/approval-1/)).toBeTruthy();
   });
 });

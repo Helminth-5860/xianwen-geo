@@ -71,10 +71,10 @@ export type PublicPlan = Readonly<{
   plan_version_id: string;
   version_no: number;
 }>;
-export type PlanApplicationStatus = "pending" | "contacted" | "closed" | "cancelled";
+export type PlanApplicationStatus = "pending" | "contacted" | "closed" | "cancelled" | "activated";
 export type PlanApplicationEvent = Readonly<{
   id: string;
-  event_type: "submitted" | "contacted" | "closed" | "cancelled";
+  event_type: "submitted" | "contacted" | "closed" | "cancelled" | "activated";
   from_status: string;
   to_status: PlanApplicationStatus;
   safe_summary: string;
@@ -82,6 +82,7 @@ export type PlanApplicationEvent = Readonly<{
 }>;
 export type PlanApplication = Readonly<{
   id: string;
+  activated_at: string | null;
   plan_id: string;
   requested_plan_version_id: string;
   requested_version_no: number;
@@ -105,6 +106,39 @@ export type AdminPlanApplication = PlanApplication &
     applicant_phone?: string;
     current_owner: { id: string; nickname: string } | null;
   }>;
+export type SubscriptionStatus = "active" | "expired" | "terminated";
+export type Subscription = Readonly<{
+  id: string;
+  user_id?: string;
+  user_nickname?: string;
+  plan_id: string;
+  plan_code: string;
+  plan_name: string;
+  plan_version_id: string;
+  plan_version_no: number;
+  status: SubscriptionStatus;
+  is_trial: boolean;
+  starts_at: string;
+  ends_at: string;
+  cycle_anchor_day: number;
+  entitlement_summary: {
+    valid_days: number;
+    limit_keys: string[];
+    enabled_model_keys: ModelKey[];
+  };
+  version: number;
+  source_application_id?: string | null;
+  activated_at?: string;
+  expired_at?: string | null;
+  terminated_at?: string | null;
+  termination_reason?: string;
+  events?: {
+    id: string;
+    event_type: "activated" | "expired" | "terminated";
+    safe_summary: string;
+    created_at: string;
+  }[];
+}>;
 
 const risk = (input: RiskInput) => ({
   confirmed: input.confirmed ?? false,
@@ -147,6 +181,49 @@ export const changeAdminPlanApplication = (
   post<RiskExecution<AdminPlanApplication>>(`/admin/plan-applications/${id}/${action}`, {
     expected_version: expectedVersion,
     ...risk(input),
+  });
+export const getCurrentSubscription = () => get<{ current: Subscription | null }>("/subscription");
+export const getAdminSubscriptions = (status = "", page = 1) => {
+  const query = new URLSearchParams({ page: String(page) });
+  if (status) query.set("status", status);
+  return get<PageData<Subscription>>("/admin/subscriptions?" + query.toString());
+};
+export const getAdminSubscription = (id: string) => get<Subscription>("/admin/subscriptions/" + id);
+export const openSubscriptionFromApplication = (
+  id: string,
+  expectedVersion: number,
+  input: {
+    selectedPlanVersionId?: string | null;
+    confirmUnavailable?: boolean;
+    unavailableReason?: string;
+    confirmVersionOverride?: boolean;
+    overrideReason?: string;
+    openingNote?: string;
+  } = {},
+) =>
+  post<RiskExecution<{ approval_required: true }>>("/admin/plan-applications/" + id + "/activate", {
+    expected_version: expectedVersion,
+    selected_plan_version_id: input.selectedPlanVersionId ?? null,
+    confirm_unavailable: input.confirmUnavailable ?? false,
+    unavailable_reason: input.unavailableReason ?? "",
+    confirm_version_override: input.confirmVersionOverride ?? false,
+    override_reason: input.overrideReason ?? "",
+    opening_note: input.openingNote ?? "",
+  });
+export const grantTrialSubscription = (
+  userId: string,
+  expectedVersion: number,
+  planId: string,
+  openingNote = "",
+) =>
+  post<RiskExecution<{ approval_required: true }>>(
+    "/admin/users/" + userId + "/subscriptions/trial",
+    { expected_version: expectedVersion, plan_id: planId, opening_note: openingNote },
+  );
+export const terminateSubscription = (id: string, expectedVersion: number, reason: string) =>
+  post<RiskExecution<{ approval_required: true }>>("/admin/subscriptions/" + id + "/terminate", {
+    expected_version: expectedVersion,
+    reason,
   });
 export const getPlans = (status = "", keyword = "") => {
   const query = new URLSearchParams();
