@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { PlanCatalog } from "../components/plans/plan-catalog";
 import NewPlanPage from "../app/admin/plans/new/page";
 import AdminPlansPage from "../app/admin/plans/page";
@@ -13,6 +13,7 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push }),
   useParams: () => routeParams,
 }));
+const getCurrentUser = vi.fn();
 const getPublicPlans = vi.fn();
 const getPlans = vi.fn();
 const createPlan = vi.fn();
@@ -28,6 +29,13 @@ vi.mock("../lib/plans-client", async () => {
     createPlan: (...args: unknown[]) => createPlan(...args),
     getPlan: (...args: unknown[]) => getPlan(...args),
     copyPlan: (...args: unknown[]) => copyPlan(...args),
+  };
+});
+vi.mock("../lib/auth-client", async () => {
+  const actual = await vi.importActual<typeof import("../lib/auth-client")>("../lib/auth-client");
+  return {
+    ...actual,
+    getCurrentUser: (...args: unknown[]) => getCurrentUser(...args),
   };
 });
 vi.mock("../lib/risk-client", async () => {
@@ -59,6 +67,9 @@ beforeAll(() => {
     }),
   });
 });
+beforeEach(() => {
+  getCurrentUser.mockResolvedValue({ id: "user-1" });
+});
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
@@ -72,6 +83,8 @@ const fixed = {
   price_display_mode: "fixed" as const,
   display_price: "88.00",
   display_currency: "CNY" as const,
+  plan_version_id: "version-1",
+  version_no: 1,
   is_trial: false,
   valid_days: 30,
   benefits: {},
@@ -97,7 +110,7 @@ describe("套餐真实交互", () => {
     expect(screen.getByText("联系开通")).toBeTruthy();
     expect(screen.getByText("支持正式综合分")).toBeTruthy();
     expect(screen.getByText("不支持正式综合分")).toBeTruthy();
-    expect(screen.getAllByRole("link", { name: "申请套餐 / 联系开通" })).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: "申请套餐 / 联系开通" })).toHaveLength(2);
     expect(screen.queryByText("立即购买")).toBeNull();
   });
 

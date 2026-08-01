@@ -16,7 +16,8 @@ from apps.admin_rbac.models import (
 )
 from apps.admin_rbac.risk_catalog import RISK_ACTION_BY_KEY
 from apps.admin_rbac.services import create_admin
-from apps.plans.models import Plan, PlanVersion
+from apps.plans.application_services import create_application
+from apps.plans.models import Plan, PlanApplication, PlanVersion
 from apps.plans.serializers import limit_value
 from apps.plans.services import (
     create_plan,
@@ -240,9 +241,35 @@ def build_plan_case(action_key, actor):
     raise AssertionError(action_key)
 
 
+def build_plan_application_case(action_key, actor):
+    plan, version = plan_fixture(actor, code=action_key.replace(".", "-"), publish=True)
+    applicant = User.objects.create_user(
+        phone="13800138000", nickname="套餐申请用户", password=PASSWORD
+    )
+    application = create_application(
+        applicant=applicant,
+        plan_id=plan.pk,
+        plan_version_id=version.pk,
+        user_note="",
+        idempotency_key=f"matrix-{action_key.replace('.', '-')}-key",
+        request_id=uuid.uuid4(),
+    ).application
+    action = action_key.rsplit(".", 1)[-1]
+    return EndpointCase(
+        f"/api/v1/admin/plan-applications/{application.pk}/{action}",
+        "post",
+        {"expected_version": application.version},
+        lambda: tuple(
+            PlanApplication.objects.filter(pk=application.pk).values_list("status", "version")
+        ),
+    )
+
+
 def build_case(action_key, actor):
     if action_key.startswith("plan."):
         return build_plan_case(action_key, actor)
+    if action_key.startswith("plan_application."):
+        return build_plan_application_case(action_key, actor)
 
     target_role = AdminRole.objects.create(
         name=f"目标角色-{action_key}", data_scope=AdminRole.DataScope.ALL

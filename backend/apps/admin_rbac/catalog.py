@@ -20,6 +20,9 @@ PERMISSION_CATALOG = (
     CatalogPermission("menu.admin.audit", "统一审计菜单", "audit", "menu", 60, True),
     CatalogPermission("menu.admin.risk-policies", "风险策略菜单", "risk", "menu", 70, True),
     CatalogPermission("menu.admin.plans", "套餐管理菜单", "plans", "menu", 80),
+    CatalogPermission(
+        "menu.admin.plan-applications", "套餐申请菜单", "plan_applications", "menu", 85
+    ),
     CatalogPermission("admin.dashboard.view", "查看后台工作台", "admin", "action", 90),
     CatalogPermission("users.list", "用户列表", "users", "action", 100),
     CatalogPermission("users.view", "用户详情", "users", "action", 110),
@@ -64,6 +67,14 @@ PERMISSION_CATALOG = (
     CatalogPermission("plan_versions.retire", "退役套餐版本", "plans", "action", 730),
     CatalogPermission("plan_limits.view", "查看套餐限制", "plans", "action", 740),
     CatalogPermission("plan_limits.update", "修改套餐限制", "plans", "action", 750),
+    CatalogPermission("plan_applications.list", "套餐申请列表", "plan_applications", "action", 760),
+    CatalogPermission("plan_applications.view", "套餐申请详情", "plan_applications", "action", 770),
+    CatalogPermission(
+        "plan_applications.contact", "联系套餐申请", "plan_applications", "action", 780
+    ),
+    CatalogPermission(
+        "plan_applications.close", "关闭套餐申请", "plan_applications", "action", 790
+    ),
 )
 
 CATALOG_BY_KEY = {item.key: item for item in PERMISSION_CATALOG}

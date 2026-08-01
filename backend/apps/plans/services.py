@@ -863,6 +863,8 @@ def public_plan_summary(plan: Plan) -> dict[str, Any]:
     }
     return {
         "id": str(plan.pk),
+        "plan_version_id": str(version.pk),
+        "version_no": version.version_no,
         "code": plan.code,
         "name": plan.name,
         "description": plan.description,

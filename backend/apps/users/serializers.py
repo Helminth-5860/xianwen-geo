@@ -270,6 +270,7 @@ class NotificationSerializer(serializers.ModelSerializer):
         fields = (
             "id",
             "notification_type",
+            "related_plan_application_id",
             "title",
             "safe_summary",
             "read_at",

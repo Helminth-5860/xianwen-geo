@@ -333,3 +333,176 @@ class PlanModelPermission(models.Model):  # noqa: DJ008
                 name="plan_model_key_valid",
             ),
         ]
+
+
+class PlanApplication(models.Model):  # noqa: DJ008
+    class Status(models.TextChoices):
+        PENDING = "pending", "待处理"
+        CONTACTED = "contacted", "已联系"
+        CLOSED = "closed", "已关闭"
+        CANCELLED = "cancelled", "已取消"
+
+    class Source(models.TextChoices):
+        USER_WEB = "user_web", "用户网页"
+
+    OPEN_STATUSES = (Status.PENDING, Status.CONTACTED)
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    applicant = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="plan_applications"
+    )
+    plan = models.ForeignKey(Plan, on_delete=models.PROTECT, related_name="applications")
+    requested_plan_version = models.ForeignKey(
+        PlanVersion, on_delete=models.PROTECT, related_name="applications"
+    )
+    requested_version_no = models.PositiveBigIntegerField()
+    requested_config_digest = models.CharField(max_length=64)
+    public_plan_snapshot = models.JSONField()
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.PENDING)
+    source = models.CharField(max_length=16, choices=Source.choices, default=Source.USER_WEB)
+    user_note = models.CharField(max_length=500, blank=True)
+    contacted_at = models.DateTimeField(null=True, blank=True)
+    contacted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="contacted_plan_applications",
+    )
+    closed_at = models.DateTimeField(null=True, blank=True)
+    closed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="closed_plan_applications",
+    )
+    cancelled_at = models.DateTimeField(null=True, blank=True)
+    version = models.PositiveBigIntegerField(default=1)
+    idempotency_key_digest = models.CharField(max_length=64)
+    request_digest = models.CharField(max_length=64)
+    request_id = models.UUIDField(db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "plan_applications"
+        ordering = ("-created_at", "-id")
+        indexes = [
+            models.Index(
+                fields=("applicant", "status", "created_at"), name="plan_app_user_status_idx"
+            ),
+            models.Index(fields=("plan", "status", "created_at"), name="plan_app_plan_status_idx"),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=("applicant", "idempotency_key_digest"), name="plan_app_idempotency_unique"
+            ),
+            models.UniqueConstraint(
+                fields=("applicant", "plan"),
+                condition=models.Q(status__in=("pending", "contacted")),
+                name="plan_app_single_open",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(status__in=("pending", "contacted", "closed", "cancelled")),
+                name="plan_app_valid_status",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(source="user_web"), name="plan_app_valid_source"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(version__gte=1), name="plan_app_version_gte_1"
+            ),
+            models.CheckConstraint(
+                condition=(
+                    ~models.Q(requested_config_digest="")
+                    & ~models.Q(idempotency_key_digest="")
+                    & ~models.Q(request_digest="")
+                ),
+                name="plan_app_digests_present",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(
+                        status="pending",
+                        contacted_at__isnull=True,
+                        closed_at__isnull=True,
+                        cancelled_at__isnull=True,
+                    )
+                    | models.Q(
+                        status="contacted",
+                        contacted_at__isnull=False,
+                        closed_at__isnull=True,
+                        cancelled_at__isnull=True,
+                    )
+                    | models.Q(status="closed", closed_at__isnull=False, cancelled_at__isnull=True)
+                    | models.Q(
+                        status="cancelled", cancelled_at__isnull=False, closed_at__isnull=True
+                    )
+                ),
+                name="plan_app_status_times",
+            ),
+        ]
+
+
+class AppendOnlyPlanApplicationEventQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        raise TypeError("套餐申请事件不允许更新。")
+
+    def delete(self):
+        raise TypeError("套餐申请事件不允许删除。")
+
+
+class PlanApplicationEvent(models.Model):  # noqa: DJ008
+    class EventType(models.TextChoices):
+        SUBMITTED = "submitted", "已提交"
+        CONTACTED = "contacted", "已联系"
+        CLOSED = "closed", "已关闭"
+        CANCELLED = "cancelled", "已取消"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    application = models.ForeignKey(
+        PlanApplication, on_delete=models.PROTECT, related_name="events"
+    )
+    event_type = models.CharField(max_length=16, choices=EventType.choices)
+    from_status = models.CharField(max_length=16, blank=True)
+    to_status = models.CharField(max_length=16, choices=PlanApplication.Status.choices)
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="plan_application_events",
+    )
+    safe_summary = models.CharField(max_length=200)
+    request_id = models.UUIDField(db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = AppendOnlyPlanApplicationEventQuerySet.as_manager()
+
+    class Meta:
+        db_table = "plan_application_events"
+        ordering = ("created_at", "id")
+        indexes = [
+            models.Index(fields=("application", "created_at"), name="plan_app_event_created_idx")
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(
+                    event_type__in=("submitted", "contacted", "closed", "cancelled")
+                ),
+                name="plan_app_event_valid_type",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(to_status__in=("pending", "contacted", "closed", "cancelled")),
+                name="plan_app_event_valid_status",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk and not self._state.adding:
+            raise TypeError("套餐申请事件不允许更新。")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise TypeError("套餐申请事件不允许删除。")

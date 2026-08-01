@@ -238,6 +238,34 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+  plan-application-tests:
+    profiles: ["plan-application-test"]
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: test
+    command:
+      ["python", "-m", "pytest", "tests/test_plan_applications_postgres.py", "--ds=config.settings", "-q", "-p", "no:cacheprovider"]
+    environment:
+      APP_ENV: local
+      DJANGO_SETTINGS_MODULE: config.settings
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?set DJANGO_SECRET_KEY for isolated test}
+      DJANGO_DEBUG: "false"
+      ALLOWED_HOSTS: localhost,127.0.0.1
+      CSRF_TRUSTED_ORIGINS: http://localhost:3000
+      CORS_ALLOWED_ORIGINS: http://localhost:3000
+      DATABASE_URL: ${DATABASE_URL:?set isolated test DATABASE_URL}
+      REDIS_URL: ${REDIS_URL:?set isolated test REDIS_URL}
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:?set isolated test broker URL}
+      SMS_PROVIDER: mock
+      SMS_VERIFICATION_HMAC_KEY: ${SMS_VERIFICATION_HMAC_KEY:?set isolated test SMS HMAC key}
+      RUN_MIGRATIONS: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
 
 
 

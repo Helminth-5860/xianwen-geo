@@ -68,13 +68,86 @@ export type PublicPlan = Readonly<{
   models: { model_key: ModelKey; name: string; selected_by_default: boolean }[];
   supports_formal_composite: boolean;
   sort_order: number;
+  plan_version_id: string;
+  version_no: number;
 }>;
+export type PlanApplicationStatus = "pending" | "contacted" | "closed" | "cancelled";
+export type PlanApplicationEvent = Readonly<{
+  id: string;
+  event_type: "submitted" | "contacted" | "closed" | "cancelled";
+  from_status: string;
+  to_status: PlanApplicationStatus;
+  safe_summary: string;
+  created_at: string;
+}>;
+export type PlanApplication = Readonly<{
+  id: string;
+  plan_id: string;
+  requested_plan_version_id: string;
+  requested_version_no: number;
+  public_plan_snapshot: PublicPlan & Record<string, unknown>;
+  status: PlanApplicationStatus;
+  source: "user_web";
+  user_note: string;
+  contacted_at: string | null;
+  closed_at: string | null;
+  cancelled_at: string | null;
+  version: number;
+  created_at: string;
+  updated_at: string;
+  events: PlanApplicationEvent[];
+}>;
+export type AdminPlanApplication = PlanApplication &
+  Readonly<{
+    applicant_id: string;
+    applicant_nickname: string;
+    applicant_phone_masked: string;
+    applicant_phone?: string;
+    current_owner: { id: string; nickname: string } | null;
+  }>;
 
 const risk = (input: RiskInput) => ({
   confirmed: input.confirmed ?? false,
   current_password: input.current_password ?? "",
 });
 export const getPublicPlans = () => get<PublicPlan[]>("/plans");
+export const createPlanApplication = (
+  planId: string,
+  planVersionId: string,
+  userNote: string,
+  idempotencyKey: string,
+) =>
+  post<PlanApplication>(
+    "/plan-applications",
+    { plan_id: planId, plan_version_id: planVersionId, user_note: userNote },
+    { "Idempotency-Key": idempotencyKey },
+  );
+export const getPlanApplications = (page = 1, status = "") => {
+  const query = new URLSearchParams({ page: String(page) });
+  if (status) query.set("status", status);
+  return get<PageData<PlanApplication>>(`/plan-applications?${query.toString()}`);
+};
+export const getPlanApplication = (id: string) => get<PlanApplication>(`/plan-applications/${id}`);
+export const cancelPlanApplication = (id: string, expectedVersion: number) =>
+  post<PlanApplication>(`/plan-applications/${id}/cancel`, { expected_version: expectedVersion });
+export const getAdminPlanApplications = (status = "", planId = "", page = 1) => {
+  const query = new URLSearchParams({ page: String(page) });
+  if (status) query.set("status", status);
+  if (planId) query.set("plan_id", planId);
+  return get<PageData<AdminPlanApplication>>(`/admin/plan-applications?${query.toString()}`);
+};
+export const getAdminPlanApplication = (id: string) =>
+  get<AdminPlanApplication>(`/admin/plan-applications/${id}`);
+export const changeAdminPlanApplication = (
+  id: string,
+  action: "contact" | "close",
+  expectedVersion: number,
+  input: RiskInput,
+) =>
+  post<RiskExecution<AdminPlanApplication>>(`/admin/plan-applications/${id}/${action}`, {
+    expected_version: expectedVersion,
+    ...risk(input),
+  });
 export const getPlans = (status = "", keyword = "") => {
   const query = new URLSearchParams();
   if (status) query.set("status", status);
