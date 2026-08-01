@@ -3,6 +3,10 @@ from rest_framework.exceptions import NotFound
 from apps.admin_rbac.permissions import AdminContext
 from apps.admin_rbac.risk_handlers import HandlerContext, HandlerResult, HandlerSpec
 
+from .application_services import (
+    admin_change_application,
+    scoped_application_or_404,
+)
 from .models import Plan, PlanVersion
 from .serializers import (
     EmptyPlanPayloadSerializer,
@@ -203,6 +207,40 @@ def handle_plan_version_retire(context: HandlerContext) -> HandlerResult:
     return HandlerResult(before, after, after)
 
 
+def _application_version(user, context: AdminContext, target_id, lock):
+    application = scoped_application_or_404(user, context, target_id, lock=lock)
+    return application.version
+
+
+def _handle_application(context, action):
+    admin_context = context.request.admin_context
+    application = scoped_application_or_404(context.requester, admin_context, context.target_id)
+    before = {"status": application.status, "version": application.version}
+    application = admin_change_application(
+        requester=context.requester,
+        admin_context=admin_context,
+        application_id=context.target_id,
+        expected_version=context.target_version,
+        action=action,
+        request_id=context.request.request_id,
+    )
+    after = {"status": application.status, "version": application.version}
+    return HandlerResult(
+        before,
+        after,
+        {"application_id": str(application.pk), **after},
+        application.applicant,
+    )
+
+
+def handle_plan_application_contact(context):
+    return _handle_application(context, "contact")
+
+
+def handle_plan_application_close(context):
+    return _handle_application(context, "close")
+
+
 PLAN_HANDLER_SPECS = {
     "plan.create": HandlerSpec(
         "plans.create", False, PlanCreatePayloadSerializer, _new_plan_version, handle_plan_create
@@ -249,6 +287,20 @@ PLAN_HANDLER_SPECS = {
         EmptyPlanPayloadSerializer,
         _plan_version_record_version,
         handle_plan_version_retire,
+    ),
+    "plan_application.contact": HandlerSpec(
+        "plan_applications.contact",
+        False,
+        EmptyPlanPayloadSerializer,
+        _application_version,
+        handle_plan_application_contact,
+    ),
+    "plan_application.close": HandlerSpec(
+        "plan_applications.close",
+        False,
+        EmptyPlanPayloadSerializer,
+        _application_version,
+        handle_plan_application_close,
     ),
 }
 

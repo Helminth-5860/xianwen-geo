@@ -274,3 +274,16 @@ XW-0107 将首批 12 个高风险写操作接入固定 Catalog 和显式 Handler
 本地专属验证运行 `.\scripts\test-plans.ps1`。Seed 迁移 reverse 为 noop，触发器逆向只移除数据库保护；完整回退会丢失套餐和发布快照证据，任何逆向迁移前必须审查并备份，生产优先前向修复或备份恢复。当前未连接腾讯云 PostgreSQL/Redis。
 
 完整设计和回滚边界见 [docs/22-PLANS-PLAN-VERSIONS.md](docs/22-PLANS-PLAN-VERSIONS.md)。
+
+## 套餐申请（XW-0111）
+
+套餐申请统一使用 `PlanApplication`、`/api/v1/plan-applications` 和
+`/api/v1/admin/plan-applications`。申请绑定创建时的 current published PlanVersion 与最小公开快照，
+PostgreSQL 条件唯一约束、事务锁和数据库 trigger 保护幂等、单 open 申请及不可变绑定。管理员按当前
+CustomerAssignment 动态应用 own/role/all 范围，contact/close 经统一风险编排；状态、追加式事件、
+固定通知与 AuditEvent 同事务提交。
+
+本阶段没有 activate、Subscription、Quota、订单或支付。真实 PostgreSQL 专属验证运行
+`.\scripts\test-plan-applications.ps1`；Seed reverse 为 noop，trigger reverse 只移除保护，生产逆向
+迁移前必须审查并备份，优先前向修复或备份恢复。完整设计与回滚边界见
+[docs/23-PLAN-APPLICATIONS.md](docs/23-PLAN-APPLICATIONS.md)。

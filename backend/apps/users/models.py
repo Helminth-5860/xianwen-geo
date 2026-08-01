@@ -213,6 +213,10 @@ class Notification(models.Model):
         APPROVAL_REJECTED = "approval_rejected", "审核拒绝"
         ACCOUNT_FROZEN = "account_frozen", "账号冻结"
         ACCOUNT_UNFROZEN = "account_unfrozen", "账号解冻"
+        PLAN_APPLICATION_SUBMITTED = "plan_application_submitted", "套餐申请已提交"
+        PLAN_APPLICATION_CONTACTED = "plan_application_contacted", "套餐申请已联系"
+        PLAN_APPLICATION_CLOSED = "plan_application_closed", "套餐申请已关闭"
+        PLAN_APPLICATION_CANCELLED = "plan_application_cancelled", "套餐申请已取消"
 
     id: models.UUIDField = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     recipient: models.ForeignKey = models.ForeignKey(
@@ -228,6 +232,13 @@ class Notification(models.Model):
     safe_summary: models.CharField = models.CharField(max_length=200)
     related_status_event: models.ForeignKey = models.ForeignKey(
         UserStatusEvent,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="notifications",
+    )
+    related_plan_application = models.ForeignKey(
+        "plans.PlanApplication",
         null=True,
         blank=True,
         on_delete=models.SET_NULL,

@@ -17,6 +17,7 @@ const MENU_ITEMS = [
   ["menu.admin.admins", "/admin/security", "安全策略"],
   ["menu.admin.approvals", "/admin/approvals", "高风险审批"],
   ["menu.admin.audit", "/admin/audit", "统一审计"],
+  ["menu.admin.plan-applications", "/admin/plan-applications", "套餐申请"],
   ["menu.admin.risk-policies", "/admin/risk-policies", "风险策略"],
   ["menu.admin.plans", "/admin/plans", "套餐"],
 ] as const;

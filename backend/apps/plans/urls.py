@@ -1,5 +1,14 @@
 from django.urls import path
 
+from .application_views import (
+    AdminPlanApplicationCloseView,
+    AdminPlanApplicationContactView,
+    AdminPlanApplicationDetailView,
+    AdminPlanApplicationListView,
+    PlanApplicationCancelView,
+    PlanApplicationDetailView,
+    PlanApplicationListCreateView,
+)
 from .views import (
     AdminPlanArchiveView,
     AdminPlanCopyView,
@@ -57,6 +66,41 @@ urlpatterns = [
         "admin/plan-versions/<uuid:version_id>/retire",
         AdminPlanVersionRetireView.as_view(),
         name="admin-plan-version-retire",
+    ),
+    path(
+        "plan-applications",
+        PlanApplicationListCreateView.as_view(),
+        name="plan-application-list-create",
+    ),
+    path(
+        "plan-applications/<uuid:application_id>",
+        PlanApplicationDetailView.as_view(),
+        name="plan-application-detail",
+    ),
+    path(
+        "plan-applications/<uuid:application_id>/cancel",
+        PlanApplicationCancelView.as_view(),
+        name="plan-application-cancel",
+    ),
+    path(
+        "admin/plan-applications",
+        AdminPlanApplicationListView.as_view(),
+        name="admin-plan-application-list",
+    ),
+    path(
+        "admin/plan-applications/<uuid:application_id>",
+        AdminPlanApplicationDetailView.as_view(),
+        name="admin-plan-application-detail",
+    ),
+    path(
+        "admin/plan-applications/<uuid:application_id>/contact",
+        AdminPlanApplicationContactView.as_view(),
+        name="admin-plan-application-contact",
+    ),
+    path(
+        "admin/plan-applications/<uuid:application_id>/close",
+        AdminPlanApplicationCloseView.as_view(),
+        name="admin-plan-application-close",
     ),
     path("plans", PublicPlanListView.as_view(), name="public-plan-list"),
     path("plans/<uuid:plan_id>", PublicPlanDetailView.as_view(), name="public-plan-detail"),

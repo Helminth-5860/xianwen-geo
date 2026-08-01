@@ -371,32 +371,6 @@ paths:
           $ref: '#/components/responses/CsrfFailed'
         '404':
           $ref: '#/components/responses/ResourceNotFound'
-  /plans:
-    get:
-      tags: [Plans]
-      security: []
-      summary: 展示套餐列表
-      responses:
-        '200':
-          description: 套餐列表
-  /package-applications:
-    post:
-      tags: [Plans]
-      summary: 申请开通套餐
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [plan_id]
-              properties:
-                plan_id: {type: string, format: uuid}
-                contact_name: {type: string}
-                contact_phone: {type: string}
-                note: {type: string}
-      responses:
-        '201': {description: 已提交}
   /subjects:
     get:
       tags: [Subjects]
@@ -1404,6 +1378,122 @@ paths:
       security: []
       summary: 公开已上架套餐详情
       responses: {'200': {description: 不含 digest、原始 effective_config 或风险元数据, content: {application/json: {schema: {$ref: '#/components/schemas/PublicPlanEnvelope'}}}}, '404': {$ref: '#/components/responses/ResourceNotFound'}}
+  /plan-applications:
+    get:
+      tags: [Plans]
+      summary: 分页查看自己的套餐申请
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - {name: status, in: query, schema: {$ref: '#/components/schemas/PlanApplicationStatus'}}
+      responses:
+        '200': {description: 自己的申请分页, content: {application/json: {schema: {$ref: '#/components/schemas/PlanApplicationPageEnvelope'}}}}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+    post:
+      tags: [Plans]
+      summary: 申请当前公开套餐版本；不创建订阅、订单或额度
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/PlanApplicationCreateRequest'}}}
+      responses:
+        '200': {description: 相同 Idempotency-Key 与相同 canonical 请求的安全重放, content: {application/json: {schema: {$ref: '#/components/schemas/PlanApplicationEnvelope'}}}}
+        '201': {description: 首次创建成功, content: {application/json: {schema: {$ref: '#/components/schemas/PlanApplicationEnvelope'}}}}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {description: CSRF_FAILED 或 PLAN_APPLICATION_NOT_ELIGIBLE}
+        '409': {description: PLAN_APPLICATION_PLAN_UNAVAILABLE、PLAN_APPLICATION_ALREADY_OPEN、PLAN_APPLICATION_VERSION_MISMATCH 或 IDEMPOTENCY_CONFLICT}
+        '422': {description: IDEMPOTENCY_KEY_REQUIRED、PLAN_APPLICATION_NOTE_INVALID 或 VALIDATION_ERROR}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+  /plan-applications/{applicationId}:
+    parameters: [{$ref: '#/components/parameters/PlanApplicationId'}]
+    get:
+      tags: [Plans]
+      summary: 查看自己的套餐申请详情
+      responses:
+        '200': {description: 绑定公开快照和追加式历史, content: {application/json: {schema: {$ref: '#/components/schemas/PlanApplicationEnvelope'}}}}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+  /plan-applications/{applicationId}/cancel:
+    parameters: [{$ref: '#/components/parameters/PlanApplicationId'}]
+    post:
+      tags: [Plans]
+      summary: 取消自己的 pending/contacted 申请
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/PlanApplicationExpectedVersionRequest'}}}}
+      responses:
+        '200': {description: 已取消, content: {application/json: {schema: {$ref: '#/components/schemas/PlanApplicationEnvelope'}}}}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {description: CSRF_FAILED 或 PLAN_APPLICATION_NOT_ELIGIBLE}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+        '409': {description: PLAN_APPLICATION_STATE_CONFLICT 或 PLAN_APPLICATION_VERSION_CONFLICT}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+  /admin/plan-applications:
+    get:
+      tags: [Admin, Plans]
+      summary: 按 RBAC 和当前 CustomerAssignment 数据范围查看申请
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - {name: status, in: query, schema: {$ref: '#/components/schemas/PlanApplicationStatus'}}
+        - {name: plan_id, in: query, schema: {type: string, format: uuid}}
+        - {name: phone, in: query, description: 先应用 scope 再精确筛选, schema: {type: string}}
+        - {name: keyword, in: query, schema: {type: string, maxLength: 100}}
+      responses:
+        '200': {description: 脱敏手机号与当前负责人摘要, content: {application/json: {schema: {$ref: '#/components/schemas/AdminPlanApplicationPageEnvelope'}}}}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/PermissionDenied'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /admin/plan-applications/{applicationId}:
+    parameters: [{$ref: '#/components/parameters/PlanApplicationId'}]
+    get:
+      tags: [Admin, Plans]
+      summary: 查看范围内套餐申请详情
+      description: 完整手机号只在 plan_applications.view、对象 scope 和联系业务最小需要下返回。
+      responses:
+        '200': {description: 管理员详情, content: {application/json: {schema: {$ref: '#/components/schemas/AdminPlanApplicationEnvelope'}}}}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/PermissionDenied'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+  /admin/plan-applications/{applicationId}/contact:
+    parameters: [{$ref: '#/components/parameters/PlanApplicationId'}]
+    post:
+      tags: [Admin, Plans]
+      summary: 经风险编排将 pending 标记为 contacted
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/PlanApplicationAdminActionRequest'}}}}
+      responses:
+        '200': {description: 已联系}
+        '202': {$ref: '#/components/responses/ApprovalRequired'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/PermissionDenied'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+        '409': {description: PLAN_APPLICATION_STATE_CONFLICT 或 PLAN_APPLICATION_VERSION_CONFLICT}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+  /admin/plan-applications/{applicationId}/close:
+    parameters: [{$ref: '#/components/parameters/PlanApplicationId'}]
+    post:
+      tags: [Admin, Plans]
+      summary: 经风险编排关闭 pending/contacted 申请；不授予或撤销权益
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/PlanApplicationAdminActionRequest'}}}}
+      responses:
+        '200': {description: 已关闭}
+        '202': {$ref: '#/components/responses/ApprovalRequired'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/PermissionDenied'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+        '409': {description: PLAN_APPLICATION_STATE_CONFLICT 或 PLAN_APPLICATION_VERSION_CONFLICT}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
 components:
   pathItems:
     AdminStatusAction:
@@ -1466,6 +1556,11 @@ components:
       schema: {type: string, format: uuid}
     PlanVersionId:
       name: versionId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    PlanApplicationId:
+      name: applicationId
       in: path
       required: true
       schema: {type: string, format: uuid}
@@ -2610,9 +2705,11 @@ components:
     PublicPlan:
       type: object
       additionalProperties: false
-      required: [id, code, name, description, price_display_mode, display_currency, is_trial, valid_days, benefits, models, supports_formal_composite, sort_order]
+      required: [id, plan_version_id, version_no, code, name, description, price_display_mode, display_currency, is_trial, valid_days, benefits, models, supports_formal_composite, sort_order]
       properties:
         id: {type: string, format: uuid}
+        plan_version_id: {type: string, format: uuid, readOnly: true}
+        version_no: {type: integer, minimum: 1, readOnly: true}
         code: {type: string}
         name: {type: string}
         description: {type: string}
@@ -2625,6 +2722,119 @@ components:
         models: {type: array, items: {type: object, properties: {model_key: {$ref: '#/components/schemas/PlanModelKey'}, name: {type: string}, selected_by_default: {type: boolean}}}}
         supports_formal_composite: {type: boolean}
         sort_order: {type: integer}
+    PlanApplicationStatus:
+      type: string
+      enum: [pending, contacted, closed, cancelled]
+    PlanApplicationPublicSnapshot:
+      type: object
+      additionalProperties: false
+      required: [plan_id, plan_version_id, code, name, description, price_display_mode, display_currency, is_trial, version_no, valid_days, benefits, models, supports_formal_composite]
+      properties:
+        plan_id: {type: string, format: uuid, readOnly: true}
+        plan_version_id: {type: string, format: uuid, readOnly: true}
+        code: {type: string, readOnly: true}
+        name: {type: string, readOnly: true}
+        description: {type: string, readOnly: true}
+        price_display_mode: {$ref: '#/components/schemas/PlanPriceMode'}
+        display_price: {type: [string, 'null'], readOnly: true}
+        display_currency: {type: string, const: CNY, readOnly: true}
+        is_trial: {type: boolean, readOnly: true}
+        version_no: {type: integer, minimum: 1, readOnly: true}
+        valid_days: {type: integer, minimum: 1, readOnly: true}
+        benefits: {type: object, additionalProperties: true, readOnly: true}
+        models: {type: array, readOnly: true, items: {type: object, additionalProperties: false, properties: {model_key: {$ref: '#/components/schemas/PlanModelKey'}, name: {type: string}}}}
+        supports_formal_composite: {type: boolean, readOnly: true}
+    PlanApplicationEvent:
+      type: object
+      additionalProperties: false
+      required: [id, event_type, from_status, to_status, safe_summary, created_at]
+      properties:
+        id: {type: string, format: uuid, readOnly: true}
+        event_type: {type: string, enum: [submitted, contacted, closed, cancelled], readOnly: true}
+        from_status: {type: string, readOnly: true}
+        to_status: {$ref: '#/components/schemas/PlanApplicationStatus'}
+        safe_summary: {type: string, readOnly: true}
+        created_at: {type: string, format: date-time, readOnly: true}
+    PlanApplication:
+      type: object
+      additionalProperties: false
+      required: [id, plan_id, requested_plan_version_id, requested_version_no, public_plan_snapshot, status, source, user_note, version, created_at, updated_at, events]
+      properties:
+        id: {type: string, format: uuid, readOnly: true}
+        plan_id: {type: string, format: uuid, readOnly: true}
+        requested_plan_version_id: {type: string, format: uuid, readOnly: true}
+        requested_version_no: {type: integer, minimum: 1, readOnly: true}
+        public_plan_snapshot: {$ref: '#/components/schemas/PlanApplicationPublicSnapshot'}
+        status: {$ref: '#/components/schemas/PlanApplicationStatus'}
+        source: {type: string, const: user_web, readOnly: true}
+        user_note: {type: string, maxLength: 500}
+        contacted_at: {type: [string, 'null'], format: date-time, readOnly: true}
+        closed_at: {type: [string, 'null'], format: date-time, readOnly: true}
+        cancelled_at: {type: [string, 'null'], format: date-time, readOnly: true}
+        version: {type: integer, minimum: 1, readOnly: true}
+        created_at: {type: string, format: date-time, readOnly: true}
+        updated_at: {type: string, format: date-time, readOnly: true}
+        events: {type: array, readOnly: true, items: {$ref: '#/components/schemas/PlanApplicationEvent'}}
+    AdminPlanApplicationListItem:
+      type: object
+      additionalProperties: false
+      required: [id, applicant_id, applicant_nickname, applicant_phone_masked, plan_id, requested_plan_version_id, requested_version_no, status, current_owner, version, created_at, updated_at]
+      properties:
+        id: {type: string, format: uuid}
+        applicant_id: {type: string, format: uuid}
+        applicant_nickname: {type: string}
+        applicant_phone_masked: {type: string, pattern: '^1\d{2}\*{4}\d{4}$'}
+        plan_id: {type: string, format: uuid}
+        requested_plan_version_id: {type: string, format: uuid}
+        requested_version_no: {type: integer, minimum: 1}
+        status: {$ref: '#/components/schemas/PlanApplicationStatus'}
+        current_owner: {oneOf: [{type: object, additionalProperties: false, properties: {id: {type: string, format: uuid}, nickname: {type: string}}}, {type: 'null'}]}
+        version: {type: integer, minimum: 1}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    AdminPlanApplicationDetail:
+      allOf:
+        - $ref: '#/components/schemas/AdminPlanApplicationListItem'
+        - type: object
+          properties:
+            applicant_phone: {type: string, pattern: '^1\d{10}$', description: 仅详情、具备 view 权限且对象在 scope 内返回}
+            public_plan_snapshot: {$ref: '#/components/schemas/PlanApplicationPublicSnapshot'}
+            user_note: {type: string, maxLength: 500}
+            contacted_at: {type: [string, 'null'], format: date-time}
+            contacted_by_id: {type: [string, 'null'], format: uuid}
+            closed_at: {type: [string, 'null'], format: date-time}
+            closed_by_id: {type: [string, 'null'], format: uuid}
+            cancelled_at: {type: [string, 'null'], format: date-time}
+            events: {type: array, items: {$ref: '#/components/schemas/PlanApplicationEvent'}}
+    PlanApplicationCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [plan_id, plan_version_id]
+      properties:
+        plan_id: {type: string, format: uuid}
+        plan_version_id: {type: string, format: uuid}
+        user_note: {type: string, maxLength: 500}
+    PlanApplicationExpectedVersionRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version]
+      properties:
+        expected_version: {type: integer, minimum: 1}
+    PlanApplicationAdminActionRequest:
+      allOf:
+        - $ref: '#/components/schemas/PlanApplicationExpectedVersionRequest'
+        - type: object
+          properties:
+            confirmed: {type: boolean, default: false}
+            current_password: {type: string, format: password, writeOnly: true}
+    PlanApplicationEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, properties: {data: {$ref: '#/components/schemas/PlanApplication'}}}]
+    PlanApplicationPageEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, properties: {data: {type: object, properties: {results: {type: array, items: {$ref: '#/components/schemas/PlanApplication'}}, pagination: {$ref: '#/components/schemas/Pagination'}}}}}]
+    AdminPlanApplicationEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, properties: {data: {$ref: '#/components/schemas/AdminPlanApplicationDetail'}}}]
+    AdminPlanApplicationPageEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, properties: {data: {type: object, properties: {results: {type: array, items: {$ref: '#/components/schemas/AdminPlanApplicationListItem'}}, pagination: {$ref: '#/components/schemas/Pagination'}}}}}]
     PlanEnvelope:
       allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, properties: {data: {$ref: '#/components/schemas/Plan'}}}]
     PlanVersionEnvelope:

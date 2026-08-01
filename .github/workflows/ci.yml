@@ -105,3 +105,5 @@ jobs:
         run: bash scripts/test-risk-approval.sh
       - name: Run PostgreSQL plans and immutable versions tests
         run: bash scripts/test-plans.sh
+      - name: Run PostgreSQL plan application concurrency tests
+        run: bash scripts/test-plan-applications.sh

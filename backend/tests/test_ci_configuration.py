@@ -255,5 +255,36 @@ def test_docker_job_runs_reproducible_postgresql_plans_suite():
     assert "openssl rand -hex 32" in shell_script
     assert "[guid]::NewGuid()" in powershell_script
     suite = (REPO_ROOT / "backend" / "tests" / "test_plans_postgres.py").read_text(encoding="utf-8")
+
     assert suite.count("def test_postgresql_") == 8
     assert 'profiles: ["plans-test"]' in compose
+
+
+def test_docker_job_runs_reproducible_postgresql_plan_application_suite():
+    workflow = load_workflow()
+    docker_steps = workflow["jobs"]["docker"]["steps"]
+    assert any(
+        step.get("name") == "Run PostgreSQL plan application concurrency tests"
+        and step.get("run") == "bash scripts/test-plan-applications.sh"
+        for step in docker_steps
+    )
+    shell_script = (REPO_ROOT / "scripts" / "test-plan-applications.sh").read_text(encoding="utf-8")
+    powershell_script = (REPO_ROOT / "scripts" / "test-plan-applications.ps1").read_text(
+        encoding="utf-8"
+    )
+    compose = (REPO_ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+    core_command = (
+        "docker compose --project-name xianwen-plan-application-test "
+        "--profile plan-application-test run --rm --build plan-application-tests"
+    )
+    assert "tests/test_plan_applications_postgres.py" in compose
+    assert core_command in " ".join(shell_script.replace(chr(92) + chr(10), "").split())
+    assert core_command in " ".join(powershell_script.split())
+    assert "down --volumes --remove-orphans" in shell_script
+    assert "down --volumes --remove-orphans" in powershell_script
+    assert "openssl rand -hex 32" in shell_script and "[guid]::NewGuid()" in powershell_script
+    assert 'profiles: ["plan-application-test"]' in compose
+    suite = (REPO_ROOT / "backend" / "tests" / "test_plan_applications_postgres.py").read_text(
+        encoding="utf-8"
+    )
+    assert suite.count("def test_postgresql_") >= 9

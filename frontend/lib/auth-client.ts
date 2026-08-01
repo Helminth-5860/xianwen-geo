@@ -78,7 +78,11 @@ export async function get<T>(path: string): Promise<T> {
   return readEnvelope<T>(response);
 }
 
-export async function post<T>(path: string, body: Record<string, unknown>): Promise<T> {
+export async function post<T>(
+  path: string,
+  body: Record<string, unknown>,
+  extraHeaders: Readonly<Record<string, string>> = {},
+): Promise<T> {
   const csrfToken = await getCsrfToken();
   const response = await fetch(`${publicEnvironment.apiBaseUrl}${path}`, {
     method: "POST",
@@ -87,6 +91,7 @@ export async function post<T>(path: string, body: Record<string, unknown>): Prom
       Accept: "application/json",
       "Content-Type": "application/json",
       "X-CSRFToken": csrfToken,
+      ...extraHeaders,
     },
     body: JSON.stringify(body),
   });
@@ -174,11 +179,19 @@ export type StatusEvent = Readonly<{
 export type AccountNotification = Readonly<{
   id: string;
   notification_type:
-    "approval_approved" | "approval_rejected" | "account_frozen" | "account_unfrozen";
+    | "approval_approved"
+    | "approval_rejected"
+    | "account_frozen"
+    | "account_unfrozen"
+    | "plan_application_submitted"
+    | "plan_application_contacted"
+    | "plan_application_closed"
+    | "plan_application_cancelled";
   title: string;
   safe_summary: string;
   read_at: string | null;
   created_at: string;
+  related_plan_application_id?: string | null;
 }>;
 
 export type PageData<T> = Readonly<{
