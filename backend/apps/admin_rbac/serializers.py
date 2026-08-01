@@ -18,6 +18,14 @@ from .models import (
 from .security import normalize_network
 
 
+class StrictSerializer(serializers.Serializer):
+    def to_internal_value(self, data):
+        unknown = set(data) - set(self.fields)
+        if unknown:
+            raise serializers.ValidationError({key: ["不允许的字段。"] for key in sorted(unknown)})
+        return super().to_internal_value(data)
+
+
 class RoleSerializer(serializers.ModelSerializer):
     permission_keys = serializers.SerializerMethodField()
 
@@ -54,20 +62,37 @@ class RoleCreateSerializer(serializers.Serializer):
     data_scope = serializers.ChoiceField(choices=AdminRole.DataScope.values)
 
 
-class RoleUpdateSerializer(serializers.Serializer):
+class RoleUpdateSerializer(StrictSerializer):
     expected_version = serializers.IntegerField(min_value=1)
     name = serializers.CharField(max_length=80, required=False, trim_whitespace=False)
     description = serializers.CharField(
         max_length=500, required=False, allow_blank=True, trim_whitespace=False
     )
     data_scope = serializers.ChoiceField(choices=AdminRole.DataScope.values, required=False)
+
+    def validate(self, attrs):
+        if not any(field in attrs for field in ("name", "description", "data_scope")):
+            raise serializers.ValidationError({"non_field_errors": ["必须提供要修改的普通字段。"]})
+        return attrs
+
+
+class RolePermissionsReplaceSerializer(StrictSerializer):
+    expected_version = serializers.IntegerField(min_value=1)
     permission_keys = serializers.ListField(
-        child=serializers.CharField(max_length=100), required=False, allow_empty=True
+        child=serializers.CharField(max_length=100), allow_empty=True
+    )
+    confirmed = serializers.BooleanField(required=False, default=False)
+    current_password = serializers.CharField(
+        max_length=128, write_only=True, required=False, default=""
     )
 
 
-class VersionSerializer(serializers.Serializer):
+class VersionSerializer(StrictSerializer):
     expected_version = serializers.IntegerField(min_value=1)
+    confirmed = serializers.BooleanField(required=False, default=False)
+    current_password = serializers.CharField(
+        max_length=128, write_only=True, required=False, default=""
+    )
 
 
 class PermissionSerializer(serializers.ModelSerializer):
@@ -90,17 +115,20 @@ class AdminProfileSerializer(serializers.ModelSerializer):
     phone_masked = serializers.SerializerMethodField()
     is_superuser = serializers.BooleanField(source="user.is_superuser")
     role = RoleSerializer()
+    logout_version = serializers.IntegerField(source="user.session_version")
 
     class Meta:
         model = AdminProfile
         fields = (
             "id",
+            "user_id",
             "nickname",
             "phone_masked",
             "is_superuser",
             "admin_status",
             "version",
             "role",
+            "logout_version",
             "created_at",
             "updated_at",
         )
@@ -130,13 +158,26 @@ class AdminCreateSerializer(serializers.Serializer):
         return attrs
 
 
-class AdminUpdateSerializer(serializers.Serializer):
+class AdminUpdateSerializer(StrictSerializer):
     expected_version = serializers.IntegerField(min_value=1)
     nickname = serializers.CharField(max_length=50, required=False, trim_whitespace=False)
-    role_id = serializers.UUIDField(required=False)
 
     def validate_nickname(self, value):
         return validate_nickname(value)
+
+    def validate(self, attrs):
+        if "nickname" not in attrs:
+            raise serializers.ValidationError({"nickname": ["必须提供要修改的普通字段。"]})
+        return attrs
+
+
+class AdminRoleChangeSerializer(StrictSerializer):
+    expected_version = serializers.IntegerField(min_value=1)
+    role_id = serializers.UUIDField()
+    confirmed = serializers.BooleanField(required=False, default=False)
+    current_password = serializers.CharField(
+        max_length=128, write_only=True, required=False, default=""
+    )
 
 
 class AssignmentSerializer(serializers.ModelSerializer):
@@ -147,11 +188,16 @@ class AssignmentSerializer(serializers.ModelSerializer):
         fields = ("id", "customer_id", "owner_admin_id", "version", "assigned_at")
 
 
-class AssignmentUpdateSerializer(serializers.Serializer):
+class AssignmentUpdateSerializer(StrictSerializer):
     owner_admin_id = serializers.UUIDField(allow_null=True)
     expected_version = serializers.IntegerField(min_value=0)
     reason = serializers.CharField(
         max_length=200, required=False, allow_blank=True, trim_whitespace=False
+    )
+
+    confirmed = serializers.BooleanField(required=False, default=False)
+    current_password = serializers.CharField(
+        max_length=128, write_only=True, required=False, default=""
     )
 
     def validate_reason(self, value):
@@ -178,7 +224,7 @@ class AdminChallengeVerifySerializer(AdminChallengeSerializer):
     )
 
 
-class SecurityMutationSerializer(serializers.Serializer):
+class SecurityMutationSerializer(StrictSerializer):
     current_password = serializers.CharField(max_length=128, write_only=True, trim_whitespace=False)
     expected_security_version = serializers.IntegerField(min_value=1)
     confirm_lockout = serializers.BooleanField(default=False, required=False)

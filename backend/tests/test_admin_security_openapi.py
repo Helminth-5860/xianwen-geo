@@ -109,7 +109,14 @@ def test_admin_security_openapi_response_matrices_are_complete():
             "503",
             "500",
         },
-        ("/admin/admins/{adminId}/force-logout", "post"): {"200", "401", "403", "404", "500"},
+        ("/admin/admins/{adminId}/force-logout", "post"): {
+            "200",
+            "202",
+            "401",
+            "403",
+            "404",
+            "500",
+        },
     }
     for (path, method), statuses in expected.items():
         assert set(paths[path][method]["responses"]) == statuses

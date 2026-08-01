@@ -1,5 +1,17 @@
 from django.urls import path
 
+from .risk_views import (
+    ApprovalApproveView,
+    ApprovalCancelView,
+    ApprovalDetailView,
+    ApprovalListView,
+    ApprovalRejectView,
+    AuditEventDetailView,
+    AuditEventListView,
+    RiskActionListView,
+    RiskPolicyDetailView,
+    RiskPolicyListView,
+)
 from .security_views import (
     AdminForceLogoutView,
     AdminLogoutView,
@@ -17,11 +29,13 @@ from .views import (
     AdminDetailView,
     AdminListCreateView,
     AdminMeView,
+    AdminRoleChangeView,
     CustomerAssignmentView,
     PermissionListView,
     RoleDetailView,
     RoleDisableView,
     RoleListCreateView,
+    RolePermissionsView,
     status_view,
 )
 
@@ -35,6 +49,11 @@ urlpatterns = [
     path("admin/me", AdminMeView.as_view(), name="admin-me"),
     path("admin/admins", AdminListCreateView.as_view(), name="admin-list"),
     path("admin/admins/<uuid:profile_id>", AdminDetailView.as_view(), name="admin-detail"),
+    path(
+        "admin/admins/<uuid:profile_id>/role",
+        AdminRoleChangeView.as_view(),
+        name="admin-role-change",
+    ),
     path(
         "admin/admins/<uuid:profile_id>/disable",
         status_view("disable").as_view(),
@@ -58,6 +77,11 @@ urlpatterns = [
     ),
     path("admin/roles", RoleListCreateView.as_view(), name="role-list"),
     path("admin/roles/<uuid:role_id>", RoleDetailView.as_view(), name="role-detail"),
+    path(
+        "admin/roles/<uuid:role_id>/permissions",
+        RolePermissionsView.as_view(),
+        name="role-permissions",
+    ),
     path("admin/roles/<uuid:role_id>/disable", RoleDisableView.as_view(), name="role-disable"),
     path("admin/roles/<uuid:role_id>/security", RoleSecurityView.as_view(), name="role-security"),
     path(
@@ -86,5 +110,37 @@ urlpatterns = [
         "admin/users/<uuid:customer_id>/assignment",
         CustomerAssignmentView.as_view(),
         name="customer-assignment",
+    ),
+    path("admin/risk-actions", RiskActionListView.as_view(), name="risk-action-list"),
+    path("admin/risk-policies", RiskPolicyListView.as_view(), name="risk-policy-list"),
+    path(
+        "admin/risk-policies/<str:action_key>",
+        RiskPolicyDetailView.as_view(),
+        name="risk-policy-detail",
+    ),
+    path("admin/approvals", ApprovalListView.as_view(), name="approval-list"),
+    path(
+        "admin/approvals/<uuid:approval_id>", ApprovalDetailView.as_view(), name="approval-detail"
+    ),
+    path(
+        "admin/approvals/<uuid:approval_id>/approve",
+        ApprovalApproveView.as_view(),
+        name="approval-approve",
+    ),
+    path(
+        "admin/approvals/<uuid:approval_id>/reject",
+        ApprovalRejectView.as_view(),
+        name="approval-reject",
+    ),
+    path(
+        "admin/approvals/<uuid:approval_id>/cancel",
+        ApprovalCancelView.as_view(),
+        name="approval-cancel",
+    ),
+    path("admin/audit-events", AuditEventListView.as_view(), name="audit-event-list"),
+    path(
+        "admin/audit-events/<uuid:event_id>",
+        AuditEventDetailView.as_view(),
+        name="audit-event-detail",
     ),
 ]

@@ -157,6 +157,7 @@ class AdminUserListSerializer(serializers.ModelSerializer):
             "phone_masked",
             "approval_status",
             "account_status",
+            "status_version",
             "approved_at",
             "created_at",
         )
@@ -176,6 +177,7 @@ class AdminUserDetailSerializer(AdminUserListSerializer):
             "phone_masked",
             "approval_status",
             "account_status",
+            "status_version",
             "approved_at",
             "created_at",
             "approval_reason",
@@ -213,9 +215,16 @@ class ReviewUserSerializer(serializers.Serializer):
         allow_blank=True,
         trim_whitespace=False,
     )
+    expected_version = serializers.IntegerField(min_value=1, required=False)
+    confirmed = serializers.BooleanField(required=False, default=False)
+    current_password = serializers.CharField(
+        max_length=128, write_only=True, required=False, default=""
+    )
 
     def validate(self, attrs):
         decision = attrs["decision"]
+        if decision == "reject" and "expected_version" not in attrs:
+            raise serializers.ValidationError({"expected_version": ["拒绝审核时必须提供。"]})
         reason = attrs.get("reason", "")
         if decision == "reject" and not reason.strip():
             attrs["reason_required"] = True
@@ -236,6 +245,11 @@ class AccountStatusActionSerializer(serializers.Serializer):
         allow_blank=True,
         trim_whitespace=False,
     )
+    expected_version = serializers.IntegerField(min_value=1, required=False)
+    confirmed = serializers.BooleanField(required=False, default=False)
+    current_password = serializers.CharField(
+        max_length=128, write_only=True, required=False, default=""
+    )
 
     def validate_reason(self, value: str) -> str:
         return validate_safe_plain_text(
@@ -244,6 +258,10 @@ class AccountStatusActionSerializer(serializers.Serializer):
             max_length=500,
             required=False,
         )
+
+
+class FreezeStatusActionSerializer(AccountStatusActionSerializer):
+    expected_version = serializers.IntegerField(min_value=1)
 
 
 class NotificationSerializer(serializers.ModelSerializer):

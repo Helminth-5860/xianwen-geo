@@ -231,7 +231,11 @@ def test_force_logout_increments_version_and_records_redacted_event():
     admin = authenticate_admin_client(APIClient(), actor)
     before = profile.user.session_version
 
-    response = admin.post(f"/api/v1/admin/admins/{profile.id}/force-logout", {}, format="json")
+    response = admin.post(
+        f"/api/v1/admin/admins/{profile.id}/force-logout",
+        {"expected_version": before, "confirmed": True},
+        format="json",
+    )
 
     assert response.status_code == 200
     profile.user.refresh_from_db()

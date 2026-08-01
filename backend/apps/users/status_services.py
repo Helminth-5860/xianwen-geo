@@ -157,12 +157,14 @@ def review_user(
     else:
         raise ApprovalStateConflict
 
+    user.status_version += 1
     user.save(
         update_fields=[
             "approval_status",
             "approval_reason",
             "approved_at",
             "approved_by",
+            "status_version",
             "updated_at",
         ]
     )
@@ -191,12 +193,13 @@ def resubmit_approval(
     if user.approval_status != User.ApprovalStatus.REJECTED:
         raise ApprovalStateConflict
     from_value = user.approval_status
-    update_fields = ["approval_status", "approval_reason", "updated_at"]
+    update_fields = ["approval_status", "approval_reason", "status_version", "updated_at"]
     if nickname is not None:
         user.nickname = validate_nickname(nickname)
         update_fields.append("nickname")
     user.approval_status = User.ApprovalStatus.PENDING
     user.approval_reason = ""
+    user.status_version += 1
     user.save(update_fields=update_fields)
     event = _create_event(
         user=user,
@@ -243,7 +246,16 @@ def change_account_status(
         notification_type = Notification.NotificationType.ACCOUNT_UNFROZEN
     else:
         raise AccountStateConflict
-    user.save(update_fields=["account_status", "is_active", "session_version", "updated_at"])
+    user.status_version += 1
+    user.save(
+        update_fields=[
+            "account_status",
+            "is_active",
+            "session_version",
+            "status_version",
+            "updated_at",
+        ]
+    )
     event = _create_event(
         user=user,
         domain=UserStatusEvent.StatusDomain.ACCOUNT,

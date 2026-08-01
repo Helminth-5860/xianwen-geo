@@ -326,3 +326,7 @@ class AdminSecurityEvent(models.Model):  # noqa: DJ008
             models.Index(fields=("subject", "created_at"), name="admin_sec_subject_idx"),
             models.Index(fields=("event_type", "created_at"), name="admin_sec_event_idx"),
         ]
+
+
+# Imported here so Django discovers the XW-0107 models under this application.
+from .risk_models import ApprovalRequest, AuditEvent, RiskAction, RiskPolicy  # noqa: E402,F401

@@ -261,3 +261,9 @@ RBAC 的 0002 Seed 迁移反向操作为 `RunPython.noop`：单独回退不会�
 ## 19. 管理员 2FA 与 IP 白名单（XW-0106）
 
 XW-0106 增加独立管理员密码/短信登录、不可持久化的 Redis 两阶段 challenge、管理员安全 Session 上下文、角色及超级管理员 IPv4/IPv6 白名单、追加式安全事件、全部设备强制退出和服务器控制台紧急恢复。管理员身份不能从普通登录入口绕过；超级管理员短信 2FA 永久强制，production 未配置真实短信 Provider 时失败关闭。实现、迁移回滚限制和 PostgreSQL/Redis 专属验收见 `docs/20-ADMIN-2FA-IP-ALLOWLIST.md`。
+
+## 20. 高风险审批与统一安全审计（XW-0107）
+
+XW-0107 将首批 12 个高风险写操作接入固定 Catalog 和显式 Handler 注册表，并按 PostgreSQL 当前 RiskPolicy 执行确认、密码再验证或双人审批。V1 不公开通用审批创建 API，不提供 BPM、动态执行器或单人绕过。审批 payload 只保存动作专属安全字段和绑定目标版本的摘要；统一 AuditEvent 追加式保存白名单摘要，不保存密码、验证码、Cookie、Session、challenge、完整手机号/IP、基础设施秘密或原始异常。
+
+迁移 Seed 使用 RunPython.noop 保留被审批/审计引用的目录证据；完整逆向迁移会删除审批和审计表，生产必须先审查并备份，优先前向修复或备份恢复。设计、API、安全边界及 PostgreSQL/Redis 专属验收见 docs/21-HIGH-RISK-APPROVAL-AUDIT.md。

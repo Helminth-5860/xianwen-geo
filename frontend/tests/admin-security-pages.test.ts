@@ -34,6 +34,7 @@ describe("管理员安全页面源代码边界", () => {
   it("管理员详情强制退出具有二次确认", () => {
     const detail = read("../app/admin/admins/[id]/page.tsx");
     expect(detail).toContain("forceLogoutAdmin");
-    expect(detail).toContain("Popconfirm");
+    expect(detail).toContain("RiskActionButton");
+    expect(detail).toContain('mode={modes["admin.force_logout"]');
   });
 });

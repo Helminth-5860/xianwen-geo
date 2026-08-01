@@ -1,32 +1,42 @@
 "use client";
 
-import { CheckOutlined, LockOutlined, StopOutlined, UnlockOutlined } from "@ant-design/icons";
 import { Alert, Button, Space } from "antd";
+import { CheckOutlined, LockOutlined, StopOutlined, UnlockOutlined } from "@ant-design/icons";
 
+import { RiskActionButton, type RiskCredentials } from "./risk-action-button";
 import { useAdminCapabilities } from "./admin-capability";
+import type { ApprovalCreated, RiskExecution, RiskMode } from "@/lib/risk-client";
 
 export type UserStatusActionTarget = Readonly<{
   approval_status: "pending" | "approved" | "rejected";
   account_status: "active" | "frozen" | "cancel_pending" | "cancelled";
 }>;
 
-type Props = Readonly<{
-  user: UserStatusActionTarget;
+type Props<T extends UserStatusActionTarget> = Readonly<{
+  user: T;
   submitting: boolean;
+  rejectMode: RiskMode;
+  freezeMode: RiskMode;
   onApprove: () => void;
-  onReject: () => void;
-  onFreeze: () => void;
+  executeReject: (credentials: RiskCredentials) => Promise<RiskExecution<T>>;
+  executeFreeze: (credentials: RiskCredentials) => Promise<RiskExecution<T>>;
+  onRiskExecuted: (result: T) => void;
+  onApproval: (approval: ApprovalCreated) => void;
   onUnfreeze: () => void;
 }>;
 
-export function UserStatusActions({
+export function UserStatusActions<T extends UserStatusActionTarget>({
   user,
   submitting,
+  rejectMode,
+  freezeMode,
   onApprove,
-  onReject,
-  onFreeze,
+  executeReject,
+  executeFreeze,
+  onRiskExecuted,
+  onApproval,
   onUnfreeze,
-}: Props) {
+}: Props<T>) {
   const capabilities = useAdminCapabilities();
   const canReview = Boolean(capabilities?.permission_keys.includes("users.review"));
   const canFreeze = Boolean(capabilities?.permission_keys.includes("users.freeze"));
@@ -50,15 +60,32 @@ export function UserStatusActions({
             >
               通过审核
             </Button>
-            <Button danger icon={<StopOutlined />} disabled={submitting} onClick={onReject}>
-              拒绝审核
-            </Button>
+            <RiskActionButton
+              actionName="拒绝用户审核"
+              mode={rejectMode}
+              danger
+              disabled={submitting}
+              reasonRequired
+              execute={executeReject}
+              onExecuted={onRiskExecuted}
+              onApproval={onApproval}
+            >
+              <StopOutlined /> 拒绝审核
+            </RiskActionButton>
           </>
         )}
         {canFreeze && user.account_status === "active" && (
-          <Button danger icon={<LockOutlined />} disabled={submitting} onClick={onFreeze}>
-            冻结账号
-          </Button>
+          <RiskActionButton
+            actionName="冻结用户"
+            mode={freezeMode}
+            danger
+            disabled={submitting}
+            execute={executeFreeze}
+            onExecuted={onRiskExecuted}
+            onApproval={onApproval}
+          >
+            <LockOutlined /> 冻结账号
+          </RiskActionButton>
         )}
         {canFreeze && user.account_status === "frozen" && (
           <Button icon={<UnlockOutlined />} disabled={submitting} onClick={onUnfreeze}>

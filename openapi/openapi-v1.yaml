@@ -985,7 +985,7 @@ paths:
       responses: {'200': {description: 管理员详情}, '404': {$ref: '#/components/responses/ResourceNotFound'}}
     patch:
       tags: [Admin]
-      summary: 修改管理员资料或角色
+      summary: 仅修改管理员普通资料；角色变更使用独立风险端点
       parameters: [{$ref: '#/components/parameters/CsrfToken'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AdminUpdateRequest'}}}}
       responses: {'200': {description: 已更新}, '409': {description: ADMIN_VERSION_CONFLICT}}
@@ -995,7 +995,8 @@ paths:
       tags: [Admin]
       summary: administrator security session_version administrator security Session
       parameters: [{$ref: '#/components/parameters/CsrfToken'}]
-      responses: {'200': {description: 当前或目标管理员的既有 Session 已撤销}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '500': {$ref: '#/components/responses/InternalError'}}
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/RiskControlFields'}}}}
+      responses: {'200': {description: 当前或目标管理员的既有 Session 已撤销}, '202': {description: 已创建双人审批请求}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '500': {$ref: '#/components/responses/InternalError'}}
   /admin/admins/{adminId}/disable:
     $ref: '#/components/pathItems/AdminStatusAction'
   /admin/admins/{adminId}/enable:
@@ -1023,7 +1024,7 @@ paths:
       responses: {'200': {description: 角色详情}}
     patch:
       tags: [Admin]
-      summary: 更新角色、数据范围和权限
+      summary: 仅更新角色普通资料和数据范围；权限替换使用独立风险端点
       parameters: [{$ref: '#/components/parameters/CsrfToken'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/RoleUpdateRequest'}}}}
       responses: {'200': {description: 已更新}, '409': {description: ROLE_VERSION_CONFLICT}}
@@ -1108,6 +1109,166 @@ paths:
       parameters: [{$ref: '#/components/parameters/UserId'}, {$ref: '#/components/parameters/CsrfToken'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AssignmentUpdateRequest'}}}}
       responses: {'200': {description: 当前归属}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {description: ASSIGNMENT_VERSION_CONFLICT}}
+  /admin/admins/{adminId}/role:
+    parameters: [{$ref: '#/components/parameters/AdminId'}]
+    post:
+      tags: [Admin]
+      summary: 通过风险编排变更管理员角色
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AdminRoleChangeRiskRequest'}}}}
+      responses:
+        '200': {description: 角色已同步变更}
+        '202': {description: 已创建双人审批请求, content: {application/json: {schema: {$ref: '#/components/schemas/ApprovalCreatedEnvelope'}}}}
+        '403': {$ref: '#/components/responses/PermissionDenied'}
+        '409': {description: 目标版本、策略或审批可用性冲突}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /admin/roles/{roleId}/permissions:
+    parameters: [{$ref: '#/components/parameters/RoleId'}]
+    put:
+      tags: [Admin]
+      summary: 通过固定双人审批替换角色权限
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/RolePermissionsRiskRequest'}}}}
+      responses:
+        '200': {description: 权限已替换}
+        '202': {description: 已创建双人审批请求, content: {application/json: {schema: {$ref: '#/components/schemas/ApprovalCreatedEnvelope'}}}}
+        '403': {$ref: '#/components/responses/PermissionDenied'}
+        '409': {description: 目标版本、策略或审批可用性冲突}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /admin/risk-actions:
+    get:
+      tags: [Admin]
+      summary: 当前管理员可执行动作的最小风险提示
+      responses:
+        '200': {description: 静态动作目录及当前策略}
+        '403': {$ref: '#/components/responses/PermissionDenied'}
+  /admin/risk-policies:
+    get:
+      tags: [Admin]
+      summary: 超级管理员查看全部风险策略
+      responses:
+        '200': {description: 风险策略列表}
+        '403': {$ref: '#/components/responses/PermissionDenied'}
+  /admin/risk-policies/{actionKey}:
+    parameters:
+      - name: actionKey
+        in: path
+        required: true
+        schema: {type: string, maxLength: 100}
+    patch:
+      tags: [Admin]
+      summary: 固定保护地更新风险策略
+      description: 始终要求有效超级管理员、当前密码、真实 CSRF、确认和乐观版本，不递归使用可配置策略。
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/RiskPolicyUpdateRequest'}}}}
+      responses:
+        '200': {description: 风险策略已更新}
+        '403': {description: 权限、CSRF 或当前密码验证失败}
+        '409': {description: RISK_POLICY_VERSION_CONFLICT}
+        '422': {description: 不支持模式、低于最低模式或缺少确认}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+  /admin/approvals:
+    get:
+      tags: [Admin]
+      summary: 审批请求列表
+      description: 普通管理员只看到自己发起的请求；超级管理员看到全部。V1 不提供通用 POST 创建。
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - name: status
+          in: query
+          schema: {$ref: '#/components/schemas/ApprovalRequestStatus'}
+      responses:
+        '200': {description: 审批分页, content: {application/json: {schema: {$ref: '#/components/schemas/ApprovalPageEnvelope'}}}}
+        '403': {$ref: '#/components/responses/PermissionDenied'}
+  /admin/approvals/{approvalId}:
+    parameters:
+      - name: approvalId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    get:
+      tags: [Admin]
+      summary: 审批安全详情
+      responses:
+        '200': {description: 不含 sanitized_payload 全文的详情, content: {application/json: {schema: {$ref: '#/components/schemas/ApprovalEnvelope'}}}}
+        '403': {$ref: '#/components/responses/PermissionDenied'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+  /admin/approvals/{approvalId}/approve:
+    parameters:
+      - name: approvalId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    post:
+      tags: [Admin]
+      summary: 另一名有效超级管理员批准并同步执行一次
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ApprovalApproveRequest'}}}}
+      responses:
+        '200': {description: 最终 executed 或 execution_failed, content: {application/json: {schema: {$ref: '#/components/schemas/ApprovalEnvelope'}}}}
+        '403': {description: 自批、权限、CSRF 或当前密码失败}
+        '409': {description: APPROVAL_STATE_CONFLICT 或 APPROVAL_STALE}
+        '410': {description: APPROVAL_EXPIRED}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+  /admin/approvals/{approvalId}/reject:
+    parameters:
+      - name: approvalId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    post:
+      tags: [Admin]
+      summary: 另一名有效超级管理员拒绝待审批请求
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ApprovalRejectRequest'}}}}
+      responses:
+        '200': {description: 已拒绝}
+        '403': {description: 自拒绝、权限或 CSRF 失败}
+        '409': {description: APPROVAL_STATE_CONFLICT}
+        '410': {description: APPROVAL_EXPIRED}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /admin/approvals/{approvalId}/cancel:
+    parameters:
+      - name: approvalId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    post:
+      tags: [Admin]
+      summary: 发起人取消待审批请求
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      responses:
+        '200': {description: 已取消}
+        '409': {description: APPROVAL_STATE_CONFLICT}
+        '410': {description: APPROVAL_EXPIRED}
+  /admin/audit-events:
+    get:
+      tags: [Admin]
+      summary: 超级管理员查看统一安全审计索引
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - {name: action_key, in: query, schema: {type: string, maxLength: 100}}
+        - {name: outcome, in: query, schema: {type: string, maxLength: 32}}
+      responses:
+        '200': {description: 仅白名单安全摘要, content: {application/json: {schema: {$ref: '#/components/schemas/AuditEventPageEnvelope'}}}}
+        '403': {$ref: '#/components/responses/PermissionDenied'}
+  /admin/audit-events/{eventId}:
+    parameters:
+      - name: eventId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    get:
+      tags: [Admin]
+      summary: 超级管理员查看统一审计安全详情
+      responses:
+        '200': {description: 不含完整 payload、手机号、IP 或原始异常, content: {application/json: {schema: {$ref: '#/components/schemas/AuditEventEnvelope'}}}}
+        '403': {$ref: '#/components/responses/PermissionDenied'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
 components:
   pathItems:
     AdminStatusAction:
@@ -1388,6 +1549,16 @@ components:
         - IP_ALLOWLIST_LOCKOUT_CONFIRMATION_REQUIRED
         - ACCOUNT_ALREADY_EXISTS
         - APPROVAL_STATE_CONFLICT
+        - RISK_CONFIRMATION_REQUIRED
+        - RISK_POLICY_VERSION_CONFLICT
+        - RISK_SECURITY_MODE_NOT_SUPPORTED
+        - RISK_SECURITY_MODE_BELOW_MINIMUM
+        - APPROVAL_SELF_NOT_ALLOWED
+        - APPROVAL_APPROVER_UNAVAILABLE
+        - APPROVAL_EXPIRED
+        - APPROVAL_STALE
+        - APPROVAL_PAYLOAD_INVALID
+        - APPROVAL_EXECUTION_FAILED
         - ACCOUNT_STATE_CONFLICT
         - APPROVAL_REASON_REQUIRED
         - PERMISSION_DENIED
@@ -1556,7 +1727,7 @@ components:
       type: object
       additionalProperties: false
       required:
-        [id, nickname, phone_masked, approval_status, account_status, approved_at, created_at]
+        [id, nickname, phone_masked, approval_status, account_status, status_version, approved_at, created_at]
       properties:
         id: {type: string, format: uuid}
         nickname: {type: string, maxLength: 50}
@@ -1565,6 +1736,7 @@ components:
           $ref: '#/components/schemas/ApprovalStatus'
         account_status:
           $ref: '#/components/schemas/AccountStatus'
+        status_version: {type: integer, minimum: 1}
         approval_reason: {type: [string, 'null'], maxLength: 500}
         approved_at: {type: [string, 'null'], format: date-time}
         created_at: {type: string, format: date-time}
@@ -1651,11 +1823,17 @@ components:
           properties:
             decision: {type: string, const: reject}
             reason: {type: string, minLength: 1, maxLength: 500}
+            expected_version: {type: integer, minimum: 1}
+            confirmed: {type: boolean}
+            current_password: {type: string, format: password, writeOnly: true}
     AccountStatusActionRequest:
       type: object
       additionalProperties: false
       properties:
         reason: {type: string, maxLength: 500}
+        expected_version: {type: integer, minimum: 1}
+        confirmed: {type: boolean}
+        current_password: {type: string, format: password, writeOnly: true}
     Notification:
       type: object
       additionalProperties: false
@@ -1858,11 +2036,13 @@ components:
       required: [id, nickname, phone_masked, is_superuser, admin_status, version]
       properties:
         id: {type: string, format: uuid}
+        user_id: {type: string, format: uuid}
         nickname: {type: string}
         phone_masked: {type: string}
         is_superuser: {type: boolean}
         admin_status: {type: string, enum: [active, disabled, locked]}
         version: {type: integer, minimum: 1}
+        logout_version: {type: integer, minimum: 1}
         role: {$ref: '#/components/schemas/AdminRoleSummary'}
     AdminContextEnvelope:
       allOf:
@@ -1894,13 +2074,14 @@ components:
       properties:
         expected_version: {type: integer, minimum: 1}
         nickname: {type: string, maxLength: 50}
-        role_id: {type: string, format: uuid}
     ExpectedVersionRequest:
       type: object
       additionalProperties: false
       required: [expected_version]
       properties:
         expected_version: {type: integer, minimum: 1}
+        confirmed: {type: boolean}
+        current_password: {type: string, format: password, writeOnly: true}
     RoleCreateRequest:
       type: object
       additionalProperties: false
@@ -1918,7 +2099,6 @@ components:
         name: {type: string, maxLength: 80}
         description: {type: string, maxLength: 500}
         data_scope: {type: string, enum: [own, role, all]}
-        permission_keys: {type: array, uniqueItems: true, items: {type: string}}
     AssignmentUpdateRequest:
       type: object
       additionalProperties: false
@@ -1927,81 +2107,153 @@ components:
         owner_admin_id: {type: [string, 'null'], format: uuid}
         expected_version: {type: integer, minimum: 0}
         reason: {type: string, maxLength: 200}
-    AdminRoleSummary:
-      type: [object, 'null']
-      properties:
-        id: {type: string, format: uuid}
-        name: {type: string}
-        status: {type: string, enum: [active, inactive]}
-        data_scope: {type: string, enum: [own, role, all]}
-        version: {type: integer, minimum: 1}
-        permission_keys: {type: array, items: {type: string}}
-    AdminProfile:
+    RiskMode:
+      type: string
+      enum: [confirm, password, two_person]
+    RiskControlFields:
       type: object
-      required: [id, nickname, phone_masked, is_superuser, admin_status, version]
+      additionalProperties: false
+      required: [expected_version]
+      properties:
+        expected_version: {type: integer, minimum: 0}
+        confirmed: {type: boolean}
+        current_password: {type: string, format: password, writeOnly: true}
+    AdminRoleChangeRiskRequest:
+      allOf:
+        - $ref: '#/components/schemas/RiskControlFields'
+        - type: object
+          required: [role_id]
+          properties:
+            role_id: {type: string, format: uuid}
+    RolePermissionsRiskRequest:
+      allOf:
+        - $ref: '#/components/schemas/RiskControlFields'
+        - type: object
+          required: [permission_keys]
+          properties:
+            permission_keys: {type: array, uniqueItems: true, maxItems: 200, items: {type: string}}
+    RiskPolicyUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [current_mode, expected_version, current_password, confirmed]
+      properties:
+        current_mode: {$ref: '#/components/schemas/RiskMode'}
+        expected_version: {type: integer, minimum: 1}
+        current_password: {type: string, format: password, writeOnly: true}
+        confirmed: {type: boolean, const: true}
+    ApprovalRequestStatus:
+      type: string
+      enum: [pending, rejected, cancelled, expired, stale, executed, execution_failed]
+    ApprovalCreated:
+      type: object
+      additionalProperties: false
+      required: [approval_required, approval_id, status, expires_at]
+      properties:
+        approval_required: {type: boolean, const: true}
+        approval_id: {type: string, format: uuid}
+        status: {type: string, const: pending}
+        expires_at: {type: string, format: date-time}
+    ApprovalCreatedEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          required: [data]
+          properties:
+            data: {$ref: '#/components/schemas/ApprovalCreated'}
+    ApprovalRequest:
+      type: object
+      additionalProperties: false
+      required: [id, action_key, policy_version, requester_id, target_type, target_id, target_version, safe_summary, status, expires_at, request_id, created_at, updated_at]
       properties:
         id: {type: string, format: uuid}
-        nickname: {type: string}
-        phone_masked: {type: string}
-        is_superuser: {type: boolean}
-        admin_status: {type: string, enum: [active, disabled, locked]}
-        version: {type: integer, minimum: 1}
-        role: {$ref: '#/components/schemas/AdminRoleSummary'}
-    AdminContextEnvelope:
+        action_key: {type: string}
+        policy_version: {type: integer, minimum: 1}
+        requester_id: {type: string, format: uuid}
+        target_type: {type: string}
+        target_id: {type: string, format: uuid}
+        target_version: {type: integer, minimum: 0}
+        safe_summary: {type: string, maxLength: 500}
+        status: {$ref: '#/components/schemas/ApprovalRequestStatus'}
+        expires_at: {type: string, format: date-time}
+        approved_by_id: {type: [string, 'null'], format: uuid}
+        approved_at: {type: [string, 'null'], format: date-time}
+        rejected_by_id: {type: [string, 'null'], format: uuid}
+        rejected_at: {type: [string, 'null'], format: date-time}
+        rejection_reason: {type: string, maxLength: 500}
+        cancelled_at: {type: [string, 'null'], format: date-time}
+        executed_at: {type: [string, 'null'], format: date-time}
+        execution_result: {type: object, additionalProperties: true}
+        stable_error_code: {type: string}
+        request_id: {type: string, format: uuid}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    ApprovalEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          properties:
+            data: {$ref: '#/components/schemas/ApprovalRequest'}
+    ApprovalPageEnvelope:
       allOf:
         - $ref: '#/components/schemas/EnvelopeBase'
         - type: object
           properties:
             data:
-              allOf:
-                - $ref: '#/components/schemas/AdminProfile'
-                - type: object
-                  properties:
-                    admin_version: {type: integer, minimum: 1}
-                    data_scope: {type: string, enum: [own, role, all]}
-                    permission_keys: {type: array, items: {type: string}}
-                    menu_keys: {type: array, items: {type: string}}
-    AdminCreateRequest:
+              type: object
+              properties:
+                results: {type: array, items: {$ref: '#/components/schemas/ApprovalRequest'}}
+                pagination: {$ref: '#/components/schemas/Pagination'}
+    ApprovalApproveRequest:
       type: object
       additionalProperties: false
-      required: [phone, nickname, password, role_id]
+      required: [current_password]
       properties:
-        phone: {type: string}
-        nickname: {type: string, maxLength: 50}
-        password: {type: string, format: password, writeOnly: true}
-        role_id: {type: string, format: uuid}
-    AdminUpdateRequest:
+        current_password: {type: string, format: password, writeOnly: true}
+    ApprovalRejectRequest:
       type: object
       additionalProperties: false
-      required: [expected_version]
+      required: [reason]
       properties:
-        expected_version: {type: integer, minimum: 1}
-        nickname: {type: string, maxLength: 50}
-        role_id: {type: string, format: uuid}
-    ExpectedVersionRequest:
+        reason: {type: string, minLength: 1, maxLength: 500}
+    AuditEvent:
       type: object
       additionalProperties: false
-      required: [expected_version]
+      required: [id, category, action_key, outcome, target_type, target_id, request_id, safe_before, safe_after, created_at]
       properties:
-        expected_version: {type: integer, minimum: 1}
-    RoleCreateRequest:
-      type: object
-      additionalProperties: false
-      required: [name, data_scope]
-      properties:
-        name: {type: string, maxLength: 80}
-        description: {type: string, maxLength: 500}
-        data_scope: {type: string, enum: [own, role, all]}
-    RoleUpdateRequest:
-      type: object
-      additionalProperties: false
-      required: [expected_version]
-      properties:
-        expected_version: {type: integer, minimum: 1}
-        name: {type: string, maxLength: 80}
-        description: {type: string, maxLength: 500}
-        data_scope: {type: string, enum: [own, role, all]}
-        permission_keys: {type: array, uniqueItems: true, items: {type: string}}
+        id: {type: string, format: uuid}
+        category: {type: string}
+        action_key: {type: string}
+        outcome: {type: string}
+        actor_id: {type: [string, 'null'], format: uuid}
+        subject_id: {type: [string, 'null'], format: uuid}
+        requester_id: {type: [string, 'null'], format: uuid}
+        approver_id: {type: [string, 'null'], format: uuid}
+        target_type: {type: string}
+        target_id: {type: string, format: uuid}
+        request_id: {type: string, format: uuid}
+        approval_request_id: {type: [string, 'null'], format: uuid}
+        safe_before: {type: object, additionalProperties: true}
+        safe_after: {type: object, additionalProperties: true}
+        stable_error_code: {type: string}
+        ip_fingerprint: {type: string, maxLength: 64, description: 不可逆服务端指纹，不是完整 IP}
+        user_agent_digest: {type: string, maxLength: 64}
+        created_at: {type: string, format: date-time}
+    AuditEventEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          properties:
+            data: {$ref: '#/components/schemas/AuditEvent'}
+    AuditEventPageEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                results: {type: array, items: {$ref: '#/components/schemas/AuditEvent'}}
+                pagination: {$ref: '#/components/schemas/Pagination'}
     AssignmentUpdateRequest:
       type: object
       additionalProperties: false

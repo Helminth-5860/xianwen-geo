@@ -153,6 +153,7 @@ export type AdminUser = Readonly<{
   phone_masked: string;
   approval_status: AccountUser["approval_status"];
   account_status: AccountUser["account_status"];
+  status_version: number;
   approval_reason?: string | null;
   approved_at: string | null;
   created_at: string;
@@ -228,12 +229,28 @@ export function getAdminUserHistory(userId: string) {
   return get<PageData<StatusEvent>>(`/admin/users/${userId}/history`);
 }
 
-export function reviewAdminUser(userId: string, decision: "approve" | "reject", reason = "") {
-  return post<AdminUser>(`/admin/users/${userId}/review`, { decision, reason });
+export function reviewAdminUser(
+  userId: string,
+  decision: "approve" | "reject",
+  reason = "",
+  expectedVersion?: number,
+  credentials: { confirmed?: true; current_password?: string } = {},
+) {
+  return post<AdminUser | import("./risk-client").ApprovalCreated>(
+    `/admin/users/${userId}/review`,
+    { decision, reason, expected_version: expectedVersion, ...credentials },
+  );
 }
 
-export function freezeAdminUser(userId: string) {
-  return post<AdminUser>(`/admin/users/${userId}/freeze`, {});
+export function freezeAdminUser(
+  userId: string,
+  expectedVersion: number,
+  credentials: { confirmed: true; current_password: string },
+) {
+  return post<AdminUser | import("./risk-client").ApprovalCreated>(
+    `/admin/users/${userId}/freeze`,
+    { expected_version: expectedVersion, ...credentials },
+  );
 }
 
 export function unfreezeAdminUser(userId: string) {

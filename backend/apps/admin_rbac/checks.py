@@ -61,3 +61,48 @@ def admin_profile_invariants(app_configs, **kwargs):
             )
         )
     return warnings
+
+
+@register()
+def risk_catalog_invariants(app_configs, **kwargs):
+    from django.core.checks import Error
+
+    from .risk_catalog import CATALOG_VERSION, RISK_ACTION_CATALOG, mode_is_valid
+    from .risk_handlers import HANDLER_REGISTRY
+    from .risk_models import RiskAction
+
+    errors = []
+    definitions = {item.key: item for item in RISK_ACTION_CATALOG}
+    if set(definitions) != set(HANDLER_REGISTRY):
+        errors.append(Error("高风险目录与静态 Handler 注册表不一致。", id="admin_rbac.E010"))
+    for definition in definitions.values():
+        if (
+            definition.default_mode not in definition.supported_modes
+            or not mode_is_valid(definition, definition.default_mode)
+            or definition.minimum_mode not in definition.supported_modes
+        ):
+            errors.append(
+                Error(f"高风险动作 {definition.key} 的模式定义不合法。", id="admin_rbac.E011")
+            )
+    try:
+        rows = {item.key: item for item in RiskAction.objects.all()}
+    except (OperationalError, ProgrammingError):
+        return errors
+    for key, definition in definitions.items():
+        row = rows.get(key)
+        expected = {
+            "name": definition.name,
+            "module": definition.module,
+            "target_type": definition.target_type,
+            "supported_modes": list(definition.supported_modes),
+            "default_mode": definition.default_mode,
+            "minimum_mode": definition.minimum_mode,
+            "handler_key": definition.handler_key,
+            "catalog_version": CATALOG_VERSION,
+        }
+        if row is None or any(getattr(row, field) != value for field, value in expected.items()):
+            errors.append(Error(f"高风险目录数据库记录发生漂移：{key}", id="admin_rbac.E012"))
+    unmanaged = set(rows) - set(definitions)
+    if unmanaged:
+        errors.append(Error("数据库存在未受代码目录管理的高风险动作。", id="admin_rbac.E013"))
+    return errors

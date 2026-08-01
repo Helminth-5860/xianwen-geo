@@ -6,6 +6,7 @@ from apps.users.models import User
 
 from ...catalog import PERMISSION_CATALOG
 from ...models import AdminPermission, AdminProfile
+from ...risk_catalog_services import synchronize_risk_catalog
 from ...services import set_permission_status
 
 
@@ -39,6 +40,8 @@ class Command(BaseCommand):
             AdminPermission.objects.exclude(key__in=catalog_keys).values_list("key", flat=True)
         )
         changes = len(extra_keys)
+        risk_changes, unknown_risk_keys = synchronize_risk_catalog(apply_changes=apply_changes)
+        changes += risk_changes
         for item in PERMISSION_CATALOG:
             current = AdminPermission.objects.filter(key=item.key).first()
             expected = {
@@ -91,6 +94,13 @@ class Command(BaseCommand):
                     user.is_staff = False
                     user.session_version += 1
                     user.save(update_fields=["is_staff", "session_version", "updated_at"])
+        if unknown_risk_keys:
+            self.stdout.write(
+                self.style.WARNING(
+                    "risk catalog drift：发现 "
+                    f"{len(unknown_risk_keys)} 个非目录动作；不会自动删除。"
+                )
+            )
         if extra_keys:
             self.stdout.write(
                 self.style.WARNING(

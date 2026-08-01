@@ -26,6 +26,8 @@ const mocks = vi.hoisted(() => ({
   forceLogoutAdmin: vi.fn(),
   changeAdminStatus: vi.fn(),
   updateAdmin: vi.fn(),
+  changeAdminRole: vi.fn(),
+  getRiskActions: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -59,10 +61,16 @@ vi.mock("@/lib/admin-rbac-client", () => ({
   forceLogoutAdmin: mocks.forceLogoutAdmin,
   changeAdminStatus: mocks.changeAdminStatus,
   updateAdmin: mocks.updateAdmin,
+  changeAdminRole: mocks.changeAdminRole,
 }));
+vi.mock("@/lib/risk-client", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../lib/risk-client")>();
+  return { ...actual, getRiskActions: mocks.getRiskActions };
+});
 vi.mock("@/components/admin/admin-capability", () => ({
   useAdminCapabilities: () => ({
     id: "target-id",
+    user_id: "target-user-id",
     permission_keys: ["admins.update", "admins.disable"],
     menu_keys: [],
   }),
@@ -91,13 +99,22 @@ const entry = {
 };
 const profile = {
   id: "target-id",
+  user_id: "target-user-id",
   nickname: "超级管理员",
   phone_masked: "139****9000",
   is_superuser: true,
   admin_status: "active" as const,
   version: 1,
+  logout_version: 1,
   role: null,
 };
+
+mocks.getRiskActions.mockResolvedValue([
+  {
+    key: "admin.force_logout",
+    current_mode: "confirm",
+  },
+]);
 
 function error(code: string, message: string, status: number) {
   return new AuthApiError(new Response(null, { status }), {
@@ -313,8 +330,8 @@ describe("force logout", () => {
     render(<AdminDetailPage />);
     await screen.findByText(/超级管理员/);
     await user.click(screen.getByRole("button", { name: "强制退出全部设备" }));
-    expect(await screen.findByText("确认强制退出该管理员全部设备？")).toBeTruthy();
-    await user.click(screen.getByRole("button", { name: "OK" }));
+    expect(await screen.findByText("确认后立即执行")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "确认执行" }));
     expect(await screen.findByText("已撤销当前会话；下一次请求将要求重新登录。")).toBeTruthy();
   });
 
@@ -333,7 +350,7 @@ describe("force logout", () => {
     render(<AdminDetailPage />);
     await screen.findByText(/超级管理员/);
     await user.click(screen.getByRole("button", { name: "强制退出全部设备" }));
-    await user.click(await screen.findByRole("button", { name: "OK" }));
+    await user.click(await screen.findByRole("button", { name: "确认执行" }));
     expect(await screen.findByText(message as string)).toBeTruthy();
   });
 });

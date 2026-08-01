@@ -184,10 +184,14 @@ def test_user_review_uses_role_scope_and_separate_permission(scope_fixture):
 def test_user_freeze_uses_own_scope_and_freeze_permission(scope_fixture):
     data = scope_fixture
     hidden = data.own_client.post(
-        f"/api/v1/admin/users/{data.role_customer.id}/freeze", {}, format="json"
+        f"/api/v1/admin/users/{data.role_customer.id}/freeze",
+        {"expected_version": data.role_customer.status_version, "confirmed": True},
+        format="json",
     )
     visible = data.own_client.post(
-        f"/api/v1/admin/users/{data.own_customer.id}/freeze", {}, format="json"
+        f"/api/v1/admin/users/{data.own_customer.id}/freeze",
+        {"expected_version": data.own_customer.status_version, "confirmed": True},
+        format="json",
     )
     assert hidden.status_code == 404
     assert visible.status_code == 200
@@ -195,7 +199,9 @@ def test_user_freeze_uses_own_scope_and_freeze_permission(scope_fixture):
     permission = AdminPermission.objects.get(key="users.freeze")
     AdminRolePermission.objects.filter(role=data.own_admin.role, permission=permission).delete()
     denied = data.own_client.post(
-        f"/api/v1/admin/users/{data.own_customer.id}/freeze", {}, format="json"
+        f"/api/v1/admin/users/{data.own_customer.id}/freeze",
+        {"expected_version": data.own_customer.status_version, "confirmed": True},
+        format="json",
     )
     assert denied.status_code == 403
 
