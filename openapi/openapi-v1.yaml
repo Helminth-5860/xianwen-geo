@@ -1304,6 +1304,106 @@ paths:
         '401': {$ref: '#/components/responses/AuthRequired'}
         '403': {$ref: '#/components/responses/PermissionDenied'}
         '404': {$ref: '#/components/responses/ResourceNotFound'}
+  /admin/plans:
+    get:
+      tags: [Admin, Plans]
+      summary: 分页筛选套餐
+      responses:
+        '200': {description: 套餐分页, content: {application/json: {schema: {$ref: '#/components/schemas/PlanPageEnvelope'}}}}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/PermissionDenied'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+    post:
+      tags: [Admin, Plans]
+      summary: 创建套餐；展示价格不是交易价格
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/PlanCreateRequest'}}}}
+      responses:
+        '200': {description: 已创建, content: {application/json: {schema: {$ref: '#/components/schemas/PlanEnvelope'}}}}
+        '202': {$ref: '#/components/responses/ApprovalRequired'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/PermissionDenied'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+  /admin/plans/{planId}:
+    parameters: [{$ref: '#/components/parameters/PlanId'}]
+    get:
+      tags: [Admin, Plans]
+      summary: 套餐详情和当前/草稿版本
+      responses: {'200': {description: 套餐详情, content: {application/json: {schema: {$ref: '#/components/schemas/PlanEnvelope'}}}}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}, '429': {$ref: '#/components/responses/RateLimited'}, '503': {$ref: '#/components/responses/ServiceUnavailable'}}
+    patch:
+      tags: [Admin, Plans]
+      summary: 修改套餐展示资料；不能修改版本权益
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/PlanUpdateRequest'}}}}
+      responses: {'200': {description: 已修改}, '202': {$ref: '#/components/responses/ApprovalRequired'}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}, '429': {$ref: '#/components/responses/RateLimited'}, '503': {$ref: '#/components/responses/ServiceUnavailable'}}
+  /admin/plans/{planId}/copy:
+    parameters: [{$ref: '#/components/parameters/PlanId'}]
+    post:
+      tags: [Admin, Plans]
+      summary: 深复制套餐到新草稿
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/PlanCopyRequest'}}}}
+      responses: {'200': {description: 已复制}, '202': {$ref: '#/components/responses/ApprovalRequired'}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}, '429': {$ref: '#/components/responses/RateLimited'}, '503': {$ref: '#/components/responses/ServiceUnavailable'}}
+  /admin/plans/{planId}/online:
+    $ref: '#/components/pathItems/PlanStateAction'
+  /admin/plans/{planId}/offline:
+    $ref: '#/components/pathItems/PlanStateAction'
+  /admin/plans/{planId}/archive:
+    $ref: '#/components/pathItems/PlanStateAction'
+  /admin/plans/{planId}/versions:
+    parameters: [{$ref: '#/components/parameters/PlanId'}]
+    get:
+      tags: [Admin, Plans]
+      summary: 套餐版本列表
+      responses: {'200': {description: 版本列表}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}, '429': {$ref: '#/components/responses/RateLimited'}, '503': {$ref: '#/components/responses/ServiceUnavailable'}}
+    post:
+      tags: [Admin, Plans]
+      summary: 创建唯一草稿版本
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/PlanVersionCreateRequest'}}}}
+      responses: {'200': {description: 已创建}, '202': {$ref: '#/components/responses/ApprovalRequired'}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}, '429': {$ref: '#/components/responses/RateLimited'}, '503': {$ref: '#/components/responses/ServiceUnavailable'}}
+  /admin/plan-versions/{versionId}:
+    parameters: [{$ref: '#/components/parameters/PlanVersionId'}]
+    get:
+      tags: [Admin, Plans]
+      summary: 套餐版本详情
+      responses: {'200': {description: 版本详情, content: {application/json: {schema: {$ref: '#/components/schemas/PlanVersionEnvelope'}}}}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}, '429': {$ref: '#/components/responses/RateLimited'}, '503': {$ref: '#/components/responses/ServiceUnavailable'}}
+    patch:
+      tags: [Admin, Plans]
+      summary: 修改草稿 typed limits 和八模型；不接受 effective_config/config_digest
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/PlanVersionUpdateRequest'}}}}
+      responses: {'200': {description: 已修改}, '202': {$ref: '#/components/responses/ApprovalRequired'}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}, '429': {$ref: '#/components/responses/RateLimited'}, '503': {$ref: '#/components/responses/ServiceUnavailable'}}
+  /admin/plan-versions/{versionId}/publish:
+    $ref: '#/components/pathItems/PlanVersionPublishAction'
+  /admin/plan-versions/{versionId}/retire:
+    $ref: '#/components/pathItems/PlanVersionStateAction'
+  /admin/plan-limit-definitions:
+    get:
+      tags: [Admin, Plans]
+      summary: 读取代码所有的限制键目录
+      responses: {'200': {description: 限制定义}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}, '429': {$ref: '#/components/responses/RateLimited'}, '503': {$ref: '#/components/responses/ServiceUnavailable'}}
+  /plans:
+    get:
+      tags: [Plans]
+      security: []
+      summary: 公开已上架套餐
+      responses: {'200': {description: 仅 current published 权益摘要, content: {application/json: {schema: {$ref: '#/components/schemas/PublicPlanListEnvelope'}}}}, '404': {$ref: '#/components/responses/ResourceNotFound'}}
+  /plans/{planId}:
+    parameters: [{$ref: '#/components/parameters/PlanId'}]
+    get:
+      tags: [Plans]
+      security: []
+      summary: 公开已上架套餐详情
+      responses: {'200': {description: 不含 digest、原始 effective_config 或风险元数据, content: {application/json: {schema: {$ref: '#/components/schemas/PublicPlanEnvelope'}}}}, '404': {$ref: '#/components/responses/ResourceNotFound'}}
 components:
   pathItems:
     AdminStatusAction:
@@ -1322,6 +1422,30 @@ components:
         responses:
           '200': {description: 状态已更新}
           '409': {description: ADMIN_STATE_CONFLICT、ADMIN_VERSION_CONFLICT、ADMIN_HAS_ASSIGNED_CUSTOMERS 或 LAST_SUPERUSER_PROTECTED}
+    PlanStateAction:
+      parameters: [{$ref: '#/components/parameters/PlanId'}]
+      post:
+        tags: [Admin, Plans]
+        summary: 套餐状态动作（online/offline/archive）
+        parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+        requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/PlanExpectedVersionRequest'}}}}
+        responses: {'200': {description: 已执行}, '202': {$ref: '#/components/responses/ApprovalRequired'}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}, '429': {$ref: '#/components/responses/RateLimited'}, '503': {$ref: '#/components/responses/ServiceUnavailable'}}
+    PlanVersionStateAction:
+      parameters: [{$ref: '#/components/parameters/PlanVersionId'}]
+      post:
+        tags: [Admin, Plans]
+        summary: 退役套餐版本；已发布/retired 权益不可变
+        parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+        requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/PlanExpectedVersionRequest'}}}}
+        responses: {'200': {description: 已执行}, '202': {$ref: '#/components/responses/ApprovalRequired'}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}, '429': {$ref: '#/components/responses/RateLimited'}, '503': {$ref: '#/components/responses/ServiceUnavailable'}}
+    PlanVersionPublishAction:
+      parameters: [{$ref: '#/components/parameters/PlanVersionId'}]
+      post:
+        tags: [Admin, Plans]
+        summary: 发布服务端 canonical snapshot
+        parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+        requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/PlanPublishRequest'}}}}
+        responses: {'200': {description: 已发布}, '202': {$ref: '#/components/responses/ApprovalRequired'}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}, '429': {$ref: '#/components/responses/RateLimited'}, '503': {$ref: '#/components/responses/ServiceUnavailable'}}
   securitySchemes:
     cookieAuth:
       type: apiKey
@@ -1335,6 +1459,16 @@ components:
         type: string
         format: uuid
   parameters:
+    PlanId:
+      name: planId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    PlanVersionId:
+      name: versionId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
     AdminId:
       name: adminId
       in: path
@@ -1464,6 +1598,16 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorEnvelope'
+    ApprovalRequired:
+      description: 高风险策略要求双人审批，原动作尚未执行
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ApprovalCreatedEnvelope'}
+    Conflict:
+      description: PLAN_STATE_CONFLICT、PLAN_VERSION_STATE_CONFLICT、PLAN_VERSION_CONFLICT、PLAN_DRAFT_ALREADY_EXISTS 或 PLAN_IMMUTABLE
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorEnvelope'}
     AuthRequired:
       description: 未认证或认证凭证无效
       headers:
@@ -2300,3 +2444,194 @@ components:
         reason: {type: string, maxLength: 200}
         confirmed: {type: boolean}
         current_password: {type: string, format: password, writeOnly: true}
+    PlanPriceMode:
+      type: string
+      enum: [fixed, contact]
+      description: 展示价格模式；展示价格不是交易价格
+    PlanModelKey:
+      type: string
+      enum: [deepseek, doubao, qwen, hunyuan, wenxin, kimi, glm, spark]
+    PlanModelPermission:
+      type: object
+      additionalProperties: false
+      required: [model_key, sort_order, selected_by_default]
+      properties:
+        model_key: {$ref: '#/components/schemas/PlanModelKey'}
+        sort_order: {type: integer, minimum: 0}
+        selected_by_default: {type: boolean, description: 可有多个默认选择}
+        name: {type: string, readOnly: true}
+    PlanLimitValue:
+      oneOf:
+        - {type: integer, minimum: 0, maximum: 9223372036854775807}
+        - {type: boolean}
+        - {type: string}
+        - {type: object, additionalProperties: true}
+        - {type: array, items: {}}
+        - {type: 'null'}
+      description: 由对应 LimitDefinition 的 value_type 和白名单 Schema 决定；禁止 float、NaN、Infinity
+    PlanLimit:
+      type: object
+      additionalProperties: false
+      required: [key, value]
+      properties:
+        key: {type: string, maxLength: 100}
+        value_type: {type: string, enum: [integer, boolean, text, enum, json], readOnly: true}
+        value: {$ref: '#/components/schemas/PlanLimitValue'}
+    PlanVersion:
+      type: object
+      additionalProperties: false
+      required: [id, plan_id, version_no, status, valid_days, queue_priority, version, limits, model_permissions, supports_formal_composite]
+      properties:
+        id: {type: string, format: uuid}
+        plan_id: {type: string, format: uuid}
+        version_no: {type: integer, minimum: 1}
+        status: {type: string, enum: [draft, published, retired]}
+        valid_days: {type: integer, minimum: 1, maximum: 3650}
+        queue_priority: {type: integer, minimum: 0, maximum: 1000}
+        version: {type: integer, minimum: 1}
+        snapshot_generated_at: {type: [string, 'null'], format: date-time, readOnly: true}
+        limits: {type: array, items: {$ref: '#/components/schemas/PlanLimit'}}
+        model_permissions: {type: array, minItems: 1, items: {$ref: '#/components/schemas/PlanModelPermission'}}
+        supports_formal_composite: {type: boolean, readOnly: true}
+      description: published/retired 的权益、effective_config 和 digest 在数据库层不可变
+    Plan:
+      type: object
+      additionalProperties: false
+      required: [id, code, name, description, price_display_mode, display_currency, is_trial, status, sort_order, version]
+      properties:
+        id: {type: string, format: uuid}
+        code: {type: string, pattern: '^[a-z][a-z0-9_-]{1,63}$'}
+        name: {type: string, maxLength: 100}
+        description: {type: string, maxLength: 5000}
+        price_display_mode: {$ref: '#/components/schemas/PlanPriceMode'}
+        display_price: {type: [string, 'null'], pattern: '^\d+(\.\d{1,2})?$', description: Decimal(12,2) 的规范字符串；contact 时为 null}
+        display_currency: {type: string, const: CNY}
+        is_trial: {type: boolean}
+        status: {type: string, enum: [draft, published, offline, archived]}
+        sort_order: {type: integer, minimum: 0}
+        current_published_version_id: {type: [string, 'null'], format: uuid, readOnly: true}
+        version: {type: integer, minimum: 1}
+        current_published_version: {oneOf: [{$ref: '#/components/schemas/PlanVersion'}, {type: 'null'}], readOnly: true}
+        draft_version: {oneOf: [{$ref: '#/components/schemas/PlanVersion'}, {type: 'null'}], readOnly: true}
+    RiskWriteFields:
+      type: object
+      properties:
+        confirmed: {type: boolean, default: false}
+        current_password: {type: string, format: password, writeOnly: true}
+    PlanCreateRequest:
+      allOf:
+        - $ref: '#/components/schemas/RiskWriteFields'
+        - type: object
+          additionalProperties: false
+          required: [code, name, price_display_mode]
+          properties:
+            code: {type: string, pattern: '^[a-z][a-z0-9_-]{1,63}$'}
+            name: {type: string, maxLength: 100}
+            description: {type: string, maxLength: 5000}
+            price_display_mode: {$ref: '#/components/schemas/PlanPriceMode'}
+            display_price: {type: [string, 'null'], pattern: '^\d+(\.\d{1,2})?$'}
+            is_trial: {type: boolean}
+            sort_order: {type: integer, minimum: 0}
+            confirmed: {type: boolean}
+            current_password: {type: string, format: password, writeOnly: true}
+    PlanUpdateRequest:
+      allOf:
+        - $ref: '#/components/schemas/RiskWriteFields'
+        - type: object
+          additionalProperties: false
+          required: [expected_version]
+          properties:
+            expected_version: {type: integer, minimum: 1}
+            name: {type: string, maxLength: 100}
+            description: {type: string, maxLength: 5000}
+            price_display_mode: {$ref: '#/components/schemas/PlanPriceMode'}
+            display_price: {type: [string, 'null'], pattern: '^d+(.d{1,2})?$'}
+            is_trial: {type: boolean}
+            sort_order: {type: integer, minimum: 0}
+            confirmed: {type: boolean}
+            current_password: {type: string, format: password, writeOnly: true}
+    PlanCopyRequest:
+      type: object
+      additionalProperties: false
+      required: [new_code, new_name, expected_source_plan_version]
+      properties:
+        new_code: {type: string, pattern: '^[a-z][a-z0-9_-]{1,63}$'}
+        new_name: {type: string, maxLength: 100}
+        source_version_id: {type: [string, 'null'], format: uuid}
+        expected_source_plan_version: {type: integer, minimum: 1}
+        confirmed: {type: boolean}
+        current_password: {type: string, format: password, writeOnly: true}
+    PlanExpectedVersionRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version]
+      properties:
+        expected_version: {type: integer, minimum: 1}
+        confirmed: {type: boolean}
+        current_password: {type: string, format: password, writeOnly: true}
+    PlanVersionCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_plan_version]
+      properties:
+        expected_plan_version: {type: integer, minimum: 1}
+        source_version_id: {type: [string, 'null'], format: uuid}
+        confirmed: {type: boolean}
+        current_password: {type: string, format: password, writeOnly: true}
+    PlanVersionUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version, valid_days, queue_priority, limits, model_permissions]
+      properties:
+        expected_version: {type: integer, minimum: 1}
+        valid_days: {type: integer, minimum: 1, maximum: 3650}
+        queue_priority: {type: integer, minimum: 0, maximum: 1000}
+        limits: {type: array, minItems: 1, items: {$ref: '#/components/schemas/PlanLimit'}}
+        model_permissions: {type: array, minItems: 1, maxItems: 8, items: {$ref: '#/components/schemas/PlanModelPermission'}}
+        confirmed: {type: boolean}
+        current_password: {type: string, format: password, writeOnly: true}
+    PlanPublishRequest:
+      allOf:
+        - $ref: '#/components/schemas/PlanExpectedVersionRequest'
+        - type: object
+          properties:
+            confirm_informal_composite: {type: boolean, default: false, description: 无法形成正式综合分时必须为 true}
+    PlanLimitDefinition:
+      type: object
+      additionalProperties: false
+      properties:
+        key: {type: string}
+        value_type: {type: string, enum: [integer, boolean, text, enum, json]}
+        storage_kind: {type: string, enum: [plan_limit, plan_version_field, model_permissions]}
+        minimum: {type: [integer, 'null']}
+        maximum: {type: [integer, 'null']}
+        required: {type: boolean}
+        status: {type: string, enum: [active, inactive]}
+    PublicPlan:
+      type: object
+      additionalProperties: false
+      required: [id, code, name, description, price_display_mode, display_currency, is_trial, valid_days, benefits, models, supports_formal_composite, sort_order]
+      properties:
+        id: {type: string, format: uuid}
+        code: {type: string}
+        name: {type: string}
+        description: {type: string}
+        price_display_mode: {$ref: '#/components/schemas/PlanPriceMode'}
+        display_price: {type: [string, 'null']}
+        display_currency: {type: string, const: CNY}
+        is_trial: {type: boolean}
+        valid_days: {type: integer}
+        benefits: {type: object, additionalProperties: true}
+        models: {type: array, items: {type: object, properties: {model_key: {$ref: '#/components/schemas/PlanModelKey'}, name: {type: string}, selected_by_default: {type: boolean}}}}
+        supports_formal_composite: {type: boolean}
+        sort_order: {type: integer}
+    PlanEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, properties: {data: {$ref: '#/components/schemas/Plan'}}}]
+    PlanVersionEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, properties: {data: {$ref: '#/components/schemas/PlanVersion'}}}]
+    PlanPageEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, properties: {data: {type: object, properties: {results: {type: array, items: {$ref: '#/components/schemas/Plan'}}, pagination: {$ref: '#/components/schemas/Pagination'}}}}}]
+    PublicPlanEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, properties: {data: {$ref: '#/components/schemas/PublicPlan'}}}]
+    PublicPlanListEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, properties: {data: {type: array, items: {$ref: '#/components/schemas/PublicPlan'}}}}]

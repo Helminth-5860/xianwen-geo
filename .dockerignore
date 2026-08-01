@@ -7,4 +7,13 @@ backend/db.sqlite3
 frontend/.next
 frontend/node_modules
 *.log
-
+*.patch
+*probe*
+*fault*
+.codex/
+**/.venv/
+**/node_modules/
+**/.next/
+**/.pytest_cache/
+**/.ruff_cache/
+**/.mypy_cache/

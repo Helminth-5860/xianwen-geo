@@ -16,6 +16,14 @@ from apps.admin_rbac.models import (
 )
 from apps.admin_rbac.risk_catalog import RISK_ACTION_BY_KEY
 from apps.admin_rbac.services import create_admin
+from apps.plans.models import Plan, PlanVersion
+from apps.plans.serializers import limit_value
+from apps.plans.services import (
+    create_plan,
+    create_plan_version,
+    publish_plan_version,
+    set_plan_offline,
+)
 from apps.users.models import User
 from tests.admin_session_helpers import authenticate_admin_client
 
@@ -43,7 +51,199 @@ def send(client, case, body):
     return getattr(client, case.method)(case.path, body, format="json")
 
 
+def plan_fixture(actor, *, code, publish=False, offline=False):
+    plan = create_plan(
+        plan_id=uuid.uuid4(),
+        actor=actor,
+        data={
+            "code": code,
+            "name": "风险矩阵套餐",
+            "description": "",
+            "price_display_mode": "fixed",
+            "display_price": "99.00",
+            "is_trial": False,
+            "sort_order": 10,
+        },
+    )
+    if not publish:
+        return plan, None
+    version = create_plan_version(
+        plan_id=plan.pk,
+        actor=actor,
+        expected_plan_version=plan.version,
+    )
+    version = publish_plan_version(
+        version_id=version.pk,
+        actor=actor,
+        expected_version=version.version,
+        confirm_informal_composite=True,
+    )
+    plan.refresh_from_db()
+    if offline:
+        plan = set_plan_offline(
+            plan_id=plan.pk,
+            actor=actor,
+            expected_version=plan.version,
+        )
+    return plan, version
+
+
+def version_update_body(version):
+    return {
+        "expected_version": version.version,
+        "valid_days": version.valid_days + 1,
+        "queue_priority": version.queue_priority,
+        "limits": [
+            {"key": item.limit_key, "value": limit_value(item)}
+            for item in version.limits.order_by("limit_key")
+        ],
+        "model_permissions": [
+            {
+                "model_key": item.model_key,
+                "sort_order": item.sort_order,
+                "selected_by_default": item.selected_by_default,
+            }
+            for item in version.model_permissions.order_by("sort_order", "model_key")
+        ],
+    }
+
+
+def build_plan_case(action_key, actor):
+    suffix = action_key.replace(".", "-")
+    if action_key == "plan.create":
+        code = "matrix-create"
+        return EndpointCase(
+            "/api/v1/admin/plans",
+            "post",
+            {
+                "code": code,
+                "name": "矩阵创建套餐",
+                "description": "",
+                "price_display_mode": "contact",
+                "display_price": None,
+                "is_trial": False,
+                "sort_order": 1,
+            },
+            lambda: Plan.objects.filter(code=code).count(),
+        )
+
+    if action_key == "plan.update":
+        plan, _ = plan_fixture(actor, code=suffix)
+        return EndpointCase(
+            f"/api/v1/admin/plans/{plan.pk}",
+            "patch",
+            {"expected_version": plan.version, "name": "更新后的套餐"},
+            lambda: tuple(Plan.objects.filter(pk=plan.pk).values_list("name", "version")),
+        )
+
+    if action_key == "plan.copy":
+        source, version = plan_fixture(actor, code=suffix, publish=True)
+        return EndpointCase(
+            f"/api/v1/admin/plans/{source.pk}/copy",
+            "post",
+            {
+                "new_code": "matrix-copy-target",
+                "new_name": "矩阵复制套餐",
+                "source_version_id": str(version.pk),
+                "expected_source_plan_version": source.version,
+            },
+            lambda: Plan.objects.filter(code="matrix-copy-target").count(),
+        )
+
+    if action_key == "plan.version.create":
+        plan, _ = plan_fixture(actor, code=suffix)
+        return EndpointCase(
+            f"/api/v1/admin/plans/{plan.pk}/versions",
+            "post",
+            {"expected_plan_version": plan.version},
+            lambda: PlanVersion.objects.filter(plan=plan).count(),
+        )
+
+    if action_key == "plan.version.update":
+        plan, _ = plan_fixture(actor, code=suffix)
+        version = create_plan_version(
+            plan_id=plan.pk,
+            actor=actor,
+            expected_plan_version=plan.version,
+        )
+        return EndpointCase(
+            f"/api/v1/admin/plan-versions/{version.pk}",
+            "patch",
+            version_update_body(version),
+            lambda: tuple(
+                PlanVersion.objects.filter(pk=version.pk).values_list("valid_days", "version")
+            ),
+        )
+
+    if action_key == "plan.version.publish":
+        plan, _ = plan_fixture(actor, code=suffix)
+        version = create_plan_version(
+            plan_id=plan.pk,
+            actor=actor,
+            expected_plan_version=plan.version,
+        )
+        return EndpointCase(
+            f"/api/v1/admin/plan-versions/{version.pk}/publish",
+            "post",
+            {
+                "expected_version": version.version,
+                "confirm_informal_composite": True,
+            },
+            lambda: tuple(
+                PlanVersion.objects.filter(pk=version.pk).values_list("status", "version")
+            ),
+        )
+
+    if action_key == "plan.offline":
+        plan, _ = plan_fixture(actor, code=suffix, publish=True)
+        return EndpointCase(
+            f"/api/v1/admin/plans/{plan.pk}/offline",
+            "post",
+            {"expected_version": plan.version},
+            lambda: tuple(Plan.objects.filter(pk=plan.pk).values_list("status", "version")),
+        )
+
+    if action_key == "plan.online":
+        plan, _ = plan_fixture(actor, code=suffix, publish=True, offline=True)
+        return EndpointCase(
+            f"/api/v1/admin/plans/{plan.pk}/online",
+            "post",
+            {"expected_version": plan.version},
+            lambda: tuple(Plan.objects.filter(pk=plan.pk).values_list("status", "version")),
+        )
+
+    if action_key == "plan.archive":
+        plan, _ = plan_fixture(actor, code=suffix)
+        return EndpointCase(
+            f"/api/v1/admin/plans/{plan.pk}/archive",
+            "post",
+            {"expected_version": plan.version},
+            lambda: tuple(Plan.objects.filter(pk=plan.pk).values_list("status", "version")),
+        )
+
+    if action_key == "plan.version.retire":
+        plan, _ = plan_fixture(actor, code=suffix)
+        version = create_plan_version(
+            plan_id=plan.pk,
+            actor=actor,
+            expected_plan_version=plan.version,
+        )
+        return EndpointCase(
+            f"/api/v1/admin/plan-versions/{version.pk}/retire",
+            "post",
+            {"expected_version": version.version},
+            lambda: tuple(
+                PlanVersion.objects.filter(pk=version.pk).values_list("status", "version")
+            ),
+        )
+
+    raise AssertionError(action_key)
+
+
 def build_case(action_key, actor):
+    if action_key.startswith("plan."):
+        return build_plan_case(action_key, actor)
+
     target_role = AdminRole.objects.create(
         name=f"目标角色-{action_key}", data_scope=AdminRole.DataScope.ALL
     )

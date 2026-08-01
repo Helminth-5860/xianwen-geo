@@ -496,6 +496,13 @@ HANDLER_SPECS = {
         handle_user_review_reject,
     ),
 }
+from apps.plans.risk_handlers import (  # noqa: E402
+    PLAN_HANDLER_REGISTRY,
+    PLAN_HANDLER_SPECS,
+)
+
+HANDLER_REGISTRY.update(PLAN_HANDLER_REGISTRY)
+HANDLER_SPECS.update(PLAN_HANDLER_SPECS)
 
 
 def handler_spec(action_key: str) -> HandlerSpec:

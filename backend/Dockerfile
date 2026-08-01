@@ -12,19 +12,21 @@ RUN addgroup --system app \
     && mkdir -p /home/app \
     && chown app:app /home/app
 
-COPY requirements.txt requirements-dev.txt ./
+COPY backend/requirements.txt backend/requirements-dev.txt ./
 RUN pip install --no-cache-dir --requirement requirements.txt
 
 FROM base AS test
 RUN pip install --no-cache-dir --requirement requirements-dev.txt
-COPY --chown=app:app . .
+COPY --chown=app:app backend/ .
+COPY --chown=app:app config/plan-limit-keys.json /config/plan-limit-keys.json
 RUN sed -i 's/\r$//' /app/entrypoint.sh && chmod +x /app/entrypoint.sh
 USER app
 ENTRYPOINT ["/app/entrypoint.sh"]
 CMD ["python", "-m", "pytest"]
 
 FROM base AS production
-COPY --chown=app:app . .
+COPY --chown=app:app backend/ .
+COPY --chown=app:app config/plan-limit-keys.json /config/plan-limit-keys.json
 RUN sed -i 's/\r$//' /app/entrypoint.sh && chmod +x /app/entrypoint.sh
 USER app
 EXPOSE 8000
