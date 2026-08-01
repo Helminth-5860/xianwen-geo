@@ -267,3 +267,10 @@ XW-0106 增加独立管理员密码/短信登录、不可持久化的 Redis 两�
 XW-0107 将首批 12 个高风险写操作接入固定 Catalog 和显式 Handler 注册表，并按 PostgreSQL 当前 RiskPolicy 执行确认、密码再验证或双人审批。V1 不公开通用审批创建 API，不提供 BPM、动态执行器或单人绕过。审批 payload 只保存动作专属安全字段和绑定目标版本的摘要；统一 AuditEvent 追加式保存白名单摘要，不保存密码、验证码、Cookie、Session、challenge、完整手机号/IP、基础设施秘密或原始异常。
 
 迁移 Seed 使用 RunPython.noop 保留被审批/审计引用的目录证据；完整逆向迁移会删除审批和审计表，生产必须先审查并备份，优先前向修复或备份恢复。设计、API、安全边界及 PostgreSQL/Redis 专属验收见 docs/21-HIGH-RISK-APPROVAL-AUDIT.md。
+## 套餐与不可变版本（XW-0110）
+
+套餐模板使用独立 `plans` 应用、代码所有 Limit Catalog、typed value、八模型权限和 PostgreSQL 不可变触发器。展示价格仅用于 CNY 页面展示，不是交易价格；本阶段没有申请、订阅、订单、支付或财务流水。
+
+本地专属验证运行 `.\scripts\test-plans.ps1`。Seed 迁移 reverse 为 noop，触发器逆向只移除数据库保护；完整回退会丢失套餐和发布快照证据，任何逆向迁移前必须审查并备份，生产优先前向修复或备份恢复。当前未连接腾讯云 PostgreSQL/Redis。
+
+完整设计和回滚边界见 [docs/22-PLANS-PLAN-VERSIONS.md](docs/22-PLANS-PLAN-VERSIONS.md)。

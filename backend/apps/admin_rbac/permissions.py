@@ -48,7 +48,10 @@ class HasAdminPermission(BasePermission):
     message = "没有权限执行此操作"
 
     def has_permission(self, request, view) -> bool:
-        required = getattr(view, "required_permission", None)
+        required_by_method = getattr(view, "required_permissions_by_method", {})
+        required = required_by_method.get(
+            request.method, getattr(view, "required_permission", None)
+        )
         if not required or required not in CATALOG_BY_KEY:
             return False
         from .security import validate_admin_session

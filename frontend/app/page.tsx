@@ -4,7 +4,7 @@ import { ApiOutlined, CheckCircleFilled, CloudServerOutlined } from "@ant-design
 import { Alert, Button, Card, ConfigProvider, Space, Tag, Typography } from "antd";
 import zhCN from "antd/locale/zh_CN";
 import { useSyncExternalStore } from "react";
-import { AccountOverview } from "@/components/account/account-overview";
+import { PlanCatalog } from "@/components/plans/plan-catalog";
 
 import { publicEnvironment } from "@/lib/env";
 import { SITE_DESCRIPTION, SITE_NAME } from "@/lib/site";
@@ -63,8 +63,9 @@ export default function Home() {
             <Text>Docker Compose 统一编排 PostgreSQL、Redis 和应用服务。</Text>
           </Card>
         </section>
+
+        <PlanCatalog />
       </main>
     </ConfigProvider>
   );
-  <AccountOverview />;
 }

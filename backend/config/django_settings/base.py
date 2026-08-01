@@ -66,6 +66,7 @@ INSTALLED_APPS = [
     "apps.core",
     "apps.users",
     "apps.admin_rbac",
+    "apps.plans",
 ]
 
 MIDDLEWARE = [

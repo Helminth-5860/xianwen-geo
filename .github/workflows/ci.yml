@@ -103,3 +103,5 @@ jobs:
         run: bash scripts/test-admin-security.sh
       - name: Run PostgreSQL/Redis high-risk approval tests
         run: bash scripts/test-risk-approval.sh
+      - name: Run PostgreSQL plans and immutable versions tests
+        run: bash scripts/test-plans.sh

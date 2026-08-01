@@ -3,6 +3,7 @@ import json
 import re
 from dataclasses import dataclass
 from datetime import timedelta
+from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
@@ -116,6 +117,8 @@ class RiskResult:
 def _json_value(value):
     if isinstance(value, UUID):
         return str(value)
+    if isinstance(value, Decimal):
+        return format(value, "f")
     if isinstance(value, dict):
         output = {}
         for key, item in value.items():
@@ -126,7 +129,7 @@ def _json_value(value):
         return output
     if isinstance(value, (list, tuple)):
         return [_json_value(item) for item in value]
-    if value is None or isinstance(value, (str, int, float, bool)):
+    if value is None or isinstance(value, (str, int, bool)):
         if isinstance(value, str):
             lowered = value.casefold()
             if any(marker in lowered for marker in FORBIDDEN_TEXT_MARKERS):
