@@ -30,6 +30,7 @@ from .risk_serializers import (
     RiskPolicyUpdateSerializer,
 )
 from .risk_services import (
+    ApprovalExpired,
     ApprovalSelfNotAllowed,
     ApprovalStateConflict,
     RiskError,
@@ -149,7 +150,7 @@ class ApprovalListView(APIView):
     permission_classes = [HasAdminPermission]
 
     def get(self, request):
-        expire_pending_approvals()
+        expire_pending_approvals(request=request)
         queryset = ApprovalRequest.objects.select_related("requester", "action")
         if not request.user.is_superuser:
             queryset = queryset.filter(requester=request.user)
@@ -229,12 +230,14 @@ class ApprovalCancelView(APIView):
     def post(self, request, approval_id):
         try:
             approval = cancel_request(request=request, approval_id=approval_id)
+        except ApprovalExpired:
+            return error_response(
+                ErrorCode.APPROVAL_EXPIRED,
+                status_code=HTTP_410_GONE,
+                request=request,
+            )
         except ApprovalStateConflict as exc:
             return risk_error_response(exc, request)
-        if approval.status == ApprovalRequest.Status.EXPIRED:
-            return error_response(
-                ErrorCode.APPROVAL_EXPIRED, status_code=HTTP_410_GONE, request=request
-            )
         return Response(ApprovalSerializer(approval).data)
 
 

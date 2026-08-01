@@ -50,3 +50,17 @@ AuditEvent 只保存白名单 before/after/result 摘要、稳定错误码、不
 PowerShell 运行 .\scripts\test-risk-approval.ps1，POSIX 运行 ./scripts/test-risk-approval.sh。
 
 Compose risk-approval-test profile 执行 tests/test_risk_approval_postgres.py，覆盖并发批准 exactly-once、approve/cancel 竞态、目标/权限 stale、pending 条件唯一、Handler savepoint 回滚、AuditEvent 失败全事务回滚和既有 last-superuser 保护。GitHub Actions 的 Docker Compose Job 必须真实运行该套件并在结束后删除容器、网络和测试卷。
+
+
+## 核验修复补充
+
+- list、detail、approve、cancel 触发的 pending -> expired 全部进入同一事务服务：锁定审批、更新终态、追加一条 AuditEvent；审计失败时审批仍为 pending，重复检查不会重复审计。
+- cancel 已过期审批稳定返回 410 APPROVAL_EXPIRED，不执行 Handler，也不写 cancelled_at。
+- 批准时重新验证 approver 的完整管理员安全 Session、superuser 身份、active 状态和当前密码；disabled、locked、缺安全上下文、非 superuser、自批及错误密码均不能执行 Handler。
+- pending 请求绑定 policy_version 和 two_person 模式；策略版本或模式变化会将旧请求标记 stale 并审计，不能因降级为 password 或升级为 two_person 绕过。
+- 12 个既有业务入口按动作目录支持模式执行。confirm、password、two_person 及不支持模式均由参数化 HTTP 测试覆盖；管理员、角色和客户通用 PATCH 明确拒绝高风险字段、嵌套对象、别名及普通/高风险混合字段。
+- 客户详情提供 customer.assignment.change 前端入口，只显示负责人昵称和脱敏手机号；分配、转交和解除都携带 expected_version，并复用统一 RiskActionButton。审批 payload 不写入 URL、localStorage 或 sessionStorage。
+- payload 递归拒绝 password、current_password、sms_code、cookie/cookies、session/session_id、challenge/challenge_id、api_key、secret、private_key、access_token/refresh_token、sql、command、url/callback_url、import_path、callable，以及控制字符、HTML 和超限内容。
+- OpenAPI 对 risk-actions、risk-policies、approvals 和 audit-events 的每个 operation 明确声明 401，并按实现列出 403/404/409/410/422/429/503；current_password 均为 writeOnly，仍无通用 POST approvals。
+
+真实 PostgreSQL/Redis 专属套件现在为 15 项，包含 approve/expire 两种终态赢家、policy stale、disabled/locked approver、并发过期 exactly-once 审计与审计失败回滚。PowerShell 与 POSIX 脚本、Compose profile 和 GitHub Actions Docker Compose Job 均运行同一 tests/test_risk_approval_postgres.py，快速 SQLite 套件只收集并跳过这些专属测试。

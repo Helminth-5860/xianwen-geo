@@ -5,6 +5,14 @@ import { Alert, Button, Card, Descriptions, List, Space, Tag, Typography } from 
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
+import { useAdminCapabilities } from "@/components/admin/admin-capability";
+import { CustomerAssignmentActions } from "@/components/admin/customer-assignment-actions";
+import {
+  getAdmins,
+  getCustomerAssignment,
+  type AdminProfile,
+  type CustomerAssignment,
+} from "@/lib/admin-rbac-client";
 import { UserStatusActions } from "@/components/admin/user-status-actions";
 import { getRiskActions, type RiskMode } from "@/lib/risk-client";
 
@@ -32,32 +40,42 @@ const eventLabels: Record<StatusEvent["event_type"], string> = {
 export default function AdminUserDetailPage() {
   const params = useParams<{ id: string }>();
   const userId = params.id;
+  const capabilities = useAdminCapabilities();
   const [user, setUser] = useState<AdminUser | null>(null);
   const [history, setHistory] = useState<StatusEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [riskModes, setRiskModes] = useState<Record<string, RiskMode>>({});
+  const [assignment, setAssignment] = useState<CustomerAssignment | null>(null);
+  const [admins, setAdmins] = useState<AdminProfile[]>([]);
 
   const load = useCallback(async () => {
     if (!userId) return;
     setLoading(true);
     setError("");
     try {
-      const [current, events, actions] = await Promise.all([
+      const canAssign = Boolean(capabilities?.permission_keys.includes("users.assign"));
+      const [current, events, actions, assignmentData, adminPage] = await Promise.all([
         getAdminUser(userId),
         getAdminUserHistory(userId),
         getRiskActions(),
+        canAssign ? getCustomerAssignment(userId) : Promise.resolve(null),
+        canAssign && capabilities?.permission_keys.includes("admins.list")
+          ? getAdmins()
+          : Promise.resolve(null),
       ]);
       setUser(current);
       setHistory(events.results);
+      setAssignment(assignmentData);
+      setAdmins(adminPage?.results ?? []);
       setRiskModes(Object.fromEntries(actions.map((action) => [action.key, action.current_mode])));
     } catch (loadError) {
       setError(userMessage(loadError));
     } finally {
       setLoading(false);
     }
-  }, [userId]);
+  }, [capabilities, userId]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void load(), 0);
@@ -141,6 +159,21 @@ export default function AdminUserDetailPage() {
           </>
         )}
       </Card>
+      {capabilities?.permission_keys.includes("users.assign") && assignment && (
+        <CustomerAssignmentActions
+          key={`${assignment.customer_id}:${assignment.version}:${assignment.owner_admin_id ?? "unassigned"}`}
+          assignment={assignment}
+          admins={admins}
+          mode={riskModes["customer.assignment.change"] ?? "password"}
+          onChanged={(changed) => {
+            setAssignment(changed);
+            void load();
+          }}
+          onApproval={(approval) =>
+            setError(`已创建审批请求 ${approval.approval_id}，客户负责人尚未变更。`)
+          }
+        />
+      )}
       <Card title="审核与账号状态历史">
         <List
           dataSource={history}

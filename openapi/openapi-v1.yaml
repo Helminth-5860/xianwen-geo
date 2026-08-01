@@ -1103,12 +1103,30 @@ paths:
       summary: 只读稳定权限目录
       responses: {'200': {description: 权限目录}}
   /admin/users/{userId}/assignment:
+    get:
+      tags: [Admin]
+      summary: 查看当前客户负责人（仅昵称和脱敏手机号）
+      parameters: [{$ref: '#/components/parameters/UserId'}]
+      responses:
+        '200': {description: 当前负责人或未分配状态}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/PermissionDenied'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
     put:
       tags: [Admin]
       summary: 分配、转交或解除客户负责人
       parameters: [{$ref: '#/components/parameters/UserId'}, {$ref: '#/components/parameters/CsrfToken'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AssignmentUpdateRequest'}}}}
-      responses: {'200': {description: 当前归属}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {description: ASSIGNMENT_VERSION_CONFLICT}}
+      responses:
+        '200': {description: 当前归属}
+        '202': {description: 已创建双人审批请求, content: {application/json: {schema: {$ref: '#/components/schemas/ApprovalCreatedEnvelope'}}}}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/PermissionDenied'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+        '409': {description: ASSIGNMENT_VERSION_CONFLICT、APPROVAL_STATE_CONFLICT 或 APPROVAL_STALE}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
   /admin/admins/{adminId}/role:
     parameters: [{$ref: '#/components/parameters/AdminId'}]
     post:
@@ -1141,6 +1159,7 @@ paths:
       summary: 当前管理员可执行动作的最小风险提示
       responses:
         '200': {description: 静态动作目录及当前策略}
+        '401': {$ref: '#/components/responses/AuthRequired'}
         '403': {$ref: '#/components/responses/PermissionDenied'}
   /admin/risk-policies:
     get:
@@ -1148,6 +1167,7 @@ paths:
       summary: 超级管理员查看全部风险策略
       responses:
         '200': {description: 风险策略列表}
+        '401': {$ref: '#/components/responses/AuthRequired'}
         '403': {$ref: '#/components/responses/PermissionDenied'}
   /admin/risk-policies/{actionKey}:
     parameters:
@@ -1163,7 +1183,9 @@ paths:
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/RiskPolicyUpdateRequest'}}}}
       responses:
         '200': {description: 风险策略已更新}
+        '401': {$ref: '#/components/responses/AuthRequired'}
         '403': {description: 权限、CSRF 或当前密码验证失败}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
         '409': {description: RISK_POLICY_VERSION_CONFLICT}
         '422': {description: 不支持模式、低于最低模式或缺少确认}
         '429': {$ref: '#/components/responses/RateLimited'}
@@ -1181,7 +1203,9 @@ paths:
           schema: {$ref: '#/components/schemas/ApprovalRequestStatus'}
       responses:
         '200': {description: 审批分页, content: {application/json: {schema: {$ref: '#/components/schemas/ApprovalPageEnvelope'}}}}
+        '401': {$ref: '#/components/responses/AuthRequired'}
         '403': {$ref: '#/components/responses/PermissionDenied'}
+        '422': {$ref: '#/components/responses/ValidationError'}
   /admin/approvals/{approvalId}:
     parameters:
       - name: approvalId
@@ -1193,6 +1217,7 @@ paths:
       summary: 审批安全详情
       responses:
         '200': {description: 不含 sanitized_payload 全文的详情, content: {application/json: {schema: {$ref: '#/components/schemas/ApprovalEnvelope'}}}}
+        '401': {$ref: '#/components/responses/AuthRequired'}
         '403': {$ref: '#/components/responses/PermissionDenied'}
         '404': {$ref: '#/components/responses/ResourceNotFound'}
   /admin/approvals/{approvalId}/approve:
@@ -1208,9 +1233,12 @@ paths:
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ApprovalApproveRequest'}}}}
       responses:
         '200': {description: 最终 executed 或 execution_failed, content: {application/json: {schema: {$ref: '#/components/schemas/ApprovalEnvelope'}}}}
+        '401': {$ref: '#/components/responses/AuthRequired'}
         '403': {description: 自批、权限、CSRF 或当前密码失败}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
         '409': {description: APPROVAL_STATE_CONFLICT 或 APPROVAL_STALE}
         '410': {description: APPROVAL_EXPIRED}
+        '422': {$ref: '#/components/responses/ValidationError'}
         '429': {$ref: '#/components/responses/RateLimited'}
         '503': {$ref: '#/components/responses/ServiceUnavailable'}
   /admin/approvals/{approvalId}/reject:
@@ -1226,7 +1254,9 @@ paths:
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ApprovalRejectRequest'}}}}
       responses:
         '200': {description: 已拒绝}
+        '401': {$ref: '#/components/responses/AuthRequired'}
         '403': {description: 自拒绝、权限或 CSRF 失败}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
         '409': {description: APPROVAL_STATE_CONFLICT}
         '410': {description: APPROVAL_EXPIRED}
         '422': {$ref: '#/components/responses/ValidationError'}
@@ -1242,6 +1272,9 @@ paths:
       parameters: [{$ref: '#/components/parameters/CsrfToken'}]
       responses:
         '200': {description: 已取消}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/PermissionDenied'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
         '409': {description: APPROVAL_STATE_CONFLICT}
         '410': {description: APPROVAL_EXPIRED}
   /admin/audit-events:
@@ -1255,6 +1288,7 @@ paths:
         - {name: outcome, in: query, schema: {type: string, maxLength: 32}}
       responses:
         '200': {description: 仅白名单安全摘要, content: {application/json: {schema: {$ref: '#/components/schemas/AuditEventPageEnvelope'}}}}
+        '401': {$ref: '#/components/responses/AuthRequired'}
         '403': {$ref: '#/components/responses/PermissionDenied'}
   /admin/audit-events/{eventId}:
     parameters:
@@ -1267,6 +1301,7 @@ paths:
       summary: 超级管理员查看统一审计安全详情
       responses:
         '200': {description: 不含完整 payload、手机号、IP 或原始异常, content: {application/json: {schema: {$ref: '#/components/schemas/AuditEventEnvelope'}}}}
+        '401': {$ref: '#/components/responses/AuthRequired'}
         '403': {$ref: '#/components/responses/PermissionDenied'}
         '404': {$ref: '#/components/responses/ResourceNotFound'}
 components:
@@ -2098,7 +2133,6 @@ components:
         expected_version: {type: integer, minimum: 1}
         name: {type: string, maxLength: 80}
         description: {type: string, maxLength: 500}
-        data_scope: {type: string, enum: [own, role, all]}
     AssignmentUpdateRequest:
       type: object
       additionalProperties: false
@@ -2107,6 +2141,8 @@ components:
         owner_admin_id: {type: [string, 'null'], format: uuid}
         expected_version: {type: integer, minimum: 0}
         reason: {type: string, maxLength: 200}
+        confirmed: {type: boolean}
+        current_password: {type: string, format: password, writeOnly: true}
     RiskMode:
       type: string
       enum: [confirm, password, two_person]
@@ -2262,3 +2298,5 @@ components:
         owner_admin_id: {type: [string, 'null'], format: uuid}
         expected_version: {type: integer, minimum: 0}
         reason: {type: string, maxLength: 200}
+        confirmed: {type: boolean}
+        current_password: {type: string, format: password, writeOnly: true}

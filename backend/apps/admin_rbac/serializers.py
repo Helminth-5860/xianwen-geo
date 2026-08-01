@@ -68,10 +68,9 @@ class RoleUpdateSerializer(StrictSerializer):
     description = serializers.CharField(
         max_length=500, required=False, allow_blank=True, trim_whitespace=False
     )
-    data_scope = serializers.ChoiceField(choices=AdminRole.DataScope.values, required=False)
 
     def validate(self, attrs):
-        if not any(field in attrs for field in ("name", "description", "data_scope")):
+        if not any(field in attrs for field in ("name", "description")):
             raise serializers.ValidationError({"non_field_errors": ["必须提供要修改的普通字段。"]})
         return attrs
 
@@ -182,10 +181,25 @@ class AdminRoleChangeSerializer(StrictSerializer):
 
 class AssignmentSerializer(serializers.ModelSerializer):
     owner_admin_id = serializers.UUIDField(allow_null=True)
+    owner_nickname = serializers.CharField(source="owner_admin.user.nickname", allow_null=True)
+    owner_phone_masked = serializers.SerializerMethodField()
 
     class Meta:
         model = CustomerAssignment
-        fields = ("id", "customer_id", "owner_admin_id", "version", "assigned_at")
+        fields = (
+            "id",
+            "customer_id",
+            "owner_admin_id",
+            "owner_nickname",
+            "owner_phone_masked",
+            "version",
+            "assigned_at",
+        )
+
+    def get_owner_phone_masked(self, assignment):
+        if assignment.owner_admin_id is None:
+            return ""
+        return mask_phone(assignment.owner_admin.user.phone)
 
 
 class AssignmentUpdateSerializer(StrictSerializer):

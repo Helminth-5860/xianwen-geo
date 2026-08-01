@@ -51,6 +51,37 @@ export type RiskCredentials = Readonly<{
   current_password: string;
 }>;
 
+export type CustomerAssignment = Readonly<{
+  id: string | null;
+  customer_id: string;
+  owner_admin_id: string | null;
+  owner_nickname: string | null;
+  owner_phone_masked: string;
+  version: number;
+  assigned_at: string | null;
+}>;
+
+export const getCustomerAssignment = (customerId: string) =>
+  get<CustomerAssignment>(`/admin/users/${customerId}/assignment`);
+
+export const changeCustomerAssignment = (
+  customerId: string,
+  ownerAdminId: string | null,
+  expectedVersion: number,
+  reason: string,
+  credentials: RiskCredentials,
+) =>
+  write<import("./risk-client").RiskExecution<CustomerAssignment>>(
+    "PUT",
+    `/admin/users/${customerId}/assignment`,
+    {
+      owner_admin_id: ownerAdminId,
+      expected_version: expectedVersion,
+      reason,
+      ...credentials,
+    },
+  );
+
 export const changeAdminStatus = (
   id: string,
   action: string,

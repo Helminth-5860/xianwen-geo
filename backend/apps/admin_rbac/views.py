@@ -14,6 +14,7 @@ from .models import AdminPermission, AdminProfile, AdminRole, CustomerAssignment
 from .permissions import HasAdminPermission
 from .risk_services import RiskError, perform_risk_action
 from .risk_views import risk_error_response
+from .scopes import scoped_customer_or_404
 from .security import AdminReauthFailed, AdminReauthRateLimited, AdminSecurityUnavailable
 from .serializers import (
     AdminCreateSerializer,
@@ -286,7 +287,7 @@ class RoleDetailView(APIView):
                 expected_version=data["expected_version"],
                 name=data.get("name"),
                 description=data.get("description"),
-                data_scope=data.get("data_scope"),
+                data_scope=None,
                 permission_keys=None,
                 request_id=request.request_id,
             )
@@ -374,6 +375,27 @@ class PermissionListView(APIView):
 class CustomerAssignmentView(APIView):
     required_permission = "users.assign"
     permission_classes = [HasAdminPermission]
+
+    def get(self, request, customer_id):
+        customer = scoped_customer_or_404(request.user, request.admin_context, customer_id)
+        assignment = (
+            CustomerAssignment.objects.select_related("owner_admin__user")
+            .filter(customer=customer)
+            .first()
+        )
+        if assignment is None:
+            return Response(
+                {
+                    "id": None,
+                    "customer_id": str(customer.pk),
+                    "owner_admin_id": None,
+                    "owner_nickname": None,
+                    "owner_phone_masked": "",
+                    "version": 0,
+                    "assigned_at": None,
+                }
+            )
+        return Response(AssignmentSerializer(assignment).data)
 
     @method_decorator(csrf_protect)
     def put(self, request, customer_id):

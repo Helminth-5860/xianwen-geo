@@ -1,5 +1,6 @@
 import hashlib
 import json
+import re
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
@@ -8,9 +9,9 @@ from uuid import UUID
 from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.utils import timezone
-from rest_framework.exceptions import NotFound, PermissionDenied
+from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 
-from apps.core.redaction import is_sensitive_field
+from apps.core.redaction import is_sensitive_field, normalize_field_name
 from apps.users.models import User
 
 from .audit_services import record_audit_event
@@ -35,6 +36,29 @@ FORBIDDEN_TEXT_MARKERS = (
     "eval(",
     "import ",
 )
+HTML_TAG_PATTERN = re.compile(r"<\s*/?\s*[a-zA-Z][^>]*>")
+FORBIDDEN_PAYLOAD_KEYS = {
+    "password",
+    "current_password",
+    "sms_code",
+    "cookie",
+    "cookies",
+    "session",
+    "session_id",
+    "challenge",
+    "challenge_id",
+    "api_key",
+    "secret",
+    "private_key",
+    "access_token",
+    "refresh_token",
+    "sql",
+    "command",
+    "url",
+    "callback_url",
+    "import_path",
+    "callable",
+}
 
 
 class RiskError(Exception):
@@ -95,7 +119,8 @@ def _json_value(value):
     if isinstance(value, dict):
         output = {}
         for key, item in value.items():
-            if is_sensitive_field(key):
+            normalized_key = normalize_field_name(key)
+            if is_sensitive_field(key) or normalized_key in FORBIDDEN_PAYLOAD_KEYS:
                 raise ApprovalPayloadInvalid
             output[str(key)] = _json_value(item)
         return output
@@ -105,6 +130,8 @@ def _json_value(value):
         if isinstance(value, str):
             lowered = value.casefold()
             if any(marker in lowered for marker in FORBIDDEN_TEXT_MARKERS):
+                raise ApprovalPayloadInvalid
+            if HTML_TAG_PATTERN.search(value):
                 raise ApprovalPayloadInvalid
             if any(ord(character) < 32 for character in value):
                 raise ApprovalPayloadInvalid
@@ -293,6 +320,8 @@ def _perform_risk_action_transactional(
             approval,
         )
     if mode == PASSWORD:
+        if not current_password:
+            raise ValidationError({"current_password": ["密码模式必须提供当前密码。"]})
         _reauth(request.user, current_password, request)
     elif mode == "confirm" and confirmed is not True:
         raise RiskConfirmationRequired
@@ -346,10 +375,39 @@ def perform_risk_action(**kwargs):
     return result
 
 
-def expire_pending_approvals():
-    return ApprovalRequest.objects.filter(
-        status=ApprovalRequest.Status.PENDING, expires_at__lte=timezone.now()
-    ).update(status=ApprovalRequest.Status.EXPIRED, updated_at=timezone.now())
+def _expire_locked_approval(*, approval, request, now=None):
+    now = now or timezone.now()
+    if approval.status != ApprovalRequest.Status.PENDING or approval.expires_at > now:
+        return False
+    approval.status = ApprovalRequest.Status.EXPIRED
+    approval.save(update_fields=["status", "updated_at"])
+    record_audit_event(
+        request=request,
+        category="approval",
+        action_key=approval.action_key,
+        outcome="expired",
+        actor=request.user,
+        requester=approval.requester,
+        target_type=approval.target_type,
+        target_id=approval.target_id,
+        approval_request=approval,
+        safe_after={"status": "expired"},
+    )
+    return True
+
+
+@transaction.atomic
+def expire_pending_approvals(*, request):
+    now = timezone.now()
+    approvals = list(
+        ApprovalRequest.objects.select_for_update()
+        .select_related("requester", "action")
+        .filter(status=ApprovalRequest.Status.PENDING, expires_at__lte=now)
+    )
+    return sum(
+        _expire_locked_approval(approval=approval, request=request, now=now)
+        for approval in approvals
+    )
 
 
 @transaction.atomic
@@ -365,21 +423,7 @@ def get_approval_for_user(*, request, approval_id, permission_key="approvals.vie
     _context_with_permission(request.user, permission_key)
     if not request.user.is_superuser and approval.requester_id != request.user.pk:
         raise NotFound
-    if approval.status == ApprovalRequest.Status.PENDING and approval.expires_at <= timezone.now():
-        approval.status = ApprovalRequest.Status.EXPIRED
-        approval.save(update_fields=["status", "updated_at"])
-        record_audit_event(
-            request=request,
-            category="approval",
-            action_key=approval.action_key,
-            outcome="expired",
-            actor=request.user,
-            requester=approval.requester,
-            target_type=approval.target_type,
-            target_id=approval.target_id,
-            approval_request=approval,
-            safe_after={"status": "expired"},
-        )
+    _expire_locked_approval(approval=approval, request=request)
     return approval
 
 
@@ -537,12 +581,12 @@ def reject_request(*, request, approval_id, reason):
 
 
 @transaction.atomic
-def cancel_request(*, request, approval_id):
+def _cancel_request_transactional(*, request, approval_id):
     approval = get_approval_for_user(
         request=request, approval_id=approval_id, permission_key="approvals.cancel"
     )
     if approval.status == ApprovalRequest.Status.EXPIRED:
-        raise ApprovalExpired
+        return approval
     if (
         approval.status != ApprovalRequest.Status.PENDING
         or approval.requester_id != request.user.pk
@@ -563,6 +607,13 @@ def cancel_request(*, request, approval_id):
         approval_request=approval,
         safe_after={"status": "cancelled"},
     )
+    return approval
+
+
+def cancel_request(*, request, approval_id):
+    approval = _cancel_request_transactional(request=request, approval_id=approval_id)
+    if approval.status == ApprovalRequest.Status.EXPIRED:
+        raise ApprovalExpired
     return approval
 
 
