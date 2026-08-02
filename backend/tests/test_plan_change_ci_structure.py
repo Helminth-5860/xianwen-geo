@@ -23,6 +23,10 @@ def test_docker_job_runs_reproducible_postgresql_redis_plan_change_suite():
     suite = (REPO_ROOT / "backend" / "tests" / "test_plan_changes_postgres.py").read_text(
         encoding="utf-8"
     )
+    check_shell = (REPO_ROOT / "scripts" / "check.sh").read_text(encoding="utf-8")
+    check_powershell = (REPO_ROOT / "scripts" / "check.ps1").read_text(encoding="utf-8")
+    assert check_shell.count("PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY=ci-only-plan-change") == 2
+    assert check_powershell.count('PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY = "ci-only-plan-change') == 1
     assert 'profiles: ["plan-change-test"]' in compose
     assert "tests/test_plan_changes_postgres.py" in compose
     assert "docker-compose.plan-change.yml" in shell_script
