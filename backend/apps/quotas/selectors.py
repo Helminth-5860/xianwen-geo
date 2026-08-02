@@ -1,3 +1,5 @@
+from typing import Any
+
 from django.db.models import Q
 from django.utils import timezone
 from rest_framework.exceptions import NotFound
@@ -20,8 +22,38 @@ def current_accounts(user, *, now=None):
     )
 
 
+def current_account_summaries(user, *, now=None):
+    grouped: dict[str, dict[str, Any]] = {}
+    for account in current_accounts(user, now=now).order_by("quota_type", "id"):
+        item = grouped.setdefault(
+            account.quota_type,
+            {
+                "quota_type": account.quota_type,
+                "unit": account.unit,
+                "scope": account.scope,
+                "entitlement_amount": 0,
+                "available": 0,
+                "frozen": 0,
+            },
+        )
+        item["entitlement_amount"] += account.entitlement_amount
+        item["available"] += account.available
+        item["frozen"] += account.frozen
+    return list(grouped.values())
+
+
 def user_ledger(user):
-    return QuotaLedgerEntry.objects.filter(user=user).select_related("account")
+    return (
+        QuotaLedgerEntry.objects.filter(user=user)
+        .exclude(
+            action__in=(
+                QuotaLedgerEntry.Action.PLAN_CHANGE_FORFEIT,
+                QuotaLedgerEntry.Action.PLAN_CHANGE_TRANSFER_OUT,
+                QuotaLedgerEntry.Action.PLAN_CHANGE_TRANSFER_IN,
+            )
+        )
+        .select_related("account")
+    )
 
 
 def scoped_accounts(user, context):

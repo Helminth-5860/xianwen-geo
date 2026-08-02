@@ -13,6 +13,7 @@ REQUIRED_ENVIRONMENT = {
     "DJANGO_DEBUG": "false",
     "SMS_VERIFICATION_HMAC_KEY": "s" * 64,
     "QUOTA_IDEMPOTENCY_HMAC_KEY": "q" * 64,
+    "PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY": "p" * 64,
     "SMS_PROVIDER": "unconfigured",
     "DATABASE_URL": "postgresql://app:placeholder@database:5432/xianwen",
     "REDIS_URL": "redis://redis:6379/0",
@@ -34,6 +35,7 @@ def import_settings(overrides: dict[str, str] | None = None, missing: str | None
             "DJANGO_DEBUG",
             "SMS_VERIFICATION_HMAC_KEY",
             "QUOTA_IDEMPOTENCY_HMAC_KEY",
+            "PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY",
             "SMS_PROVIDER",
             "DATABASE_URL",
             "REDIS_URL",
@@ -64,6 +66,7 @@ def import_settings(overrides: dict[str, str] | None = None, missing: str | None
         "DJANGO_SECRET_KEY",
         "SMS_VERIFICATION_HMAC_KEY",
         "QUOTA_IDEMPOTENCY_HMAC_KEY",
+        "PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY",
         "DATABASE_URL",
         "REDIS_URL",
         "ALLOWED_HOSTS",
@@ -91,6 +94,14 @@ def test_production_missing_required_environment_fails_fast(missing):
         (
             {"QUOTA_IDEMPOTENCY_HMAC_KEY": "weak"},
             "QUOTA_IDEMPOTENCY_HMAC_KEY is too weak",
+        ),
+        (
+            {"PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY": "weak"},
+            "PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY is too weak",
+        ),
+        (
+            {"PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY": "x" * 64},
+            "must not reuse another application secret",
         ),
         ({"SMS_PROVIDER": "mock"}, "Mock SMS provider is forbidden"),
         (
@@ -175,3 +186,29 @@ def test_production_rejects_quota_hmac_reusing_redis_password():
 
     assert result.returncode != 0
     assert "QUOTA_IDEMPOTENCY_HMAC_KEY must not reuse REDIS_URL credentials" in result.stderr
+
+
+def test_production_rejects_plan_change_hmac_reusing_database_password():
+    reused = "database-password-that-is-more-than-fifty-characters-long-222222"
+    result = import_settings(
+        overrides={
+            "PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY": reused,
+            "DATABASE_URL": f"postgresql://app:{reused}@database:5432/xianwen",
+        }
+    )
+    assert result.returncode != 0
+    assert (
+        "PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY must not reuse DATABASE_URL credentials" in result.stderr
+    )
+
+
+def test_production_rejects_plan_change_hmac_reusing_redis_password():
+    reused = "redis-password-that-is-more-than-fifty-characters-long-22222222"
+    result = import_settings(
+        overrides={
+            "PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY": reused,
+            "REDIS_URL": f"redis://default:{reused}@redis:6379/0",
+        }
+    )
+    assert result.returncode != 0
+    assert "PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY must not reuse REDIS_URL credentials" in result.stderr

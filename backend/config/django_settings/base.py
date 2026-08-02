@@ -155,6 +155,14 @@ QUOTA_IDEMPOTENCY_HMAC_KEY = os.getenv(
 if len(QUOTA_IDEMPOTENCY_HMAC_KEY) < 32:
     raise ImproperlyConfigured("QUOTA_IDEMPOTENCY_HMAC_KEY is too weak; minimum length is 32.")
 SMS_PROVIDER = os.getenv("SMS_PROVIDER", "unconfigured").strip().lower()
+PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY = os.getenv(
+    "PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY",
+    "local-test-plan-change-idempotency-key-not-for-production",
+).strip()
+if len(PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY) < 32:
+    raise ImproperlyConfigured(
+        "PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY is too weak; minimum length is 32."
+    )
 SMS_VERIFICATION_HMAC_KEY = os.getenv(
     "SMS_VERIFICATION_HMAC_KEY", "local-test-sms-hmac-key-not-for-production"
 ).strip()

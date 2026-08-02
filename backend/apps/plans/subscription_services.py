@@ -210,14 +210,28 @@ def _create_active_subscription(
     opening_note,
     request_id,
     now,
+    source_change=None,
+    ends_at=None,
+    cycle_anchor_day=None,
 ):
     snapshot, digest = _validate_snapshot(version)
-    ends_at = _ends_at(now, version.valid_days)
+    ends_at = ends_at or _ends_at(now, version.valid_days)
+    source_type = (
+        Subscription.SourceType.PLAN_CHANGE
+        if source_change is not None
+        else (
+            Subscription.SourceType.TRIAL_GRANT
+            if plan.is_trial
+            else Subscription.SourceType.APPLICATION
+        )
+    )
     try:
         with transaction.atomic():
             subscription = Subscription.objects.create(
                 user=user,
                 source_application=application,
+                source_type=source_type,
+                source_change=source_change,
                 plan=plan,
                 plan_version=version,
                 plan_version_no=version.version_no,
@@ -226,7 +240,7 @@ def _create_active_subscription(
                 status=Subscription.Status.ACTIVE,
                 starts_at=now,
                 ends_at=ends_at,
-                cycle_anchor_day=timezone.localtime(now).day,
+                cycle_anchor_day=cycle_anchor_day or timezone.localtime(now).day,
                 is_trial=plan.is_trial,
                 opened_by=actor,
                 opening_note=opening_note,

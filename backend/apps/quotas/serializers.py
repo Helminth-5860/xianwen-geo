@@ -67,14 +67,32 @@ class UserQuotaAccountSerializer(serializers.ModelSerializer):
         return names.get(obj.quota_type, obj.quota_type)
 
 
+class UserQuotaSummarySerializer(serializers.Serializer):
+    quota_type = serializers.CharField(max_length=100)
+    display_name = serializers.SerializerMethodField()
+    unit = serializers.CharField(max_length=50)
+    scope = serializers.CharField(max_length=24)
+    entitlement_amount = serializers.IntegerField(min_value=0)
+    available = serializers.IntegerField(min_value=0)
+    frozen = serializers.IntegerField(min_value=0)
+
+    def get_display_name(self, obj):
+        names = {
+            "detection_points": "检测点数",
+            "article_credits": "文章额度",
+            "image_credits": "图片额度",
+            "storage_bytes": "存储空间",
+            "assistant_messages": "AI 助手消息",
+        }
+        return names.get(obj["quota_type"], obj["quota_type"])
+
+
 class UserQuotaLedgerSerializer(serializers.ModelSerializer):
     class Meta:
         model = QuotaLedgerEntry
         fields = (
             "id",
-            "account_id",
             "quota_type",
-            "sequence",
             "action",
             "available_delta",
             "available_after",

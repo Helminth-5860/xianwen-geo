@@ -550,6 +550,11 @@ class Subscription(models.Model):  # noqa: DJ008
         EXPIRED = "expired", "已到期"
         TERMINATED = "terminated", "已终止"
 
+    class SourceType(models.TextChoices):
+        APPLICATION = "application", "套餐申请"
+        TRIAL_GRANT = "trial_grant", "试用发放"
+        PLAN_CHANGE = "plan_change", "套餐变更"
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -562,6 +567,18 @@ class Subscription(models.Model):  # noqa: DJ008
         blank=True,
         on_delete=models.PROTECT,
         related_name="subscription",
+    )
+    source_type = models.CharField(
+        max_length=16,
+        choices=SourceType.choices,
+        default=SourceType.APPLICATION,
+    )
+    source_change = models.OneToOneField(
+        "SubscriptionChange",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="target_subscription",
     )
     plan = models.ForeignKey(Plan, on_delete=models.PROTECT, related_name="subscriptions")
     plan_version = models.ForeignKey(
@@ -643,11 +660,31 @@ class Subscription(models.Model):  # noqa: DJ008
                 name="subscription_digest_present",
             ),
             models.CheckConstraint(
+                condition=models.Q(source_type__in=("application", "trial_grant", "plan_change")),
+                name="subscription_source_type_valid",
+            ),
+            models.CheckConstraint(
                 condition=(
-                    models.Q(is_trial=True, source_application__isnull=True)
-                    | models.Q(is_trial=False, source_application__isnull=False)
+                    models.Q(
+                        source_type="application",
+                        is_trial=False,
+                        source_application__isnull=False,
+                        source_change__isnull=True,
+                    )
+                    | models.Q(
+                        source_type="trial_grant",
+                        is_trial=True,
+                        source_application__isnull=True,
+                        source_change__isnull=True,
+                    )
+                    | models.Q(
+                        source_type="plan_change",
+                        is_trial=False,
+                        source_application__isnull=True,
+                        source_change__isnull=False,
+                    )
                 ),
-                name="subscription_source_by_trial",
+                name="subscription_source_consistent",
             ),
             models.CheckConstraint(
                 condition=(
@@ -739,3 +776,238 @@ class SubscriptionEvent(models.Model):  # noqa: DJ008
 
     def delete(self, *args, **kwargs):
         raise TypeError("订阅事件不允许删除。")
+
+
+class SubscriptionChangeQuerySet(models.QuerySet):
+    def delete(self):
+        raise TypeError("订阅变更不允许删除。")
+
+
+class SubscriptionChange(models.Model):  # noqa: DJ008
+    class Status(models.TextChoices):
+        SCHEDULED = "scheduled", "已排期"
+        EXECUTED = "executed", "已执行"
+        CANCELLED = "cancelled", "已取消"
+
+    class ChangeType(models.TextChoices):
+        RENEWAL = "renewal", "续费"
+        UPGRADE = "upgrade", "升级"
+        DOWNGRADE = "downgrade", "降级"
+        REPLACEMENT = "replacement", "替换"
+        TRIAL_CONVERSION = "trial_conversion", "试用转正式"
+
+    class QuotaPolicy(models.TextChoices):
+        OVERWRITE = "overwrite", "覆盖"
+        ACCUMULATE = "accumulate", "累加"
+        RETAIN = "retain", "保留"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="subscription_changes",
+    )
+    from_subscription = models.ForeignKey(
+        Subscription,
+        on_delete=models.PROTECT,
+        related_name="outgoing_changes",
+    )
+    target_plan = models.ForeignKey(
+        Plan,
+        on_delete=models.PROTECT,
+        related_name="subscription_changes",
+    )
+    target_plan_version = models.ForeignKey(
+        PlanVersion,
+        on_delete=models.PROTECT,
+        related_name="subscription_changes",
+    )
+    target_plan_version_no = models.PositiveBigIntegerField()
+    target_entitlement_digest = models.CharField(max_length=64)
+    status = models.CharField(max_length=16, choices=Status.choices)
+    change_type = models.CharField(max_length=24, choices=ChangeType.choices)
+    quota_policy = models.CharField(max_length=16, choices=QuotaPolicy.choices)
+    effective_at = models.DateTimeField()
+    reason = models.CharField(max_length=500)
+    unavailable_reason = models.CharField(max_length=500, blank=True)
+    requested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="requested_subscription_changes",
+    )
+    executed_at = models.DateTimeField(null=True, blank=True)
+    cancelled_at = models.DateTimeField(null=True, blank=True)
+    cancelled_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="cancelled_subscription_changes",
+    )
+    cancellation_reason = models.CharField(max_length=500, blank=True)
+    version = models.PositiveBigIntegerField(default=1)
+    idempotency_key_version = models.PositiveSmallIntegerField(default=1)
+    idempotency_key_digest = models.CharField(max_length=64, unique=True)
+    idempotency_scope_digest = models.CharField(max_length=64)
+    request_digest = models.CharField(max_length=64)
+    cancellation_idempotency_key_version = models.PositiveSmallIntegerField(null=True)
+    cancellation_idempotency_key_digest = models.CharField(  # noqa: DJ001
+        max_length=64, null=True, unique=True
+    )
+    cancellation_idempotency_scope_digest = models.CharField(max_length=64, blank=True)
+    cancellation_request_digest = models.CharField(max_length=64, blank=True)
+    request_id = models.UUIDField(db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    objects = SubscriptionChangeQuerySet.as_manager()
+
+    class Meta:
+        db_table = "subscription_changes"
+        ordering = ("-created_at", "-id")
+        indexes = [
+            models.Index(fields=("user", "created_at"), name="sub_change_user_idx"),
+            models.Index(fields=("status", "effective_at"), name="sub_change_due_idx"),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=("from_subscription",),
+                condition=models.Q(status__in=("scheduled", "executed")),
+                name="sub_change_single_successor",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(status__in=("scheduled", "executed", "cancelled")),
+                name="sub_change_status_valid",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(
+                    change_type__in=(
+                        "renewal",
+                        "upgrade",
+                        "downgrade",
+                        "replacement",
+                        "trial_conversion",
+                    )
+                ),
+                name="sub_change_type_valid",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(quota_policy__in=("overwrite", "accumulate", "retain")),
+                name="sub_change_quota_policy_valid",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(
+                        status="scheduled",
+                        change_type="renewal",
+                        executed_at__isnull=True,
+                        cancelled_at__isnull=True,
+                        cancelled_by__isnull=True,
+                        cancellation_reason="",
+                    )
+                    | models.Q(
+                        status="executed",
+                        executed_at__isnull=False,
+                        cancelled_at__isnull=True,
+                        cancelled_by__isnull=True,
+                        cancellation_reason="",
+                    )
+                    | models.Q(
+                        status="cancelled",
+                        change_type="renewal",
+                        executed_at__isnull=True,
+                        cancelled_at__isnull=False,
+                        cancelled_by__isnull=False,
+                        cancellation_reason__gt="",
+                    )
+                ),
+                name="sub_change_status_times",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    (
+                        models.Q(status__in=("scheduled", "executed"))
+                        & models.Q(cancellation_idempotency_key_version__isnull=True)
+                        & models.Q(cancellation_idempotency_key_digest__isnull=True)
+                        & models.Q(cancellation_idempotency_scope_digest="")
+                        & models.Q(cancellation_request_digest="")
+                    )
+                    | (
+                        models.Q(status="cancelled")
+                        & models.Q(cancellation_idempotency_key_version__isnull=False)
+                        & models.Q(cancellation_idempotency_key_digest__isnull=False)
+                        & ~models.Q(cancellation_idempotency_scope_digest="")
+                        & ~models.Q(cancellation_request_digest="")
+                    )
+                ),
+                name="sub_change_cancel_idem_state",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    ~models.Q(target_entitlement_digest="")
+                    & ~models.Q(idempotency_key_digest="")
+                    & ~models.Q(idempotency_scope_digest="")
+                    & ~models.Q(request_digest="")
+                    & models.Q(version__gte=1)
+                ),
+                name="sub_change_digests_version",
+            ),
+        ]
+
+    def delete(self, *args, **kwargs):
+        raise TypeError("订阅变更不允许删除。")
+
+
+class AppendOnlySubscriptionChangeEventQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        raise TypeError("订阅变更事件不允许更新。")
+
+    def delete(self):
+        raise TypeError("订阅变更事件不允许删除。")
+
+
+class SubscriptionChangeEvent(models.Model):  # noqa: DJ008
+    class EventType(models.TextChoices):
+        SCHEDULED = "scheduled", "已排期"
+        EXECUTED = "executed", "已执行"
+        CANCELLED = "cancelled", "已取消"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    change = models.ForeignKey(
+        SubscriptionChange,
+        on_delete=models.PROTECT,
+        related_name="events",
+    )
+    event_type = models.CharField(max_length=16, choices=EventType.choices)
+    from_status = models.CharField(max_length=16, blank=True)
+    to_status = models.CharField(max_length=16, choices=SubscriptionChange.Status.choices)
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="subscription_change_events",
+    )
+    safe_summary = models.CharField(max_length=200)
+    request_id = models.UUIDField(db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = AppendOnlySubscriptionChangeEventQuerySet.as_manager()
+
+    class Meta:
+        db_table = "subscription_change_events"
+        ordering = ("created_at", "id")
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(event_type__in=("scheduled", "executed", "cancelled")),
+                name="sub_change_event_type_valid",
+            )
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk and not self._state.adding:
+            raise TypeError("订阅变更事件不允许更新。")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise TypeError("订阅变更事件不允许删除。")

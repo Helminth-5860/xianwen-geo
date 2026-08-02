@@ -8,6 +8,7 @@ SECRET_KEY = "test-only-key-never-use-in-deployment"
 SMS_PROVIDER = "mock"
 SMS_VERIFICATION_HMAC_KEY = "test-only-sms-hmac-key-never-use-in-deployment"
 QUOTA_IDEMPOTENCY_HMAC_KEY = "test-only-quota-idempotency-key-never-use-in-deployment"
+PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY = "test-only-plan-change-idempotency-key-never-use-in-deployment"
 DEBUG = False
 ALLOWED_HOSTS = ["testserver", "localhost", "127.0.0.1"]
 CSRF_TRUSTED_ORIGINS = ["http://testserver"]

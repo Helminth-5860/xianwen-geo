@@ -24,6 +24,10 @@ class QuotaAccount(models.Model):  # noqa: DJ008
         ACCOUNT = "account", "账号"
         ACCOUNT_CYCLE = "account_cycle", "账号周期"
 
+    class BatchType(models.TextChoices):
+        PRIMARY = "primary", "套餐基础批次"
+        CARRYOVER = "carryover", "保留额度批次"
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="quota_accounts"
@@ -35,6 +39,19 @@ class QuotaAccount(models.Model):  # noqa: DJ008
     scope = models.CharField(max_length=24, choices=Scope.choices)
     unit = models.CharField(max_length=32)
     batch_key = models.UUIDField(default=uuid.uuid4)
+    batch_type = models.CharField(
+        max_length=16,
+        choices=BatchType.choices,
+        default=BatchType.PRIMARY,
+    )
+    spendable_until = models.DateTimeField(null=True, blank=True)
+    source_change = models.ForeignKey(
+        "plans.SubscriptionChange",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="carryover_quota_accounts",
+    )
     entitlement_amount = models.BigIntegerField()
     available = models.BigIntegerField(default=0)
     frozen = models.BigIntegerField(default=0)
@@ -63,9 +80,14 @@ class QuotaAccount(models.Model):  # noqa: DJ008
                 name="quota_account_unique_batch",
             ),
             models.UniqueConstraint(
+                fields=("subscription", "quota_type"),
+                condition=Q(batch_type="primary", cycle_started_at__isnull=True),
+                name="quota_account_unique_noncycle",
+            ),
+            models.UniqueConstraint(
                 fields=("subscription", "quota_type", "cycle_started_at"),
+                condition=Q(batch_type="primary", cycle_started_at__isnull=False),
                 name="quota_account_unique_cycle",
-                nulls_distinct=False,
             ),
             models.CheckConstraint(
                 condition=Q(entitlement_amount__gte=0), name="quota_entitlement_gte_0"
@@ -90,6 +112,26 @@ class QuotaAccount(models.Model):  # noqa: DJ008
                 | (~Q(scope="account_cycle") & Q(cycle_started_at__isnull=True)),
                 name="quota_account_scope_cycle",
             ),
+            models.CheckConstraint(
+                condition=Q(batch_type__in=("primary", "carryover")),
+                name="quota_account_batch_type_valid",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    Q(
+                        batch_type="primary",
+                        source_change__isnull=True,
+                        spendable_until__isnull=True,
+                    )
+                    | Q(
+                        batch_type="carryover",
+                        source_change__isnull=False,
+                        spendable_until__isnull=False,
+                        entitlement_amount=0,
+                    )
+                ),
+                name="quota_account_batch_consistent",
+            ),
         ]
         indexes = [
             models.Index(fields=("user", "quota_type"), name="quota_account_user_type_idx"),
@@ -103,6 +145,82 @@ class QuotaAccount(models.Model):  # noqa: DJ008
         raise RuntimeError("额度账户不能删除。")
 
 
+class QuotaHoldGroup(models.Model):  # noqa: DJ008
+    class Status(models.TextChoices):
+        OPEN = "open", "待结算"
+        PARTIALLY_SETTLED = "partially_settled", "部分结算"
+        SETTLED = "settled", "已结算"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="quota_hold_groups"
+    )
+    quota_type = models.CharField(max_length=100)
+    business_type = models.CharField(max_length=64)
+    business_id = models.UUIDField()
+    requested_amount = models.BigIntegerField()
+    consumed_amount = models.BigIntegerField(default=0)
+    released_amount = models.BigIntegerField(default=0)
+    status = models.CharField(max_length=24, choices=Status.choices, default=Status.OPEN)
+    freeze_idempotency_key_version = models.PositiveSmallIntegerField(default=1)
+    freeze_idempotency_key_digest = models.CharField(max_length=64, unique=True)
+    freeze_idempotency_scope_digest = models.CharField(max_length=64)
+    freeze_request_digest = models.CharField(max_length=64)
+    version = models.BigIntegerField(default=1)
+    settled_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    objects = ProtectedQuerySet.as_manager()
+
+    class Meta:
+        db_table = "quota_hold_groups"
+        ordering = ("-created_at", "id")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("user", "quota_type", "business_type", "business_id"),
+                name="quota_hold_group_business_unique",
+            ),
+            models.CheckConstraint(
+                condition=Q(requested_amount__gt=0), name="quota_hold_group_requested_gt_0"
+            ),
+            models.CheckConstraint(
+                condition=Q(consumed_amount__gte=0), name="quota_hold_group_consumed_gte_0"
+            ),
+            models.CheckConstraint(
+                condition=Q(released_amount__gte=0), name="quota_hold_group_released_gte_0"
+            ),
+            models.CheckConstraint(
+                condition=Q(consumed_amount__lte=F("requested_amount") - F("released_amount")),
+                name="quota_hold_group_total_lte",
+            ),
+            models.CheckConstraint(
+                condition=Q(version__gte=1), name="quota_hold_group_version_gte_1"
+            ),
+            models.CheckConstraint(
+                condition=(
+                    Q(status="open", consumed_amount=0, released_amount=0, settled_at__isnull=True)
+                    | (
+                        Q(status="partially_settled", settled_at__isnull=True)
+                        & (Q(consumed_amount__gt=0) | Q(released_amount__gt=0))
+                        & Q(consumed_amount__lt=F("requested_amount") - F("released_amount"))
+                    )
+                    | (
+                        Q(status="settled", settled_at__isnull=False)
+                        & Q(consumed_amount=F("requested_amount") - F("released_amount"))
+                    )
+                ),
+                name="quota_hold_group_status_amounts",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=("user", "status", "created_at"), name="quota_hold_group_user_idx"),
+        ]
+
+    def delete(self, *args, **kwargs):
+        raise RuntimeError("额度冻结组不能删除。")
+
+
 class QuotaHold(models.Model):  # noqa: DJ008
     class Status(models.TextChoices):
         OPEN = "open", "待结算"
@@ -110,6 +228,7 @@ class QuotaHold(models.Model):  # noqa: DJ008
         SETTLED = "settled", "已结算"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    group = models.ForeignKey(QuotaHoldGroup, on_delete=models.PROTECT, related_name="allocations")
     account = models.ForeignKey(QuotaAccount, on_delete=models.PROTECT, related_name="holds")
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="quota_holds"
@@ -140,8 +259,8 @@ class QuotaHold(models.Model):  # noqa: DJ008
         ordering = ("-created_at", "id")
         constraints = [
             models.UniqueConstraint(
-                fields=("account", "business_type", "business_id"),
-                name="quota_hold_unique_business_target",
+                fields=("group", "account"),
+                name="quota_hold_group_account_unique",
             ),
             models.CheckConstraint(
                 condition=Q(requested_amount__gt=0), name="quota_hold_requested_gt_0"
@@ -193,6 +312,9 @@ class QuotaLedgerEntry(models.Model):  # noqa: DJ008
         GRANT = "grant", "赠送"
         COMPENSATE = "compensate", "补偿"
         MANUAL_DEDUCT = "manual_deduct", "人工扣减"
+        PLAN_CHANGE_FORFEIT = "plan_change_forfeit", "套餐变更清零"
+        PLAN_CHANGE_TRANSFER_OUT = "plan_change_transfer_out", "套餐变更转出"
+        PLAN_CHANGE_TRANSFER_IN = "plan_change_transfer_in", "套餐变更转入"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     account = models.ForeignKey(
@@ -209,7 +331,7 @@ class QuotaLedgerEntry(models.Model):  # noqa: DJ008
     )
     quota_type = models.CharField(max_length=100)
     sequence = models.BigIntegerField()
-    action = models.CharField(max_length=24, choices=Action.choices)
+    action = models.CharField(max_length=32, choices=Action.choices)
     available_before = models.BigIntegerField()
     available_delta = models.BigIntegerField()
     available_after = models.BigIntegerField()
@@ -275,6 +397,9 @@ class QuotaLedgerEntry(models.Model):  # noqa: DJ008
                                 "grant",
                                 "compensate",
                                 "manual_deduct",
+                                "plan_change_forfeit",
+                                "plan_change_transfer_out",
+                                "plan_change_transfer_in",
                             )
                         )
                         & Q(hold__isnull=True)
@@ -300,3 +425,59 @@ class QuotaLedgerEntry(models.Model):  # noqa: DJ008
 
     def delete(self, *args, **kwargs):
         raise RuntimeError("额度流水不能删除。")
+
+
+class QuotaTransfer(models.Model):  # noqa: DJ008
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    change = models.ForeignKey(
+        "plans.SubscriptionChange",
+        on_delete=models.PROTECT,
+        related_name="quota_transfers",
+    )
+    quota_type = models.CharField(max_length=100)
+    amount = models.BigIntegerField()
+    source_account = models.ForeignKey(
+        QuotaAccount,
+        on_delete=models.PROTECT,
+        related_name="outgoing_transfers",
+    )
+    target_account = models.ForeignKey(
+        QuotaAccount,
+        on_delete=models.PROTECT,
+        related_name="incoming_transfers",
+    )
+    transfer_out_entry = models.OneToOneField(
+        QuotaLedgerEntry,
+        on_delete=models.PROTECT,
+        related_name="outgoing_transfer",
+    )
+    transfer_in_entry = models.OneToOneField(
+        QuotaLedgerEntry,
+        on_delete=models.PROTECT,
+        related_name="incoming_transfer",
+    )
+    request_id = models.UUIDField(db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = ProtectedQuerySet.as_manager()
+
+    class Meta:
+        db_table = "quota_transfers"
+        ordering = ("change_id", "quota_type", "id")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("change", "source_account", "target_account"),
+                name="quota_transfer_account_pair_unique",
+            ),
+            models.CheckConstraint(
+                condition=Q(amount__gt=0),
+                name="quota_transfer_amount_gt_0",
+            ),
+            models.CheckConstraint(
+                condition=~Q(source_account=F("target_account")),
+                name="quota_transfer_distinct_accounts",
+            ),
+        ]
+
+    def delete(self, *args, **kwargs):
+        raise RuntimeError("额度迁移记录不能删除。")

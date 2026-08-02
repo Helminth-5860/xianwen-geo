@@ -9,6 +9,12 @@ from .application_services import (
     admin_change_application,
     scoped_application_or_404,
 )
+from .change_idempotency import PlanChangeDigests
+from .change_services import (
+    cancel_scheduled_change,
+    execute_subscription_change,
+    scoped_subscription_change_or_404,
+)
 from .models import Plan, PlanVersion
 from .serializers import (
     EmptyPlanPayloadSerializer,
@@ -33,8 +39,10 @@ from .services import (
     validate_publishable,
 )
 from .subscription_serializers import (
+    CancelSubscriptionChangePayloadSerializer,
     GrantTrialPayloadSerializer,
     OpenSubscriptionPayloadSerializer,
+    SubscriptionChangePayloadSerializer,
     TerminateSubscriptionPayloadSerializer,
 )
 from .subscription_services import (
@@ -350,6 +358,87 @@ def handle_subscription_terminate(context):
     )
 
 
+def _subscription_change_source_version(user, context, target_id, lock):
+    # The domain service acquires Plan -> PlanVersion -> User -> Subscription locks.
+    # Taking the subscription lock in the generic risk preflight would invert that order.
+    return scoped_subscription_or_404(user, context, target_id, lock=False).version
+
+
+def _subscription_change_version(user, context, target_id, lock):
+    return scoped_subscription_change_or_404(user, context, target_id, lock=False).version
+
+
+def _change_digests(payload):
+    return PlanChangeDigests(
+        key_version=payload["idempotency_key_version"],
+        key_digest=payload["idempotency_key_digest"],
+        scope_digest=payload["idempotency_scope_digest"],
+        request_digest=payload["request_digest"],
+    )
+
+
+def handle_subscription_change(context):
+    admin_context = _subscription_context(context.requester)
+    source = scoped_subscription_or_404(
+        context.requester, admin_context, context.target_id, lock=False
+    )
+    before = {"status": source.status, "version": source.version}
+    target_version = PlanVersion.objects.only("plan_id").get(
+        pk=context.payload["target_plan_version_id"]
+    )
+    change = execute_subscription_change(
+        requester=context.requester,
+        admin_context=admin_context,
+        source_subscription_id=context.target_id,
+        expected_version=context.target_version,
+        target_plan_id=target_version.plan_id,
+        target_plan_version_id=target_version.pk,
+        requested_type=context.payload["change_type"],
+        quota_policy=context.payload["quota_policy"],
+        confirm_unavailable=context.payload.get("confirm_unavailable", False),
+        unavailable_reason=context.payload.get("unavailable_reason", ""),
+        reason=context.payload["reason"],
+        digests=_change_digests(context.payload),
+        request_id=context.request.request_id,
+    )
+    result = {
+        "change_id": str(change.pk),
+        "status": change.status,
+        "change_type": change.change_type,
+        "effective_at": change.effective_at,
+        "version": change.version,
+    }
+    target = getattr(change, "target_subscription", None)
+    if target is not None:
+        result["target_subscription_id"] = str(target.pk)
+    return HandlerResult(
+        before, {"status": change.status, "version": change.version}, result, change.user
+    )
+
+
+def handle_subscription_change_cancel(context):
+    admin_context = _subscription_context(context.requester)
+    change = scoped_subscription_change_or_404(
+        context.requester, admin_context, context.target_id, lock=False
+    )
+    before = {"status": change.status, "version": change.version}
+    change = cancel_scheduled_change(
+        requester=context.requester,
+        admin_context=admin_context,
+        change_id=context.target_id,
+        expected_version=context.target_version,
+        reason=context.payload["reason"],
+        digests=_change_digests(context.payload),
+        request_id=context.request.request_id,
+    )
+    return HandlerResult(
+        before,
+        {"status": change.status, "version": change.version},
+        {"change_id": str(change.pk), "status": change.status, "version": change.version},
+        change.user,
+    )
+
+
 PLAN_HANDLER_SPECS = {
     "plan.create": HandlerSpec(
         "plans.create", False, PlanCreatePayloadSerializer, _new_plan_version, handle_plan_create
@@ -431,6 +520,20 @@ PLAN_HANDLER_SPECS = {
         TerminateSubscriptionPayloadSerializer,
         _subscription_version,
         handle_subscription_terminate,
+    ),
+    "subscription.change": HandlerSpec(
+        "subscriptions.change",
+        False,
+        SubscriptionChangePayloadSerializer,
+        _subscription_change_source_version,
+        handle_subscription_change,
+    ),
+    "subscription.change.cancel": HandlerSpec(
+        "subscriptions.change",
+        False,
+        CancelSubscriptionChangePayloadSerializer,
+        _subscription_change_version,
+        handle_subscription_change_cancel,
     ),
 }
 

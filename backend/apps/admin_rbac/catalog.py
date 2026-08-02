@@ -84,6 +84,7 @@ PERMISSION_CATALOG = (
     CatalogPermission(
         "subscriptions.override_version", "替换申请套餐版本", "subscriptions", "action", 850
     ),
+    CatalogPermission("subscriptions.change", "变更或取消订阅套餐", "subscriptions", "action", 855),
     CatalogPermission(
         "menu.admin.quotas", "\u989d\u5ea6\u7ba1\u7406\u83dc\u5355", "quotas", "menu", 87
     ),

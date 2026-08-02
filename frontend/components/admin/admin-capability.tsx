@@ -19,6 +19,7 @@ const MENU_ITEMS = [
   ["menu.admin.audit", "/admin/audit", "统一审计"],
   ["menu.admin.plan-applications", "/admin/plan-applications", "套餐申请"],
   ["menu.admin.subscriptions", "/admin/subscriptions", "订阅"],
+  ["menu.admin.subscriptions", "/admin/subscription-changes", "套餐变更"],
   ["menu.admin.quotas", "/admin/quotas", "\u989d\u5ea6"],
   ["menu.admin.risk-policies", "/admin/risk-policies", "风险策略"],
   ["menu.admin.plans", "/admin/plans", "套餐"],
@@ -38,13 +39,11 @@ export function AdminCapabilityProvider({ children }: { children: ReactNode }) {
     <AdminCapabilityContext.Provider value={context}>
       <nav aria-label="后台菜单">
         <Space wrap>
-          {MENU_ITEMS.filter(([key]) => context.menu_keys.includes(key)).map(
-            ([key, href, label]) => (
-              <Link key={key} href={href}>
-                <Button type="text">{label}</Button>
-              </Link>
-            ),
-          )}
+          {MENU_ITEMS.filter(([key]) => context.menu_keys.includes(key)).map(([, href, label]) => (
+            <Link key={href} href={href}>
+              <Button type="text">{label}</Button>
+            </Link>
+          ))}
         </Space>
       </nav>
       {children}

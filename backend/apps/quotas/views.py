@@ -24,7 +24,7 @@ from .exceptions import QuotaError, QuotaIdempotencyConflict
 from .idempotency import derive_idempotency_digests
 from .models import QuotaLedgerEntry
 from .selectors import (
-    current_accounts,
+    current_account_summaries,
     scoped_account_or_404,
     scoped_accounts,
     scoped_ledger,
@@ -34,8 +34,8 @@ from .serializers import (
     AdminQuotaAccountSerializer,
     AdminQuotaLedgerSerializer,
     QuotaAdjustmentRequestSerializer,
-    UserQuotaAccountSerializer,
     UserQuotaLedgerSerializer,
+    UserQuotaSummarySerializer,
     validate_quota_type,
 )
 from .services import _assert_idempotent_match
@@ -82,7 +82,11 @@ def quota_error_response(exc, request):
 class CurrentQuotaAccountsView(APIView):
     def get(self, request):
         return Response(
-            {"accounts": UserQuotaAccountSerializer(current_accounts(request.user), many=True).data}
+            {
+                "accounts": UserQuotaSummarySerializer(
+                    current_account_summaries(request.user), many=True
+                ).data
+            }
         )
 
 

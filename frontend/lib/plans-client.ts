@@ -117,6 +117,8 @@ export type Subscription = Readonly<{
   plan_version_id: string;
   plan_version_no: number;
   status: SubscriptionStatus;
+  source_type: "application" | "trial_grant" | "plan_change";
+  source_change_id?: string | null;
   is_trial: boolean;
   starts_at: string;
   ends_at: string;
@@ -140,6 +142,56 @@ export type Subscription = Readonly<{
   }[];
 }>;
 
+export type SubscriptionChangeStatus = "scheduled" | "executed" | "cancelled";
+export type SubscriptionChangeType =
+  "renewal" | "upgrade" | "downgrade" | "replacement" | "trial_conversion";
+export type SubscriptionQuotaPolicy = "overwrite" | "accumulate" | "retain";
+export type SubscriptionChange = Readonly<{
+  id: string;
+  from_subscription_id: string;
+  target_plan_id: string;
+  target_plan_name: string;
+  target_plan_version_id?: string;
+  target_plan_version_no: number;
+  status: SubscriptionChangeStatus;
+  change_type: SubscriptionChangeType;
+  quota_policy: SubscriptionQuotaPolicy;
+  effective_at: string;
+  executed_at: string | null;
+  cancelled_at: string | null;
+  version: number;
+  reason?: string;
+  unavailable_reason?: string;
+  cancellation_reason?: string;
+  user_id?: string;
+  user_nickname?: string;
+  created_at: string;
+  updated_at?: string;
+}>;
+export type SubscriptionChangePreview = Readonly<{
+  change_type: SubscriptionChangeType;
+  target_plan_id: string;
+  target_plan_version_id: string;
+  source_plan_version_no: number;
+  target_plan_version_no: number;
+  quota_policy: SubscriptionQuotaPolicy;
+  effective_at: string;
+  ends_at: string | null;
+  cycle_anchor_day: number;
+  unavailable_confirmation_required: boolean;
+  changed_limit_keys: string[];
+  added_model_keys: ModelKey[];
+  removed_model_keys: ModelKey[];
+}>;
+export type SubscriptionChangeInput = Readonly<{
+  expectedVersion: number;
+  targetPlanVersionId: string;
+  changeType: SubscriptionChangeType;
+  quotaPolicy: SubscriptionQuotaPolicy;
+  confirmUnavailable?: boolean;
+  unavailableReason?: string;
+  reason: string;
+}>;
 const risk = (input: RiskInput) => ({
   confirmed: input.confirmed ?? false,
   current_password: input.current_password ?? "",
@@ -225,6 +277,54 @@ export const terminateSubscription = (id: string, expectedVersion: number, reaso
     expected_version: expectedVersion,
     reason,
   });
+export const previewSubscriptionChange = (
+  id: string,
+  input: Omit<SubscriptionChangeInput, "reason" | "confirmUnavailable" | "unavailableReason">,
+) =>
+  post<SubscriptionChangePreview>("/admin/subscriptions/" + id + "/change/preview", {
+    expected_version: input.expectedVersion,
+    target_plan_version_id: input.targetPlanVersionId,
+    change_type: input.changeType,
+    quota_policy: input.quotaPolicy,
+  });
+export const requestSubscriptionChange = (
+  id: string,
+  input: SubscriptionChangeInput,
+  idempotencyKey: string,
+) =>
+  post<RiskExecution<{ approval_required: true }>>(
+    "/admin/subscriptions/" + id + "/change",
+    {
+      expected_version: input.expectedVersion,
+      target_plan_version_id: input.targetPlanVersionId,
+      change_type: input.changeType,
+      quota_policy: input.quotaPolicy,
+      confirm_unavailable: input.confirmUnavailable ?? false,
+      unavailable_reason: input.unavailableReason ?? "",
+      reason: input.reason,
+    },
+    { "Idempotency-Key": idempotencyKey },
+  );
+export const getAdminSubscriptionChanges = (status = "", page = 1) => {
+  const query = new URLSearchParams({ page: String(page) });
+  if (status) query.set("status", status);
+  return get<PageData<SubscriptionChange>>("/admin/subscription-changes?" + query.toString());
+};
+export const getAdminSubscriptionChange = (id: string) =>
+  get<SubscriptionChange>("/admin/subscription-changes/" + id);
+export const cancelSubscriptionChange = (
+  id: string,
+  expectedVersion: number,
+  reason: string,
+  idempotencyKey: string,
+) =>
+  post<RiskExecution<{ approval_required: true }>>(
+    "/admin/subscription-changes/" + id + "/cancel",
+    { expected_version: expectedVersion, reason },
+    { "Idempotency-Key": idempotencyKey },
+  );
+export const getUserSubscriptionChanges = () =>
+  get<{ results: SubscriptionChange[] }>("/subscription/changes");
 export const getPlans = (status = "", keyword = "") => {
   const query = new URLSearchParams();
   if (status) query.set("status", status);
