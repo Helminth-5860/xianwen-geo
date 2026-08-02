@@ -276,7 +276,17 @@ services:
       dockerfile: backend/Dockerfile
       target: test
     command:
-      ["python", "-m", "pytest", "tests/test_subscriptions_postgres.py", "--ds=config.settings", "-q", "-p", "no:cacheprovider"]
+      [
+        "python",
+        "-m",
+        "pytest",
+        "tests/test_subscriptions_postgres.py",
+        "tests/test_subscriptions_postgres_evidence.py",
+        "--ds=config.settings",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+      ]
     environment:
       APP_ENV: local
       DJANGO_SETTINGS_MODULE: config.settings

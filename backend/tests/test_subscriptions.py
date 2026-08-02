@@ -30,6 +30,7 @@ from apps.plans.models import (
     SubscriptionEvent,
 )
 from apps.plans.services import (
+    archive_plan,
     create_plan,
     create_plan_version,
     publish_plan_version,
@@ -37,6 +38,7 @@ from apps.plans.services import (
 )
 from apps.plans.subscription_services import (
     SubscriptionConfirmationRequired,
+    SubscriptionPlanUnavailable,
     SubscriptionStateConflict,
     SubscriptionTrialAlreadyGranted,
     activate_application,
@@ -594,3 +596,82 @@ def test_subscription_write_endpoint_requires_real_csrf():
     assert response.status_code == 403
     assert response.json()["error"]["code"] == "CSRF_FAILED"
     assert not ApprovalRequest.objects.filter(action_key="subscription.grant_trial").exists()
+
+
+@pytest.mark.django_db
+def test_trial_current_version_and_unavailable_plan_boundaries():
+    admin = superuser("13900139000")
+    trial, _ = published_plan(admin, code="unavailable-trial", trial=True)
+    current_version_id = trial.current_published_version_id
+    first_user = customer()
+    subscription = grant_trial(
+        requester=admin,
+        admin_context=resolve_admin_context(admin),
+        user_id=first_user.pk,
+        expected_status_version=first_user.status_version,
+        plan_id=trial.pk,
+        opening_note="",
+        request_id=uuid.uuid4(),
+    )
+    assert subscription.plan_version_id == current_version_id
+
+    trial = set_plan_offline(
+        plan_id=trial.pk,
+        actor=admin,
+        expected_version=trial.version,
+    )
+    offline_user = customer("13700137000")
+    with pytest.raises(SubscriptionPlanUnavailable):
+        grant_trial(
+            requester=admin,
+            admin_context=resolve_admin_context(admin),
+            user_id=offline_user.pk,
+            expected_status_version=offline_user.status_version,
+            plan_id=trial.pk,
+            opening_note="",
+            request_id=uuid.uuid4(),
+        )
+    trial = archive_plan(
+        plan_id=trial.pk,
+        actor=admin,
+        expected_version=trial.version,
+    )
+    archived_trial_user = customer("13600136000")
+    with pytest.raises(SubscriptionPlanUnavailable):
+        grant_trial(
+            requester=admin,
+            admin_context=resolve_admin_context(admin),
+            user_id=archived_trial_user.pk,
+            expected_status_version=archived_trial_user.status_version,
+            plan_id=trial.pk,
+            opening_note="",
+            request_id=uuid.uuid4(),
+        )
+
+    formal_user = customer("13500135000")
+    formal, version = published_plan(admin, code="archived-formal")
+    application = application_for(formal_user, formal, version)
+    formal = set_plan_offline(
+        plan_id=formal.pk,
+        actor=admin,
+        expected_version=formal.version,
+    )
+    archive_plan(
+        plan_id=formal.pk,
+        actor=admin,
+        expected_version=formal.version,
+    )
+    with pytest.raises(SubscriptionPlanUnavailable):
+        activate_application(
+            requester=admin,
+            admin_context=resolve_admin_context(admin),
+            application_id=application.pk,
+            expected_version=application.version,
+            selected_plan_version_id=None,
+            confirm_unavailable=True,
+            unavailable_reason="确认归档边界",
+            confirm_version_override=False,
+            override_reason="",
+            opening_note="",
+            request_id=uuid.uuid4(),
+        )

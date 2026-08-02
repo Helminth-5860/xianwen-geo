@@ -318,4 +318,9 @@ def test_docker_job_runs_reproducible_postgresql_subscription_suite():
     suite = (REPO_ROOT / "backend" / "tests" / "test_subscriptions_postgres.py").read_text(
         encoding="utf-8"
     )
+    evidence_suite = (
+        REPO_ROOT / "backend" / "tests" / "test_subscriptions_postgres_evidence.py"
+    ).read_text(encoding="utf-8")
     assert suite.count("def test_postgresql_") == 7
+    assert evidence_suite.count("def test_postgresql_") == 10
+    assert "tests/test_subscriptions_postgres_evidence.py" in compose
