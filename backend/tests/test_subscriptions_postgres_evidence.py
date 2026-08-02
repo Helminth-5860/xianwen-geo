@@ -114,7 +114,7 @@ def test_postgresql_activation_application_transition_race_is_consistent(competi
         assert application.status in {"contacted", "activated"}
         assert subscriptions.count() == (1 if application.status == "activated" else 0)
         successful = sum(not isinstance(result, Exception) for result in results)
-        assert successful == (2 if application.status == "activated" else 1)
+        assert successful == 1
     else:
         terminal = {"cancel": "cancelled", "close": "closed"}[competing_action]
         assert sum(not isinstance(result, Exception) for result in results) == 1
