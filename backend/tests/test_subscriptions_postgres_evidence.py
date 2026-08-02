@@ -388,6 +388,7 @@ def test_postgresql_terminate_and_reopen_race_preserves_single_active():
     results = parallel(terminate, lambda: activate(actor, second_application))
     current.refresh_from_db()
     second_application.refresh_from_db()
+    assert not any(isinstance(result, DatabaseError) for result in results)
     assert any(not isinstance(result, Exception) for result in results)
     assert current.status == "terminated"
     assert Subscription.objects.filter(user=user, status="active").count() <= 1

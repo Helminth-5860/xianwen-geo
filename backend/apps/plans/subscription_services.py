@@ -476,7 +476,11 @@ def terminate_subscription(
     reason: str,
     request_id,
 ):
+    candidate = scoped_subscription_or_404(requester, admin_context, subscription_id)
+    User.objects.select_for_update().get(pk=candidate.user_id)
     subscription = scoped_subscription_or_404(requester, admin_context, subscription_id, lock=True)
+    if subscription.user_id != candidate.user_id:
+        raise SubscriptionStateConflict
     if subscription.version != expected_version:
         raise SubscriptionVersionConflict
     if subscription.status != Subscription.Status.ACTIVE:
