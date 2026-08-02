@@ -1,4 +1,7 @@
 $ErrorActionPreference = "Stop"
+if ([string]::IsNullOrWhiteSpace($env:QUOTA_IDEMPOTENCY_HMAC_KEY)) {
+    $env:QUOTA_IDEMPOTENCY_HMAC_KEY = ([guid]::NewGuid().ToString("N") + [guid]::NewGuid().ToString("N"))
+}
 
 $defaults = @{
     POSTGRES_DB = "risk_approval_test_db"

@@ -12,6 +12,7 @@ APP_ENV = "production"
 
 SECRET_KEY = require_env("DJANGO_SECRET_KEY")
 SMS_VERIFICATION_HMAC_KEY = require_env("SMS_VERIFICATION_HMAC_KEY")
+QUOTA_IDEMPOTENCY_HMAC_KEY = require_env("QUOTA_IDEMPOTENCY_HMAC_KEY")
 weak_secret_markers = {
     "changeme",
     "change-me",
@@ -26,6 +27,15 @@ if len(SMS_VERIFICATION_HMAC_KEY) < 50 or SMS_VERIFICATION_HMAC_KEY.lower() in w
     raise ImproperlyConfigured("SMS_VERIFICATION_HMAC_KEY is too weak for production.")
 if SMS_VERIFICATION_HMAC_KEY == SECRET_KEY:
     raise ImproperlyConfigured("SMS_VERIFICATION_HMAC_KEY must not reuse DJANGO_SECRET_KEY.")
+if (
+    len(QUOTA_IDEMPOTENCY_HMAC_KEY) < 50
+    or QUOTA_IDEMPOTENCY_HMAC_KEY.lower() in weak_secret_markers
+):
+    raise ImproperlyConfigured("QUOTA_IDEMPOTENCY_HMAC_KEY is too weak for production.")
+if QUOTA_IDEMPOTENCY_HMAC_KEY in {SECRET_KEY, SMS_VERIFICATION_HMAC_KEY}:
+    raise ImproperlyConfigured(
+        "QUOTA_IDEMPOTENCY_HMAC_KEY must not reuse another application secret."
+    )
 for forbidden_variable in ("DATABASE_URL", "REDIS_URL"):
     configured_url = os.getenv(forbidden_variable, "")
     configured_password = urlsplit(configured_url).password if configured_url else None
@@ -34,6 +44,10 @@ for forbidden_variable in ("DATABASE_URL", "REDIS_URL"):
             f"SMS_VERIFICATION_HMAC_KEY must not reuse {forbidden_variable} credentials."
         )
 
+    if QUOTA_IDEMPOTENCY_HMAC_KEY in {configured_url, configured_password}:
+        raise ImproperlyConfigured(
+            f"QUOTA_IDEMPOTENCY_HMAC_KEY must not reuse {forbidden_variable} credentials."
+        )
 SMS_PROVIDER = os.getenv("SMS_PROVIDER", "unconfigured").strip().lower()
 if SMS_PROVIDER == "mock":
     raise ImproperlyConfigured("Mock SMS provider is forbidden in production.")

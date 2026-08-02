@@ -317,7 +317,7 @@ def test_binding_survives_plan_offline_and_no_forbidden_business_models():
     assert application.public_plan_snapshot == original
     assert application.requested_plan_version_id == version.pk
     assert {model.__name__ for model in apps.get_models()}.isdisjoint(
-        {"QuotaAccount", "Order", "Payment", "Refund", "Invoice", "Contract"}
+        {"Order", "Payment", "Refund", "Invoice", "Contract"}
     )
 
 

@@ -47,6 +47,7 @@ services:
       CELERY_BROKER_URL: ${CELERY_BROKER_URL:?请先复制 .env.example 为 .env}
       SMS_PROVIDER: ${SMS_PROVIDER:-mock}
       SMS_VERIFICATION_HMAC_KEY: ${SMS_VERIFICATION_HMAC_KEY:?请配置随机本地短信 HMAC 密钥}
+      QUOTA_IDEMPOTENCY_HMAC_KEY: ${QUOTA_IDEMPOTENCY_HMAC_KEY:?set a random local quota HMAC key}
       SMS_CODE_TTL_SECONDS: ${SMS_CODE_TTL_SECONDS:-300}
       SMS_RESEND_COOLDOWN_SECONDS: ${SMS_RESEND_COOLDOWN_SECONDS:-60}
       SMS_MAX_ATTEMPTS: ${SMS_MAX_ATTEMPTS:-5}
@@ -111,6 +112,7 @@ services:
       CELERY_BROKER_URL: ${CELERY_BROKER_URL:?请先复制 .env.example 为 .env}
       SMS_PROVIDER: ${SMS_PROVIDER:-mock}
       SMS_VERIFICATION_HMAC_KEY: ${SMS_VERIFICATION_HMAC_KEY:?请配置随机本地短信 HMAC 密钥}
+      QUOTA_IDEMPOTENCY_HMAC_KEY: ${QUOTA_IDEMPOTENCY_HMAC_KEY:?set a random local quota HMAC key}
       SMS_CODE_TTL_SECONDS: ${SMS_CODE_TTL_SECONDS:-300}
       SMS_RESEND_COOLDOWN_SECONDS: ${SMS_RESEND_COOLDOWN_SECONDS:-60}
       SMS_MAX_ATTEMPTS: ${SMS_MAX_ATTEMPTS:-5}
@@ -150,6 +152,7 @@ services:
       CELERY_BROKER_URL: ${CELERY_BROKER_URL:?请先复制 .env.example 为 .env}
       SMS_PROVIDER: mock
       SMS_VERIFICATION_HMAC_KEY: ${SMS_VERIFICATION_HMAC_KEY:?请配置随机本地短信 HMAC 密钥}
+      QUOTA_IDEMPOTENCY_HMAC_KEY: ${QUOTA_IDEMPOTENCY_HMAC_KEY:?set a random local quota HMAC key}
       RUN_MIGRATIONS: "false"
     depends_on:
       postgres:
@@ -177,6 +180,7 @@ services:
       CELERY_BROKER_URL: ${CELERY_BROKER_URL:?set CELERY_BROKER_URL in local .env}
       SMS_PROVIDER: mock
       SMS_VERIFICATION_HMAC_KEY: ${SMS_VERIFICATION_HMAC_KEY:?set a random local SMS HMAC key}
+      QUOTA_IDEMPOTENCY_HMAC_KEY: ${QUOTA_IDEMPOTENCY_HMAC_KEY:?set a random local quota HMAC key}
       RUN_MIGRATIONS: "false"
     depends_on:
       postgres:
@@ -204,6 +208,7 @@ services:
       CELERY_BROKER_URL: ${CELERY_BROKER_URL:?set CELERY_BROKER_URL in local .env}
       SMS_PROVIDER: mock
       SMS_VERIFICATION_HMAC_KEY: ${SMS_VERIFICATION_HMAC_KEY:?set a random local SMS HMAC key}
+      QUOTA_IDEMPOTENCY_HMAC_KEY: ${QUOTA_IDEMPOTENCY_HMAC_KEY:?set a random local quota HMAC key}
       RISK_APPROVAL_TTL_SECONDS: 86400
       RUN_MIGRATIONS: "false"
     depends_on:
@@ -232,6 +237,7 @@ services:
       CELERY_BROKER_URL: ${CELERY_BROKER_URL:?set isolated test broker URL}
       SMS_PROVIDER: mock
       SMS_VERIFICATION_HMAC_KEY: ${SMS_VERIFICATION_HMAC_KEY:?set isolated test SMS HMAC key}
+      QUOTA_IDEMPOTENCY_HMAC_KEY: ${QUOTA_IDEMPOTENCY_HMAC_KEY:?set isolated test quota HMAC key}
       RUN_MIGRATIONS: "false"
     depends_on:
       postgres:
@@ -259,6 +265,7 @@ services:
       CELERY_BROKER_URL: ${CELERY_BROKER_URL:?set isolated test broker URL}
       SMS_PROVIDER: mock
       SMS_VERIFICATION_HMAC_KEY: ${SMS_VERIFICATION_HMAC_KEY:?set isolated test SMS HMAC key}
+      QUOTA_IDEMPOTENCY_HMAC_KEY: ${QUOTA_IDEMPOTENCY_HMAC_KEY:?set isolated test quota HMAC key}
       RUN_MIGRATIONS: "false"
     depends_on:
       postgres:
@@ -300,6 +307,45 @@ services:
       CELERY_BROKER_URL: ${CELERY_BROKER_URL:?set isolated test broker URL}
       SMS_PROVIDER: mock
       SMS_VERIFICATION_HMAC_KEY: ${SMS_VERIFICATION_HMAC_KEY:?set isolated test SMS HMAC key}
+      QUOTA_IDEMPOTENCY_HMAC_KEY: ${QUOTA_IDEMPOTENCY_HMAC_KEY:?set isolated test quota HMAC key}
+      RUN_MIGRATIONS: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  quota-tests:
+    profiles: ["quota-test"]
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: test
+    command:
+      [
+        "python",
+        "-m",
+        "pytest",
+        "tests/test_quotas_postgres.py",
+        "--ds=config.settings",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+      ]
+    environment:
+      APP_ENV: local
+      DJANGO_SETTINGS_MODULE: config.settings
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?set DJANGO_SECRET_KEY for isolated test}
+      DJANGO_DEBUG: "false"
+      ALLOWED_HOSTS: localhost,127.0.0.1
+      CSRF_TRUSTED_ORIGINS: http://localhost:3000
+      CORS_ALLOWED_ORIGINS: http://localhost:3000
+      DATABASE_URL: ${DATABASE_URL:?set isolated test DATABASE_URL}
+      REDIS_URL: ${REDIS_URL:?set isolated test REDIS_URL}
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:?set isolated test broker URL}
+      SMS_PROVIDER: mock
+      SMS_VERIFICATION_HMAC_KEY: ${SMS_VERIFICATION_HMAC_KEY:?set isolated test SMS HMAC key}
+      QUOTA_IDEMPOTENCY_HMAC_KEY: ${QUOTA_IDEMPOTENCY_HMAC_KEY:?set isolated quota HMAC key}
       RUN_MIGRATIONS: "false"
     depends_on:
       postgres:

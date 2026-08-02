@@ -14,6 +14,7 @@ from apps.admin_rbac.models import (
     CustomerAssignment,
     RiskPolicy,
 )
+from apps.admin_rbac.permissions import resolve_admin_context
 from apps.admin_rbac.risk_catalog import RISK_ACTION_BY_KEY
 from apps.admin_rbac.services import create_admin
 from apps.plans.application_services import create_application
@@ -25,8 +26,13 @@ from apps.plans.services import (
     publish_plan_version,
     set_plan_offline,
 )
+from apps.plans.subscription_services import grant_trial
+from apps.quotas.idempotency import derive_idempotency_digests
+from apps.quotas.models import QuotaAccount
+from apps.quotas.services import adjust_quota_account
 from apps.users.models import User
 from tests.admin_session_helpers import authenticate_admin_client
+from tests.test_subscriptions import published_plan
 
 PASSWORD = "Correct-Horse-Battery-2026!"
 MODES = ("confirm", "password", "two_person")
@@ -38,6 +44,7 @@ class EndpointCase:
     method: str
     body: dict
     snapshot: Callable[[], object]
+    headers: dict | None = None
 
 
 def superuser(phone):
@@ -49,7 +56,7 @@ def admin_client(user):
 
 
 def send(client, case, body):
-    return getattr(client, case.method)(case.path, body, format="json")
+    return getattr(client, case.method)(case.path, body, format="json", **(case.headers or {}))
 
 
 def plan_fixture(actor, *, code, publish=False, offline=False):
@@ -265,7 +272,74 @@ def build_plan_application_case(action_key, actor):
     )
 
 
+def build_quota_case(action_key, actor):
+    customer = User.objects.create_user(
+        phone="13800138000",
+        nickname="Quota target",
+        password=PASSWORD,
+        approval_status=User.ApprovalStatus.APPROVED,
+    )
+    plan, _ = published_plan(
+        actor,
+        code=f"matrix-{action_key.replace('.', '-')}",
+        trial=True,
+    )
+    subscription = grant_trial(
+        requester=actor,
+        admin_context=resolve_admin_context(actor),
+        user_id=customer.pk,
+        expected_status_version=customer.status_version,
+        plan_id=plan.pk,
+        opening_note="",
+        request_id=uuid.uuid4(),
+    )
+    account = QuotaAccount.objects.get(
+        subscription=subscription,
+        quota_type="detection_points",
+    )
+    setup_reason = "risk matrix setup"
+    setup_digests = derive_idempotency_digests(
+        f"matrix-setup-{account.pk}",
+        operation="grant",
+        user_id=account.user_id,
+        account_id=account.pk,
+        business_type="quota_adjustment",
+        business_id=account.pk,
+        request_payload={"amount": 5, "reason": setup_reason},
+    )
+    adjust_quota_account(
+        requester=actor,
+        admin_context=resolve_admin_context(actor),
+        account_id=account.pk,
+        expected_version=account.version,
+        action="grant",
+        amount=5,
+        reason=setup_reason,
+        digests=setup_digests,
+        request_id=uuid.uuid4(),
+    )
+    account.refresh_from_db()
+    endpoint_action = action_key.removeprefix("quota.").replace("_", "-")
+    return EndpointCase(
+        f"/api/v1/admin/quota-accounts/{account.pk}/adjust/{endpoint_action}",
+        "post",
+        {
+            "expected_version": account.version,
+            "amount": 1,
+            "reason": "risk matrix adjustment",
+        },
+        lambda: tuple(
+            QuotaAccount.objects.filter(pk=account.pk).values_list(
+                "available", "frozen", "version", "ledger_sequence"
+            )
+        ),
+        {"HTTP_IDEMPOTENCY_KEY": f"matrix-{endpoint_action}-key-0001"},
+    )
+
+
 def build_case(action_key, actor):
+    if action_key.startswith("quota."):
+        return build_quota_case(action_key, actor)
     if action_key.startswith("plan."):
         return build_plan_case(action_key, actor)
     if action_key.startswith("plan_application."):

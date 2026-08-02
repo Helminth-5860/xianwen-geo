@@ -503,6 +503,13 @@ from apps.plans.risk_handlers import (  # noqa: E402
 
 HANDLER_REGISTRY.update(PLAN_HANDLER_REGISTRY)
 HANDLER_SPECS.update(PLAN_HANDLER_SPECS)
+from apps.quotas.risk_handlers import (  # noqa: E402
+    QUOTA_HANDLER_REGISTRY,
+    QUOTA_HANDLER_SPECS,
+)
+
+HANDLER_REGISTRY.update(QUOTA_HANDLER_REGISTRY)
+HANDLER_SPECS.update(QUOTA_HANDLER_SPECS)
 
 
 def handler_spec(action_key: str) -> HandlerSpec:

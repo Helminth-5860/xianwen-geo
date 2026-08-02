@@ -84,6 +84,18 @@ PERMISSION_CATALOG = (
     CatalogPermission(
         "subscriptions.override_version", "替换申请套餐版本", "subscriptions", "action", 850
     ),
+    CatalogPermission(
+        "menu.admin.quotas", "\u989d\u5ea6\u7ba1\u7406\u83dc\u5355", "quotas", "menu", 87
+    ),
+    CatalogPermission(
+        "quotas.list", "\u989d\u5ea6\u8d26\u6237\u5217\u8868", "quotas", "action", 860
+    ),
+    CatalogPermission(
+        "quotas.ledger.view", "\u989d\u5ea6\u6d41\u6c34\u67e5\u770b", "quotas", "action", 870
+    ),
+    CatalogPermission(
+        "quotas.adjust", "\u989d\u5ea6\u4eba\u5de5\u8c03\u6574", "quotas", "action", 880
+    ),
 )
 
 CATALOG_BY_KEY = {item.key: item for item in PERMISSION_CATALOG}

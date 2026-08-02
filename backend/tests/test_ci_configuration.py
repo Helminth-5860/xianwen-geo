@@ -324,3 +324,52 @@ def test_docker_job_runs_reproducible_postgresql_subscription_suite():
     assert suite.count("def test_postgresql_") == 7
     assert evidence_suite.count("def test_postgresql_") == 10
     assert "tests/test_subscriptions_postgres_evidence.py" in compose
+
+
+def test_docker_job_runs_reproducible_postgresql_redis_quota_suite():
+    workflow = load_workflow()
+    docker_steps = workflow["jobs"]["docker"]["steps"]
+    assert any(
+        step.get("name") == "Run PostgreSQL/Redis quota ledger tests"
+        and step.get("run") == "bash scripts/test-quotas.sh"
+        for step in docker_steps
+    )
+
+    shell_script = (REPO_ROOT / "scripts" / "test-quotas.sh").read_text(encoding="utf-8")
+    powershell_script = (REPO_ROOT / "scripts" / "test-quotas.ps1").read_text(encoding="utf-8")
+    compose = (REPO_ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+    core_command = (
+        "docker compose --project-name xianwen-quota-test "
+        "--profile quota-test run --rm --build quota-tests"
+    )
+    assert "tests/test_quotas_postgres.py" in compose
+    assert core_command in " ".join(shell_script.replace(chr(92) + chr(10), "").split())
+    assert core_command in " ".join(powershell_script.split())
+    assert "down --volumes --remove-orphans" in shell_script
+    assert "down --volumes --remove-orphans" in powershell_script
+    assert "openssl rand -hex 32" in shell_script
+    assert "[guid]::NewGuid()" in powershell_script
+    assert 'profiles: ["quota-test"]' in compose
+    suite = (REPO_ROOT / "backend" / "tests" / "test_quotas_postgres.py").read_text(
+        encoding="utf-8"
+    )
+    required_tests = (
+        "test_postgresql_concurrent_freezes_have_contiguous_ledger_sequences",
+        "test_postgresql_same_key_concurrent_replay_and_different_payload_conflict",
+        "test_postgresql_concurrent_freezes_cannot_overdraw_available_balance",
+        "test_postgresql_concurrent_consume_release_preserves_partial_settlement",
+        "test_postgresql_raw_sql_rejects_sequence_gap_reuse_and_before_after_mismatch",
+        "test_postgresql_raw_sql_guards_account_hold_and_ledger_evidence",
+        "test_postgresql_settled_hold_cannot_be_restored",
+        "test_postgresql_hold_can_consume_and_release_after_subscription_termination",
+        "test_postgresql_hold_can_settle_after_subscription_time_window_expires",
+        "test_postgresql_adjustments_preserve_frozen_and_entitlement_amount",
+        "test_postgresql_quota_initialization_failure_rolls_back_subscription",
+        "test_postgresql_backfill_is_idempotent",
+        "test_postgresql_backfill_invalid_snapshot_rolls_back_valid_rows_atomically",
+        "test_postgresql_quota_adjustment_audit_failure_rolls_back_business",
+        "test_postgresql_quota_adjustment_two_person_executes_exactly_once",
+    )
+    for test_name in required_tests:
+        assert f"def {test_name}" in suite
+    assert suite.count("def test_postgresql_") == 16

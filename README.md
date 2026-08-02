@@ -295,3 +295,13 @@ GET /api/v1/subscription 只读当前有效订阅，响应不会暴露完整权�
 
 状态、锁顺序、数据库触发器、权限和回滚边界见
 [docs/24-SUBSCRIPTIONS.md](docs/24-SUBSCRIPTIONS.md)。
+## Quota ledger (XW-0113)
+
+Quota balances, holds, idempotency evidence, and append-only ledger history are
+owned by PostgreSQL in the independent `apps.quotas` application. There is no
+Subject UUID account and no public reset API in this task. Administrator
+grant/compensate/manual-deduct operations are fixed two-person actions; user
+responses omit internal business IDs and digest fields.
+
+See [docs/25-QUOTA-LEDGER.md](docs/25-QUOTA-LEDGER.md). Run the real isolated
+PostgreSQL/Redis suite with `.\scripts\test-quotas.ps1`.

@@ -599,6 +599,15 @@ GEO 权重、等级、口碑权重、曝光公式、评分模型版本和状态�
 生成、整篇优化、局部修改等任务，记录额度结算。
 
 ### 20.8 `article_comparison_candidates`
+## XW-0113 implemented quota schema override
+
+The earlier section 7 was a preliminary design. The implemented XW-0113 schema
+is authoritative for this task: `QuotaAccount` has no `subject_id`, status,
+or independent expiry; it binds an immutable Subscription and optional account
+cycle. `QuotaHold` uniquely binds an account/business target, and
+`QuotaLedgerEntry` is append-only with a strict per-account sequence.
+PostgreSQL triggers protect balances, bindings, evidence, and terminal hold
+state. There is no public reset API. See `25-QUOTA-LEDGER.md`.
 
 短期临时表：原稿快照、优化稿、过期时间、选择结果。用户选择后删除或按短期审计策略清理，不作为文章版本。
 

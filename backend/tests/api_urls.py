@@ -98,6 +98,7 @@ urlpatterns = [
     path("api/v1/", include("apps.admin_rbac.urls")),
     path("api/v1/", include("apps.plans.urls")),
     path("api/v1/test/validation/", ValidationView.as_view()),
+    path("api/v1/", include("apps.quotas.urls")),
     path("api/v1/test/protected/", ProtectedView.as_view()),
     path("api/v1/test/forbidden/", ForbiddenView.as_view()),
     path("api/v1/test/missing/", MissingView.as_view()),

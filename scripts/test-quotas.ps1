@@ -1,0 +1,24 @@
+$ErrorActionPreference = "Stop"
+if ([string]::IsNullOrWhiteSpace($env:POSTGRES_DB)) { $env:POSTGRES_DB = "quota_test_db" }
+if ([string]::IsNullOrWhiteSpace($env:POSTGRES_USER)) { $env:POSTGRES_USER = "quota_test_user" }
+if ([string]::IsNullOrWhiteSpace($env:POSTGRES_PASSWORD)) {
+    $env:POSTGRES_PASSWORD = ([guid]::NewGuid().ToString("N") + [guid]::NewGuid().ToString("N"))
+}
+foreach ($name in @("DJANGO_SECRET_KEY", "SMS_VERIFICATION_HMAC_KEY", "QUOTA_IDEMPOTENCY_HMAC_KEY")) {
+    if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
+        [Environment]::SetEnvironmentVariable(
+            $name,
+            ([guid]::NewGuid().ToString("N") + [guid]::NewGuid().ToString("N"))
+        )
+    }
+}
+if ([string]::IsNullOrWhiteSpace($env:REDIS_URL)) { $env:REDIS_URL = "redis://redis:6379/0" }
+if ([string]::IsNullOrWhiteSpace($env:CELERY_BROKER_URL)) { $env:CELERY_BROKER_URL = "redis://redis:6379/1" }
+if ([string]::IsNullOrWhiteSpace($env:DATABASE_URL)) {
+    $env:DATABASE_URL = "postgresql://$($env:POSTGRES_USER):$($env:POSTGRES_PASSWORD)@postgres:5432/$($env:POSTGRES_DB)"
+}
+try {
+    docker compose --project-name xianwen-quota-test --profile quota-test run --rm --build quota-tests
+    if ($LASTEXITCODE -ne 0) { throw "PostgreSQL/Redis quota tests failed." }
+}
+finally { docker compose --project-name xianwen-quota-test --profile quota-test down --volumes --remove-orphans }

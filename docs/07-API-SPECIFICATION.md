@@ -621,3 +621,11 @@
 
 `openapi/openapi-v1.yaml` 提供启动骨架。Codex 每完成一组接口，必须同步更新 OpenAPI，不允许文档长期落后于实现。
 
+## XW-0113 implemented quota API note
+
+The OpenAPI 3.1 file is authoritative. XW-0113 implements user reads
+`GET /quotas` and `GET /quota-ledger`, administrator scoped reads
+`GET /admin/quota-accounts` and `GET /admin/quota-ledger`, plus fixed
+two-person grant/compensate/manual-deduct adjustment endpoints below
+`/admin/quota-accounts/{account_id}/adjust`. There is no public reset,
+freeze, consume, or release endpoint in XW-0113.
