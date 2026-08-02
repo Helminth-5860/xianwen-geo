@@ -239,6 +239,11 @@ def _create_active_subscription(
         if plan.is_trial and Subscription.objects.filter(user=user, is_trial=True).exists():
             raise SubscriptionTrialAlreadyGranted from exc
         raise SubscriptionStateConflict from exc
+    # Quota accounts and their initialize ledger entries are part of the same
+    # transaction as subscription/application/events/audit in the caller.
+    from apps.quotas.services import initialize_subscription_accounts
+
+    initialize_subscription_accounts(subscription=subscription, request_id=request_id, actor=actor)
     _subscription_event(
         subscription=subscription,
         event_type=SubscriptionEvent.EventType.ACTIVATED,

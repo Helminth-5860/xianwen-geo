@@ -324,3 +324,33 @@ def test_docker_job_runs_reproducible_postgresql_subscription_suite():
     assert suite.count("def test_postgresql_") == 7
     assert evidence_suite.count("def test_postgresql_") == 10
     assert "tests/test_subscriptions_postgres_evidence.py" in compose
+
+
+def test_docker_job_runs_reproducible_postgresql_redis_quota_suite():
+    workflow = load_workflow()
+    docker_steps = workflow["jobs"]["docker"]["steps"]
+    assert any(
+        step.get("name") == "Run PostgreSQL/Redis quota ledger tests"
+        and step.get("run") == "bash scripts/test-quotas.sh"
+        for step in docker_steps
+    )
+
+    shell_script = (REPO_ROOT / "scripts" / "test-quotas.sh").read_text(encoding="utf-8")
+    powershell_script = (REPO_ROOT / "scripts" / "test-quotas.ps1").read_text(encoding="utf-8")
+    compose = (REPO_ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+    core_command = (
+        "docker compose --project-name xianwen-quota-test "
+        "--profile quota-test run --rm --build quota-tests"
+    )
+    assert "tests/test_quotas_postgres.py" in compose
+    assert core_command in " ".join(shell_script.replace(chr(92) + chr(10), "").split())
+    assert core_command in " ".join(powershell_script.split())
+    assert "down --volumes --remove-orphans" in shell_script
+    assert "down --volumes --remove-orphans" in powershell_script
+    assert "openssl rand -hex 32" in shell_script
+    assert "[guid]::NewGuid()" in powershell_script
+    assert 'profiles: ["quota-test"]' in compose
+    suite = (REPO_ROOT / "backend" / "tests" / "test_quotas_postgres.py").read_text(
+        encoding="utf-8"
+    )
+    assert suite.count("def test_postgresql_") == 9

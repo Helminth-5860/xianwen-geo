@@ -204,6 +204,7 @@ function Invoke-DockerChecks {
         CELERY_BROKER_URL = "redis://redis:6379/1"
         SMS_PROVIDER = "mock"
         SMS_VERIFICATION_HMAC_KEY = "ci-only-sms-hmac-key-with-more-than-fifty-characters-000000"
+        QUOTA_IDEMPOTENCY_HMAC_KEY = "ci-only-quota-hmac-key-with-more-than-fifty-characters-000000"
         ALLOWED_HOSTS = "localhost,api"
         CSRF_TRUSTED_ORIGINS = "http://localhost:3000"
         CORS_ALLOWED_ORIGINS = "http://localhost:3000"

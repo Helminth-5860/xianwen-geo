@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+export QUOTA_IDEMPOTENCY_HMAC_KEY="${QUOTA_IDEMPOTENCY_HMAC_KEY:-$(openssl rand -hex 32)}"
 random_secret() { openssl rand -hex 32; }
 export POSTGRES_DB="${POSTGRES_DB:-subscription_test_db}"
 export POSTGRES_USER="${POSTGRES_USER:-subscription_test_user}"

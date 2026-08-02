@@ -4,7 +4,7 @@ CONFIRM = "confirm"
 PASSWORD = "password"
 TWO_PERSON = "two_person"
 MODE_STRENGTH = {CONFIRM: 1, PASSWORD: 2, TWO_PERSON: 3}
-CATALOG_VERSION = 4
+CATALOG_VERSION = 5
 
 
 @dataclass(frozen=True)
@@ -289,6 +289,36 @@ RISK_ACTION_CATALOG = (
         TWO_PERSON,
         TWO_PERSON,
         "subscription.terminate",
+    ),
+    RiskActionDefinition(
+        "quota.grant",
+        "\u989d\u5ea6\u8d60\u9001",
+        "quotas",
+        "quota_account",
+        (TWO_PERSON,),
+        TWO_PERSON,
+        TWO_PERSON,
+        "quota.grant",
+    ),
+    RiskActionDefinition(
+        "quota.compensate",
+        "\u989d\u5ea6\u8865\u507f",
+        "quotas",
+        "quota_account",
+        (TWO_PERSON,),
+        TWO_PERSON,
+        TWO_PERSON,
+        "quota.compensate",
+    ),
+    RiskActionDefinition(
+        "quota.manual_deduct",
+        "\u989d\u5ea6\u4eba\u5de5\u6263\u51cf",
+        "quotas",
+        "quota_account",
+        (TWO_PERSON,),
+        TWO_PERSON,
+        TWO_PERSON,
+        "quota.manual_deduct",
     ),
 )
 RISK_ACTION_BY_KEY = {item.key: item for item in RISK_ACTION_CATALOG}

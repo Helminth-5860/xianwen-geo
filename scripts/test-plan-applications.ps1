@@ -1,4 +1,7 @@
 $ErrorActionPreference = "Stop"
+if ([string]::IsNullOrWhiteSpace($env:QUOTA_IDEMPOTENCY_HMAC_KEY)) {
+    $env:QUOTA_IDEMPOTENCY_HMAC_KEY = ([guid]::NewGuid().ToString("N") + [guid]::NewGuid().ToString("N"))
+}
 if ([string]::IsNullOrWhiteSpace($env:POSTGRES_DB)) { $env:POSTGRES_DB = "plan_application_test_db" }
 if ([string]::IsNullOrWhiteSpace($env:POSTGRES_USER)) { $env:POSTGRES_USER = "plan_application_test_user" }
 if ([string]::IsNullOrWhiteSpace($env:POSTGRES_PASSWORD)) {

@@ -67,6 +67,7 @@ INSTALLED_APPS = [
     "apps.users",
     "apps.admin_rbac",
     "apps.plans",
+    "apps.quotas",
 ]
 
 MIDDLEWARE = [
@@ -148,6 +149,11 @@ ADMIN_CHALLENGE_TTL_SECONDS = positive_env_int("ADMIN_CHALLENGE_TTL_SECONDS", 30
 ADMIN_REAUTH_LIMIT_FAILURES = positive_env_int("ADMIN_REAUTH_LIMIT_FAILURES", 5)
 ADMIN_REAUTH_LIMIT_WINDOW_SECONDS = positive_env_int("ADMIN_REAUTH_LIMIT_WINDOW_SECONDS", 900)
 RISK_APPROVAL_TTL_SECONDS = positive_env_int("RISK_APPROVAL_TTL_SECONDS", 86_400)
+QUOTA_IDEMPOTENCY_HMAC_KEY = os.getenv(
+    "QUOTA_IDEMPOTENCY_HMAC_KEY", "local-test-quota-idempotency-key-not-for-production"
+).strip()
+if len(QUOTA_IDEMPOTENCY_HMAC_KEY) < 32:
+    raise ImproperlyConfigured("QUOTA_IDEMPOTENCY_HMAC_KEY is too weak; minimum length is 32.")
 SMS_PROVIDER = os.getenv("SMS_PROVIDER", "unconfigured").strip().lower()
 SMS_VERIFICATION_HMAC_KEY = os.getenv(
     "SMS_VERIFICATION_HMAC_KEY", "local-test-sms-hmac-key-not-for-production"

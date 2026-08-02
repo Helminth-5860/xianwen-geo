@@ -1,0 +1,389 @@
+import uuid
+from datetime import timedelta
+from unittest.mock import patch
+
+import pytest
+from django.core.management import call_command
+from django.test import override_settings
+from django.urls import Resolver404, resolve
+from rest_framework.test import APIClient
+
+from apps.admin_rbac.models import ApprovalRequest, RiskAction, RiskPolicy
+from apps.admin_rbac.permissions import resolve_admin_context
+from apps.admin_rbac.risk_catalog import RISK_ACTION_BY_KEY, TWO_PERSON
+from apps.plans.subscription_services import grant_trial, terminate_subscription
+from apps.quotas.catalog import CURRENT_ACCOUNT_DEFINITIONS, snapshot_quota_values
+from apps.quotas.exceptions import (
+    QuotaBusinessAlreadyHeld,
+    QuotaHoldStateConflict,
+)
+from apps.quotas.idempotency import derive_idempotency_digests
+from apps.quotas.models import QuotaAccount, QuotaHold, QuotaLedgerEntry
+from apps.quotas.services import (
+    adjust_quota_account,
+    consume_hold,
+    freeze_quota,
+    initialize_subscription_accounts,
+    release_hold,
+    replay_account,
+)
+from apps.users.models import User
+from tests.admin_session_helpers import authenticate_admin_client
+from tests.test_subscriptions import PASSWORD, published_plan
+
+
+@pytest.fixture(autouse=True)
+def seed_catalogs(db):
+    call_command("sync_plan_catalog", "--apply", verbosity=0)
+    call_command("sync_admin_rbac", "--apply", verbosity=0)
+
+
+def provision(*, phone="13800138000"):
+    admin = User.objects.create_superuser(phone="13900139000", nickname="?????", password=PASSWORD)
+    user = User.objects.create_user(
+        phone=phone,
+        nickname="????",
+        password=PASSWORD,
+        approval_status=User.ApprovalStatus.APPROVED,
+    )
+    plan, _ = published_plan(admin, code=f"quota-{uuid.uuid4().hex[:8]}", trial=True)
+    subscription = grant_trial(
+        requester=admin,
+        admin_context=resolve_admin_context(admin),
+        user_id=user.pk,
+        expected_status_version=user.status_version,
+        plan_id=plan.pk,
+        opening_note="",
+        request_id=uuid.uuid4(),
+    )
+    return admin, user, subscription
+
+
+def fund(account, admin, *, amount=5):
+    digests = derive_idempotency_digests(
+        f"test-fund-{account.pk}",
+        operation="grant",
+        user_id=account.user_id,
+        account_id=account.pk,
+        business_type="quota_adjustment",
+        business_id=account.pk,
+        request_payload={"amount": amount, "reason": "??????"},
+    )
+    adjust_quota_account(
+        requester=admin,
+        admin_context=resolve_admin_context(admin),
+        account_id=account.pk,
+        expected_version=account.version,
+        action="grant",
+        amount=amount,
+        reason="??????",
+        digests=digests,
+        request_id=uuid.uuid4(),
+    )
+    account.refresh_from_db()
+    return account
+
+
+@pytest.mark.django_db
+def test_subscription_initializes_all_five_accounts_even_zero():
+    _, _, subscription = provision()
+    accounts = QuotaAccount.objects.filter(subscription=subscription)
+    assert set(accounts.values_list("quota_type", flat=True)) == {
+        item.key for item in CURRENT_ACCOUNT_DEFINITIONS
+    }
+    assert accounts.count() == 5
+    for account in accounts:
+        assert account.ledger_sequence == 1
+        assert account.last_ledger_entry.sequence == 1
+        assert account.last_ledger_entry.action == "initialize"
+        assert replay_account(account).available == account.entitlement_amount
+
+
+@pytest.mark.parametrize(
+    "bad_value",
+    [True, -1, 2**63],
+)
+def test_snapshot_rejects_bool_negative_and_overflow(bad_value):
+    limits = {item.source_limit_key: 0 for item in CURRENT_ACCOUNT_DEFINITIONS}
+    limits.update(
+        {
+            "keyword_regenerations_per_cycle": 0,
+            "distillation_regenerations_per_cycle": 0,
+            "question_bank_regenerations_per_cycle": 0,
+            "strategy_regenerations_per_cycle": 0,
+            "outline_regenerations_per_cycle": 0,
+            "local_ai_edits_per_cycle": 0,
+            "quality_rechecks_per_cycle": 0,
+        }
+    )
+    limits["detection_points"] = bad_value
+    with pytest.raises(ValueError):
+        snapshot_quota_values({"limits": limits})
+
+
+def test_snapshot_rejects_unknown_or_missing_catalog_key():
+    with pytest.raises(ValueError):
+        snapshot_quota_values({"limits": {"unknown": 1}})
+
+
+@pytest.mark.django_db
+def test_initialization_is_idempotent():
+    admin, _, subscription = provision()
+    before = (QuotaAccount.objects.count(), QuotaLedgerEntry.objects.count())
+    initialize_subscription_accounts(
+        subscription=subscription, request_id=uuid.uuid4(), actor=admin
+    )
+    assert (QuotaAccount.objects.count(), QuotaLedgerEntry.objects.count()) == before
+
+
+@pytest.mark.django_db
+def test_freeze_consume_release_and_replay():
+    admin, _, subscription = provision()
+    account = QuotaAccount.objects.get(subscription=subscription, quota_type="detection_points")
+    account = fund(account, admin)
+    amount = min(account.available, 2)
+    hold = freeze_quota(
+        account_id=account.pk,
+        amount=amount,
+        business_type="test_task",
+        business_id=uuid.uuid4(),
+        idempotency_key="freeze-key-unique-0001",
+        request_id=uuid.uuid4(),
+    )
+    consume_hold(
+        hold_id=hold.pk,
+        amount=1,
+        idempotency_key="consume-key-" + "unique-0001",
+        request_id=uuid.uuid4(),
+    )
+    if amount > 1:
+        release_hold(
+            hold_id=hold.pk,
+            amount=amount - 1,
+            idempotency_key="release-key-unique-0001",
+            request_id=uuid.uuid4(),
+        )
+    hold.refresh_from_db()
+    account.refresh_from_db()
+    assert hold.status == QuotaHold.Status.SETTLED
+    assert replay_account(account).frozen == 0
+    with pytest.raises(QuotaHoldStateConflict):
+        release_hold(
+            hold_id=hold.pk,
+            amount=1,
+            idempotency_key="release-key-unique-0002",
+            request_id=uuid.uuid4(),
+        )
+
+
+@pytest.mark.django_db
+def test_different_idempotency_key_cannot_duplicate_business_hold():
+    admin, _, subscription = provision()
+    account = QuotaAccount.objects.get(subscription=subscription, quota_type="detection_points")
+    business_id = uuid.uuid4()
+    account = fund(account, admin)
+    freeze_quota(
+        account_id=account.pk,
+        amount=1,
+        business_type="test_task",
+        business_id=business_id,
+        idempotency_key="freeze-business-key-0001",
+        request_id=uuid.uuid4(),
+    )
+    with pytest.raises(QuotaBusinessAlreadyHeld):
+        freeze_quota(
+            account_id=account.pk,
+            amount=1,
+            business_type="test_task",
+            business_id=business_id,
+            idempotency_key="freeze-business-key-0002",
+            request_id=uuid.uuid4(),
+        )
+
+
+@pytest.mark.django_db
+def test_existing_hold_can_settle_after_subscription_terminated():
+    admin, _, subscription = provision()
+    account = QuotaAccount.objects.get(subscription=subscription, quota_type="detection_points")
+    account = fund(account, admin)
+    hold = freeze_quota(
+        account_id=account.pk,
+        amount=1,
+        business_type="test_task",
+        business_id=uuid.uuid4(),
+        idempotency_key="freeze-after-end-key-0001",
+        request_id=uuid.uuid4(),
+    )
+    terminate_subscription(
+        requester=admin,
+        admin_context=resolve_admin_context(admin),
+        subscription_id=subscription.pk,
+        expected_version=subscription.version,
+        reason="???????",
+        request_id=uuid.uuid4(),
+    )
+    release_hold(
+        hold_id=hold.pk,
+        amount=1,
+        idempotency_key="release-after-end-key-0001",
+        request_id=uuid.uuid4(),
+    )
+    hold.refresh_from_db()
+    assert hold.status == QuotaHold.Status.SETTLED
+
+
+@pytest.mark.django_db
+def test_existing_hold_can_consume_after_subscription_time_window_ends():
+    admin, _, subscription = provision()
+    account = QuotaAccount.objects.get(subscription=subscription, quota_type="detection_points")
+    account = fund(account, admin)
+    hold = freeze_quota(
+        account_id=account.pk,
+        amount=1,
+        business_type="test_task",
+        business_id=uuid.uuid4(),
+        idempotency_key="freeze-expired-key-0001",
+        request_id=uuid.uuid4(),
+    )
+    with patch(
+        "apps.quotas.services.timezone.now",
+        return_value=subscription.ends_at + timedelta(seconds=1),
+    ):
+        consume_hold(
+            hold_id=hold.pk,
+            amount=1,
+            idempotency_key="consume-expired-key-0001",
+            request_id=uuid.uuid4(),
+        )
+    hold.refresh_from_db()
+    assert hold.status == QuotaHold.Status.SETTLED
+
+
+@pytest.mark.django_db
+def test_manual_deduct_does_not_reduce_frozen_and_grants_do_not_change_entitlement():
+    admin, _, subscription = provision()
+    account = QuotaAccount.objects.get(subscription=subscription, quota_type="detection_points")
+    initial_entitlement = account.entitlement_amount
+    context = resolve_admin_context(admin)
+    for index, action in enumerate(("grant", "compensate", "manual_deduct"), start=1):
+        account.refresh_from_db()
+        before_frozen = account.frozen
+        digests = derive_idempotency_digests(
+            f"adjust-key-unique-{index:04d}",
+            operation=action,
+            user_id=account.user_id,
+            account_id=account.pk,
+            business_type="quota_adjustment",
+            business_id=account.pk,
+            request_payload={"amount": 1, "reason": "??????"},
+        )
+        adjust_quota_account(
+            requester=admin,
+            admin_context=context,
+            account_id=account.pk,
+            expected_version=account.version,
+            action=action,
+            amount=1,
+            reason="??????",
+            digests=digests,
+            request_id=uuid.uuid4(),
+        )
+        account.refresh_from_db()
+        assert account.frozen == before_frozen
+        assert account.entitlement_amount == initial_entitlement
+
+
+@pytest.mark.django_db
+def test_user_quota_apis_do_not_leak_business_or_idempotency_fields():
+    admin, user, subscription = provision()
+    account = QuotaAccount.objects.get(subscription=subscription, quota_type="detection_points")
+    account = fund(account, admin)
+    freeze_quota(
+        account_id=account.pk,
+        amount=1,
+        business_type="private_task",
+        business_id=uuid.uuid4(),
+        idempotency_key="private-business-key-0001",
+        request_id=uuid.uuid4(),
+    )
+    client = APIClient()
+    client.force_authenticate(user)
+    accounts = client.get("/api/v1/quotas")
+    ledger = client.get("/api/v1/quota-ledger")
+    assert accounts.status_code == ledger.status_code == 200
+    serialized = str(ledger.json())
+    for forbidden in (
+        "business_id",
+        "private_task",
+        "idempotency",
+        "request_digest",
+        "safe_reason",
+        "actor_id",
+    ):
+        assert forbidden not in serialized
+
+
+@pytest.mark.django_db
+def test_adjustment_approval_stores_only_derived_idempotency_values():
+    requester, _, subscription = provision()
+    User.objects.create_superuser(phone="13700137000", nickname="?????", password=PASSWORD)
+    account = QuotaAccount.objects.get(subscription=subscription, quota_type="detection_points")
+    raw_key = "raw-idempotency-key-must-not-persist-0113"
+    response = authenticate_admin_client(APIClient(), requester).post(
+        f"/api/v1/admin/quota-accounts/{account.pk}/adjust/grant",
+        {"expected_version": account.version, "amount": 1, "reason": "????"},
+        format="json",
+        HTTP_IDEMPOTENCY_KEY=raw_key,
+    )
+    assert response.status_code == 202
+    approval = ApprovalRequest.objects.get(pk=response.json()["data"]["approval_id"])
+    assert approval.action_key == "quota.grant"
+    assert raw_key not in str(approval.sanitized_payload)
+    assert raw_key not in approval.payload_digest
+    assert len(approval.sanitized_payload["idempotency_key_digest"]) == 64
+
+
+@pytest.mark.django_db
+def test_risk_catalog_is_fixed_two_person_and_has_no_reset():
+    for key in ("quota.grant", "quota.compensate", "quota.manual_deduct"):
+        definition = RISK_ACTION_BY_KEY[key]
+        action = RiskAction.objects.get(key=key)
+        policy = RiskPolicy.objects.get(action=action)
+        assert definition.supported_modes == (TWO_PERSON,)
+        assert definition.default_mode == definition.minimum_mode == TWO_PERSON
+        assert action.minimum_mode == policy.current_mode == TWO_PERSON
+    assert "quota.reset" not in RISK_ACTION_BY_KEY
+    assert not RiskAction.objects.filter(key="quota.reset").exists()
+
+
+def test_no_public_reset_route():
+    for path in (
+        "/api/v1/quotas/reset",
+        "/api/v1/admin/quota-accounts/reset",
+        "/api/v1/admin/quota-reset",
+    ):
+        with pytest.raises(Resolver404):
+            resolve(path)
+
+
+def test_models_have_no_subject_or_account_status_fields():
+    names = {field.name for field in QuotaAccount._meta.fields}
+    assert "subject_id" not in names
+    assert "subject" not in names
+    assert "status" not in names
+    assert "expires_at" not in names
+
+
+@override_settings(QUOTA_IDEMPOTENCY_HMAC_KEY="isolated-test-" + "quota-key-0123456789abcdef")
+def test_hmac_scope_changes_operation_account_and_business_target():
+    common = {
+        "user_id": uuid.uuid4(),
+        "account_id": uuid.uuid4(),
+        "business_type": "task",
+        "business_id": uuid.uuid4(),
+        "request_payload": {"amount": 1},
+    }
+    first = derive_idempotency_digests("same-raw-key-0001", operation="freeze", **common)
+    changed = derive_idempotency_digests("same-raw-key-0001", operation="consume", **common)
+    assert first.scope_digest != changed.scope_digest
+    assert first.request_digest == changed.request_digest

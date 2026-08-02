@@ -109,3 +109,5 @@ jobs:
         run: bash scripts/test-plan-applications.sh
       - name: Run PostgreSQL/Redis subscription concurrency and guard tests
         run: bash scripts/test-subscriptions.sh
+      - name: Run PostgreSQL/Redis quota ledger tests
+        run: bash scripts/test-quotas.sh

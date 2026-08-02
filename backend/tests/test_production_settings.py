@@ -12,6 +12,7 @@ REQUIRED_ENVIRONMENT = {
     "DJANGO_SECRET_KEY": "x" * 64,
     "DJANGO_DEBUG": "false",
     "SMS_VERIFICATION_HMAC_KEY": "s" * 64,
+    "QUOTA_IDEMPOTENCY_HMAC_KEY": "q" * 64,
     "SMS_PROVIDER": "unconfigured",
     "DATABASE_URL": "postgresql://app:placeholder@database:5432/xianwen",
     "REDIS_URL": "redis://redis:6379/0",
@@ -32,6 +33,7 @@ def import_settings(overrides: dict[str, str] | None = None, missing: str | None
             "DJANGO_SECRET_KEY",
             "DJANGO_DEBUG",
             "SMS_VERIFICATION_HMAC_KEY",
+            "QUOTA_IDEMPOTENCY_HMAC_KEY",
             "SMS_PROVIDER",
             "DATABASE_URL",
             "REDIS_URL",
@@ -61,6 +63,7 @@ def import_settings(overrides: dict[str, str] | None = None, missing: str | None
     [
         "DJANGO_SECRET_KEY",
         "SMS_VERIFICATION_HMAC_KEY",
+        "QUOTA_IDEMPOTENCY_HMAC_KEY",
         "DATABASE_URL",
         "REDIS_URL",
         "ALLOWED_HOSTS",
@@ -85,10 +88,22 @@ def test_production_missing_required_environment_fails_fast(missing):
             {"SMS_VERIFICATION_HMAC_KEY": "weak"},
             "SMS_VERIFICATION_HMAC_KEY is too weak",
         ),
+        (
+            {"QUOTA_IDEMPOTENCY_HMAC_KEY": "weak"},
+            "QUOTA_IDEMPOTENCY_HMAC_KEY is too weak",
+        ),
         ({"SMS_PROVIDER": "mock"}, "Mock SMS provider is forbidden"),
         (
             {"SMS_VERIFICATION_HMAC_KEY": "x" * 64},
             "must not reuse DJANGO_SECRET_KEY",
+        ),
+        (
+            {"QUOTA_IDEMPOTENCY_HMAC_KEY": "x" * 64},
+            "must not reuse another application secret",
+        ),
+        (
+            {"QUOTA_IDEMPOTENCY_HMAC_KEY": "s" * 64},
+            "must not reuse another application secret",
         ),
     ],
 )
@@ -134,3 +149,29 @@ def test_production_requires_proxy_networks_when_proxy_hops_enabled():
 
     assert result.returncode != 0
     assert "TRUSTED_PROXY_CIDRS is required" in result.stderr
+
+
+def test_production_rejects_quota_hmac_reusing_database_password():
+    reused = "database-password-that-is-more-than-fifty-characters-long-111111"
+    result = import_settings(
+        overrides={
+            "QUOTA_IDEMPOTENCY_HMAC_KEY": reused,
+            "DATABASE_URL": f"postgresql://app:{reused}@database:5432/xianwen",
+        }
+    )
+
+    assert result.returncode != 0
+    assert "QUOTA_IDEMPOTENCY_HMAC_KEY must not reuse DATABASE_URL credentials" in result.stderr
+
+
+def test_production_rejects_quota_hmac_reusing_redis_password():
+    reused = "redis-password-that-is-more-than-fifty-characters-long-11111111"
+    result = import_settings(
+        overrides={
+            "QUOTA_IDEMPOTENCY_HMAC_KEY": reused,
+            "REDIS_URL": f"redis://default:{reused}@redis:6379/0",
+        }
+    )
+
+    assert result.returncode != 0
+    assert "QUOTA_IDEMPOTENCY_HMAC_KEY must not reuse REDIS_URL credentials" in result.stderr
