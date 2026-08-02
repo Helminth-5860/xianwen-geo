@@ -75,6 +75,15 @@ PERMISSION_CATALOG = (
     CatalogPermission(
         "plan_applications.close", "关闭套餐申请", "plan_applications", "action", 790
     ),
+    CatalogPermission("menu.admin.subscriptions", "订阅管理菜单", "subscriptions", "menu", 86),
+    CatalogPermission("subscriptions.list", "订阅列表", "subscriptions", "action", 800),
+    CatalogPermission("subscriptions.view", "订阅详情", "subscriptions", "action", 810),
+    CatalogPermission("subscriptions.open", "开通正式订阅", "subscriptions", "action", 820),
+    CatalogPermission("subscriptions.grant_trial", "发放试用订阅", "subscriptions", "action", 830),
+    CatalogPermission("subscriptions.terminate", "终止订阅", "subscriptions", "action", 840),
+    CatalogPermission(
+        "subscriptions.override_version", "替换申请套餐版本", "subscriptions", "action", 850
+    ),
 )
 
 CATALOG_BY_KEY = {item.key: item for item in PERMISSION_CATALOG}

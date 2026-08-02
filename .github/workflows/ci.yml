@@ -107,3 +107,5 @@ jobs:
         run: bash scripts/test-plans.sh
       - name: Run PostgreSQL plan application concurrency tests
         run: bash scripts/test-plan-applications.sh
+      - name: Run PostgreSQL/Redis subscription concurrency and guard tests
+        run: bash scripts/test-subscriptions.sh

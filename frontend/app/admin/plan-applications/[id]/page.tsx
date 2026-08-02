@@ -1,6 +1,18 @@
 "use client";
 
-import { Alert, Card, Descriptions, Space, Spin, Tag, Typography } from "antd";
+import {
+  Alert,
+  Button,
+  Card,
+  Checkbox,
+  Descriptions,
+  Input,
+  Modal,
+  Space,
+  Spin,
+  Tag,
+  Typography,
+} from "antd";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
@@ -11,6 +23,7 @@ import {
   changeAdminPlanApplication,
   getAdminPlanApplication,
   type AdminPlanApplication,
+  openSubscriptionFromApplication,
 } from "@/lib/plans-client";
 import { getRiskActions, type ApprovalCreated, type RiskMode } from "@/lib/risk-client";
 
@@ -20,6 +33,12 @@ export default function AdminPlanApplicationDetailPage() {
   const [item, setItem] = useState<AdminPlanApplication | null>(null);
   const [modes, setModes] = useState<Record<string, RiskMode>>({});
   const [approval, setApproval] = useState<ApprovalCreated | null>(null);
+  const [activateOpen, setActivateOpen] = useState(false);
+  const [unavailable, setUnavailable] = useState(false);
+  const [unavailableReason, setUnavailableReason] = useState("");
+  const [overrideVersion, setOverrideVersion] = useState("");
+  const [overrideConfirmed, setOverrideConfirmed] = useState(false);
+  const [overrideReason, setOverrideReason] = useState("");
   const [error, setError] = useState("");
   useEffect(() => {
     void Promise.all([getAdminPlanApplication(id), getRiskActions()])
@@ -33,6 +52,9 @@ export default function AdminPlanApplicationDetailPage() {
   if (!item) return <Spin description="正在加载套餐申请" />;
   const canContact = capabilities?.permission_keys.includes("plan_applications.contact") ?? false;
   const canClose = capabilities?.permission_keys.includes("plan_applications.close") ?? false;
+  const canOpen = capabilities?.permission_keys.includes("subscriptions.open") ?? false;
+  const canOverride =
+    capabilities?.permission_keys.includes("subscriptions.override_version") ?? false;
   return (
     <main className="admin-page">
       <Typography.Title>套餐申请详情</Typography.Title>
@@ -91,8 +113,68 @@ export default function AdminPlanApplicationDetailPage() {
               关闭申请
             </RiskActionButton>
           )}
+          {canOpen && (item.status === "pending" || item.status === "contacted") && (
+            <Button type="primary" onClick={() => setActivateOpen(true)}>
+              开通订阅
+            </Button>
+          )}
         </Space>
       </Card>
+      <Modal
+        title="开通订阅（固定双人审批）"
+        open={activateOpen}
+        onCancel={() => setActivateOpen(false)}
+        onOk={async () => {
+          try {
+            const result = await openSubscriptionFromApplication(item.id, item.version, {
+              selectedPlanVersionId: overrideVersion || null,
+              confirmUnavailable: unavailable,
+              unavailableReason,
+              confirmVersionOverride: overrideConfirmed,
+              overrideReason,
+            });
+            if ("approval_required" in result) setApproval(result as ApprovalCreated);
+            setActivateOpen(false);
+          } catch (reason) {
+            setError(userMessage(reason));
+          }
+        }}
+        okText="发起审批"
+      >
+        <Space direction="vertical" style={{ width: "100%" }}>
+          <Checkbox
+            checked={unavailable}
+            onChange={(event) => setUnavailable(event.target.checked)}
+          >
+            确认离线套餐或退役版本仍需开通
+          </Checkbox>
+          <Input
+            aria-label="特殊状态开通原因"
+            value={unavailableReason}
+            onChange={(event) => setUnavailableReason(event.target.value)}
+          />
+          {canOverride && (
+            <>
+              <Input
+                aria-label="替换套餐版本 ID"
+                value={overrideVersion}
+                onChange={(event) => setOverrideVersion(event.target.value)}
+              />
+              <Checkbox
+                checked={overrideConfirmed}
+                onChange={(event) => setOverrideConfirmed(event.target.checked)}
+              >
+                确认替换申请绑定版本
+              </Checkbox>
+              <Input
+                aria-label="替换版本原因"
+                value={overrideReason}
+                onChange={(event) => setOverrideReason(event.target.value)}
+              />
+            </>
+          )}
+        </Space>
+      </Modal>
     </main>
   );
 }

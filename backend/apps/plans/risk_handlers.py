@@ -1,7 +1,9 @@
 from rest_framework.exceptions import NotFound
 
-from apps.admin_rbac.permissions import AdminContext
+from apps.admin_rbac.permissions import AdminContext, resolve_admin_context
 from apps.admin_rbac.risk_handlers import HandlerContext, HandlerResult, HandlerSpec
+from apps.admin_rbac.scopes import scoped_customer_or_404
+from apps.users.models import User
 
 from .application_services import (
     admin_change_application,
@@ -29,6 +31,17 @@ from .services import (
     update_plan,
     update_plan_version,
     validate_publishable,
+)
+from .subscription_serializers import (
+    GrantTrialPayloadSerializer,
+    OpenSubscriptionPayloadSerializer,
+    TerminateSubscriptionPayloadSerializer,
+)
+from .subscription_services import (
+    activate_application,
+    grant_trial,
+    scoped_subscription_or_404,
+    terminate_subscription,
 )
 
 
@@ -241,6 +254,102 @@ def handle_plan_application_close(context):
     return _handle_application(context, "close")
 
 
+def _subscription_context(user):
+    context = resolve_admin_context(user)
+    if context is None:
+        raise NotFound
+    return context
+
+
+def _customer_status_version(user, context: AdminContext, target_id, lock):
+    scoped_customer_or_404(user, context, target_id)
+    query = User.objects.all()
+    if lock:
+        query = query.select_for_update()
+    try:
+        return query.only("status_version").get(pk=target_id).status_version
+    except User.DoesNotExist as exc:
+        raise NotFound from exc
+
+
+def _subscription_version(user, context: AdminContext, target_id, lock):
+    return scoped_subscription_or_404(user, context, target_id, lock=lock).version
+
+
+def handle_subscription_open(context):
+    admin_context = _subscription_context(context.requester)
+    application = scoped_application_or_404(context.requester, admin_context, context.target_id)
+    before = {"status": application.status, "version": application.version}
+    subscription, application, flags = activate_application(
+        requester=context.requester,
+        admin_context=admin_context,
+        application_id=context.target_id,
+        expected_version=context.target_version,
+        selected_plan_version_id=context.payload.get("selected_plan_version_id"),
+        confirm_unavailable=context.payload.get("confirm_unavailable", False),
+        unavailable_reason=context.payload.get("unavailable_reason", ""),
+        confirm_version_override=context.payload.get("confirm_version_override", False),
+        override_reason=context.payload.get("override_reason", ""),
+        opening_note=context.payload.get("opening_note", ""),
+        request_id=context.request.request_id,
+    )
+    after = {"status": application.status, "version": application.version}
+    return HandlerResult(
+        before,
+        after,
+        {
+            "subscription_id": str(subscription.pk),
+            "application_id": str(application.pk),
+            "status": subscription.status,
+            **flags,
+        },
+        subscription.user,
+    )
+
+
+def handle_subscription_grant_trial(context):
+    admin_context = _subscription_context(context.requester)
+    user = scoped_customer_or_404(context.requester, admin_context, context.target_id)
+    before = {"status_version": user.status_version, "trial_granted": False}
+    subscription = grant_trial(
+        requester=context.requester,
+        admin_context=admin_context,
+        user_id=context.target_id,
+        expected_status_version=context.target_version,
+        plan_id=context.payload["plan_id"],
+        opening_note=context.payload.get("opening_note", ""),
+        request_id=context.request.request_id,
+    )
+    after = {"status_version": user.status_version, "trial_granted": True}
+    return HandlerResult(
+        before,
+        after,
+        {"subscription_id": str(subscription.pk), "status": subscription.status},
+        subscription.user,
+    )
+
+
+def handle_subscription_terminate(context):
+    admin_context = _subscription_context(context.requester)
+    subscription = scoped_subscription_or_404(context.requester, admin_context, context.target_id)
+    before = {"status": subscription.status, "version": subscription.version}
+    subscription = terminate_subscription(
+        requester=context.requester,
+        admin_context=admin_context,
+        subscription_id=context.target_id,
+        expected_version=context.target_version,
+        reason=context.payload["reason"],
+        request_id=context.request.request_id,
+    )
+    after = {"status": subscription.status, "version": subscription.version}
+    return HandlerResult(
+        before,
+        after,
+        {"subscription_id": str(subscription.pk), **after},
+        subscription.user,
+    )
+
+
 PLAN_HANDLER_SPECS = {
     "plan.create": HandlerSpec(
         "plans.create", False, PlanCreatePayloadSerializer, _new_plan_version, handle_plan_create
@@ -301,6 +410,27 @@ PLAN_HANDLER_SPECS = {
         EmptyPlanPayloadSerializer,
         _application_version,
         handle_plan_application_close,
+    ),
+    "subscription.open": HandlerSpec(
+        "subscriptions.open",
+        False,
+        OpenSubscriptionPayloadSerializer,
+        _application_version,
+        handle_subscription_open,
+    ),
+    "subscription.grant_trial": HandlerSpec(
+        "subscriptions.grant_trial",
+        False,
+        GrantTrialPayloadSerializer,
+        _customer_status_version,
+        handle_subscription_grant_trial,
+    ),
+    "subscription.terminate": HandlerSpec(
+        "subscriptions.terminate",
+        False,
+        TerminateSubscriptionPayloadSerializer,
+        _subscription_version,
+        handle_subscription_terminate,
     ),
 }
 

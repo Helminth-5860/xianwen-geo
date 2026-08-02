@@ -217,6 +217,10 @@ class Notification(models.Model):
         PLAN_APPLICATION_CONTACTED = "plan_application_contacted", "套餐申请已联系"
         PLAN_APPLICATION_CLOSED = "plan_application_closed", "套餐申请已关闭"
         PLAN_APPLICATION_CANCELLED = "plan_application_cancelled", "套餐申请已取消"
+        PLAN_APPLICATION_ACTIVATED = "plan_application_activated", "套餐申请已开通"
+        SUBSCRIPTION_TRIAL_GRANTED = "subscription_trial_granted", "试用套餐已发放"
+        SUBSCRIPTION_EXPIRED = "subscription_expired", "套餐已到期"
+        SUBSCRIPTION_TERMINATED = "subscription_terminated", "套餐已终止"
 
     id: models.UUIDField = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     recipient: models.ForeignKey = models.ForeignKey(
@@ -245,6 +249,13 @@ class Notification(models.Model):
         related_name="notifications",
     )
     read_at: models.DateTimeField = models.DateTimeField(null=True, blank=True)
+    related_subscription = models.ForeignKey(
+        "plans.Subscription",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="notifications",
+    )
     created_at: models.DateTimeField = models.DateTimeField(auto_now_add=True, db_index=True)
 
     class Meta:

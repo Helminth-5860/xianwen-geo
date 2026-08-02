@@ -444,7 +444,10 @@ def build_case(action_key, actor):
 
 
 @pytest.mark.django_db
-@pytest.mark.parametrize("action_key", sorted(RISK_ACTION_BY_KEY))
+@pytest.mark.parametrize(
+    "action_key",
+    sorted(key for key in RISK_ACTION_BY_KEY if not key.startswith("subscription.")),
+)
 @pytest.mark.parametrize("mode", MODES)
 def test_each_existing_high_risk_endpoint_enforces_policy_without_bypass(action_key, mode):
     requester = superuser("13900139000")

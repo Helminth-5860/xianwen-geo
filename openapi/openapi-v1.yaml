@@ -1494,6 +1494,89 @@ paths:
         '422': {$ref: '#/components/responses/ValidationError'}
         '429': {$ref: '#/components/responses/RateLimited'}
         '503': {$ref: '#/components/responses/ServiceUnavailable'}
+  /subscription:
+    get:
+      tags: [Subscriptions]
+      summary: 读取当前有效订阅；严格只读
+      responses:
+        '200': {description: 无订阅时 current 为 null, content: {application/json: {schema: {$ref: '#/components/schemas/CurrentSubscriptionEnvelope'}}}}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+  /admin/subscriptions:
+    get:
+      tags: [Admin, Subscriptions]
+      summary: 按管理员客户数据范围读取订阅
+      parameters:
+        - {name: status, in: query, schema: {$ref: '#/components/schemas/SubscriptionStatus'}}
+        - {name: plan_id, in: query, schema: {type: string, format: uuid}}
+        - {name: user_id, in: query, schema: {type: string, format: uuid}}
+        - {name: page, in: query, schema: {type: integer, minimum: 1}}
+        - {name: page_size, in: query, schema: {type: integer, minimum: 1, maximum: 100}}
+      responses:
+        '200': {description: 数据范围内订阅, content: {application/json: {schema: {$ref: '#/components/schemas/AdminSubscriptionPageEnvelope'}}}}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/PermissionDenied'}
+  /admin/subscriptions/{subscriptionId}:
+    parameters:
+      - {name: subscriptionId, in: path, required: true, schema: {type: string, format: uuid}}
+    get:
+      tags: [Admin, Subscriptions]
+      summary: 读取数据范围内订阅详情
+      responses:
+        '200': {description: 订阅详情不含完整权益快照或 digest, content: {application/json: {schema: {$ref: '#/components/schemas/AdminSubscriptionEnvelope'}}}}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/PermissionDenied'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+  /admin/plan-applications/{applicationId}/activate:
+    parameters:
+      - $ref: '#/components/parameters/PlanApplicationId'
+    post:
+      tags: [Admin, Subscriptions]
+      summary: 从正式套餐申请发起固定双人审批开通
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/OpenSubscriptionRequest'}}}}
+      responses:
+        '202': {$ref: '#/components/responses/ApprovalRequired'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/PermissionDenied'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+  /admin/users/{userId}/subscriptions/trial:
+    parameters:
+      - {name: userId, in: path, required: true, schema: {type: string, format: uuid}}
+    post:
+      tags: [Admin, Subscriptions]
+      summary: 发起固定双人审批试用发放
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/GrantTrialRequest'}}}}
+      responses:
+        '202': {$ref: '#/components/responses/ApprovalRequired'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/PermissionDenied'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+  /admin/subscriptions/{subscriptionId}/terminate:
+    parameters:
+      - {name: subscriptionId, in: path, required: true, schema: {type: string, format: uuid}}
+    post:
+      tags: [Admin, Subscriptions]
+      summary: 发起固定双人审批终止订阅
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/TerminateSubscriptionRequest'}}}}
+      responses:
+        '202': {$ref: '#/components/responses/ApprovalRequired'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/PermissionDenied'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
 components:
   pathItems:
     AdminStatusAction:
@@ -1845,6 +1928,16 @@ components:
         - RATE_LIMITED
         - INTERNAL_ERROR
         - SERVICE_TEMPORARILY_UNAVAILABLE
+        - SUBSCRIPTION_NOT_ELIGIBLE
+        - SUBSCRIPTION_ALREADY_ACTIVE
+        - SUBSCRIPTION_STATE_CONFLICT
+        - SUBSCRIPTION_VERSION_CONFLICT
+        - SUBSCRIPTION_PLAN_UNAVAILABLE
+        - SUBSCRIPTION_PLAN_VERSION_MISMATCH
+        - SUBSCRIPTION_TRIAL_ALREADY_GRANTED
+        - SUBSCRIPTION_CONFIRMATION_REQUIRED
+        - SUBSCRIPTION_OVERRIDE_FORBIDDEN
+        - SUBSCRIPTION_NOTE_INVALID
     HealthEnvelope:
       allOf:
         - $ref: '#/components/schemas/EnvelopeBase'
@@ -2724,7 +2817,7 @@ components:
         sort_order: {type: integer}
     PlanApplicationStatus:
       type: string
-      enum: [pending, contacted, closed, cancelled]
+      enum: [pending, contacted, closed, cancelled, activated]
     PlanApplicationPublicSnapshot:
       type: object
       additionalProperties: false
@@ -2750,7 +2843,7 @@ components:
       required: [id, event_type, from_status, to_status, safe_summary, created_at]
       properties:
         id: {type: string, format: uuid, readOnly: true}
-        event_type: {type: string, enum: [submitted, contacted, closed, cancelled], readOnly: true}
+        event_type: {type: string, enum: [submitted, contacted, closed, cancelled, activated], readOnly: true}
         from_status: {type: string, readOnly: true}
         to_status: {$ref: '#/components/schemas/PlanApplicationStatus'}
         safe_summary: {type: string, readOnly: true}
@@ -2771,6 +2864,7 @@ components:
         contacted_at: {type: [string, 'null'], format: date-time, readOnly: true}
         closed_at: {type: [string, 'null'], format: date-time, readOnly: true}
         cancelled_at: {type: [string, 'null'], format: date-time, readOnly: true}
+        activated_at: {type: [string, 'null'], format: date-time, readOnly: true}
         version: {type: integer, minimum: 1, readOnly: true}
         created_at: {type: string, format: date-time, readOnly: true}
         updated_at: {type: string, format: date-time, readOnly: true}
@@ -2797,6 +2891,8 @@ components:
         - $ref: '#/components/schemas/AdminPlanApplicationListItem'
         - type: object
           properties:
+            activated_at: {type: [string, 'null'], format: date-time}
+            activated_by_id: {type: [string, 'null'], format: uuid}
             applicant_phone: {type: string, pattern: '^1\d{10}$', description: 仅详情、具备 view 权限且对象在 scope 内返回}
             public_plan_snapshot: {$ref: '#/components/schemas/PlanApplicationPublicSnapshot'}
             user_note: {type: string, maxLength: 500}
@@ -2845,3 +2941,88 @@ components:
       allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, properties: {data: {$ref: '#/components/schemas/PublicPlan'}}}]
     PublicPlanListEnvelope:
       allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, properties: {data: {type: array, items: {$ref: '#/components/schemas/PublicPlan'}}}}]
+    SubscriptionStatus:
+      type: string
+      enum: [active, expired, terminated]
+    EntitlementSummary:
+      type: object
+      additionalProperties: false
+      required: [valid_days, limit_keys, enabled_model_keys]
+      properties:
+        valid_days: {type: integer, minimum: 1}
+        limit_keys: {type: array, items: {type: string}}
+        enabled_model_keys: {type: array, items: {$ref: '#/components/schemas/PlanModelKey'}}
+    Subscription:
+      type: object
+      additionalProperties: false
+      required: [id, plan_id, plan_code, plan_name, plan_version_id, plan_version_no, status, is_trial, starts_at, ends_at, cycle_anchor_day, entitlement_summary, version]
+      properties:
+        id: {type: string, format: uuid}
+        plan_id: {type: string, format: uuid}
+        plan_code: {type: string}
+        plan_name: {type: string}
+        plan_version_id: {type: string, format: uuid}
+        plan_version_no: {type: integer, minimum: 1}
+        status: {$ref: '#/components/schemas/SubscriptionStatus'}
+        is_trial: {type: boolean}
+        starts_at: {type: string, format: date-time}
+        ends_at: {type: string, format: date-time}
+        cycle_anchor_day: {type: integer, minimum: 1, maximum: 31}
+        entitlement_summary: {$ref: '#/components/schemas/EntitlementSummary'}
+        version: {type: integer, minimum: 1}
+    AdminSubscription:
+      allOf:
+        - $ref: '#/components/schemas/Subscription'
+        - type: object
+          properties:
+            user_id: {type: string, format: uuid}
+            user_nickname: {type: string}
+            source_application_id: {type: [string, 'null'], format: uuid}
+            activated_at: {type: string, format: date-time}
+            expired_at: {type: [string, 'null'], format: date-time}
+            terminated_at: {type: [string, 'null'], format: date-time}
+            termination_reason: {type: string, maxLength: 500}
+            events: {type: array, items: {$ref: '#/components/schemas/SubscriptionEvent'}}
+    SubscriptionEvent:
+      type: object
+      additionalProperties: false
+      properties:
+        id: {type: string, format: uuid}
+        event_type: {type: string, enum: [activated, expired, terminated]}
+        from_status: {type: string}
+        to_status: {$ref: '#/components/schemas/SubscriptionStatus'}
+        safe_summary: {type: string}
+        created_at: {type: string, format: date-time}
+    OpenSubscriptionRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version]
+      properties:
+        expected_version: {type: integer, minimum: 1}
+        selected_plan_version_id: {type: [string, 'null'], format: uuid}
+        confirm_unavailable: {type: boolean, default: false}
+        unavailable_reason: {type: string, maxLength: 500}
+        confirm_version_override: {type: boolean, default: false}
+        override_reason: {type: string, maxLength: 500}
+        opening_note: {type: string, maxLength: 500}
+    GrantTrialRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version, plan_id]
+      properties:
+        expected_version: {type: integer, minimum: 1}
+        plan_id: {type: string, format: uuid}
+        opening_note: {type: string, maxLength: 500}
+    TerminateSubscriptionRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version, reason]
+      properties:
+        expected_version: {type: integer, minimum: 1}
+        reason: {type: string, minLength: 1, maxLength: 500}
+    CurrentSubscriptionEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, properties: {data: {type: object, required: [current], properties: {current: {oneOf: [{$ref: '#/components/schemas/Subscription'}, {type: 'null'}]}}}}}]
+    AdminSubscriptionEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, properties: {data: {$ref: '#/components/schemas/AdminSubscription'}}}]
+    AdminSubscriptionPageEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, properties: {data: {type: object, properties: {results: {type: array, items: {$ref: '#/components/schemas/AdminSubscription'}}, pagination: {$ref: '#/components/schemas/Pagination'}}}}}]

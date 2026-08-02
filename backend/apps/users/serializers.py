@@ -272,6 +272,7 @@ class NotificationSerializer(serializers.ModelSerializer):
             "notification_type",
             "related_plan_application_id",
             "title",
+            "related_subscription_id",
             "safe_summary",
             "read_at",
             "created_at",

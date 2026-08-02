@@ -90,11 +90,25 @@ def _locked_plan(plan_id) -> Plan:
 
 def _locked_version(version_id) -> PlanVersion:
     try:
-        return PlanVersion.objects.select_for_update().select_related("plan").get(pk=version_id)
+        return PlanVersion.objects.select_for_update().get(pk=version_id)
     except PlanVersion.DoesNotExist as exc:
         from rest_framework.exceptions import NotFound
 
         raise NotFound from exc
+
+
+def _locked_plan_and_version(version_id) -> tuple[Plan, PlanVersion]:
+    try:
+        plan_id = PlanVersion.objects.only("plan_id").get(pk=version_id).plan_id
+    except PlanVersion.DoesNotExist as exc:
+        from rest_framework.exceptions import NotFound
+
+        raise NotFound from exc
+    plan = _locked_plan(plan_id)
+    version = _locked_version(version_id)
+    if version.plan_id != plan.pk:
+        raise PlanStateConflict("套餐版本所属套餐发生变化。")
+    return plan, version
 
 
 def _ensure_expected(actual: int, expected: int, *, plan: bool = False) -> None:
@@ -460,8 +474,7 @@ def update_plan_version(
     limits: list[dict[str, Any]],
     model_permissions: list[dict[str, Any]],
 ) -> PlanVersion:
-    version = _locked_version(version_id)
-    plan = _locked_plan(version.plan_id)
+    plan, version = _locked_plan_and_version(version_id)
     _ensure_expected(version.version, expected_version)
     if plan.status == Plan.Status.ARCHIVED or version.status != PlanVersion.Status.DRAFT:
         raise PlanImmutable("仅草稿版本可修改。")
@@ -612,8 +625,7 @@ def publish_plan_version(
     expected_version: int,
     confirm_informal_composite: bool,
 ) -> PlanVersion:
-    version = _locked_version(version_id)
-    plan = _locked_plan(version.plan_id)
+    plan, version = _locked_plan_and_version(version_id)
     _ensure_expected(version.version, expected_version)
     if plan.status == Plan.Status.ARCHIVED or version.status != PlanVersion.Status.DRAFT:
         raise PlanVersionStateConflict("当前版本不能发布。")
@@ -699,8 +711,7 @@ def set_plan_offline(*, plan_id, actor, expected_version: int) -> Plan:
 
 @transaction.atomic
 def retire_plan_version(*, version_id, actor, expected_version: int) -> PlanVersion:
-    version = _locked_version(version_id)
-    plan = _locked_plan(version.plan_id)
+    plan, version = _locked_plan_and_version(version_id)
     _ensure_expected(version.version, expected_version)
     if plan.status == Plan.Status.ARCHIVED or version.status == PlanVersion.Status.RETIRED:
         raise PlanVersionStateConflict("当前版本不能退役。")
