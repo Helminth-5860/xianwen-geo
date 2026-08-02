@@ -353,4 +353,23 @@ def test_docker_job_runs_reproducible_postgresql_redis_quota_suite():
     suite = (REPO_ROOT / "backend" / "tests" / "test_quotas_postgres.py").read_text(
         encoding="utf-8"
     )
-    assert suite.count("def test_postgresql_") == 9
+    required_tests = (
+        "test_postgresql_concurrent_freezes_have_contiguous_ledger_sequences",
+        "test_postgresql_same_key_concurrent_replay_and_different_payload_conflict",
+        "test_postgresql_concurrent_freezes_cannot_overdraw_available_balance",
+        "test_postgresql_concurrent_consume_release_preserves_partial_settlement",
+        "test_postgresql_raw_sql_rejects_sequence_gap_reuse_and_before_after_mismatch",
+        "test_postgresql_raw_sql_guards_account_hold_and_ledger_evidence",
+        "test_postgresql_settled_hold_cannot_be_restored",
+        "test_postgresql_hold_can_consume_and_release_after_subscription_termination",
+        "test_postgresql_hold_can_settle_after_subscription_time_window_expires",
+        "test_postgresql_adjustments_preserve_frozen_and_entitlement_amount",
+        "test_postgresql_quota_initialization_failure_rolls_back_subscription",
+        "test_postgresql_backfill_is_idempotent",
+        "test_postgresql_backfill_invalid_snapshot_rolls_back_valid_rows_atomically",
+        "test_postgresql_quota_adjustment_audit_failure_rolls_back_business",
+        "test_postgresql_quota_adjustment_two_person_executes_exactly_once",
+    )
+    for test_name in required_tests:
+        assert f"def {test_name}" in suite
+    assert suite.count("def test_postgresql_") == 16

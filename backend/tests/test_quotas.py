@@ -8,7 +8,7 @@ from django.test import override_settings
 from django.urls import Resolver404, resolve
 from rest_framework.test import APIClient
 
-from apps.admin_rbac.models import ApprovalRequest, RiskAction, RiskPolicy
+from apps.admin_rbac.models import ApprovalRequest, AuditEvent, RiskAction, RiskPolicy
 from apps.admin_rbac.permissions import resolve_admin_context
 from apps.admin_rbac.risk_catalog import RISK_ACTION_BY_KEY, TWO_PERSON
 from apps.plans.subscription_services import grant_trial, terminate_subscription
@@ -27,7 +27,7 @@ from apps.quotas.services import (
     release_hold,
     replay_account,
 )
-from apps.users.models import User
+from apps.users.models import Notification, User
 from tests.admin_session_helpers import authenticate_admin_client
 from tests.test_subscriptions import PASSWORD, published_plan
 
@@ -319,27 +319,47 @@ def test_user_quota_apis_do_not_leak_business_or_idempotency_fields():
         "request_digest",
         "safe_reason",
         "actor_id",
+        "entitlement_snapshot",
+        "sanitized_payload",
+        "approval_request",
+        "internal_actor",
     ):
         assert forbidden not in serialized
 
 
 @pytest.mark.django_db
-def test_adjustment_approval_stores_only_derived_idempotency_values():
+def test_adjustment_approval_stores_only_derived_idempotency_values(caplog):
     requester, _, subscription = provision()
     User.objects.create_superuser(phone="13700137000", nickname="?????", password=PASSWORD)
     account = QuotaAccount.objects.get(subscription=subscription, quota_type="detection_points")
-    raw_key = "raw-idempotency-key-must-not-persist-0113"
+    client_header_value = "repeatable-test-request"
     response = authenticate_admin_client(APIClient(), requester).post(
         f"/api/v1/admin/quota-accounts/{account.pk}/adjust/grant",
         {"expected_version": account.version, "amount": 1, "reason": "????"},
         format="json",
-        HTTP_IDEMPOTENCY_KEY=raw_key,
+        HTTP_IDEMPOTENCY_KEY=client_header_value,
     )
     assert response.status_code == 202
     approval = ApprovalRequest.objects.get(pk=response.json()["data"]["approval_id"])
     assert approval.action_key == "quota.grant"
-    assert raw_key not in str(approval.sanitized_payload)
-    assert raw_key not in approval.payload_digest
+    assert client_header_value not in str(response.json())
+    assert client_header_value not in str(approval.sanitized_payload)
+    assert client_header_value not in approval.payload_digest
+    assert client_header_value not in caplog.text
+    assert client_header_value not in str(
+        list(
+            AuditEvent.objects.filter(approval_request=approval).values(
+                "safe_before", "safe_after", "stable_error_code"
+            )
+        )
+    )
+    assert client_header_value not in str(
+        list(
+            Notification.objects.filter(recipient=approval.requester).values(
+                "title", "safe_summary"
+            )
+        )
+    )
     assert len(approval.sanitized_payload["idempotency_key_digest"]) == 64
 
 
@@ -372,6 +392,7 @@ def test_models_have_no_subject_or_account_status_fields():
     assert "subject" not in names
     assert "status" not in names
     assert "expires_at" not in names
+    assert "subject_cycle" not in {value for value, _ in QuotaAccount.Scope.choices}
 
 
 @override_settings(QUOTA_IDEMPOTENCY_HMAC_KEY="isolated-test-" + "quota-key-0123456789abcdef")
