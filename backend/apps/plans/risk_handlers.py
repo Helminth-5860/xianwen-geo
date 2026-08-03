@@ -405,7 +405,7 @@ def handle_subscription_change(context):
         "change_id": str(change.pk),
         "status": change.status,
         "change_type": change.change_type,
-        "effective_at": change.effective_at,
+        "effective_at": change.effective_at.isoformat(),
         "version": change.version,
     }
     target = getattr(change, "target_subscription", None)

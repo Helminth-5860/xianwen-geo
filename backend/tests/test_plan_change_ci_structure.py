@@ -57,4 +57,23 @@ def test_docker_job_runs_reproducible_postgresql_redis_plan_change_suite():
     assert "down --volumes --remove-orphans" in powershell_script
     assert "openssl rand -hex 32" in shell_script
     assert "[guid]::NewGuid()" in powershell_script
-    assert suite.count("def test_postgresql_") == 8
+    assert suite.count("def test_postgresql_") == 18
+    for required_test in (
+        "test_postgresql_renewal_is_scheduled_without_future_facts_and_cancel_is_safe",
+        "test_postgresql_change_and_cancel_idempotency_conflict_matrix",
+        "test_postgresql_preview_submit_and_concurrent_two_person_approval_are_exactly_once",
+        "test_postgresql_transfer_ledger_pair_is_deferred_complete_and_atomic",
+        "test_postgresql_audit_failure_rolls_back_approved_plan_change",
+    ):
+        assert f"def {required_test}" in suite
+    transfer_guard = (
+        REPO_ROOT
+        / "backend"
+        / "apps"
+        / "quotas"
+        / "migrations"
+        / "0006_plan_change_transfer_ledger_guards.py"
+    ).read_text(encoding="utf-8")
+    assert "quotas_transfer_ledger_bound" in transfer_guard
+    assert "QUOTA_TRANSFER_OUT_LEDGER_UNBOUND" in transfer_guard
+    assert "QUOTA_TRANSFER_IN_LEDGER_UNBOUND" in transfer_guard
