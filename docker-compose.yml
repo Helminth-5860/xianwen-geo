@@ -48,6 +48,7 @@ services:
       SMS_PROVIDER: ${SMS_PROVIDER:-mock}
       SMS_VERIFICATION_HMAC_KEY: ${SMS_VERIFICATION_HMAC_KEY:?请配置随机本地短信 HMAC 密钥}
       QUOTA_IDEMPOTENCY_HMAC_KEY: ${QUOTA_IDEMPOTENCY_HMAC_KEY:?set a random local quota HMAC key}
+      PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY: ${PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY:?set a random local plan-change HMAC key}
       SMS_CODE_TTL_SECONDS: ${SMS_CODE_TTL_SECONDS:-300}
       SMS_RESEND_COOLDOWN_SECONDS: ${SMS_RESEND_COOLDOWN_SECONDS:-60}
       SMS_MAX_ATTEMPTS: ${SMS_MAX_ATTEMPTS:-5}
@@ -113,6 +114,7 @@ services:
       SMS_PROVIDER: ${SMS_PROVIDER:-mock}
       SMS_VERIFICATION_HMAC_KEY: ${SMS_VERIFICATION_HMAC_KEY:?请配置随机本地短信 HMAC 密钥}
       QUOTA_IDEMPOTENCY_HMAC_KEY: ${QUOTA_IDEMPOTENCY_HMAC_KEY:?set a random local quota HMAC key}
+      PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY: ${PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY:?set a random local plan-change HMAC key}
       SMS_CODE_TTL_SECONDS: ${SMS_CODE_TTL_SECONDS:-300}
       SMS_RESEND_COOLDOWN_SECONDS: ${SMS_RESEND_COOLDOWN_SECONDS:-60}
       SMS_MAX_ATTEMPTS: ${SMS_MAX_ATTEMPTS:-5}
@@ -153,6 +155,7 @@ services:
       SMS_PROVIDER: mock
       SMS_VERIFICATION_HMAC_KEY: ${SMS_VERIFICATION_HMAC_KEY:?请配置随机本地短信 HMAC 密钥}
       QUOTA_IDEMPOTENCY_HMAC_KEY: ${QUOTA_IDEMPOTENCY_HMAC_KEY:?set a random local quota HMAC key}
+      PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY: ${PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY:?set a random local plan-change HMAC key}
       RUN_MIGRATIONS: "false"
     depends_on:
       postgres:
@@ -181,6 +184,7 @@ services:
       SMS_PROVIDER: mock
       SMS_VERIFICATION_HMAC_KEY: ${SMS_VERIFICATION_HMAC_KEY:?set a random local SMS HMAC key}
       QUOTA_IDEMPOTENCY_HMAC_KEY: ${QUOTA_IDEMPOTENCY_HMAC_KEY:?set a random local quota HMAC key}
+      PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY: ${PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY:?set a random local plan-change HMAC key}
       RUN_MIGRATIONS: "false"
     depends_on:
       postgres:
@@ -209,6 +213,7 @@ services:
       SMS_PROVIDER: mock
       SMS_VERIFICATION_HMAC_KEY: ${SMS_VERIFICATION_HMAC_KEY:?set a random local SMS HMAC key}
       QUOTA_IDEMPOTENCY_HMAC_KEY: ${QUOTA_IDEMPOTENCY_HMAC_KEY:?set a random local quota HMAC key}
+      PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY: ${PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY:?set a random local plan-change HMAC key}
       RISK_APPROVAL_TTL_SECONDS: 86400
       RUN_MIGRATIONS: "false"
     depends_on:
@@ -238,6 +243,7 @@ services:
       SMS_PROVIDER: mock
       SMS_VERIFICATION_HMAC_KEY: ${SMS_VERIFICATION_HMAC_KEY:?set isolated test SMS HMAC key}
       QUOTA_IDEMPOTENCY_HMAC_KEY: ${QUOTA_IDEMPOTENCY_HMAC_KEY:?set isolated test quota HMAC key}
+      PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY: ${PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY:?set a random local plan-change HMAC key}
       RUN_MIGRATIONS: "false"
     depends_on:
       postgres:
@@ -266,6 +272,7 @@ services:
       SMS_PROVIDER: mock
       SMS_VERIFICATION_HMAC_KEY: ${SMS_VERIFICATION_HMAC_KEY:?set isolated test SMS HMAC key}
       QUOTA_IDEMPOTENCY_HMAC_KEY: ${QUOTA_IDEMPOTENCY_HMAC_KEY:?set isolated test quota HMAC key}
+      PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY: ${PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY:?set a random local plan-change HMAC key}
       RUN_MIGRATIONS: "false"
     depends_on:
       postgres:
@@ -308,6 +315,7 @@ services:
       SMS_PROVIDER: mock
       SMS_VERIFICATION_HMAC_KEY: ${SMS_VERIFICATION_HMAC_KEY:?set isolated test SMS HMAC key}
       QUOTA_IDEMPOTENCY_HMAC_KEY: ${QUOTA_IDEMPOTENCY_HMAC_KEY:?set isolated test quota HMAC key}
+      PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY: ${PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY:?set a random local plan-change HMAC key}
       RUN_MIGRATIONS: "false"
     depends_on:
       postgres:
@@ -346,6 +354,7 @@ services:
       SMS_PROVIDER: mock
       SMS_VERIFICATION_HMAC_KEY: ${SMS_VERIFICATION_HMAC_KEY:?set isolated test SMS HMAC key}
       QUOTA_IDEMPOTENCY_HMAC_KEY: ${QUOTA_IDEMPOTENCY_HMAC_KEY:?set isolated quota HMAC key}
+      PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY: ${PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY:?set a random local plan-change HMAC key}
       RUN_MIGRATIONS: "false"
     depends_on:
       postgres:

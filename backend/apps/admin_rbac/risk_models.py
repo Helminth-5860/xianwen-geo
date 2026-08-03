@@ -202,6 +202,16 @@ class ApprovalRequest(models.Model):  # noqa: DJ008
                 condition=models.Q(status="pending"),
                 name="approval_unique_pending_payload",
             ),
+            models.UniqueConstraint(
+                fields=("action_key", "target_id"),
+                condition=models.Q(status="pending", action_key="subscription.change"),
+                name="approval_single_pending_subscription_change",
+            ),
+            models.UniqueConstraint(
+                fields=("action_key", "target_id"),
+                condition=models.Q(status="pending", action_key="subscription.change.cancel"),
+                name="approval_single_pending_subscription_cancel",
+            ),
         ]
 
 

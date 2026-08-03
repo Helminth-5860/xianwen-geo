@@ -15,7 +15,7 @@ from apps.plans.models import Subscription, SubscriptionEvent
 from apps.plans.subscription_services import terminate_subscription
 from apps.quotas.exceptions import QuotaIdempotencyConflict, QuotaInsufficient
 from apps.quotas.idempotency import derive_idempotency_digests
-from apps.quotas.models import QuotaAccount, QuotaHold, QuotaLedgerEntry
+from apps.quotas.models import QuotaAccount, QuotaHold, QuotaHoldGroup, QuotaLedgerEntry
 from apps.quotas.services import (
     adjust_quota_account,
     consume_hold,
@@ -88,7 +88,7 @@ def test_postgresql_concurrent_freezes_have_contiguous_ledger_sequences():
             request_id=uuid.uuid4(),
         ),
     )
-    assert all(isinstance(item, QuotaHold) for item in results)
+    assert all(isinstance(item, QuotaHoldGroup) for item in results)
     account.refresh_from_db()
     sequences = list(account.ledger_entries.values_list("sequence", flat=True))
     assert sequences == list(range(1, len(sequences) + 1))
@@ -116,10 +116,13 @@ def test_postgresql_different_keys_cannot_freeze_same_business_target():
             request_id=uuid.uuid4(),
         ),
     )
-    assert sum(isinstance(item, QuotaHold) for item in results) == 1
+    assert sum(isinstance(item, QuotaHoldGroup) for item in results) == 1
     assert (
-        QuotaHold.objects.filter(
-            account=account, business_type="same_task", business_id=business_id
+        QuotaHoldGroup.objects.filter(
+            user=account.user,
+            quota_type=account.quota_type,
+            business_type="same_task",
+            business_id=business_id,
         ).count()
         == 1
     )
@@ -140,9 +143,9 @@ def test_postgresql_same_key_concurrent_replay_and_different_payload_conflict():
         )
 
     results = parallel(lambda: operation(2), lambda: operation(2))
-    assert all(isinstance(item, QuotaHold) for item in results)
+    assert all(isinstance(item, QuotaHoldGroup) for item in results)
     assert results[0].pk == results[1].pk
-    assert QuotaHold.objects.filter(account=account, business_id=business_id).count() == 1
+    assert QuotaHoldGroup.objects.filter(user=account.user, business_id=business_id).count() == 1
     assert (
         QuotaLedgerEntry.objects.filter(
             account=account, action="freeze", business_id=business_id
@@ -173,7 +176,7 @@ def test_postgresql_concurrent_freezes_cannot_overdraw_available_balance():
             request_id=uuid.uuid4(),
         ),
     )
-    assert sum(isinstance(item, QuotaHold) for item in results) == 1
+    assert sum(isinstance(item, QuotaHoldGroup) for item in results) == 1
     assert sum(isinstance(item, QuotaInsufficient) for item in results) == 1
     account.refresh_from_db()
     assert (account.available, account.frozen) == (5, 15)
@@ -204,10 +207,10 @@ def test_postgresql_concurrent_consume_release_preserves_partial_settlement():
             request_id=uuid.uuid4(),
         ),
     )
-    assert all(isinstance(item, QuotaHold) for item in results)
+    assert all(isinstance(item, QuotaHoldGroup) for item in results)
     hold.refresh_from_db()
     account.refresh_from_db()
-    assert hold.status == QuotaHold.Status.PARTIALLY_SETTLED
+    assert hold.status == QuotaHoldGroup.Status.PARTIALLY_SETTLED
     assert (hold.consumed_amount, hold.released_amount) == (4, 3)
     assert account.frozen == 3
     assert replay_account(account).frozen == 3
@@ -261,7 +264,7 @@ def test_postgresql_raw_sql_rejects_sequence_gap_reuse_and_before_after_mismatch
 
 def test_postgresql_raw_sql_guards_account_hold_and_ledger_evidence():
     _, _, _, account = provision()
-    hold = freeze_quota(
+    group = freeze_quota(
         account_id=account.pk,
         amount=2,
         business_type="guard_task",
@@ -269,6 +272,7 @@ def test_postgresql_raw_sql_guards_account_hold_and_ledger_evidence():
         idempotency_key="guard-freeze-key-0001",
         request_id=uuid.uuid4(),
     )
+    hold = QuotaHold.objects.get(group=group, account=account)
     entry = account.ledger_entries.order_by("-sequence").first()
     statements = (
         ("UPDATE quota_accounts SET available=available+1 WHERE id=%s", account.pk),
@@ -279,6 +283,7 @@ def test_postgresql_raw_sql_guards_account_hold_and_ledger_evidence():
         ("DELETE FROM quota_accounts WHERE id=%s", account.pk),
         ("UPDATE quota_ledger_entries SET safe_reason='tampered' WHERE id=%s", entry.pk),
         ("DELETE FROM quota_ledger_entries WHERE id=%s", entry.pk),
+        ("DELETE FROM quota_hold_groups WHERE id=%s", group.pk),
         ("DELETE FROM quota_holds WHERE id=%s", hold.pk),
     )
     for sql, identifier in statements:
@@ -289,7 +294,7 @@ def test_postgresql_raw_sql_guards_account_hold_and_ledger_evidence():
 
 def test_postgresql_settled_hold_cannot_be_restored():
     _, _, _, account = provision()
-    hold = freeze_quota(
+    group = freeze_quota(
         account_id=account.pk,
         amount=1,
         business_type="terminal_task",
@@ -298,18 +303,28 @@ def test_postgresql_settled_hold_cannot_be_restored():
         request_id=uuid.uuid4(),
     )
     release_hold(
-        hold_id=hold.pk,
+        hold_id=group.pk,
         amount=1,
         idempotency_key="terminal-release-key-0001",
         request_id=uuid.uuid4(),
     )
-    with pytest.raises(DatabaseError), transaction.atomic():
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "UPDATE quota_holds SET status='open', released_amount=0,"
-                "settled_at=NULL,version=version+1 WHERE id=%s",
-                [hold.pk],
-            )
+    hold = QuotaHold.objects.get(group=group, account=account)
+    statements = (
+        (
+            "UPDATE quota_hold_groups SET status='open', released_amount=0,"
+            "settled_at=NULL,version=version+1 WHERE id=%s",
+            group.pk,
+        ),
+        (
+            "UPDATE quota_holds SET status='open', released_amount=0,"
+            "settled_at=NULL,version=version+1 WHERE id=%s",
+            hold.pk,
+        ),
+    )
+    for sql, identifier in statements:
+        with pytest.raises(DatabaseError), transaction.atomic():
+            with connection.cursor() as cursor:
+                cursor.execute(sql, [identifier])
 
 
 def test_postgresql_hold_can_consume_and_release_after_subscription_termination():
@@ -350,7 +365,9 @@ def test_postgresql_hold_can_consume_and_release_after_subscription_termination(
         idempotency_key="post-termination-release-0001",
         request_id=uuid.uuid4(),
     )
-    assert QuotaHold.objects.filter(pk__in=(first.pk, second.pk), status="settled").count() == 2
+    groups = QuotaHoldGroup.objects.filter(pk__in=(first.pk, second.pk), status="settled")
+    assert groups.count() == 2
+    assert QuotaHold.objects.filter(group__in=groups, status="settled").count() == 2
 
 
 def test_postgresql_hold_can_settle_after_subscription_time_window_expires():
@@ -380,7 +397,7 @@ def test_postgresql_hold_can_settle_after_subscription_time_window_expires():
             request_id=uuid.uuid4(),
         )
     hold.refresh_from_db()
-    assert hold.status == QuotaHold.Status.SETTLED
+    assert hold.status == QuotaHoldGroup.Status.SETTLED
 
 
 def test_postgresql_adjustments_preserve_frozen_and_entitlement_amount():
@@ -393,7 +410,7 @@ def test_postgresql_adjustments_preserve_frozen_and_entitlement_amount():
         idempotency_key="adjustment-guard-freeze-key-0001",
         request_id=uuid.uuid4(),
     )
-    assert hold.status == QuotaHold.Status.OPEN
+    assert hold.status == QuotaHoldGroup.Status.OPEN
     entitlement = account.entitlement_amount
     for index, action in enumerate(("grant", "compensate", "manual_deduct"), start=1):
         account.refresh_from_db()
@@ -495,6 +512,7 @@ def test_postgresql_backfill_invalid_snapshot_rolls_back_valid_rows_atomically()
         "cycle_anchor_day": template.cycle_anchor_day,
         "is_trial": True,
         "source_application": None,
+        "source_type": Subscription.SourceType.TRIAL_GRANT,
         "opened_by": admin,
         "activated_at": template.activated_at,
     }

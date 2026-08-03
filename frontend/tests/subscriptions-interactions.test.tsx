@@ -41,6 +41,7 @@ const subscription = {
   plan_version_id: "version-1",
   plan_version_no: 2,
   status: "active" as const,
+  source_type: "application" as const,
   is_trial: false,
   starts_at: "2026-08-01T00:00:00Z",
   ends_at: "2026-09-01T00:00:00Z",

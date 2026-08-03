@@ -12,10 +12,16 @@ from .application_views import (
 from .subscription_views import (
     AdminGrantTrialView,
     AdminOpenSubscriptionView,
+    AdminSubscriptionChangeCancelView,
+    AdminSubscriptionChangeCreateView,
+    AdminSubscriptionChangeDetailView,
+    AdminSubscriptionChangeListView,
+    AdminSubscriptionChangePreviewView,
     AdminSubscriptionDetailView,
     AdminSubscriptionListView,
     AdminTerminateSubscriptionView,
     CurrentSubscriptionView,
+    UserSubscriptionChangeListView,
 )
 from .views import (
     AdminPlanArchiveView,
@@ -135,6 +141,36 @@ urlpatterns = [
         "admin/subscriptions/<uuid:subscription_id>/terminate",
         AdminTerminateSubscriptionView.as_view(),
         name="admin-subscription-terminate",
+    ),
+    path(
+        "admin/subscriptions/<uuid:subscription_id>/change/preview",
+        AdminSubscriptionChangePreviewView.as_view(),
+        name="admin-subscription-change-preview",
+    ),
+    path(
+        "admin/subscriptions/<uuid:subscription_id>/change",
+        AdminSubscriptionChangeCreateView.as_view(),
+        name="admin-subscription-change-create",
+    ),
+    path(
+        "admin/subscription-changes",
+        AdminSubscriptionChangeListView.as_view(),
+        name="admin-subscription-change-list",
+    ),
+    path(
+        "admin/subscription-changes/<uuid:change_id>",
+        AdminSubscriptionChangeDetailView.as_view(),
+        name="admin-subscription-change-detail",
+    ),
+    path(
+        "admin/subscription-changes/<uuid:change_id>/cancel",
+        AdminSubscriptionChangeCancelView.as_view(),
+        name="admin-subscription-change-cancel",
+    ),
+    path(
+        "subscription/changes",
+        UserSubscriptionChangeListView.as_view(),
+        name="subscription-change-list",
     ),
     path("plans", PublicPlanListView.as_view(), name="public-plan-list"),
     path("plans/<uuid:plan_id>", PublicPlanDetailView.as_view(), name="public-plan-detail"),

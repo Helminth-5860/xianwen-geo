@@ -2,7 +2,7 @@ import calendar
 import re
 import uuid
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 
 from django.db import IntegrityError, transaction
 from django.utils import timezone
@@ -32,7 +32,7 @@ from .idempotency import (
     derive_idempotency_digests,
     system_idempotency_digests,
 )
-from .models import QuotaAccount, QuotaHold, QuotaLedgerEntry
+from .models import QuotaAccount, QuotaHold, QuotaHoldGroup, QuotaLedgerEntry, QuotaTransfer
 from .selectors import scoped_account_or_404
 
 BUSINESS_TYPE_PATTERN = re.compile(r"^[a-z][a-z0-9_.-]{0,63}$")
@@ -110,6 +110,8 @@ def _subscription_effective(subscription: Subscription, account: QuotaAccount, m
         or subscription.starts_at > moment
         or subscription.ends_at <= moment
     ):
+        return False
+    if account.spendable_until is not None and account.spendable_until <= moment:
         return False
     if account.cycle_started_at is None:
         return account.cycle_ends_at is None
@@ -353,7 +355,7 @@ def create_cycle_batch(
 
 
 @transaction.atomic
-def freeze_quota(
+def _legacy_freeze_quota(
     *,
     account_id,
     amount,
@@ -425,7 +427,9 @@ def freeze_quota(
     return hold
 
 
-def _settle_hold(*, hold_id, amount, action: str, idempotency_key: str, request_id) -> QuotaHold:
+def _legacy_settle_hold(
+    *, hold_id, amount, action: str, idempotency_key: str, request_id
+) -> QuotaHold:
     subscription, account, hold = _lock_hold(hold_id)
     del subscription
     amount = _positive_amount(amount)
@@ -593,3 +597,534 @@ def replay_account(account: QuotaAccount) -> ReplayResult:
 
 def verify_all_accounts():
     return [replay_account(account) for account in QuotaAccount.objects.order_by("id")]
+
+
+def subscription_has_unsettled_holds(subscription: Subscription) -> bool:
+    return QuotaHoldGroup.objects.filter(
+        allocations__subscription=subscription,
+        status__in=(
+            QuotaHoldGroup.Status.OPEN,
+            QuotaHoldGroup.Status.PARTIALLY_SETTLED,
+        ),
+    ).exists()
+
+
+def _change_ledger_digests(*, change, account, action, amount):
+    return system_idempotency_digests(
+        operation=action,
+        user_id=account.user_id,
+        account_id=account.pk,
+        business_type="subscription_change",
+        business_id=change.pk,
+        request_payload={
+            "change_id": str(change.pk),
+            "quota_type": account.quota_type,
+            "amount": amount,
+        },
+    )
+
+
+def _forfeit_for_change(*, change, account, actor, request_id):
+    amount = account.available
+    if amount <= 0:
+        return None
+    entry, _ = _append_ledger_locked(
+        account=account,
+        action=QuotaLedgerEntry.Action.PLAN_CHANGE_FORFEIT,
+        available_delta=-amount,
+        frozen_delta=0,
+        digests=_change_ledger_digests(
+            change=change,
+            account=account,
+            action=QuotaLedgerEntry.Action.PLAN_CHANGE_FORFEIT,
+            amount=amount,
+        ),
+        business_type="subscription_change",
+        business_id=change.pk,
+        safe_reason="套餐变更旧额度清零。",
+        actor=actor,
+        request_id=request_id,
+    )
+    return entry
+
+
+def _create_carryover_account(*, change, source_account, target_subscription, spendable_until):
+    definition = quota_definition(source_account.quota_type)
+    batch_key = uuid.uuid5(
+        BATCH_NAMESPACE,
+        f"carryover|{change.pk}|{source_account.pk}|{target_subscription.pk}",
+    )
+    cycle_started_at = cycle_ends_at = None
+    if definition.scope == QuotaAccount.Scope.ACCOUNT_CYCLE:
+        cycle_started_at = change.executed_at
+        cycle_ends_at = spendable_until
+    account = QuotaAccount.objects.create(
+        user_id=target_subscription.user_id,
+        subscription=target_subscription,
+        quota_type=source_account.quota_type,
+        scope=definition.scope,
+        unit=definition.unit,
+        batch_key=batch_key,
+        batch_type=QuotaAccount.BatchType.CARRYOVER,
+        spendable_until=spendable_until,
+        source_change=change,
+        entitlement_amount=0,
+        cycle_started_at=cycle_started_at,
+        cycle_ends_at=cycle_ends_at,
+    )
+    digests = system_idempotency_digests(
+        operation="initialize_carryover",
+        user_id=account.user_id,
+        account_id=account.pk,
+        business_type="subscription_change",
+        business_id=change.pk,
+        request_payload={
+            "source_account_id": str(source_account.pk),
+            "spendable_until": spendable_until.isoformat(),
+        },
+    )
+    _append_ledger_locked(
+        account=account,
+        action=QuotaLedgerEntry.Action.INITIALIZE,
+        available_delta=0,
+        frozen_delta=0,
+        digests=digests,
+        business_type="subscription_change",
+        business_id=change.pk,
+        safe_reason="套餐变更保留批次初始化。",
+        actor=change.requested_by,
+        request_id=change.request_id,
+    )
+    return account
+
+
+def _transfer_for_change(*, change, source, target, actor, request_id):
+    amount = source.available
+    if amount <= 0:
+        return None
+    out_entry, _ = _append_ledger_locked(
+        account=source,
+        action=QuotaLedgerEntry.Action.PLAN_CHANGE_TRANSFER_OUT,
+        available_delta=-amount,
+        frozen_delta=0,
+        digests=_change_ledger_digests(
+            change=change,
+            account=source,
+            action=QuotaLedgerEntry.Action.PLAN_CHANGE_TRANSFER_OUT,
+            amount=amount,
+        ),
+        business_type="subscription_change",
+        business_id=change.pk,
+        safe_reason="套餐变更额度转出。",
+        actor=actor,
+        request_id=request_id,
+    )
+    in_entry, _ = _append_ledger_locked(
+        account=target,
+        action=QuotaLedgerEntry.Action.PLAN_CHANGE_TRANSFER_IN,
+        available_delta=amount,
+        frozen_delta=0,
+        digests=_change_ledger_digests(
+            change=change,
+            account=target,
+            action=QuotaLedgerEntry.Action.PLAN_CHANGE_TRANSFER_IN,
+            amount=amount,
+        ),
+        business_type="subscription_change",
+        business_id=change.pk,
+        safe_reason="套餐变更额度转入。",
+        actor=actor,
+        request_id=request_id,
+    )
+    return QuotaTransfer.objects.create(
+        change=change,
+        quota_type=source.quota_type,
+        amount=amount,
+        source_account=source,
+        target_account=target,
+        transfer_out_entry=out_entry,
+        transfer_in_entry=in_entry,
+        request_id=request_id,
+    )
+
+
+def apply_subscription_change_quotas(
+    *,
+    change,
+    source_subscription: Subscription,
+    target_subscription: Subscription,
+    quota_policy: str,
+    actor,
+    request_id,
+    now,
+):
+    source_accounts = list(
+        QuotaAccount.objects.filter(subscription=source_subscription).order_by("id")
+    )
+    target_primary = {
+        account.quota_type: account
+        for account in QuotaAccount.objects.filter(
+            subscription=target_subscription,
+            batch_type=QuotaAccount.BatchType.PRIMARY,
+        )
+    }
+    account_ids = sorted(
+        [account.pk for account in source_accounts]
+        + [account.pk for account in target_primary.values()],
+        key=str,
+    )
+    locked = {
+        account.pk: account
+        for account in QuotaAccount.objects.select_for_update()
+        .filter(pk__in=account_ids)
+        .order_by("id")
+    }
+    source_accounts = [locked[account.pk] for account in source_accounts]
+    target_primary = {
+        quota_type: locked[account.pk] for quota_type, account in target_primary.items()
+    }
+    group_ids = list(
+        QuotaHold.objects.filter(subscription=source_subscription)
+        .order_by()
+        .values_list("group_id", flat=True)
+        .distinct()
+    )
+    groups = list(
+        QuotaHoldGroup.objects.select_for_update().filter(pk__in=group_ids).order_by("id")
+    )
+    _locked_holds = list(
+        QuotaHold.objects.select_for_update().filter(group_id__in=group_ids).order_by("id")
+    )
+    if any(
+        group.status in (QuotaHoldGroup.Status.OPEN, QuotaHoldGroup.Status.PARTIALLY_SETTLED)
+        for group in groups
+    ):
+        raise QuotaHoldStateConflict
+    if any(account.frozen != 0 for account in source_accounts):
+        raise QuotaHoldStateConflict
+
+    for source in source_accounts:
+        if source.available <= 0:
+            continue
+        spendable_until = source.cycle_ends_at or source_subscription.ends_at
+        if spendable_until <= now or quota_policy == "overwrite":
+            _forfeit_for_change(
+                change=change,
+                account=source,
+                actor=actor,
+                request_id=request_id,
+            )
+            continue
+        if quota_policy == "accumulate":
+            target = target_primary.get(source.quota_type)
+            if target is None:
+                _forfeit_for_change(
+                    change=change,
+                    account=source,
+                    actor=actor,
+                    request_id=request_id,
+                )
+                continue
+        elif quota_policy == "retain":
+            target = _create_carryover_account(
+                change=change,
+                source_account=source,
+                target_subscription=target_subscription,
+                spendable_until=spendable_until,
+            )
+        else:
+            raise QuotaStateConflict
+        _transfer_for_change(
+            change=change,
+            source=source,
+            target=target,
+            actor=actor,
+            request_id=request_id,
+        )
+
+    if any(account.available != 0 or account.frozen != 0 for account in source_accounts):
+        raise QuotaStateConflict
+
+
+def _spend_order(account: QuotaAccount):
+    deadline = account.spendable_until or account.cycle_ends_at
+    return (
+        deadline or datetime.max.replace(tzinfo=UTC),
+        account.batch_type,
+        str(account.pk),
+    )
+
+
+@transaction.atomic
+def freeze_quota(
+    *,
+    account_id,
+    amount,
+    business_type,
+    business_id,
+    idempotency_key,
+    request_id,
+):
+    try:
+        binding = QuotaAccount.objects.only("subscription_id", "quota_type", "user_id").get(
+            pk=account_id
+        )
+    except QuotaAccount.DoesNotExist as exc:
+        raise NotFound from exc
+    subscription = Subscription.objects.select_for_update().get(pk=binding.subscription_id)
+    now = timezone.now()
+    if (
+        subscription.status != Subscription.Status.ACTIVE
+        or not subscription.starts_at <= now < subscription.ends_at
+    ):
+        raise QuotaSubscriptionUnavailable
+    accounts = list(
+        QuotaAccount.objects.select_for_update()
+        .filter(subscription=subscription, quota_type=binding.quota_type)
+        .order_by("id")
+    )
+    accounts = sorted(
+        [account for account in accounts if _subscription_effective(subscription, account, now)],
+        key=_spend_order,
+    )
+    amount = _positive_amount(amount)
+    business_type = _business_type(business_type)
+    digests = derive_idempotency_digests(
+        idempotency_key,
+        operation="freeze_group",
+        user_id=binding.user_id,
+        account_id=account_id,
+        business_type=business_type,
+        business_id=business_id,
+        request_payload={"amount": amount, "quota_type": binding.quota_type},
+    )
+    existing = QuotaHoldGroup.objects.filter(
+        freeze_idempotency_key_digest=digests.key_digest
+    ).first()
+    if existing is not None:
+        if (
+            existing.user_id != binding.user_id
+            or existing.quota_type != binding.quota_type
+            or existing.business_type != business_type
+            or existing.business_id != business_id
+            or existing.freeze_idempotency_scope_digest != digests.scope_digest
+            or existing.freeze_request_digest != digests.request_digest
+        ):
+            raise QuotaIdempotencyConflict
+        return existing
+    if QuotaHoldGroup.objects.filter(
+        user_id=binding.user_id,
+        quota_type=binding.quota_type,
+        business_type=business_type,
+        business_id=business_id,
+    ).exists():
+        raise QuotaBusinessAlreadyHeld
+    if sum(account.available for account in accounts) < amount:
+        raise QuotaInsufficient
+    group = QuotaHoldGroup.objects.create(
+        user_id=binding.user_id,
+        quota_type=binding.quota_type,
+        business_type=business_type,
+        business_id=business_id,
+        requested_amount=amount,
+        freeze_idempotency_key_version=digests.key_version,
+        freeze_idempotency_key_digest=digests.key_digest,
+        freeze_idempotency_scope_digest=digests.scope_digest,
+        freeze_request_digest=digests.request_digest,
+    )
+    remaining = amount
+    for account in accounts:
+        allocated = min(account.available, remaining)
+        if allocated <= 0:
+            continue
+        allocation_digests = system_idempotency_digests(
+            operation="freeze_allocation",
+            user_id=account.user_id,
+            account_id=account.pk,
+            business_type=business_type,
+            business_id=business_id,
+            request_payload={"group_id": str(group.pk), "amount": allocated},
+        )
+        hold = QuotaHold.objects.create(
+            group=group,
+            account=account,
+            user_id=account.user_id,
+            subscription=subscription,
+            quota_type=account.quota_type,
+            business_type=business_type,
+            business_id=business_id,
+            requested_amount=allocated,
+            freeze_idempotency_key_version=allocation_digests.key_version,
+            freeze_idempotency_key_digest=allocation_digests.key_digest,
+            freeze_idempotency_scope_digest=allocation_digests.scope_digest,
+            freeze_request_digest=allocation_digests.request_digest,
+        )
+        _append_ledger_locked(
+            account=account,
+            hold=hold,
+            action=QuotaLedgerEntry.Action.FREEZE,
+            available_delta=-allocated,
+            frozen_delta=allocated,
+            digests=allocation_digests,
+            business_type=business_type,
+            business_id=business_id,
+            safe_reason="业务额度冻结。",
+            actor=None,
+            request_id=request_id,
+        )
+        remaining -= allocated
+        if remaining == 0:
+            break
+    if remaining != 0:
+        raise QuotaInsufficient
+    return group
+
+
+def _group_for_handle(hold_id):
+    group = QuotaHoldGroup.objects.filter(pk=hold_id).first()
+    if group is not None:
+        return group
+    allocation = QuotaHold.objects.only("group_id").filter(pk=hold_id).first()
+    if allocation is None:
+        raise NotFound
+    return QuotaHoldGroup.objects.get(pk=allocation.group_id)
+
+
+def _settle_hold(*, hold_id, amount, action: str, idempotency_key: str, request_id):
+    group_binding = _group_for_handle(hold_id)
+    allocation_bindings = list(
+        QuotaHold.objects.filter(group=group_binding).values("id", "account_id", "subscription_id")
+    )
+    subscription_ids = sorted(
+        {binding["subscription_id"] for binding in allocation_bindings}, key=str
+    )
+    list(Subscription.objects.select_for_update().filter(pk__in=subscription_ids).order_by("id"))
+    account_ids = sorted({binding["account_id"] for binding in allocation_bindings}, key=str)
+    accounts = {
+        account.pk: account
+        for account in QuotaAccount.objects.select_for_update()
+        .filter(pk__in=account_ids)
+        .order_by("id")
+    }
+    group = QuotaHoldGroup.objects.select_for_update().get(pk=group_binding.pk)
+    allocations = list(
+        QuotaHold.objects.select_for_update()
+        .filter(group=group)
+        .select_related("account")
+        .order_by("id")
+    )
+    allocations.sort(key=lambda hold: _spend_order(accounts[hold.account_id]))
+    amount = _positive_amount(amount)
+    client_digests = derive_idempotency_digests(
+        idempotency_key,
+        operation=f"{action}_group",
+        user_id=group.user_id,
+        account_id=group.pk,
+        business_type=group.business_type,
+        business_id=group.business_id,
+        request_payload={"group_id": str(group.pk), "amount": amount},
+    )
+    existing = QuotaLedgerEntry.objects.filter(
+        idempotency_key_digest=client_digests.key_digest
+    ).first()
+    if existing is not None:
+        if (
+            existing.idempotency_scope_digest != client_digests.scope_digest
+            or existing.request_digest != client_digests.request_digest
+        ):
+            raise QuotaIdempotencyConflict
+        return group
+    if group.status == QuotaHoldGroup.Status.SETTLED:
+        raise QuotaHoldStateConflict
+    remaining_group = group.requested_amount - group.consumed_amount - group.released_amount
+    if amount > remaining_group:
+        raise QuotaHoldStateConflict
+
+    remaining = amount
+    first = True
+    for hold in allocations:
+        allocation_remaining = hold.requested_amount - hold.consumed_amount - hold.released_amount
+        settled = min(allocation_remaining, remaining)
+        if settled <= 0:
+            continue
+        account = accounts[hold.account_id]
+        if first:
+            allocation_digests = client_digests
+            first = False
+        else:
+            allocation_digests = system_idempotency_digests(
+                operation=f"{action}_allocation",
+                user_id=group.user_id,
+                account_id=account.pk,
+                business_type=group.business_type,
+                business_id=group.business_id,
+                request_payload={
+                    "group_id": str(group.pk),
+                    "hold_id": str(hold.pk),
+                    "amount": settled,
+                    "group_request_digest": client_digests.request_digest,
+                },
+            )
+        _append_ledger_locked(
+            account=account,
+            hold=hold,
+            action=action,
+            available_delta=settled if action == QuotaLedgerEntry.Action.RELEASE else 0,
+            frozen_delta=-settled,
+            digests=allocation_digests,
+            business_type=group.business_type,
+            business_id=group.business_id,
+            safe_reason="业务额度返还。" if action == "release" else "业务额度扣除。",
+            actor=None,
+            request_id=request_id,
+        )
+        if action == QuotaLedgerEntry.Action.CONSUME:
+            hold.consumed_amount += settled
+        else:
+            hold.released_amount += settled
+        allocation_total = hold.consumed_amount + hold.released_amount
+        hold.status = (
+            QuotaHold.Status.SETTLED
+            if allocation_total == hold.requested_amount
+            else QuotaHold.Status.PARTIALLY_SETTLED
+        )
+        hold.settled_at = timezone.now() if hold.status == QuotaHold.Status.SETTLED else None
+        hold.version += 1
+        hold.save(
+            update_fields=[
+                "consumed_amount",
+                "released_amount",
+                "status",
+                "settled_at",
+                "version",
+                "updated_at",
+            ]
+        )
+        remaining -= settled
+        if remaining == 0:
+            break
+    if remaining != 0:
+        raise QuotaHoldStateConflict
+    if action == QuotaLedgerEntry.Action.CONSUME:
+        group.consumed_amount += amount
+    else:
+        group.released_amount += amount
+    group_total = group.consumed_amount + group.released_amount
+    group.status = (
+        QuotaHoldGroup.Status.SETTLED
+        if group_total == group.requested_amount
+        else QuotaHoldGroup.Status.PARTIALLY_SETTLED
+    )
+    group.settled_at = timezone.now() if group.status == QuotaHoldGroup.Status.SETTLED else None
+    group.version += 1
+    group.save(
+        update_fields=[
+            "consumed_amount",
+            "released_amount",
+            "status",
+            "settled_at",
+            "version",
+            "updated_at",
+        ]
+    )
+    return group

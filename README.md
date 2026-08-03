@@ -304,4 +304,18 @@ grant/compensate/manual-deduct operations are fixed two-person actions; user
 responses omit internal business IDs and digest fields.
 
 See [docs/25-QUOTA-LEDGER.md](docs/25-QUOTA-LEDGER.md). Run the real isolated
+
+## 套餐变更（XW-0114）
+
+套餐变更由 PostgreSQL `SubscriptionChange` 保存批准后的 scheduled/executed/cancelled 领域事实，
+新订阅通过不可变 `source_change` 建立来源链。续费只排期；升级、降级、替换和试用转正式立即执行。
+两项写动作固定双人审批，原始 Idempotency-Key 不进入持久化、日志或响应。
+
+额度迁移只允许 overwrite、accumulate 和 retain。`QuotaHoldGroup` 支持跨到期批次冻结，
+`QuotaTransfer` 用延迟 Trigger 校验成对流水；没有 scheduled 自动执行、Beat、订单或支付。
+本地真实 PostgreSQL/Redis 验收运行 `.\scripts\test-plan-changes.ps1`。
+
+Seed reverse 保留审批/审计引用；Trigger reverse 只移除保护，不能安全撤销已执行变更或迁移流水。
+完整回退会删除领域证据，生产逆向迁移前必须停止写入、审查并备份，优先前向修复或备份恢复。
+完整边界见 [docs/26-PLAN-CHANGES.md](docs/26-PLAN-CHANGES.md)。
 PostgreSQL/Redis suite with `.\scripts\test-quotas.ps1`.

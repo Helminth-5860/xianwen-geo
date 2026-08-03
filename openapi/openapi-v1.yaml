@@ -1577,6 +1577,89 @@ paths:
         '422': {$ref: '#/components/responses/ValidationError'}
         '429': {$ref: '#/components/responses/RateLimited'}
         '503': {$ref: '#/components/responses/ServiceUnavailable'}
+  /subscription/changes:
+    get:
+      tags: [Subscriptions]
+      summary: 读取当前用户套餐变更历史，不暴露审批 payload、幂等摘要或额度批次
+      responses:
+        '200': {description: 套餐变更历史, content: {application/json: {schema: {$ref: '#/components/schemas/UserSubscriptionChangeListEnvelope'}}}}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+  /admin/subscriptions/{subscriptionId}/change/preview:
+    parameters:
+      - {name: subscriptionId, in: path, required: true, schema: {type: string, format: uuid}}
+    post:
+      tags: [Admin, Subscriptions]
+      summary: 只读预览服务端重新分类的套餐变更
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/SubscriptionChangePreviewRequest'}}}}
+      responses:
+        '200': {description: 不创建变更或审批, content: {application/json: {schema: {$ref: '#/components/schemas/SubscriptionChangePreviewEnvelope'}}}}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/PermissionDenied'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /admin/subscriptions/{subscriptionId}/change:
+    parameters:
+      - {name: subscriptionId, in: path, required: true, schema: {type: string, format: uuid}}
+    post:
+      tags: [Admin, Subscriptions]
+      summary: 发起固定双人审批套餐变更；renewal 仅创建 current-end 排期
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/SubscriptionChangeRequest'}}}}
+      responses:
+        '202': {$ref: '#/components/responses/ApprovalRequired'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/PermissionDenied'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+  /admin/subscription-changes:
+    get:
+      tags: [Admin, Subscriptions]
+      summary: 按 own/role/all 客户范围读取套餐变更
+      parameters:
+        - {name: status, in: query, schema: {$ref: '#/components/schemas/SubscriptionChangeStatus'}}
+        - {name: page, in: query, schema: {type: integer, minimum: 1}}
+        - {name: page_size, in: query, schema: {type: integer, minimum: 1, maximum: 100}}
+      responses:
+        '200': {description: 数据范围内变更, content: {application/json: {schema: {$ref: '#/components/schemas/AdminSubscriptionChangePageEnvelope'}}}}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/PermissionDenied'}
+  /admin/subscription-changes/{changeId}:
+    parameters:
+      - {name: changeId, in: path, required: true, schema: {type: string, format: uuid}}
+    get:
+      tags: [Admin, Subscriptions]
+      summary: 读取数据范围内套餐变更详情
+      responses:
+        '200': {description: 套餐变更详情, content: {application/json: {schema: {$ref: '#/components/schemas/AdminSubscriptionChangeEnvelope'}}}}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/PermissionDenied'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+  /admin/subscription-changes/{changeId}/cancel:
+    parameters:
+      - {name: changeId, in: path, required: true, schema: {type: string, format: uuid}}
+    post:
+      tags: [Admin, Subscriptions]
+      summary: 发起固定双人审批取消尚未生效的 renewal 排期
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/CancelSubscriptionChangeRequest'}}}}
+      responses:
+        '202': {$ref: '#/components/responses/ApprovalRequired'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/PermissionDenied'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
   /quotas:
     get:
       tags: [Quotas]
@@ -3022,7 +3105,7 @@ components:
     Subscription:
       type: object
       additionalProperties: false
-      required: [id, plan_id, plan_code, plan_name, plan_version_id, plan_version_no, status, is_trial, starts_at, ends_at, cycle_anchor_day, entitlement_summary, version]
+      required: [id, plan_id, plan_code, plan_name, plan_version_id, plan_version_no, status, source_type, is_trial, starts_at, ends_at, cycle_anchor_day, entitlement_summary, version]
       properties:
         id: {type: string, format: uuid}
         plan_id: {type: string, format: uuid}
@@ -3031,6 +3114,7 @@ components:
         plan_version_id: {type: string, format: uuid}
         plan_version_no: {type: integer, minimum: 1}
         status: {$ref: '#/components/schemas/SubscriptionStatus'}
+        source_type: {type: string, enum: [application, trial_grant, plan_change]}
         is_trial: {type: boolean}
         starts_at: {type: string, format: date-time}
         ends_at: {type: string, format: date-time}
@@ -3045,6 +3129,7 @@ components:
             user_id: {type: string, format: uuid}
             user_nickname: {type: string}
             source_application_id: {type: [string, 'null'], format: uuid}
+            source_change_id: {type: [string, 'null'], format: uuid}
             activated_at: {type: string, format: date-time}
             expired_at: {type: [string, 'null'], format: date-time}
             terminated_at: {type: [string, 'null'], format: date-time}
@@ -3093,18 +3178,120 @@ components:
       allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, properties: {data: {$ref: '#/components/schemas/AdminSubscription'}}}]
     AdminSubscriptionPageEnvelope:
       allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, properties: {data: {type: object, properties: {results: {type: array, items: {$ref: '#/components/schemas/AdminSubscription'}}, pagination: {$ref: '#/components/schemas/Pagination'}}}}}]
+    SubscriptionChangeStatus:
+      type: string
+      enum: [scheduled, executed, cancelled]
+    SubscriptionChangeType:
+      type: string
+      enum: [renewal, upgrade, downgrade, replacement, trial_conversion]
+    SubscriptionChangeQuotaPolicy:
+      type: string
+      enum: [overwrite, accumulate, retain]
+    SubscriptionChangePreviewRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version, target_plan_version_id, change_type, quota_policy]
+      properties:
+        expected_version: {type: integer, minimum: 1}
+        target_plan_version_id: {type: string, format: uuid}
+        change_type: {$ref: '#/components/schemas/SubscriptionChangeType'}
+        quota_policy: {$ref: '#/components/schemas/SubscriptionChangeQuotaPolicy'}
+    SubscriptionChangeRequest:
+      allOf:
+        - $ref: '#/components/schemas/SubscriptionChangePreviewRequest'
+        - type: object
+          additionalProperties: false
+          required: [reason]
+          properties:
+            confirm_unavailable: {type: boolean, default: false}
+            unavailable_reason: {type: string, maxLength: 500}
+            reason: {type: string, minLength: 1, maxLength: 500}
+    CancelSubscriptionChangeRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version, reason]
+      properties:
+        expected_version: {type: integer, minimum: 1}
+        reason: {type: string, minLength: 1, maxLength: 500}
+    SubscriptionChangePreview:
+      type: object
+      additionalProperties: false
+      required: [change_type, target_plan_id, target_plan_version_id, source_plan_version_no, target_plan_version_no, quota_policy, effective_at, cycle_anchor_day, unavailable_confirmation_required, changed_limit_keys, added_model_keys, removed_model_keys]
+      properties:
+        change_type: {$ref: '#/components/schemas/SubscriptionChangeType'}
+        target_plan_id: {type: string, format: uuid}
+        target_plan_version_id: {type: string, format: uuid}
+        source_plan_version_no: {type: integer, minimum: 1}
+        target_plan_version_no: {type: integer, minimum: 1}
+        quota_policy: {$ref: '#/components/schemas/SubscriptionChangeQuotaPolicy'}
+        effective_at: {type: string, format: date-time}
+        ends_at: {type: [string, 'null'], format: date-time}
+        cycle_anchor_day: {type: integer, minimum: 1, maximum: 31}
+        unavailable_confirmation_required: {type: boolean}
+        changed_limit_keys: {type: array, items: {type: string}}
+        added_model_keys: {type: array, items: {$ref: '#/components/schemas/PlanModelKey'}}
+        removed_model_keys: {type: array, items: {$ref: '#/components/schemas/PlanModelKey'}}
+    UserSubscriptionChange:
+      type: object
+      additionalProperties: false
+      required: [id, from_subscription_id, target_plan_id, target_plan_name, target_plan_version_no, status, change_type, quota_policy, effective_at, version, created_at]
+      properties:
+        id: {type: string, format: uuid}
+        from_subscription_id: {type: string, format: uuid}
+        target_plan_id: {type: string, format: uuid}
+        target_plan_name: {type: string}
+        target_plan_version_no: {type: integer, minimum: 1}
+        status: {$ref: '#/components/schemas/SubscriptionChangeStatus'}
+        change_type: {$ref: '#/components/schemas/SubscriptionChangeType'}
+        quota_policy: {$ref: '#/components/schemas/SubscriptionChangeQuotaPolicy'}
+        effective_at: {type: string, format: date-time}
+        executed_at: {type: [string, 'null'], format: date-time}
+        cancelled_at: {type: [string, 'null'], format: date-time}
+        version: {type: integer, minimum: 1}
+        created_at: {type: string, format: date-time}
+    AdminSubscriptionChange:
+      allOf:
+        - $ref: '#/components/schemas/UserSubscriptionChange'
+        - type: object
+          properties:
+            user_id: {type: string, format: uuid}
+            user_nickname: {type: string}
+            target_plan_version_id: {type: string, format: uuid}
+            reason: {type: string, maxLength: 500}
+            unavailable_reason: {type: string, maxLength: 500}
+            requested_by_id: {type: string, format: uuid}
+            cancellation_reason: {type: string, maxLength: 500}
+            events: {type: array, items: {$ref: '#/components/schemas/SubscriptionChangeEvent'}}
+            updated_at: {type: string, format: date-time}
+    SubscriptionChangeEvent:
+      type: object
+      additionalProperties: false
+      properties:
+        id: {type: string, format: uuid}
+        event_type: {$ref: '#/components/schemas/SubscriptionChangeStatus'}
+        from_status: {type: string}
+        to_status: {$ref: '#/components/schemas/SubscriptionChangeStatus'}
+        safe_summary: {type: string}
+        created_at: {type: string, format: date-time}
+    SubscriptionChangePreviewEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, properties: {data: {$ref: '#/components/schemas/SubscriptionChangePreview'}}}]
+    UserSubscriptionChangeListEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, properties: {data: {type: object, properties: {results: {type: array, items: {$ref: '#/components/schemas/UserSubscriptionChange'}}}}}}]
+    AdminSubscriptionChangeEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, properties: {data: {$ref: '#/components/schemas/AdminSubscriptionChange'}}}]
+    AdminSubscriptionChangePageEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, properties: {data: {type: object, properties: {results: {type: array, items: {$ref: '#/components/schemas/AdminSubscriptionChange'}}, pagination: {$ref: '#/components/schemas/Pagination'}}}}}]
     QuotaType:
       type: string
       enum: [detection_points, article_credits, image_credits, storage_bytes, assistant_messages]
     QuotaLedgerAction:
       type: string
-      enum: [initialize, freeze, consume, release, grant, compensate, manual_deduct]
+      enum: [initialize, freeze, consume, release, grant, compensate, manual_deduct, plan_change_forfeit, plan_change_transfer_out, plan_change_transfer_in]
     UserQuotaAccount:
       type: object
       additionalProperties: false
-      required: [id, quota_type, display_name, unit, scope, entitlement_amount, available, frozen, version]
+      required: [quota_type, display_name, unit, scope, entitlement_amount, available, frozen]
       properties:
-        id: {type: string, format: uuid}
         quota_type: {$ref: '#/components/schemas/QuotaType'}
         display_name: {type: string}
         unit: {type: string}
@@ -3112,18 +3299,13 @@ components:
         entitlement_amount: {type: integer, minimum: 0}
         available: {type: integer, minimum: 0}
         frozen: {type: integer, minimum: 0}
-        cycle_started_at: {type: [string, 'null'], format: date-time}
-        cycle_ends_at: {type: [string, 'null'], format: date-time}
-        version: {type: integer, minimum: 1}
     UserQuotaLedgerEntry:
       type: object
       additionalProperties: false
-      required: [id, account_id, quota_type, sequence, action, available_delta, available_after, frozen_delta, frozen_after, created_at]
+      required: [id, quota_type, action, available_delta, available_after, frozen_delta, frozen_after, created_at]
       properties:
         id: {type: string, format: uuid}
-        account_id: {type: string, format: uuid}
         quota_type: {$ref: '#/components/schemas/QuotaType'}
-        sequence: {type: integer, minimum: 1}
         action: {$ref: '#/components/schemas/QuotaLedgerAction'}
         available_delta: {type: integer}
         available_after: {type: integer, minimum: 0}

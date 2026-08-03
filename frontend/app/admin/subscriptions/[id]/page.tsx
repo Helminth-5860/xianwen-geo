@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { useAdminCapabilities } from "@/components/admin/admin-capability";
+import { SubscriptionChangeAction } from "@/components/admin/subscription-change-action";
 import { userMessage } from "@/lib/auth-client";
 import { getAdminSubscription, terminateSubscription, type Subscription } from "@/lib/plans-client";
 import type { ApprovalCreated } from "@/lib/risk-client";
@@ -65,6 +66,7 @@ export default function AdminSubscriptionDetailPage() {
           ) : (
             <Alert type="info" showIcon message="当前账号没有终止订阅权限" />
           ))}
+        <SubscriptionChangeAction subscription={item} onApproval={setApproval} onError={setError} />
       </Card>
       <Modal
         title="终止订阅（需要双人审批）"

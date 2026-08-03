@@ -4,7 +4,7 @@ CONFIRM = "confirm"
 PASSWORD = "password"
 TWO_PERSON = "two_person"
 MODE_STRENGTH = {CONFIRM: 1, PASSWORD: 2, TWO_PERSON: 3}
-CATALOG_VERSION = 5
+CATALOG_VERSION = 6
 
 
 @dataclass(frozen=True)
@@ -289,6 +289,26 @@ RISK_ACTION_CATALOG = (
         TWO_PERSON,
         TWO_PERSON,
         "subscription.terminate",
+    ),
+    RiskActionDefinition(
+        "subscription.change",
+        "变更订阅套餐",
+        "subscriptions",
+        "subscription",
+        (TWO_PERSON,),
+        TWO_PERSON,
+        TWO_PERSON,
+        "subscription.change",
+    ),
+    RiskActionDefinition(
+        "subscription.change.cancel",
+        "取消订阅续费排期",
+        "subscriptions",
+        "subscription_change",
+        (TWO_PERSON,),
+        TWO_PERSON,
+        TWO_PERSON,
+        "subscription.change.cancel",
     ),
     RiskActionDefinition(
         "quota.grant",

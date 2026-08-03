@@ -1,3 +1,4 @@
+from dataclasses import asdict
 from math import ceil
 
 from django.db.models import Q
@@ -20,17 +21,35 @@ from apps.core.error_codes import ErrorCode
 from apps.core.responses import error_response
 
 from .application_services import scoped_application_or_404
-from .models import Subscription
+from .change_idempotency import (
+    PlanChangeIdempotencyRequired,
+    derive_plan_change_digests,
+)
+from .change_services import (
+    preview_subscription_change,
+    scoped_subscription_change_or_404,
+    scoped_subscription_changes,
+    user_subscription_changes,
+)
+from .models import Plan, PlanVersion, Subscription, SubscriptionChange
 from .subscription_serializers import (
+    AdminSubscriptionChangeSerializer,
     AdminSubscriptionDetailSerializer,
     AdminSubscriptionListSerializer,
+    CancelSubscriptionChangeRequestSerializer,
     CurrentSubscriptionSerializer,
     GrantTrialRequestSerializer,
     OpenSubscriptionRequestSerializer,
+    SubscriptionChangePreviewRequestSerializer,
+    SubscriptionChangeRequestSerializer,
     TerminateSubscriptionRequestSerializer,
+    UserSubscriptionChangeSerializer,
 )
 from .subscription_services import (
     SubscriptionError,
+    SubscriptionPlanUnavailable,
+    SubscriptionPlanVersionMismatch,
+    SubscriptionVersionConflict,
     current_subscription,
     scoped_subscription_or_404,
     scoped_subscriptions,
@@ -47,6 +66,13 @@ SUBSCRIPTION_ERROR_STATUS = {
     "SUBSCRIPTION_CONFIRMATION_REQUIRED": 422,
     "SUBSCRIPTION_OVERRIDE_FORBIDDEN": 403,
     "SUBSCRIPTION_NOTE_INVALID": 422,
+    "SUBSCRIPTION_CHANGE_CLASSIFICATION_INVALID": 422,
+    "SUBSCRIPTION_CHANGE_POLICY_INVALID": 422,
+    "SUBSCRIPTION_CHANGE_ACTIVE_HOLDS": 409,
+    "SUBSCRIPTION_CHANGE_ALREADY_EXISTS": 409,
+    "SUBSCRIPTION_CHANGE_IDEMPOTENCY_CONFLICT": 409,
+    "SUBSCRIPTION_CHANGE_STATE_CONFLICT": 409,
+    "SUBSCRIPTION_CHANGE_CONFIRMATION_REQUIRED": 422,
 }
 
 
@@ -221,3 +247,185 @@ class AdminTerminateSubscriptionView(APIView):
             target_version=expected_version,
             raw_payload=payload,
         )
+
+
+def _change_request_payload(data):
+    return {
+        "target_plan_version_id": str(data["target_plan_version_id"]),
+        "change_type": data["change_type"],
+        "quota_policy": data["quota_policy"],
+        "confirm_unavailable": data.get("confirm_unavailable", False),
+        "unavailable_reason": data.get("unavailable_reason", ""),
+        "reason": data["reason"],
+    }
+
+
+def _derived_change_payload(request, *, operation, target_id, payload):
+    try:
+        digests = derive_plan_change_digests(
+            request.headers.get("Idempotency-Key", ""),
+            operation=operation,
+            requester_id=request.user.pk,
+            target_id=target_id,
+            request_payload=payload,
+        )
+    except PlanChangeIdempotencyRequired:
+        return None, error_response(
+            ErrorCode.PLAN_CHANGE_IDEMPOTENCY_REQUIRED,
+            status_code=422,
+            request=request,
+        )
+    return {
+        **payload,
+        "idempotency_key_version": digests.key_version,
+        "idempotency_key_digest": digests.key_digest,
+        "idempotency_scope_digest": digests.scope_digest,
+        "request_digest": digests.request_digest,
+    }, None
+
+
+class AdminSubscriptionChangePreviewView(APIView):
+    permission_classes = [HasAdminPermission]
+    required_permission = "subscriptions.change"
+
+    @method_decorator(csrf_protect)
+    def post(self, request, subscription_id):
+        serializer = SubscriptionChangePreviewRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        source = scoped_subscription_or_404(request.user, request.admin_context, subscription_id)
+        if source.version != serializer.validated_data["expected_version"]:
+            return subscription_error_response(SubscriptionVersionConflict(), request)
+        try:
+            target = PlanVersion.objects.select_related("plan").get(
+                pk=serializer.validated_data["target_plan_version_id"]
+            )
+        except PlanVersion.DoesNotExist:
+            return subscription_error_response(SubscriptionPlanVersionMismatch(), request)
+        if target.plan.status == Plan.Status.ARCHIVED:
+            return subscription_error_response(SubscriptionPlanUnavailable(), request)
+        if target.plan.status not in (Plan.Status.PUBLISHED, Plan.Status.OFFLINE):
+            return subscription_error_response(SubscriptionPlanUnavailable(), request)
+        if target.status not in (PlanVersion.Status.PUBLISHED, PlanVersion.Status.RETIRED):
+            return subscription_error_response(SubscriptionPlanVersionMismatch(), request)
+        try:
+            preview = preview_subscription_change(
+                source=source,
+                target_version=target,
+                requested_type=serializer.validated_data["change_type"],
+                quota_policy=serializer.validated_data["quota_policy"],
+            )
+        except SubscriptionError as exc:
+            return subscription_error_response(exc, request)
+        return Response(asdict(preview))
+
+
+class AdminSubscriptionChangeCreateView(APIView):
+    permission_classes = [HasAdminPermission]
+    required_permission = "subscriptions.change"
+
+    @method_decorator(csrf_protect)
+    def post(self, request, subscription_id):
+        serializer = SubscriptionChangeRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = dict(serializer.validated_data)
+        expected_version = data.pop("expected_version")
+        source = scoped_subscription_or_404(
+            request.user,
+            request.admin_context,
+            subscription_id,
+        )
+        if source.version != expected_version:
+            return subscription_error_response(SubscriptionVersionConflict(), request)
+        try:
+            target = PlanVersion.objects.select_related("plan").get(
+                pk=data["target_plan_version_id"]
+            )
+        except PlanVersion.DoesNotExist:
+            return subscription_error_response(SubscriptionPlanVersionMismatch(), request)
+        if target.plan.status == Plan.Status.ARCHIVED:
+            return subscription_error_response(SubscriptionPlanUnavailable(), request)
+        if target.plan.status not in (Plan.Status.PUBLISHED, Plan.Status.OFFLINE):
+            return subscription_error_response(SubscriptionPlanUnavailable(), request)
+        if target.status not in (PlanVersion.Status.PUBLISHED, PlanVersion.Status.RETIRED):
+            return subscription_error_response(SubscriptionPlanVersionMismatch(), request)
+        try:
+            preview_subscription_change(
+                source=source,
+                target_version=target,
+                requested_type=data["change_type"],
+                quota_policy=data["quota_policy"],
+            )
+        except SubscriptionError as exc:
+            return subscription_error_response(exc, request)
+        payload = _change_request_payload(data)
+        risk_payload, error = _derived_change_payload(
+            request,
+            operation="subscription.change",
+            target_id=subscription_id,
+            payload=payload,
+        )
+        if error is not None:
+            return error
+        return _perform(
+            request,
+            action_key="subscription.change",
+            target_id=subscription_id,
+            target_version=expected_version,
+            raw_payload=risk_payload,
+        )
+
+
+class AdminSubscriptionChangeListView(APIView):
+    permission_classes = [HasAdminPermission]
+    required_permission = "subscriptions.view"
+
+    def get(self, request):
+        queryset = scoped_subscription_changes(request.user, request.admin_context)
+        status_value = request.query_params.get("status")
+        if status_value:
+            if status_value not in SubscriptionChange.Status.values:
+                raise ValidationError({"status": ["套餐变更状态不正确。"]})
+            queryset = queryset.filter(status=status_value)
+        return Response(_page(queryset, AdminSubscriptionChangeSerializer, request))
+
+
+class AdminSubscriptionChangeDetailView(APIView):
+    permission_classes = [HasAdminPermission]
+    required_permission = "subscriptions.view"
+
+    def get(self, request, change_id):
+        change = scoped_subscription_change_or_404(request.user, request.admin_context, change_id)
+        return Response(AdminSubscriptionChangeSerializer(change).data)
+
+
+class AdminSubscriptionChangeCancelView(APIView):
+    permission_classes = [HasAdminPermission]
+    required_permission = "subscriptions.change"
+
+    @method_decorator(csrf_protect)
+    def post(self, request, change_id):
+        serializer = CancelSubscriptionChangeRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        expected_version = serializer.validated_data["expected_version"]
+        payload = {"reason": serializer.validated_data["reason"]}
+        risk_payload, error = _derived_change_payload(
+            request,
+            operation="subscription.change.cancel",
+            target_id=change_id,
+            payload=payload,
+        )
+        if error is not None:
+            return error
+        return _perform(
+            request,
+            action_key="subscription.change.cancel",
+            target_id=change_id,
+            target_version=expected_version,
+            raw_payload=risk_payload,
+        )
+
+
+class UserSubscriptionChangeListView(APIView):
+    def get(self, request):
+        queryset = user_subscription_changes(request.user)
+        return Response({"results": UserSubscriptionChangeSerializer(queryset, many=True).data})

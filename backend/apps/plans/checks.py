@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.core.checks import CheckMessage, Error, Warning, register
 from django.db import OperationalError, ProgrammingError
 
@@ -7,6 +8,8 @@ from .catalog import LIMIT_BY_KEY, LIMIT_CATALOG
 @register()
 def plan_catalog_checks(app_configs, **kwargs):
     errors: list[CheckMessage] = []
+    if len(getattr(settings, "PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY", "")) < 32:
+        errors.append(Error("套餐变更幂等 HMAC Key 长度不足。", id="plans.E007"))
     if len(LIMIT_BY_KEY) != len(LIMIT_CATALOG):
         errors.append(Error("套餐限制键目录存在重复 key。", id="plans.E001"))
     try:

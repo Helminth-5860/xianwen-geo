@@ -1,9 +1,11 @@
+from typing import cast
+
 from rest_framework import serializers
 
 from apps.admin_rbac.risk_serializers import StrictPayloadSerializer
 from apps.admin_rbac.serializers import StrictSerializer
 
-from .models import Subscription, SubscriptionEvent
+from .models import Subscription, SubscriptionChange, SubscriptionChangeEvent, SubscriptionEvent
 
 
 class OpenSubscriptionPayloadSerializer(StrictPayloadSerializer):
@@ -68,17 +70,24 @@ class SubscriptionEventSerializer(serializers.ModelSerializer):
 
 
 def entitlement_summary(snapshot):
-    limits = snapshot.get("limits", [])
+    limits = snapshot.get("limits", {})
     models = snapshot.get("model_permissions", [])
+    limit_keys = (
+        sorted(limits)
+        if isinstance(limits, dict)
+        else sorted(
+            cast(str, item.get("key"))
+            for item in limits
+            if isinstance(item, dict) and item.get("key")
+        )
+    )
     return {
         "valid_days": snapshot.get("valid_days"),
-        "limit_keys": sorted(
-            item.get("key") for item in limits if isinstance(item, dict) and item.get("key")
-        ),
+        "limit_keys": limit_keys,
         "enabled_model_keys": sorted(
             item.get("model_key")
             for item in models
-            if isinstance(item, dict) and item.get("enabled") and item.get("model_key")
+            if isinstance(item, dict) and item.get("model_key")
         ),
     }
 
@@ -98,6 +107,7 @@ class CurrentSubscriptionSerializer(serializers.ModelSerializer):
             "plan_version_id",
             "plan_version_no",
             "status",
+            "source_type",
             "is_trial",
             "starts_at",
             "ends_at",
@@ -125,6 +135,7 @@ class AdminSubscriptionListSerializer(CurrentSubscriptionSerializer):
             "plan_version_id",
             "plan_version_no",
             "status",
+            "source_type",
             "is_trial",
             "starts_at",
             "ends_at",
@@ -139,6 +150,7 @@ class AdminSubscriptionDetailSerializer(AdminSubscriptionListSerializer):
         fields = (  # type: ignore[assignment]
             *AdminSubscriptionListSerializer.Meta.fields,
             "source_application_id",
+            "source_change_id",
             "cycle_anchor_day",
             "activated_at",
             "expired_at",
@@ -147,5 +159,97 @@ class AdminSubscriptionDetailSerializer(AdminSubscriptionListSerializer):
             "entitlement_summary",
             "events",
             "created_at",
+            "updated_at",
+        )
+
+
+class SubscriptionChangePreviewRequestSerializer(StrictSerializer):
+    expected_version = serializers.IntegerField(min_value=1)
+    target_plan_version_id = serializers.UUIDField()
+    change_type = serializers.ChoiceField(choices=SubscriptionChange.ChangeType.values)
+    quota_policy = serializers.ChoiceField(choices=SubscriptionChange.QuotaPolicy.values)
+
+
+class SubscriptionChangeRequestSerializer(SubscriptionChangePreviewRequestSerializer):
+    confirm_unavailable = serializers.BooleanField(required=False, default=False)
+    unavailable_reason = serializers.CharField(
+        required=False, allow_blank=True, default="", max_length=500, trim_whitespace=False
+    )
+    reason = serializers.CharField(max_length=500, trim_whitespace=False)
+
+
+class SubscriptionChangePayloadSerializer(StrictPayloadSerializer):
+    target_plan_version_id = serializers.UUIDField()
+    change_type = serializers.ChoiceField(choices=SubscriptionChange.ChangeType.values)
+    quota_policy = serializers.ChoiceField(choices=SubscriptionChange.QuotaPolicy.values)
+    confirm_unavailable = serializers.BooleanField(required=False, default=False)
+    unavailable_reason = serializers.CharField(
+        required=False, allow_blank=True, default="", max_length=500, trim_whitespace=False
+    )
+    reason = serializers.CharField(max_length=500, trim_whitespace=False)
+    idempotency_key_version = serializers.IntegerField(min_value=1)
+    idempotency_key_digest = serializers.RegexField(r"^[0-9a-f]{64}$")
+    idempotency_scope_digest = serializers.RegexField(r"^[0-9a-f]{64}$")
+    request_digest = serializers.RegexField(r"^[0-9a-f]{64}$")
+
+
+class CancelSubscriptionChangeRequestSerializer(StrictSerializer):
+    expected_version = serializers.IntegerField(min_value=1)
+    reason = serializers.CharField(max_length=500, trim_whitespace=False)
+
+
+class CancelSubscriptionChangePayloadSerializer(StrictPayloadSerializer):
+    reason = serializers.CharField(max_length=500, trim_whitespace=False)
+    idempotency_key_version = serializers.IntegerField(min_value=1)
+    idempotency_key_digest = serializers.RegexField(r"^[0-9a-f]{64}$")
+    idempotency_scope_digest = serializers.RegexField(r"^[0-9a-f]{64}$")
+    request_digest = serializers.RegexField(r"^[0-9a-f]{64}$")
+
+
+class SubscriptionChangeEventSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SubscriptionChangeEvent
+        fields = ("id", "event_type", "from_status", "to_status", "safe_summary", "created_at")
+
+
+class UserSubscriptionChangeSerializer(serializers.ModelSerializer):
+    target_plan_name = serializers.CharField(source="target_plan.name")
+    target_plan_version_no = serializers.IntegerField()
+
+    class Meta:
+        model = SubscriptionChange
+        fields = (
+            "id",
+            "from_subscription_id",
+            "target_plan_id",
+            "target_plan_name",
+            "target_plan_version_no",
+            "status",
+            "change_type",
+            "quota_policy",
+            "effective_at",
+            "executed_at",
+            "cancelled_at",
+            "created_at",
+            "version",
+        )
+
+
+class AdminSubscriptionChangeSerializer(UserSubscriptionChangeSerializer):
+    user_id = serializers.UUIDField()
+    user_nickname = serializers.CharField(source="user.nickname")
+    events = SubscriptionChangeEventSerializer(many=True, read_only=True)
+
+    class Meta(UserSubscriptionChangeSerializer.Meta):
+        fields = (  # type: ignore[assignment]
+            *UserSubscriptionChangeSerializer.Meta.fields,
+            "user_id",
+            "user_nickname",
+            "target_plan_version_id",
+            "reason",
+            "unavailable_reason",
+            "requested_by_id",
+            "cancellation_reason",
+            "events",
             "updated_at",
         )

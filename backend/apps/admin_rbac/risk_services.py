@@ -291,15 +291,18 @@ def _perform_risk_action_transactional(
                     expires_at=expires_at,
                     request_id=request.request_id,
                 )
-        except IntegrityError:
-            approval = ApprovalRequest.objects.get(
+        except IntegrityError as exc:
+            existing_approval = ApprovalRequest.objects.filter(
                 requester=request.user,
                 action=policy.action,
                 target_type=policy.action.target_type,
                 target_id=target_id,
                 payload_digest=digest,
                 status=ApprovalRequest.Status.PENDING,
-            )
+            ).first()
+            if existing_approval is None:
+                raise ApprovalStateConflict from exc
+            approval = existing_approval
         record_audit_event(
             request=request,
             category="approval",

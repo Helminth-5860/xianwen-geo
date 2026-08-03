@@ -4,6 +4,7 @@ import { Alert, Card, Descriptions, Spin, Tag, Typography } from "antd";
 import { useEffect, useState } from "react";
 
 import { userMessage } from "@/lib/auth-client";
+import { SubscriptionChangeHistory } from "@/components/subscription-change-history";
 import { getCurrentSubscription, type Subscription } from "@/lib/plans-client";
 
 export default function CurrentSubscriptionPage() {
@@ -37,6 +38,7 @@ export default function CurrentSubscriptionPage() {
           </Descriptions>
         </Card>
       )}
+      <SubscriptionChangeHistory />
     </main>
   );
 }

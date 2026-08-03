@@ -13,6 +13,7 @@ APP_ENV = "production"
 SECRET_KEY = require_env("DJANGO_SECRET_KEY")
 SMS_VERIFICATION_HMAC_KEY = require_env("SMS_VERIFICATION_HMAC_KEY")
 QUOTA_IDEMPOTENCY_HMAC_KEY = require_env("QUOTA_IDEMPOTENCY_HMAC_KEY")
+PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY = require_env("PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY")
 weak_secret_markers = {
     "changeme",
     "change-me",
@@ -36,6 +37,20 @@ if QUOTA_IDEMPOTENCY_HMAC_KEY in {SECRET_KEY, SMS_VERIFICATION_HMAC_KEY}:
     raise ImproperlyConfigured(
         "QUOTA_IDEMPOTENCY_HMAC_KEY must not reuse another application secret."
     )
+if (
+    len(PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY) < 50
+    or PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY.lower() in weak_secret_markers
+):
+    raise ImproperlyConfigured("PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY is too weak for production.")
+if PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY in {
+    SECRET_KEY,
+    SMS_VERIFICATION_HMAC_KEY,
+    QUOTA_IDEMPOTENCY_HMAC_KEY,
+}:
+    raise ImproperlyConfigured(
+        "PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY must not reuse another application secret."
+    )
+
 for forbidden_variable in ("DATABASE_URL", "REDIS_URL"):
     configured_url = os.getenv(forbidden_variable, "")
     configured_password = urlsplit(configured_url).password if configured_url else None
@@ -43,11 +58,15 @@ for forbidden_variable in ("DATABASE_URL", "REDIS_URL"):
         raise ImproperlyConfigured(
             f"SMS_VERIFICATION_HMAC_KEY must not reuse {forbidden_variable} credentials."
         )
-
     if QUOTA_IDEMPOTENCY_HMAC_KEY in {configured_url, configured_password}:
         raise ImproperlyConfigured(
             f"QUOTA_IDEMPOTENCY_HMAC_KEY must not reuse {forbidden_variable} credentials."
         )
+    if PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY in {configured_url, configured_password}:
+        raise ImproperlyConfigured(
+            f"PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY must not reuse {forbidden_variable} credentials."
+        )
+
 SMS_PROVIDER = os.getenv("SMS_PROVIDER", "unconfigured").strip().lower()
 if SMS_PROVIDER == "mock":
     raise ImproperlyConfigured("Mock SMS provider is forbidden in production.")

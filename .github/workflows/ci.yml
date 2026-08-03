@@ -111,3 +111,5 @@ jobs:
         run: bash scripts/test-subscriptions.sh
       - name: Run PostgreSQL/Redis quota ledger tests
         run: bash scripts/test-quotas.sh
+      - name: Run PostgreSQL/Redis plan change tests
+        run: bash scripts/test-plan-changes.sh
