@@ -107,6 +107,8 @@ def classify_change(source: Subscription, target_version: PlanVersion, requested
     source_values, source_models = _benefit_values(source.entitlement_snapshot)
     target_values, target_models = _benefit_values(target_version.effective_config)
     if source.is_trial:
+        if requested_type != SubscriptionChange.ChangeType.TRIAL_CONVERSION:
+            raise SubscriptionChangeClassificationInvalid
         return SubscriptionChange.ChangeType.TRIAL_CONVERSION
     if requested_type == SubscriptionChange.ChangeType.RENEWAL:
         if target_version.plan_id != source.plan_id:

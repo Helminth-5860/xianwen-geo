@@ -36,7 +36,8 @@ from apps.plans.models import (
     SubscriptionChangeEvent,
 )
 from apps.plans.services import create_plan_version, publish_plan_version
-from apps.plans.subscription_services import activate_application
+from apps.plans.subscription_services import activate_application, grant_trial
+from apps.quotas import services as quota_services
 from apps.quotas.idempotency import derive_idempotency_digests
 from apps.quotas.models import (
     QuotaAccount,
@@ -986,3 +987,384 @@ def test_postgresql_hold_group_allocations_settle_and_raw_mismatch_cannot_commit
             freeze_idempotency_scope_digest=uuid.uuid4().hex * 2,
             freeze_request_digest=uuid.uuid4().hex * 2,
         )
+
+
+def test_postgresql_submission_recomputes_and_rejects_untrusted_preview_fields():
+    requester, approver, user = admin(), admin("13700137993"), customer()
+    del approver
+    source, _, _ = activate_formal(requester, user, code="pg-submit-recompute-source")
+    _, target_version = published_plan(requester, code="pg-submit-recompute-target")
+    client = authenticate_admin_client(APIClient(), requester)
+    url = f"/api/v1/admin/subscriptions/{source.pk}/change"
+    base = {
+        "expected_version": source.version,
+        "target_plan_version_id": str(target_version.pk),
+        "change_type": "upgrade",
+        "quota_policy": "overwrite",
+        "reason": "server must recompute classification",
+    }
+    before = {
+        "approvals": ApprovalRequest.objects.count(),
+        "changes": SubscriptionChange.objects.count(),
+        "subscriptions": Subscription.objects.filter(user=user).count(),
+        "accounts": QuotaAccount.objects.filter(user=user).count(),
+        "ledger": QuotaLedgerEntry.objects.filter(user=user).count(),
+        "transfers": QuotaTransfer.objects.count(),
+        "notifications": Notification.objects.filter(recipient=user).count(),
+    }
+    response = client.post(
+        url,
+        base,
+        format="json",
+        HTTP_IDEMPOTENCY_KEY="pg-submit-recompute-key-01",
+    )
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "SUBSCRIPTION_CHANGE_CLASSIFICATION_INVALID"
+
+    for index, untrusted in enumerate(
+        (
+            {"classification": "upgrade"},
+            {"before_snapshot": {"limits": {"detection_points": 999999}}},
+            {"effective_at": timezone.now().isoformat()},
+            {"quota_migration_result": {"available": 999999}},
+        ),
+        start=2,
+    ):
+        response = client.post(
+            url,
+            {
+                **base,
+                "change_type": "replacement",
+                **untrusted,
+            },
+            format="json",
+            HTTP_IDEMPOTENCY_KEY=f"pg-submit-recompute-key-{index:02d}",
+        )
+        assert response.status_code == 422
+        assert response.json()["error"]["code"] == "VALIDATION_ERROR"
+
+    assert ApprovalRequest.objects.count() == before["approvals"]
+    assert SubscriptionChange.objects.count() == before["changes"]
+    assert Subscription.objects.filter(user=user).count() == before["subscriptions"]
+    assert QuotaAccount.objects.filter(user=user).count() == before["accounts"]
+    assert QuotaLedgerEntry.objects.filter(user=user).count() == before["ledger"]
+    assert QuotaTransfer.objects.count() == before["transfers"]
+    assert Notification.objects.filter(recipient=user).count() == before["notifications"]
+
+
+def test_postgresql_trial_conversion_boundaries_are_server_enforced():
+    requester, approver = admin(), admin("13700137994")
+    del approver
+    client = authenticate_admin_client(APIClient(), requester)
+    trial_plan, trial_version = published_plan(requester, code="pg-trial-target", trial=True)
+    paid_user = customer()
+    paid_source, _, _ = activate_formal(requester, paid_user, code="pg-paid-source")
+    paid_response = client.post(
+        f"/api/v1/admin/subscriptions/{paid_source.pk}/change",
+        {
+            "expected_version": paid_source.version,
+            "target_plan_version_id": str(trial_version.pk),
+            "change_type": "trial_conversion",
+            "quota_policy": "overwrite",
+            "reason": "paid subscriptions cannot convert to trial",
+        },
+        format="json",
+        HTTP_IDEMPOTENCY_KEY="test-test-test-test-0001",
+    )
+    assert paid_response.status_code == 409
+    assert paid_response.json()["error"]["code"] == "SUBSCRIPTION_PLAN_UNAVAILABLE"
+
+    trial_user = customer("13800138201")
+    trial_source = grant_trial(
+        requester=requester,
+        admin_context=resolve_admin_context(requester),
+        user_id=trial_user.pk,
+        expected_status_version=trial_user.status_version,
+        plan_id=trial_plan.pk,
+        opening_note="trial boundary",
+        request_id=uuid.uuid4(),
+    )
+    trial_response = client.post(
+        f"/api/v1/admin/subscriptions/{trial_source.pk}/change",
+        {
+            "expected_version": trial_source.version,
+            "target_plan_version_id": str(trial_version.pk),
+            "change_type": "trial_conversion",
+            "quota_policy": "overwrite",
+            "reason": "trial cannot convert to trial",
+        },
+        format="json",
+        HTTP_IDEMPOTENCY_KEY="test-test-test-test-0002",
+    )
+    assert trial_response.status_code == 409
+    assert trial_response.json()["error"]["code"] == "SUBSCRIPTION_PLAN_UNAVAILABLE"
+
+    formal_plan, formal_version = published_plan(requester, code="pg-trial-formal-target")
+    del formal_plan
+    wrong_type = client.post(
+        f"/api/v1/admin/subscriptions/{trial_source.pk}/change",
+        {
+            "expected_version": trial_source.version,
+            "target_plan_version_id": str(formal_version.pk),
+            "change_type": "replacement",
+            "quota_policy": "overwrite",
+            "reason": "client cannot choose a non-conversion classification",
+        },
+        format="json",
+        HTTP_IDEMPOTENCY_KEY="pg-trial-wrong-type-key-01",
+    )
+    assert wrong_type.status_code == 422
+    assert wrong_type.json()["error"]["code"] == "SUBSCRIPTION_CHANGE_CLASSIFICATION_INVALID"
+
+    valid = client.post(
+        f"/api/v1/admin/subscriptions/{trial_source.pk}/change",
+        {
+            "expected_version": trial_source.version,
+            "target_plan_version_id": str(formal_version.pk),
+            "change_type": "trial_conversion",
+            "quota_policy": "overwrite",
+            "reason": "valid trial conversion",
+        },
+        format="json",
+        HTTP_IDEMPOTENCY_KEY="test-test-test-test-0003",
+    )
+    assert valid.status_code == 202
+    approval = ApprovalRequest.objects.get(pk=valid.json()["data"]["approval_id"])
+    assert approval.sanitized_payload["change_type"] == "trial_conversion"
+    assert not SubscriptionChange.objects.filter(from_subscription=trial_source).exists()
+
+
+def test_postgresql_http_change_and_cancel_idempotency_matrix():
+    requester, approver, user = admin(), admin("13700137995"), customer()
+    del approver
+    client = authenticate_admin_client(APIClient(), requester)
+    source, plan, version = activate_formal(requester, user, code="pg-http-change-idem")
+    change_url = f"/api/v1/admin/subscriptions/{source.pk}/change"
+    change_body = {
+        "expected_version": source.version,
+        "target_plan_version_id": str(version.pk),
+        "change_type": "renewal",
+        "quota_policy": "overwrite",
+        "reason": "canonical renewal",
+    }
+    missing = client.post(change_url, change_body, format="json")
+    assert missing.status_code == 422
+    assert missing.json()["error"]["code"] == "PLAN_CHANGE_IDEMPOTENCY_REQUIRED"
+
+    raw_change_key = "pg-http-shared-idempotency-key-01"
+    first = client.post(
+        change_url,
+        change_body,
+        format="json",
+        HTTP_IDEMPOTENCY_KEY=raw_change_key,
+    )
+    replay = client.post(
+        change_url,
+        change_body,
+        format="json",
+        HTTP_IDEMPOTENCY_KEY=raw_change_key,
+    )
+    assert first.status_code == replay.status_code == 202
+    assert first.json()["data"]["approval_id"] == replay.json()["data"]["approval_id"]
+    change_approval = ApprovalRequest.objects.get(pk=first.json()["data"]["approval_id"])
+
+    conflicts = (
+        (raw_change_key, {**change_body, "reason": "different payload"}),
+        ("pg-http-change-idem-key-0002", change_body),
+        (
+            "pg-http-change-idem-key-0003",
+            {**change_body, "quota_policy": "retain", "reason": "different canonical change"},
+        ),
+    )
+    for key, body in conflicts:
+        response = client.post(
+            change_url,
+            body,
+            format="json",
+            HTTP_IDEMPOTENCY_KEY=key,
+        )
+        assert response.status_code == 409
+        assert response.json()["error"]["code"] == "APPROVAL_STATE_CONFLICT"
+
+    cancel_user = customer("13800138202")
+    cancel_source, cancel_plan, cancel_version = activate_formal(
+        requester,
+        cancel_user,
+        code="pg-http-cancel-idem",
+    )
+    scheduled = change_operation(
+        requester.pk,
+        cancel_source.pk,
+        cancel_plan.pk,
+        cancel_version.pk,
+        "pg-http-cancel-scheduled-key-01",
+        change_type="renewal",
+    )
+    cancel_url = f"/api/v1/admin/subscription-changes/{scheduled.pk}/cancel"
+    cancel_body = {
+        "expected_version": scheduled.version,
+        "reason": "canonical cancellation",
+    }
+    missing = client.post(cancel_url, cancel_body, format="json")
+    assert missing.status_code == 422
+    assert missing.json()["error"]["code"] == "PLAN_CHANGE_IDEMPOTENCY_REQUIRED"
+
+    raw_cancel_key = raw_change_key
+    first_cancel = client.post(
+        cancel_url,
+        cancel_body,
+        format="json",
+        HTTP_IDEMPOTENCY_KEY=raw_cancel_key,
+    )
+    replay_cancel = client.post(
+        cancel_url,
+        cancel_body,
+        format="json",
+        HTTP_IDEMPOTENCY_KEY=raw_cancel_key,
+    )
+    assert first_cancel.status_code == replay_cancel.status_code == 202
+    assert first_cancel.json()["data"]["approval_id"] == replay_cancel.json()["data"]["approval_id"]
+    cancel_approval = ApprovalRequest.objects.get(pk=first_cancel.json()["data"]["approval_id"])
+
+    cancel_conflicts = (
+        (raw_cancel_key, {**cancel_body, "reason": "different cancellation"}),
+        ("pg-http-cancel-idem-key-0002", cancel_body),
+        (
+            "pg-http-cancel-idem-key-0003",
+            {**cancel_body, "reason": "different cancellation and key"},
+        ),
+    )
+    for key, body in cancel_conflicts:
+        response = client.post(
+            cancel_url,
+            body,
+            format="json",
+            HTTP_IDEMPOTENCY_KEY=key,
+        )
+        assert response.status_code == 409
+        assert response.json()["error"]["code"] == "APPROVAL_STATE_CONFLICT"
+
+    assert (
+        change_approval.sanitized_payload["idempotency_scope_digest"]
+        != cancel_approval.sanitized_payload["idempotency_scope_digest"]
+    )
+    serialized_records = " ".join(
+        (
+            str(list(ApprovalRequest.objects.values("sanitized_payload", "safe_summary"))),
+            str(list(AuditEvent.objects.values("safe_before", "safe_after", "stable_error_code"))),
+            str(list(Notification.objects.values("title", "safe_summary"))),
+            str(first.json()),
+            str(first_cancel.json()),
+        )
+    )
+    for raw_key in (
+        raw_change_key,
+        "pg-http-change-idem-key-0002",
+        "pg-http-change-idem-key-0003",
+        "pg-http-cancel-idem-key-0002",
+        "pg-http-cancel-idem-key-0003",
+    ):
+        assert raw_key not in serialized_records
+
+
+@pytest.mark.parametrize(
+    "corruption",
+    ["reversed_accounts", "quota_type_mismatch", "wrong_change"],
+)
+def test_postgresql_transfer_is_bound_to_change_accounts_direction_and_quota_type(corruption):
+    actor, user = admin(), customer()
+    source, _, _ = activate_formal(actor, user, code=f"pg-binding-{corruption}-source")
+    source_account = QuotaAccount.objects.get(
+        subscription=source,
+        quota_type="detection_points",
+    )
+    fund(actor, source_account, 3)
+    target_plan, target_version = published_plan(actor, code=f"pg-binding-{corruption}-target")
+    wrong_change = None
+    if corruption == "wrong_change":
+        other_user = customer("13800138203")
+        other_source, _, _ = activate_formal(actor, other_user, code="pg-binding-other-source")
+        other_plan, other_version = published_plan(actor, code="pg-binding-other-target")
+        wrong_change = change_operation(
+            actor.pk,
+            other_source.pk,
+            other_plan.pk,
+            other_version.pk,
+            "pg-binding-other-change-key-01",
+        )
+
+    original_create = QuotaTransfer.objects.create
+
+    def corrupt_transfer(**kwargs):
+        if corruption == "reversed_accounts":
+            kwargs["source_account"], kwargs["target_account"] = (
+                kwargs["target_account"],
+                kwargs["source_account"],
+            )
+        elif corruption == "quota_type_mismatch":
+            kwargs["quota_type"] = "assistant_messages"
+        else:
+            kwargs["change"] = wrong_change
+        return original_create(**kwargs)
+
+    with (
+        patch.object(
+            QuotaTransfer.objects,
+            "create",
+            side_effect=corrupt_transfer,
+        ),
+        pytest.raises(DatabaseError),
+    ):
+        change_operation(
+            actor.pk,
+            source.pk,
+            target_plan.pk,
+            target_version.pk,
+            f"pg-binding-{corruption}-key-01",
+            policy="retain",
+        )
+    assert_change_rolled_back(source, user, source_account, 3)
+
+
+@pytest.mark.parametrize(
+    ("action", "failure_name"),
+    (
+        (QuotaLedgerEntry.Action.PLAN_CHANGE_TRANSFER_OUT, "transfer_out"),
+        (QuotaLedgerEntry.Action.PLAN_CHANGE_TRANSFER_IN, "transfer_in"),
+    ),
+)
+def test_postgresql_transfer_ledger_side_failure_rolls_back_entire_change(
+    action,
+    failure_name,
+):
+    actor, user = admin(), customer()
+    source, _, _ = activate_formal(actor, user, code=f"pg-ledger-{failure_name}-source")
+    source_account = QuotaAccount.objects.get(
+        subscription=source,
+        quota_type="detection_points",
+    )
+    fund(actor, source_account, 3)
+    target_plan, target_version = published_plan(actor, code=f"pg-ledger-{failure_name}-target")
+    original_append = quota_services._append_ledger_locked
+
+    def fail_selected_side(*args, **kwargs):
+        if kwargs.get("action") == action:
+            raise RuntimeError(f"injected {failure_name} ledger failure")
+        return original_append(*args, **kwargs)
+
+    with (
+        patch(
+            "apps.quotas.services._append_ledger_locked",
+            side_effect=fail_selected_side,
+        ),
+        pytest.raises(RuntimeError),
+    ):
+        change_operation(
+            actor.pk,
+            source.pk,
+            target_plan.pk,
+            target_version.pk,
+            f"pg-ledger-{failure_name}-key-01",
+            policy="retain",
+        )
+    assert_change_rolled_back(source, user, source_account, 3)

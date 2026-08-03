@@ -57,13 +57,18 @@ def test_docker_job_runs_reproducible_postgresql_redis_plan_change_suite():
     assert "down --volumes --remove-orphans" in powershell_script
     assert "openssl rand -hex 32" in shell_script
     assert "[guid]::NewGuid()" in powershell_script
-    assert suite.count("def test_postgresql_") == 18
+    assert suite.count("def test_postgresql_") == 23
     for required_test in (
         "test_postgresql_renewal_is_scheduled_without_future_facts_and_cancel_is_safe",
         "test_postgresql_change_and_cancel_idempotency_conflict_matrix",
         "test_postgresql_preview_submit_and_concurrent_two_person_approval_are_exactly_once",
         "test_postgresql_transfer_ledger_pair_is_deferred_complete_and_atomic",
         "test_postgresql_audit_failure_rolls_back_approved_plan_change",
+        "test_postgresql_submission_recomputes_and_rejects_untrusted_preview_fields",
+        "test_postgresql_trial_conversion_boundaries_are_server_enforced",
+        "test_postgresql_http_change_and_cancel_idempotency_matrix",
+        "test_postgresql_transfer_is_bound_to_change_accounts_direction_and_quota_type",
+        "test_postgresql_transfer_ledger_side_failure_rolls_back_entire_change",
     ):
         assert f"def {required_test}" in suite
     transfer_guard = (
@@ -77,3 +82,19 @@ def test_docker_job_runs_reproducible_postgresql_redis_plan_change_suite():
     assert "quotas_transfer_ledger_bound" in transfer_guard
     assert "QUOTA_TRANSFER_OUT_LEDGER_UNBOUND" in transfer_guard
     assert "QUOTA_TRANSFER_IN_LEDGER_UNBOUND" in transfer_guard
+    change_guard = (
+        REPO_ROOT
+        / "backend"
+        / "apps"
+        / "quotas"
+        / "migrations"
+        / "0007_plan_change_transfer_change_guards.py"
+    ).read_text(encoding="utf-8")
+    for required_guard in (
+        "change_row.from_subscription_id",
+        "subscriptions WHERE source_change_id = NEW.change_id",
+        "out_row.business_id <> NEW.change_id",
+        "in_row.business_id <> NEW.change_id",
+        "change_row.status <> 'executed'",
+    ):
+        assert required_guard in change_guard

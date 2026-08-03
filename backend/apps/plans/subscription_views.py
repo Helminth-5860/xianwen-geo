@@ -329,6 +329,34 @@ class AdminSubscriptionChangeCreateView(APIView):
         serializer.is_valid(raise_exception=True)
         data = dict(serializer.validated_data)
         expected_version = data.pop("expected_version")
+        source = scoped_subscription_or_404(
+            request.user,
+            request.admin_context,
+            subscription_id,
+        )
+        if source.version != expected_version:
+            return subscription_error_response(SubscriptionVersionConflict(), request)
+        try:
+            target = PlanVersion.objects.select_related("plan").get(
+                pk=data["target_plan_version_id"]
+            )
+        except PlanVersion.DoesNotExist:
+            return subscription_error_response(SubscriptionPlanVersionMismatch(), request)
+        if target.plan.status == Plan.Status.ARCHIVED:
+            return subscription_error_response(SubscriptionPlanUnavailable(), request)
+        if target.plan.status not in (Plan.Status.PUBLISHED, Plan.Status.OFFLINE):
+            return subscription_error_response(SubscriptionPlanUnavailable(), request)
+        if target.status not in (PlanVersion.Status.PUBLISHED, PlanVersion.Status.RETIRED):
+            return subscription_error_response(SubscriptionPlanVersionMismatch(), request)
+        try:
+            preview_subscription_change(
+                source=source,
+                target_version=target,
+                requested_type=data["change_type"],
+                quota_policy=data["quota_policy"],
+            )
+        except SubscriptionError as exc:
+            return subscription_error_response(exc, request)
         payload = _change_request_payload(data)
         risk_payload, error = _derived_change_payload(
             request,
