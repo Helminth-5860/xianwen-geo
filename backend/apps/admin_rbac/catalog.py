@@ -97,6 +97,15 @@ PERMISSION_CATALOG = (
     CatalogPermission(
         "quotas.adjust", "\u989d\u5ea6\u4eba\u5de5\u8c03\u6574", "quotas", "action", 880
     ),
+    CatalogPermission("menu.admin.subject-types", "主体类型管理菜单", "subject_types", "menu", 88),
+    CatalogPermission("subject_types.list", "主体类型列表", "subject_types", "action", 890),
+    CatalogPermission("subject_types.view", "主体类型详情", "subject_types", "action", 900),
+    CatalogPermission("subject_types.create", "创建主体类型", "subject_types", "action", 910),
+    CatalogPermission("subject_types.update", "修改主体类型", "subject_types", "action", 920),
+    CatalogPermission("subject_types.disable", "启停主体类型", "subject_types", "action", 930),
+    CatalogPermission("subject_fields.list", "主体字段列表", "subject_types", "action", 940),
+    CatalogPermission("subject_fields.create", "创建主体字段", "subject_types", "action", 950),
+    CatalogPermission("subject_fields.update", "修改主体字段", "subject_types", "action", 960),
 )
 
 CATALOG_BY_KEY = {item.key: item for item in PERMISSION_CATALOG}

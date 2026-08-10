@@ -1,0 +1,106 @@
+from pathlib import Path
+
+import yaml
+
+SPEC_PATH = Path(__file__).resolve().parents[2] / "openapi" / "openapi-v1.yaml"
+
+
+def load_spec():
+    return yaml.safe_load(SPEC_PATH.read_text(encoding="utf-8"))
+
+
+def test_subject_catalog_paths_are_complete_without_upload_or_delete_routes():
+    paths = load_spec()["paths"]
+    expected_methods = {
+        "/subject-types": {"get"},
+        "/subject-types/{subjectTypeId}/form-schema": {"get"},
+        "/admin/subject-types": {"get", "post"},
+        "/admin/subject-types/{subjectTypeId}": {"get", "patch"},
+        "/admin/subject-types/{subjectTypeId}/enable": {"post"},
+        "/admin/subject-types/{subjectTypeId}/disable": {"post"},
+        "/admin/subject-types/{subjectTypeId}/fields": {"get", "post"},
+        "/admin/subject-types/{subjectTypeId}/field-order": {"put"},
+        "/admin/subject-type-fields/{configId}": {"patch"},
+        "/admin/subject-type-fields/{configId}/options": {"post"},
+        "/admin/subject-field-options/{optionId}": {"patch"},
+    }
+    for path, methods in expected_methods.items():
+        assert path in paths
+        assert methods <= paths[path].keys()
+        assert "delete" not in paths[path]
+    assert not any("upload" in path or "presign" in path for path in paths)
+
+
+def test_subject_schema_writes_require_csrf_and_expected_versions():
+    spec = load_spec()
+    paths = spec["paths"]
+    writes = (
+        ("/admin/subject-types", "post"),
+        ("/admin/subject-types/{subjectTypeId}", "patch"),
+        ("/admin/subject-types/{subjectTypeId}/enable", "post"),
+        ("/admin/subject-types/{subjectTypeId}/disable", "post"),
+        ("/admin/subject-types/{subjectTypeId}/fields", "post"),
+        ("/admin/subject-types/{subjectTypeId}/field-order", "put"),
+        ("/admin/subject-type-fields/{configId}", "patch"),
+        ("/admin/subject-type-fields/{configId}/options", "post"),
+        ("/admin/subject-field-options/{optionId}", "patch"),
+    )
+    for path, method in writes:
+        refs = {item.get("$ref") for item in paths[path][method].get("parameters", [])}
+        assert "#/components/parameters/CsrfToken" in refs
+
+    schemas = spec["components"]["schemas"]
+    versioned = (
+        "SubjectTypeUpdateRequest",
+        "ExpectedSubjectTypeVersions",
+        "CustomSubjectFieldCreateRequest",
+        "SubjectFieldConfigUpdateRequest",
+        "SubjectFieldOptionCreateRequest",
+        "SubjectFieldOptionUpdateRequest",
+        "SubjectFieldOrderRequest",
+    )
+    for name in versioned:
+        assert "expected_schema_version" in schemas[name]["required"]
+        assert schemas[name]["additionalProperties"] is False
+    assert "expected_version" in schemas["SubjectFieldConfigUpdateRequest"]["required"]
+    assert "expected_version" in schemas["SubjectFieldOptionUpdateRequest"]["required"]
+    assert "expected_config_version" in schemas["SubjectFieldOptionCreateRequest"]["required"]
+
+
+def test_subject_machine_semantics_and_public_schema_are_minimal():
+    schemas = load_spec()["components"]["schemas"]
+    assert schemas["SubjectFieldType"]["enum"] == [
+        "text",
+        "textarea",
+        "number",
+        "date",
+        "single",
+        "multi",
+        "select",
+        "url",
+        "image",
+        "file",
+    ]
+    update_properties = schemas["SubjectFieldConfigUpdateRequest"]["properties"]
+    assert not {"field_key", "field_type", "scope", "owner_subject_type", "is_builtin"} & set(
+        update_properties
+    )
+    option_update = schemas["SubjectFieldOptionUpdateRequest"]["properties"]
+    assert "option_key" not in option_update
+
+    public_config = schemas["PublicSubjectFieldConfig"]
+    assert not {"version", "is_builtin", "enabled"} & set(public_config["properties"])
+    public_option = schemas["PublicSubjectFieldOption"]
+    assert not {"version", "enabled"} & set(public_option["properties"])
+
+
+def test_subject_error_codes_are_registered_in_the_common_envelope():
+    codes = set(load_spec()["components"]["schemas"]["ErrorCode"]["enum"])
+    assert {
+        "SUBJECT_TYPE_VERSION_CONFLICT",
+        "SUBJECT_SCHEMA_VERSION_CONFLICT",
+        "SUBJECT_TYPE_KEY_CONFLICT",
+        "SUBJECT_FIELD_KEY_CONFLICT",
+        "SUBJECT_FIELD_CONFIG_INVALID",
+        "SUBJECT_TYPE_STATE_CONFLICT",
+    } <= codes

@@ -115,3 +115,5 @@ jobs:
         run: bash scripts/test-plan-changes.sh
       - name: Run PostgreSQL/Redis cycle reset and expiry tests
         run: bash scripts/test-cycle-reset.sh
+      - name: Run PostgreSQL/Redis subject schema tests
+        run: bash scripts/test-subject-schema.sh
