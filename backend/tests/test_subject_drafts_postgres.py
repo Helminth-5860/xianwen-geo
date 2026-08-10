@@ -14,10 +14,12 @@ from django.db import (
     transaction,
 )
 from django_redis import get_redis_connection
+from rest_framework.test import APIClient
 
 from apps.admin_rbac.permissions import resolve_admin_context
 from apps.plans.change_services import (
     SubscriptionSubjectLimitReconciliationRequired,
+    cancel_scheduled_change,
     preview_subscription_change,
 )
 from apps.plans.lifecycle import (
@@ -49,7 +51,7 @@ from apps.subjects.subject_services import (
 )
 from apps.users.models import User
 from tests.test_plan_changes import admin, customer
-from tests.test_plan_changes_postgres import change_operation
+from tests.test_plan_changes_postgres import cancel_digests, change_operation
 from tests.test_subscriptions_postgres import activate, make_application
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -240,27 +242,55 @@ def test_context_deferred_guard_rejects_cross_user_and_archived_reference():
 def test_no_plan_concurrent_second_draft_allows_exactly_one():
     user = make_user()
     subject_type = SubjectType.objects.get(key="enterprise")
+    payload = {
+        "subject_type_id": str(subject_type.pk),
+        "expected_schema_version": subject_type.schema_version,
+        "initial_values": {},
+    }
 
     def create_one(index):
-        close_old_connections()
-        try:
-            create_subject(
-                user_id=user.pk,
-                subject_type_id=subject_type.pk,
-                expected_schema_version=subject_type.schema_version,
-                initial_values={"name": f"Draft {index}"},
-                request_id=uuid.uuid4(),
-            )
+        thread_user = User.objects.get(pk=user.pk)
+        client = APIClient()
+        client.force_authenticate(thread_user)
+        response = client.post(
+            "/api/v1/subjects",
+            {**payload, "initial_values": {"name": f"Draft {index}"}},
+            format="json",
+        )
+        if response.status_code == 201:
             return "created"
-        except SubjectLimitReached:
-            return "limited"
-        finally:
-            close_old_connections()
+        assert response.status_code == 409
+        assert response.json()["error"]["code"] == "SUBJECT_LIMIT_REACHED"
+        return "limited"
 
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        results = list(pool.map(create_one, range(2)))
+    results = parallel(lambda: create_one(1), lambda: create_one(2))
     assert sorted(results) == ["created", "limited"]
     assert Subject.objects.filter(user=user, status=Subject.Status.DRAFT).count() == 1
+
+
+def test_valid_subscription_does_not_limit_draft_count():
+    actor = admin()
+    user = customer("13800138107")
+    open_formal(actor, user, limit=1)
+    subject_type = SubjectType.objects.get(key="enterprise")
+
+    first = create_subject(
+        user_id=user.pk,
+        subject_type_id=subject_type.pk,
+        expected_schema_version=subject_type.schema_version,
+        initial_values={"name": "First draft"},
+        request_id=uuid.uuid4(),
+    )
+    second = create_subject(
+        user_id=user.pk,
+        subject_type_id=subject_type.pk,
+        expected_schema_version=subject_type.schema_version,
+        initial_values={"name": "Second draft"},
+        request_id=uuid.uuid4(),
+    )
+
+    assert first.pk != second.pk
+    assert Subject.objects.filter(user=user, status=Subject.Status.DRAFT).count() == 2
 
 
 def test_active_limit_concurrent_last_slot_allows_exactly_one():
@@ -497,14 +527,14 @@ def test_immediate_plan_change_preview_and_execution_recheck_target_limit():
     assert not SubscriptionChange.objects.filter(from_subscription=source).exists()
 
 
-def test_scheduled_renewal_future_cap_blocks_new_subject_activation():
+def test_scheduled_renewal_future_cap_blocks_activation_and_cancel_restores_current_cap():
     actor = admin()
     user = customer("13800138104")
-    source, plan, _source_version = open_formal(actor, user, limit=3)
-    existing = active_subjects(user, 1)
+    source, plan, _source_version = open_formal(actor, user, limit=10)
+    existing = active_subjects(user, 5)
     subject_type = SubjectType.objects.get(key="enterprise")
     draft = make_subject(user, subject_type)
-    _plan, target_version = published_limit_plan(actor, limit=1, plan=plan)
+    _plan, target_version = published_limit_plan(actor, limit=5, plan=plan)
     change = change_operation(
         actor.pk,
         source.pk,
@@ -515,8 +545,10 @@ def test_scheduled_renewal_future_cap_blocks_new_subject_activation():
         change_type="renewal",
     )
     assert change.status == SubscriptionChange.Status.SCHEDULED
+    assert change.source_approval is not None
+    assert change.source_approval.status == "executed"
     source.refresh_from_db()
-    assert effective_subject_activation_limit(user=user, subscription=source) == 1
+    assert effective_subject_activation_limit(user=user, subscription=source) == 5
     with pytest.raises(SubjectLimitReached):
         activate_subject(
             user_id=user.pk,
@@ -526,15 +558,90 @@ def test_scheduled_renewal_future_cap_blocks_new_subject_activation():
         )
     assert Subject.objects.filter(user=user, status=Subject.Status.ACTIVE).count() == len(existing)
 
+    reason = "Cancel scheduled renewal"
+    cancelled = cancel_scheduled_change(
+        requester=actor,
+        admin_context=resolve_admin_context(actor),
+        change_id=change.pk,
+        expected_version=change.version,
+        reason=reason,
+        digests=cancel_digests(actor, change, "subject-renewal-cancel-cap-0001", reason),
+        request_id=uuid.uuid4(),
+    )
+    assert cancelled.status == SubscriptionChange.Status.CANCELLED
+    assert effective_subject_activation_limit(user=user, subscription=source) == 10
+    activated = activate_subject(
+        user_id=user.pk,
+        subject_id=draft.pk,
+        expected_version=draft.version,
+        request_id=uuid.uuid4(),
+    )
+    assert activated.status == Subject.Status.ACTIVE
+    assert Subject.objects.filter(user=user, status=Subject.Status.ACTIVE).count() == 6
+
+
+def test_subject_activation_and_scheduled_renewal_cancel_race_is_safe():
+    actor = admin()
+    user = customer("13800138108")
+    source, plan, _source_version = open_formal(actor, user, limit=10)
+    active_subjects(user, 5)
+    subject_type = SubjectType.objects.get(key="enterprise")
+    draft = make_subject(user, subject_type)
+    _plan, target_version = published_limit_plan(actor, limit=5, plan=plan)
+    change = change_operation(
+        actor.pk,
+        source.pk,
+        plan.pk,
+        target_version.pk,
+        "subject-limit-renewal-cancel-race-0001",
+        policy="retain",
+        change_type="renewal",
+    )
+    reason = "Cancel scheduled renewal during activation"
+
+    results = parallel(
+        lambda: cancel_scheduled_change(
+            requester=User.objects.get(pk=actor.pk),
+            admin_context=resolve_admin_context(User.objects.get(pk=actor.pk)),
+            change_id=change.pk,
+            expected_version=change.version,
+            reason=reason,
+            digests=cancel_digests(
+                actor,
+                change,
+                "subject-renewal-cancel-race-key-0001",
+                reason,
+            ),
+            request_id=uuid.uuid4(),
+        ),
+        lambda: activate_subject(
+            user_id=user.pk,
+            subject_id=draft.pk,
+            expected_version=draft.version,
+            request_id=uuid.uuid4(),
+        ),
+    )
+
+    cancelled = [result for result in results if isinstance(result, SubscriptionChange)]
+    activation = [result for result in results if not isinstance(result, SubscriptionChange)]
+    assert len(cancelled) == len(activation) == 1
+    assert cancelled[0].status == SubscriptionChange.Status.CANCELLED
+    assert isinstance(activation[0], (Subject, SubjectLimitReached))
+    change.refresh_from_db()
+    source.refresh_from_db()
+    assert change.status == SubscriptionChange.Status.CANCELLED
+    assert effective_subject_activation_limit(user=user, subscription=source) == 10
+    assert Subject.objects.filter(user=user, status=Subject.Status.ACTIVE).count() in {5, 6}
+
 
 def test_scheduled_renewal_and_subject_activation_race_is_serialized():
     actor = admin()
     user = customer("13800138106")
-    source, plan, _source_version = open_formal(actor, user, limit=3)
-    active_subjects(user, 1)
+    source, plan, _source_version = open_formal(actor, user, limit=10)
+    active_subjects(user, 5)
     subject_type = SubjectType.objects.get(key="enterprise")
     draft = make_subject(user, subject_type)
-    _plan, target_version = published_limit_plan(actor, limit=1, plan=plan)
+    _plan, target_version = published_limit_plan(actor, limit=5, plan=plan)
 
     results = parallel(
         lambda: change_operation(
@@ -569,13 +676,25 @@ def test_scheduled_renewal_and_subject_activation_race_is_serialized():
         user=user,
         status=Subject.Status.ACTIVE,
     ).count()
-    assert effective_subject_activation_limit(user=user, subscription=source) == 1
-    if isinstance(activation_results[0], Subject):
-        assert draft.status == Subject.Status.ACTIVE
-        assert active_count == 2
+    assert effective_subject_activation_limit(user=user, subscription=source) == 5
+    assert active_count in {5, 6}
+
+    execute_due_renewal(
+        change_id=changes[0].pk,
+        request_id=uuid.uuid4(),
+        now=source.ends_at + timedelta(seconds=1),
+    )
+    change = SubscriptionChange.objects.get(pk=changes[0].pk)
+    target = Subscription.objects.filter(source_change=change).first()
+    if active_count > 5:
+        assert change.status == SubscriptionChange.Status.SCHEDULED
+        assert change.stable_error_code == SUBJECT_LIMIT_RECONCILIATION_REQUIRED
+        assert target is None
     else:
-        assert draft.status == Subject.Status.DRAFT
-        assert active_count == 1
+        assert change.status == SubscriptionChange.Status.EXECUTED
+        assert target is not None
+        assert target.status == Subscription.Status.ACTIVE
+        assert active_count <= 5
 
 
 def test_scheduled_renewal_subject_reconciliation_is_recoverable():

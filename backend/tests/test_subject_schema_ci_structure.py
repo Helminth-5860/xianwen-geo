@@ -46,10 +46,12 @@ def test_subject_schema_postgresql_suite_is_wired_into_docker_job():
     )
     draft_required = (
         "test_no_plan_concurrent_second_draft_allows_exactly_one",
+        "test_valid_subscription_does_not_limit_draft_count",
         "test_active_limit_concurrent_last_slot_allows_exactly_one",
         "test_subscription_and_trial_creation_recheck_target_subject_limit",
         "test_immediate_plan_change_preview_and_execution_recheck_target_limit",
-        "test_scheduled_renewal_future_cap_blocks_new_subject_activation",
+        "test_scheduled_renewal_future_cap_blocks_activation_and_cancel_restores_current_cap",
+        "test_subject_activation_and_scheduled_renewal_cancel_race_is_safe",
         "test_scheduled_renewal_subject_reconciliation_is_recoverable",
         "test_scheduled_renewal_and_subject_activation_race_is_serialized",
     )
