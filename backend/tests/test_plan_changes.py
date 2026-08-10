@@ -46,8 +46,8 @@ def customer(phone="13800138000"):
     )
 
 
-def activate_formal(actor, user, *, code):
-    plan, version = published_plan(actor, code=code)
+def activate_formal(actor, user, *, code, valid_days=30):
+    plan, version = published_plan(actor, code=code, valid_days=valid_days)
     application = application_for(user, plan, version)
     subscription, _, _ = activate_application(
         requester=actor,

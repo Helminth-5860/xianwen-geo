@@ -78,6 +78,7 @@ class ChangePreview:
     effective_at: object
     ends_at: object | None
     cycle_anchor_day: int
+    cycle_anchor_time: object
     unavailable_confirmation_required: bool
     changed_limit_keys: tuple[str, ...]
     added_model_keys: tuple[str, ...]
@@ -191,6 +192,11 @@ def preview_subscription_change(
             if change_type == SubscriptionChange.ChangeType.TRIAL_CONVERSION
             else source.cycle_anchor_day
         ),
+        cycle_anchor_time=(
+            timezone.localtime(moment).timetz().replace(tzinfo=None)
+            if change_type == SubscriptionChange.ChangeType.TRIAL_CONVERSION
+            else source.cycle_anchor_time
+        ),
         unavailable_confirmation_required=(
             target_version.plan.status == Plan.Status.OFFLINE
             or target_version.status == PlanVersion.Status.RETIRED
@@ -301,6 +307,7 @@ def execute_subscription_change(
     reason,
     digests: PlanChangeDigests,
     request_id,
+    source_approval=None,
 ):
     existing = SubscriptionChange.objects.filter(idempotency_key_digest=digests.key_digest).first()
     if existing is not None:
@@ -380,6 +387,8 @@ def execute_subscription_change(
                 ),
                 requested_by=requester,
                 idempotency_key_version=digests.key_version,
+                source_approval=source_approval,
+                next_attempt_at=source.ends_at,
                 idempotency_key_digest=digests.key_digest,
                 idempotency_scope_digest=digests.scope_digest,
                 request_digest=digests.request_digest,
@@ -472,6 +481,11 @@ def execute_subscription_change(
         source_change=change,
         ends_at=preview.ends_at,
         cycle_anchor_day=preview.cycle_anchor_day,
+        cycle_anchor_time=(
+            None
+            if preview.change_type == SubscriptionChange.ChangeType.TRIAL_CONVERSION
+            else source.cycle_anchor_time
+        ),
     )
     try:
         apply_subscription_change_quotas(

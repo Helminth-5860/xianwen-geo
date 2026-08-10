@@ -35,6 +35,7 @@ from apps.plans.services import (
     create_plan_version,
     publish_plan_version,
     set_plan_offline,
+    update_plan_version,
 )
 from apps.plans.subscription_services import (
     SubscriptionConfirmationRequired,
@@ -72,7 +73,17 @@ def customer(phone="13800138000"):
     )
 
 
-def published_plan(actor, *, code="formal-plan", trial=False):
+def _plan_limit_value(item):
+    if item.value_type == "integer":
+        return item.integer_value
+    if item.value_type == "boolean":
+        return item.boolean_value
+    if item.value_type in {"text", "enum"}:
+        return item.text_value
+    return None if item.json_value == {"value": None} else item.json_value
+
+
+def published_plan(actor, *, code="formal-plan", trial=False, valid_days=30):
     plan = create_plan(
         plan_id=uuid.uuid4(),
         actor=actor,
@@ -87,6 +98,26 @@ def published_plan(actor, *, code="formal-plan", trial=False):
         },
     )
     version = create_plan_version(plan_id=plan.pk, actor=actor, expected_plan_version=plan.version)
+    if valid_days != version.valid_days:
+        version = update_plan_version(
+            version_id=version.pk,
+            actor=actor,
+            expected_version=version.version,
+            valid_days=valid_days,
+            queue_priority=version.queue_priority,
+            limits=[
+                {"key": item.limit_key, "value": _plan_limit_value(item)}
+                for item in version.limits.all()
+            ],
+            model_permissions=[
+                {
+                    "model_key": item.model_key,
+                    "sort_order": item.sort_order,
+                    "selected_by_default": item.selected_by_default,
+                }
+                for item in version.model_permissions.all()
+            ],
+        )
     version = publish_plan_version(
         version_id=version.pk,
         actor=actor,

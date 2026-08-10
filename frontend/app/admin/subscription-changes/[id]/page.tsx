@@ -64,6 +64,12 @@ export default function AdminSubscriptionChangeDetailPage() {
             <Tag>{item.status}</Tag>
           </Descriptions.Item>
           <Descriptions.Item label="生效时间">{item.effective_at}</Descriptions.Item>
+          {item.stable_error_code && (
+            <Descriptions.Item label="????????">{item.stable_error_code}</Descriptions.Item>
+          )}
+          {item.next_attempt_at && (
+            <Descriptions.Item label="??????">{item.next_attempt_at}</Descriptions.Item>
+          )}
         </Descriptions>
         {item.status === "scheduled" &&
           (canChange ? (

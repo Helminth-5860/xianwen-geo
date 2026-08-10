@@ -221,6 +221,7 @@ class Notification(models.Model):
         SUBSCRIPTION_TRIAL_GRANTED = "subscription_trial_granted", "试用套餐已发放"
         SUBSCRIPTION_EXPIRED = "subscription_expired", "套餐已到期"
         SUBSCRIPTION_TERMINATED = "subscription_terminated", "套餐已终止"
+        SUBSCRIPTION_RENEWED = "subscription_renewed", "Subscription renewed"
 
     id: models.UUIDField = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     recipient: models.ForeignKey = models.ForeignKey(

@@ -113,3 +113,5 @@ jobs:
         run: bash scripts/test-quotas.sh
       - name: Run PostgreSQL/Redis plan change tests
         run: bash scripts/test-plan-changes.sh
+      - name: Run PostgreSQL/Redis cycle reset and expiry tests
+        run: bash scripts/test-cycle-reset.sh

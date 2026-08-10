@@ -41,6 +41,7 @@ const subscription = {
   starts_at: "2026-08-01T00:00:00Z",
   ends_at: "2026-09-01T00:00:00Z",
   cycle_anchor_day: 1,
+  cycle_anchor_time: "08:00:00",
   entitlement_summary: { valid_days: 31, limit_keys: [], enabled_model_keys: [] },
   version: 2,
 };
@@ -57,6 +58,8 @@ const change = {
   effective_at: "2026-09-01T00:00:00Z",
   executed_at: null,
   cancelled_at: null,
+  failed_at: null,
+  stable_error_code: "",
   version: 1,
   created_at: "2026-08-02T00:00:00Z",
 };
@@ -98,6 +101,7 @@ beforeEach(() => {
     quota_policy: "retain",
     effective_at: "2026-08-02T00:00:00Z",
     ends_at: "2026-09-01T00:00:00Z",
+    cycle_anchor_time: "08:00:00",
     cycle_anchor_day: 1,
     unavailable_confirmation_required: false,
     changed_limit_keys: ["article_generation"],
@@ -234,5 +238,24 @@ describe("套餐变更真实交互", () => {
     expect(document.body.textContent).not.toMatch(
       /business_id|batch_key|source_account|target_account|request_digest|idempotency/,
     );
+  });
+
+  it("failed renewal displays a stable error and cannot be cancelled", async () => {
+    getAdminSubscriptionChange.mockResolvedValue({
+      ...change,
+      status: "failed",
+      failed_at: "2026-09-01T00:05:00Z",
+      stable_error_code: "RENEWAL_WINDOW_ELAPSED",
+    });
+    render(
+      <AdminCapabilityContext.Provider
+        value={{ permission_keys: ["subscriptions.change"], menu_keys: [] } as never}
+      >
+        <AdminSubscriptionChangeDetailPage />
+      </AdminCapabilityContext.Provider>,
+    );
+    expect(await screen.findByText("RENEWAL_WINDOW_ELAPSED")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "??????" })).toBeNull();
+    expect(cancelSubscriptionChange).not.toHaveBeenCalled();
   });
 });
