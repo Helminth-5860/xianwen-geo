@@ -38,6 +38,7 @@ export default function AdminSubscriptionChangesPage() {
             { value: "scheduled", label: "已排期" },
             { value: "executed", label: "已执行" },
             { value: "cancelled", label: "已取消" },
+            { value: "failed", label: "??????" },
           ]}
         />
       </Card>

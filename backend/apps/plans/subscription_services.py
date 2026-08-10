@@ -213,6 +213,7 @@ def _create_active_subscription(
     source_change=None,
     ends_at=None,
     cycle_anchor_day=None,
+    cycle_anchor_time=None,
 ):
     snapshot, digest = _validate_snapshot(version)
     ends_at = ends_at or _ends_at(now, version.valid_days)
@@ -241,6 +242,8 @@ def _create_active_subscription(
                 starts_at=now,
                 ends_at=ends_at,
                 cycle_anchor_day=cycle_anchor_day or timezone.localtime(now).day,
+                cycle_anchor_time=cycle_anchor_time
+                or timezone.localtime(now).timetz().replace(tzinfo=None),
                 is_trial=plan.is_trial,
                 opened_by=actor,
                 opening_note=opening_note,

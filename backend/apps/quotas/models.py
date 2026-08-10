@@ -315,6 +315,10 @@ class QuotaLedgerEntry(models.Model):  # noqa: DJ008
         PLAN_CHANGE_FORFEIT = "plan_change_forfeit", "套餐变更清零"
         PLAN_CHANGE_TRANSFER_OUT = "plan_change_transfer_out", "套餐变更转出"
         PLAN_CHANGE_TRANSFER_IN = "plan_change_transfer_in", "套餐变更转入"
+        CYCLE_FORFEIT = "cycle_forfeit", "Cycle forfeit"
+        CYCLE_LATE_RELEASE_FORFEIT = "cycle_late_release_forfeit", "Late cycle release forfeit"
+        EXPIRY_FORFEIT = "expiry_forfeit", "Expiry forfeit"
+        EXPIRY_LATE_RELEASE_FORFEIT = "expiry_late_release_forfeit", "Late expiry release forfeit"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     account = models.ForeignKey(
@@ -400,6 +404,10 @@ class QuotaLedgerEntry(models.Model):  # noqa: DJ008
                                 "plan_change_forfeit",
                                 "plan_change_transfer_out",
                                 "plan_change_transfer_in",
+                                "cycle_forfeit",
+                                "cycle_late_release_forfeit",
+                                "expiry_forfeit",
+                                "expiry_late_release_forfeit",
                             )
                         )
                         & Q(hold__isnull=True)
@@ -481,3 +489,110 @@ class QuotaTransfer(models.Model):  # noqa: DJ008
 
     def delete(self, *args, **kwargs):
         raise RuntimeError("额度迁移记录不能删除。")
+
+
+class QuotaCycleReset(models.Model):  # noqa: DJ008
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    subscription = models.ForeignKey(
+        "plans.Subscription", on_delete=models.PROTECT, related_name="quota_cycle_resets"
+    )
+    quota_type = models.CharField(max_length=100)
+    boundary = models.DateTimeField()
+    previous_account = models.OneToOneField(
+        QuotaAccount, on_delete=models.PROTECT, related_name="outgoing_cycle_reset"
+    )
+    next_account = models.OneToOneField(
+        QuotaAccount, on_delete=models.PROTECT, related_name="incoming_cycle_reset"
+    )
+    forfeit_entry = models.OneToOneField(
+        QuotaLedgerEntry,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="cycle_reset_forfeit",
+    )
+    initialize_entry = models.OneToOneField(
+        QuotaLedgerEntry, on_delete=models.PROTECT, related_name="cycle_reset_initialize"
+    )
+    request_id = models.UUIDField(db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = ProtectedQuerySet.as_manager()
+
+    class Meta:
+        db_table = "quota_cycle_resets"
+        ordering = ("boundary", "id")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("subscription", "quota_type", "boundary"),
+                name="quota_cycle_reset_unique_boundary",
+            )
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk and not self._state.adding:
+            raise RuntimeError("Cycle reset facts cannot be modified.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise RuntimeError("Cycle reset facts cannot be deleted.")
+
+
+class QuotaExpiryDisposition(models.Model):  # noqa: DJ008
+    class Policy(models.TextChoices):
+        ZERO = "zero", "Zero"
+        FREEZE = "freeze", "Freeze"
+        RETAIN = "retain", "Retain"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    account = models.OneToOneField(
+        QuotaAccount, on_delete=models.PROTECT, related_name="expiry_disposition"
+    )
+    subscription = models.ForeignKey(
+        "plans.Subscription", on_delete=models.PROTECT, related_name="quota_expiry_dispositions"
+    )
+    policy = models.CharField(max_length=16, choices=Policy.choices)
+    ledger_entry = models.OneToOneField(
+        QuotaLedgerEntry,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="expiry_disposition",
+    )
+    renewal_change = models.ForeignKey(
+        "plans.SubscriptionChange",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="quota_expiry_dispositions",
+    )
+    request_id = models.UUIDField(db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = ProtectedQuerySet.as_manager()
+
+    class Meta:
+        db_table = "quota_expiry_dispositions"
+        ordering = ("created_at", "id")
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(policy__in=("zero", "freeze", "retain")),
+                name="quota_expiry_policy_valid",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    Q(policy="zero", renewal_change__isnull=True)
+                    | Q(policy="freeze", ledger_entry__isnull=True, renewal_change__isnull=True)
+                    | Q(policy="retain", ledger_entry__isnull=True)
+                ),
+                name="quota_expiry_evidence_consistent",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk and not self._state.adding:
+            raise RuntimeError("Expiry disposition facts cannot be modified.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise RuntimeError("Expiry disposition facts cannot be deleted.")

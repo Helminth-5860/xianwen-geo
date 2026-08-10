@@ -120,14 +120,14 @@ def test_ci_dependencies_and_local_scripts_cover_required_gates():
 def test_compose_application_services_keep_build_targets():
     compose = yaml.safe_load((REPO_ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
 
-    for service in ("api", "celery", "frontend"):
+    for service in ("api", "celery", "celery-beat", "frontend"):
         assert "build" in compose["services"][service]
 
 
 def test_compose_gate_builds_only_application_services():
     shell_checks = (REPO_ROOT / "scripts" / "check.sh").read_text(encoding="utf-8")
 
-    assert "build api celery frontend" in shell_checks
+    assert "build api celery celery-beat frontend" in shell_checks
     assert "docker compose up" not in shell_checks
     assert "docker compose push" not in shell_checks
 
@@ -373,3 +373,32 @@ def test_docker_job_runs_reproducible_postgresql_redis_quota_suite():
     for test_name in required_tests:
         assert f"def {test_name}" in suite
     assert suite.count("def test_postgresql_") == 16
+
+
+def test_cycle_reset_postgresql_suite_is_wired_into_docker_job():
+    workflow = load_workflow()
+    steps = workflow["jobs"]["docker"]["steps"]
+    assert any(
+        step.get("name") == "Run PostgreSQL/Redis cycle reset and expiry tests"
+        and step.get("run") == "bash scripts/test-cycle-reset.sh"
+        for step in steps
+    )
+    shell_script = (REPO_ROOT / "scripts" / "test-cycle-reset.sh").read_text(encoding="utf-8")
+    powershell_script = (REPO_ROOT / "scripts" / "test-cycle-reset.ps1").read_text(encoding="utf-8")
+    compose = (REPO_ROOT / "docker-compose.cycle-reset.yml").read_text(encoding="utf-8")
+    assert "cycle-reset-tests" in shell_script
+    assert "cycle-reset-tests" in powershell_script
+    assert "tests/test_cycle_reset_postgres.py" in compose
+    assert "tests/test_cycle_reset_verification_postgres.py" in compose
+    assert "down --volumes --remove-orphans" in shell_script
+    assert "down --volumes --remove-orphans" in powershell_script
+    assert "openssl rand -hex 32" in shell_script
+    assert "[guid]::NewGuid()" in powershell_script
+    suite = (REPO_ROOT / "backend" / "tests" / "test_cycle_reset_postgres.py").read_text(
+        encoding="utf-8"
+    )
+    assert suite.count("def test_") == 9
+    verification = (
+        REPO_ROOT / "backend" / "tests" / "test_cycle_reset_verification_postgres.py"
+    ).read_text(encoding="utf-8")
+    assert verification.count("def test_") == 16

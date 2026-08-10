@@ -46,6 +46,7 @@ const subscription = {
   starts_at: "2026-08-01T00:00:00Z",
   ends_at: "2026-09-01T00:00:00Z",
   cycle_anchor_day: 1,
+  cycle_anchor_time: "08:00:00",
   entitlement_summary: {
     valid_days: 31,
     limit_keys: ["subject_active_limit"],

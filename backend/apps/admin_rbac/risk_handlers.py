@@ -53,6 +53,7 @@ class HandlerContext:
     target_version: int
     payload: dict[str, Any]
     current_password: str = ""
+    approval_request: Any = None
 
 
 @dataclass(frozen=True)

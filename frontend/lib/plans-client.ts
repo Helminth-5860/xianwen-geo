@@ -123,6 +123,7 @@ export type Subscription = Readonly<{
   starts_at: string;
   ends_at: string;
   cycle_anchor_day: number;
+  cycle_anchor_time: string;
   entitlement_summary: {
     valid_days: number;
     limit_keys: string[];
@@ -142,7 +143,7 @@ export type Subscription = Readonly<{
   }[];
 }>;
 
-export type SubscriptionChangeStatus = "scheduled" | "executed" | "cancelled";
+export type SubscriptionChangeStatus = "scheduled" | "executed" | "cancelled" | "failed";
 export type SubscriptionChangeType =
   "renewal" | "upgrade" | "downgrade" | "replacement" | "trial_conversion";
 export type SubscriptionQuotaPolicy = "overwrite" | "accumulate" | "retain";
@@ -159,6 +160,10 @@ export type SubscriptionChange = Readonly<{
   effective_at: string;
   executed_at: string | null;
   cancelled_at: string | null;
+  failed_at: string | null;
+  stable_error_code: string;
+  next_attempt_at?: string | null;
+  retry_count?: number;
   version: number;
   reason?: string;
   unavailable_reason?: string;
@@ -179,6 +184,7 @@ export type SubscriptionChangePreview = Readonly<{
   ends_at: string | null;
   cycle_anchor_day: number;
   unavailable_confirmation_required: boolean;
+  cycle_anchor_time: string;
   changed_limit_keys: string[];
   added_model_keys: ModelKey[];
   removed_model_keys: ModelKey[];

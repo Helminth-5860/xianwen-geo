@@ -18,8 +18,9 @@ from django.utils import timezone
 from django_redis import get_redis_connection
 from rest_framework.test import APIClient
 
-from apps.admin_rbac.models import ApprovalRequest, AuditEvent
+from apps.admin_rbac.models import ApprovalRequest, AuditEvent, RiskAction
 from apps.admin_rbac.permissions import resolve_admin_context
+from apps.admin_rbac.risk_services import canonical_payload
 from apps.plans.change_idempotency import derive_plan_change_digests
 from apps.plans.change_services import (
     SubscriptionChangeAlreadyExists,
@@ -91,6 +92,7 @@ def parallel(*operations):
         return [future.result(timeout=30) for future in futures]
 
 
+@transaction.atomic
 def change_operation(
     actor_id,
     source_id,
@@ -111,7 +113,57 @@ def change_operation(
         "unavailable_reason": "",
         "reason": reason,
     }
-    return execute_subscription_change(
+    digests = derive_plan_change_digests(
+        key,
+        operation="subscription.change",
+        requester_id=actor.pk,
+        target_id=source.pk,
+        request_payload=payload,
+    )
+    existing = SubscriptionChange.objects.filter(idempotency_key_digest=digests.key_digest).first()
+    source_approval = existing.source_approval if existing is not None else None
+    if change_type == "renewal" and source_approval is None:
+        action = RiskAction.objects.get(pk="subscription.change")
+        approver = (
+            User.objects.filter(is_superuser=True).exclude(pk=actor.pk).order_by("pk").first()
+        )
+        if approver is None:
+            approver = admin("13700137989")
+        approval_payload = {
+            **payload,
+            "idempotency_key_version": digests.key_version,
+            "idempotency_key_digest": digests.key_digest,
+            "idempotency_scope_digest": digests.scope_digest,
+            "request_digest": digests.request_digest,
+        }
+        safe_payload, payload_digest = canonical_payload(
+            action.key,
+            action.target_type,
+            source.pk,
+            source.version,
+            approval_payload,
+        )
+        approved_at = timezone.now()
+        source_approval = ApprovalRequest.objects.create(
+            action=action,
+            action_key=action.key,
+            policy_version=action.policy.version,
+            requester=actor,
+            target_type=action.target_type,
+            target_id=source.pk,
+            target_version=source.version,
+            sanitized_payload=safe_payload,
+            payload_digest=payload_digest,
+            safe_summary="Scheduled renewal test approval.",
+            status=ApprovalRequest.Status.EXECUTED,
+            expires_at=approved_at + timedelta(hours=1),
+            approved_by=approver,
+            approved_at=approved_at,
+            executed_at=approved_at,
+            request_id=uuid.uuid4(),
+        )
+
+    change = execute_subscription_change(
         requester=actor,
         admin_context=resolve_admin_context(actor),
         source_subscription_id=source.pk,
@@ -123,15 +175,14 @@ def change_operation(
         confirm_unavailable=False,
         unavailable_reason="",
         reason=payload["reason"],
-        digests=derive_plan_change_digests(
-            key,
-            operation="subscription.change",
-            requester_id=actor.pk,
-            target_id=source.pk,
-            request_payload=payload,
-        ),
+        digests=digests,
         request_id=uuid.uuid4(),
+        source_approval=source_approval,
     )
+    if source_approval is not None and not source_approval.execution_result:
+        source_approval.execution_result = {"change_id": str(change.pk)}
+        source_approval.save(update_fields=["execution_result", "updated_at"])
+    return change
 
 
 def fund(actor, account, amount):
@@ -508,6 +559,7 @@ def test_postgresql_mixed_entitlements_are_replacement_and_invalid_source_is_rej
             starts_at=now,
             ends_at=now + timedelta(days=30),
             cycle_anchor_day=timezone.localtime(now).day,
+            cycle_anchor_time=timezone.localtime(now).timetz().replace(tzinfo=None),
             is_trial=False,
             opened_by=actor,
             activated_at=now,

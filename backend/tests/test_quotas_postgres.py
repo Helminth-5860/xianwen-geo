@@ -510,6 +510,7 @@ def test_postgresql_backfill_invalid_snapshot_rolls_back_valid_rows_atomically()
         "starts_at": template.starts_at,
         "ends_at": template.ends_at,
         "cycle_anchor_day": template.cycle_anchor_day,
+        "cycle_anchor_time": template.cycle_anchor_time,
         "is_trial": True,
         "source_application": None,
         "source_type": Subscription.SourceType.TRIAL_GRANT,

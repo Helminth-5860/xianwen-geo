@@ -483,6 +483,7 @@ def approve_request(*, request, approval_id, current_password):
                     target_id=approval.target_id,
                     target_version=approval.target_version,
                     payload=safe_payload,
+                    approval_request=approval,
                 )
             )
     except Exception as exc:

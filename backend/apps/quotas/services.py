@@ -32,7 +32,14 @@ from .idempotency import (
     derive_idempotency_digests,
     system_idempotency_digests,
 )
-from .models import QuotaAccount, QuotaHold, QuotaHoldGroup, QuotaLedgerEntry, QuotaTransfer
+from .models import (
+    QuotaAccount,
+    QuotaExpiryDisposition,
+    QuotaHold,
+    QuotaHoldGroup,
+    QuotaLedgerEntry,
+    QuotaTransfer,
+)
 from .selectors import scoped_account_or_404
 
 BUSINESS_TYPE_PATTERN = re.compile(r"^[a-z][a-z0-9_.-]{0,63}$")
@@ -648,6 +655,30 @@ def _forfeit_for_change(*, change, account, actor, request_id):
     return entry
 
 
+def _forfeit_for_expiry(*, change, account, actor, request_id):
+    amount = account.available
+    if amount <= 0:
+        return None
+    entry, _ = _append_ledger_locked(
+        account=account,
+        action=QuotaLedgerEntry.Action.EXPIRY_FORFEIT,
+        available_delta=-amount,
+        frozen_delta=0,
+        digests=_change_ledger_digests(
+            change=change,
+            account=account,
+            action=QuotaLedgerEntry.Action.EXPIRY_FORFEIT,
+            amount=amount,
+        ),
+        business_type="subscription_expiry",
+        business_id=account.subscription_id,
+        safe_reason="Subscription expiry quota forfeit.",
+        actor=actor,
+        request_id=request_id,
+    )
+    return entry
+
+
 def _create_carryover_account(*, change, source_account, target_subscription, spendable_until):
     definition = quota_definition(source_account.quota_type)
     batch_key = uuid.uuid5(
@@ -754,6 +785,7 @@ def apply_subscription_change_quotas(
     source_subscription: Subscription,
     target_subscription: Subscription,
     quota_policy: str,
+    expiry_policies: dict[str, str] | None = None,
     actor,
     request_id,
     now,
@@ -807,7 +839,16 @@ def apply_subscription_change_quotas(
         if source.available <= 0:
             continue
         spendable_until = source.cycle_ends_at or source_subscription.ends_at
-        if spendable_until <= now or quota_policy == "overwrite":
+        expiry_policy = (
+            expiry_policies.get(source.quota_type, "zero") if expiry_policies is not None else None
+        )
+        if expiry_policy == "zero":
+            _forfeit_for_expiry(change=change, account=source, actor=actor, request_id=request_id)
+            continue
+        if expiry_policy == "freeze":
+            continue
+        expired_for_change = spendable_until <= now and expiry_policy != "retain"
+        if expired_for_change or quota_policy == "overwrite":
             _forfeit_for_change(
                 change=change,
                 account=source,
@@ -1065,7 +1106,7 @@ def _settle_hold(*, hold_id, amount, action: str, idempotency_key: str, request_
                     "group_request_digest": client_digests.request_digest,
                 },
             )
-        _append_ledger_locked(
+        settlement_entry, _ = _append_ledger_locked(
             account=account,
             hold=hold,
             action=action,
@@ -1078,6 +1119,53 @@ def _settle_hold(*, hold_id, amount, action: str, idempotency_key: str, request_
             actor=None,
             request_id=request_id,
         )
+        if action == QuotaLedgerEntry.Action.RELEASE:
+            late_action = None
+            business_type = ""
+            business_id = None
+            moment = timezone.now()
+            expiry_disposition = (
+                QuotaExpiryDisposition.objects.filter(account=account).only("policy").first()
+            )
+            if (
+                expiry_disposition is not None
+                and expiry_disposition.policy == QuotaExpiryDisposition.Policy.ZERO
+            ):
+                late_action = QuotaLedgerEntry.Action.EXPIRY_LATE_RELEASE_FORFEIT
+                business_type = "subscription_expiry"
+                business_id = account.subscription_id
+            elif expiry_disposition is None and (
+                account.batch_type == QuotaAccount.BatchType.PRIMARY
+                and account.cycle_ends_at is not None
+                and account.cycle_ends_at <= moment
+            ):
+                late_action = QuotaLedgerEntry.Action.CYCLE_LATE_RELEASE_FORFEIT
+                business_type = "quota_cycle_reset"
+                business_id = account.pk
+            if late_action is not None:
+                late_digests = system_idempotency_digests(
+                    operation=late_action,
+                    user_id=account.user_id,
+                    account_id=account.pk,
+                    business_type=business_type,
+                    business_id=business_id,
+                    request_payload={
+                        "settlement_entry_id": str(settlement_entry.pk),
+                        "amount": settled,
+                    },
+                )
+                _append_ledger_locked(
+                    account=account,
+                    action=late_action,
+                    available_delta=-settled,
+                    frozen_delta=0,
+                    digests=late_digests,
+                    business_type=business_type,
+                    business_id=business_id,
+                    safe_reason="Late release into an unavailable quota batch.",
+                    actor=None,
+                    request_id=request_id,
+                )
         if action == QuotaLedgerEntry.Action.CONSUME:
             hold.consumed_amount += settled
         else:

@@ -593,6 +593,7 @@ class Subscription(models.Model):  # noqa: DJ008
     starts_at = models.DateTimeField()
     ends_at = models.DateTimeField()
     cycle_anchor_day = models.PositiveSmallIntegerField()
+    cycle_anchor_time = models.TimeField()
     is_trial = models.BooleanField()
     opened_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -788,6 +789,7 @@ class SubscriptionChange(models.Model):  # noqa: DJ008
         SCHEDULED = "scheduled", "已排期"
         EXECUTED = "executed", "已执行"
         CANCELLED = "cancelled", "已取消"
+        FAILED = "failed", "Failed"
 
     class ChangeType(models.TextChoices):
         RENEWAL = "renewal", "续费"
@@ -835,8 +837,19 @@ class SubscriptionChange(models.Model):  # noqa: DJ008
         on_delete=models.PROTECT,
         related_name="requested_subscription_changes",
     )
+    source_approval = models.OneToOneField(
+        "admin_rbac.ApprovalRequest",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="scheduled_subscription_change",
+    )
     executed_at = models.DateTimeField(null=True, blank=True)
     cancelled_at = models.DateTimeField(null=True, blank=True)
+    failed_at = models.DateTimeField(null=True, blank=True)
+    stable_error_code = models.CharField(max_length=64, blank=True)
+    next_attempt_at = models.DateTimeField(null=True, blank=True)
+    retry_count = models.PositiveIntegerField(default=0)
     cancelled_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         null=True,
@@ -876,7 +889,7 @@ class SubscriptionChange(models.Model):  # noqa: DJ008
                 name="sub_change_single_successor",
             ),
             models.CheckConstraint(
-                condition=models.Q(status__in=("scheduled", "executed", "cancelled")),
+                condition=models.Q(status__in=("scheduled", "executed", "cancelled", "failed")),
                 name="sub_change_status_valid",
             ),
             models.CheckConstraint(
@@ -904,6 +917,7 @@ class SubscriptionChange(models.Model):  # noqa: DJ008
                         cancelled_at__isnull=True,
                         cancelled_by__isnull=True,
                         cancellation_reason="",
+                        failed_at__isnull=True,
                     )
                     | models.Q(
                         status="executed",
@@ -911,6 +925,8 @@ class SubscriptionChange(models.Model):  # noqa: DJ008
                         cancelled_at__isnull=True,
                         cancelled_by__isnull=True,
                         cancellation_reason="",
+                        failed_at__isnull=True,
+                        stable_error_code="",
                     )
                     | models.Q(
                         status="cancelled",
@@ -919,6 +935,18 @@ class SubscriptionChange(models.Model):  # noqa: DJ008
                         cancelled_at__isnull=False,
                         cancelled_by__isnull=False,
                         cancellation_reason__gt="",
+                        failed_at__isnull=True,
+                        stable_error_code="",
+                    )
+                    | models.Q(
+                        status="failed",
+                        change_type="renewal",
+                        executed_at__isnull=True,
+                        cancelled_at__isnull=True,
+                        cancelled_by__isnull=True,
+                        cancellation_reason="",
+                        failed_at__isnull=False,
+                        stable_error_code__gt="",
                     )
                 ),
                 name="sub_change_status_times",
@@ -926,7 +954,7 @@ class SubscriptionChange(models.Model):  # noqa: DJ008
             models.CheckConstraint(
                 condition=(
                     (
-                        models.Q(status__in=("scheduled", "executed"))
+                        models.Q(status__in=("scheduled", "executed", "failed"))
                         & models.Q(cancellation_idempotency_key_version__isnull=True)
                         & models.Q(cancellation_idempotency_key_digest__isnull=True)
                         & models.Q(cancellation_idempotency_scope_digest="")
@@ -952,6 +980,13 @@ class SubscriptionChange(models.Model):  # noqa: DJ008
                 ),
                 name="sub_change_digests_version",
             ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(status="scheduled", next_attempt_at__isnull=False)
+                    | ~models.Q(status="scheduled")
+                ),
+                name="sub_change_retry_schedule",
+            ),
         ]
 
     def delete(self, *args, **kwargs):
@@ -971,6 +1006,7 @@ class SubscriptionChangeEvent(models.Model):  # noqa: DJ008
         SCHEDULED = "scheduled", "已排期"
         EXECUTED = "executed", "已执行"
         CANCELLED = "cancelled", "已取消"
+        FAILED = "failed", "Failed"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     change = models.ForeignKey(
@@ -999,7 +1035,7 @@ class SubscriptionChangeEvent(models.Model):  # noqa: DJ008
         ordering = ("created_at", "id")
         constraints = [
             models.CheckConstraint(
-                condition=models.Q(event_type__in=("scheduled", "executed", "cancelled")),
+                condition=models.Q(event_type__in=("scheduled", "executed", "cancelled", "failed")),
                 name="sub_change_event_type_valid",
             )
         ]

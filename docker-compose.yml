@@ -133,6 +133,27 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  celery-beat:
+    extends:
+      service: celery
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    command:
+      [
+        "celery",
+        "-A",
+        "config",
+        "beat",
+        "--loglevel=INFO",
+        "--schedule=/tmp/xianwen-celerybeat-schedule",
+      ]
+    depends_on:
+      api:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
   rbac-tests:
     profiles: ["rbac-test"]
     build:

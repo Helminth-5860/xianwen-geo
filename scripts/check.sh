@@ -149,7 +149,7 @@ check_docker() {
     NEXT_PUBLIC_APP_ENV=local \
     NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1 \
     docker compose --env-file "$empty_env" -f "$REPO_ROOT/docker-compose.yml" \
-      build api celery frontend
+      build api celery celery-beat frontend
 }
 
 case "$MODE" in

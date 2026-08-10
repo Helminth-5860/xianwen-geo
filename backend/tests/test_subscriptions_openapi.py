@@ -44,6 +44,13 @@ def test_subscription_schema_exposes_only_frozen_statuses_and_safe_user_fields()
         "entitlement_summary",
     } <= properties.keys()
     assert {"entitlement_snapshot", "entitlement_digest", "opening_note"}.isdisjoint(properties)
+    assert properties["cycle_anchor_time"] == {"type": "string", "format": "time"}
+    assert schemas["SubscriptionChangeStatus"]["enum"] == [
+        "scheduled",
+        "executed",
+        "cancelled",
+        "failed",
+    ]
 
 
 def test_trial_and_open_requests_do_not_accept_server_owned_flags():

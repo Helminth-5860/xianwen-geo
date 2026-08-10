@@ -3105,7 +3105,7 @@ components:
     Subscription:
       type: object
       additionalProperties: false
-      required: [id, plan_id, plan_code, plan_name, plan_version_id, plan_version_no, status, source_type, is_trial, starts_at, ends_at, cycle_anchor_day, entitlement_summary, version]
+      required: [id, plan_id, plan_code, plan_name, plan_version_id, plan_version_no, status, source_type, is_trial, starts_at, ends_at, cycle_anchor_day, cycle_anchor_time, entitlement_summary, version]
       properties:
         id: {type: string, format: uuid}
         plan_id: {type: string, format: uuid}
@@ -3119,6 +3119,7 @@ components:
         starts_at: {type: string, format: date-time}
         ends_at: {type: string, format: date-time}
         cycle_anchor_day: {type: integer, minimum: 1, maximum: 31}
+        cycle_anchor_time: {type: string, format: time}
         entitlement_summary: {$ref: '#/components/schemas/EntitlementSummary'}
         version: {type: integer, minimum: 1}
     AdminSubscription:
@@ -3180,7 +3181,7 @@ components:
       allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, properties: {data: {type: object, properties: {results: {type: array, items: {$ref: '#/components/schemas/AdminSubscription'}}, pagination: {$ref: '#/components/schemas/Pagination'}}}}}]
     SubscriptionChangeStatus:
       type: string
-      enum: [scheduled, executed, cancelled]
+      enum: [scheduled, executed, cancelled, failed]
     SubscriptionChangeType:
       type: string
       enum: [renewal, upgrade, downgrade, replacement, trial_conversion]
@@ -3216,7 +3217,7 @@ components:
     SubscriptionChangePreview:
       type: object
       additionalProperties: false
-      required: [change_type, target_plan_id, target_plan_version_id, source_plan_version_no, target_plan_version_no, quota_policy, effective_at, cycle_anchor_day, unavailable_confirmation_required, changed_limit_keys, added_model_keys, removed_model_keys]
+      required: [change_type, target_plan_id, target_plan_version_id, source_plan_version_no, target_plan_version_no, quota_policy, effective_at, cycle_anchor_day, cycle_anchor_time, unavailable_confirmation_required, changed_limit_keys, added_model_keys, removed_model_keys]
       properties:
         change_type: {$ref: '#/components/schemas/SubscriptionChangeType'}
         target_plan_id: {type: string, format: uuid}
@@ -3227,6 +3228,7 @@ components:
         effective_at: {type: string, format: date-time}
         ends_at: {type: [string, 'null'], format: date-time}
         cycle_anchor_day: {type: integer, minimum: 1, maximum: 31}
+        cycle_anchor_time: {type: string, format: time}
         unavailable_confirmation_required: {type: boolean}
         changed_limit_keys: {type: array, items: {type: string}}
         added_model_keys: {type: array, items: {$ref: '#/components/schemas/PlanModelKey'}}
@@ -3247,6 +3249,8 @@ components:
         effective_at: {type: string, format: date-time}
         executed_at: {type: [string, 'null'], format: date-time}
         cancelled_at: {type: [string, 'null'], format: date-time}
+        failed_at: {type: [string, 'null'], format: date-time}
+        stable_error_code: {type: string}
         version: {type: integer, minimum: 1}
         created_at: {type: string, format: date-time}
     AdminSubscriptionChange:
@@ -3261,6 +3265,8 @@ components:
             unavailable_reason: {type: string, maxLength: 500}
             requested_by_id: {type: string, format: uuid}
             cancellation_reason: {type: string, maxLength: 500}
+            next_attempt_at: {type: [string, 'null'], format: date-time}
+            retry_count: {type: integer, minimum: 0}
             events: {type: array, items: {$ref: '#/components/schemas/SubscriptionChangeEvent'}}
             updated_at: {type: string, format: date-time}
     SubscriptionChangeEvent:

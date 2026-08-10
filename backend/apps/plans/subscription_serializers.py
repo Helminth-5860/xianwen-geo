@@ -112,6 +112,7 @@ class CurrentSubscriptionSerializer(serializers.ModelSerializer):
             "starts_at",
             "ends_at",
             "cycle_anchor_day",
+            "cycle_anchor_time",
             "entitlement_summary",
             "version",
         )
@@ -125,7 +126,7 @@ class AdminSubscriptionListSerializer(CurrentSubscriptionSerializer):
     user_nickname = serializers.CharField(source="user.nickname")
 
     class Meta(CurrentSubscriptionSerializer.Meta):
-        fields = (
+        fields = (  # type: ignore[assignment]
             "id",
             "user_id",
             "user_nickname",
@@ -152,6 +153,7 @@ class AdminSubscriptionDetailSerializer(AdminSubscriptionListSerializer):
             "source_application_id",
             "source_change_id",
             "cycle_anchor_day",
+            "cycle_anchor_time",
             "activated_at",
             "expired_at",
             "terminated_at",
@@ -230,6 +232,8 @@ class UserSubscriptionChangeSerializer(serializers.ModelSerializer):
             "effective_at",
             "executed_at",
             "cancelled_at",
+            "failed_at",
+            "stable_error_code",
             "created_at",
             "version",
         )
@@ -250,6 +254,8 @@ class AdminSubscriptionChangeSerializer(UserSubscriptionChangeSerializer):
             "unavailable_reason",
             "requested_by_id",
             "cancellation_reason",
+            "next_attempt_at",
+            "retry_count",
             "events",
             "updated_at",
         )

@@ -242,6 +242,7 @@ function Invoke-DockerChecks {
             "build",
             "api",
             "celery",
+            "celery-beat",
             "frontend"
         )
     }

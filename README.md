@@ -319,3 +319,17 @@ Seed reverse 保留审批/审计引用；Trigger reverse 只移除保护，不�
 完整回退会删除领域证据，生产逆向迁移前必须停止写入、审查并备份，优先前向修复或备份恢复。
 完整边界见 [docs/26-PLAN-CHANGES.md](docs/26-PLAN-CHANGES.md)。
 PostgreSQL/Redis suite with `.\scripts\test-quotas.ps1`.
+
+## Cycle reset and expiry processing (XW-0115)
+
+Celery Beat scans due renewals, subscription expiries, and monthly quota
+boundaries, while PostgreSQL stores all retry and exactly-once evidence.
+Subscription expiry is never blocked by a scheduled renewal or Hold. Renewal
+targets retain their approved effective window and can execute from an expired,
+but never terminated, source.
+
+Monthly reset creates immutable quota batches and ledger evidence; it never
+rewrites old batches or releases Holds. There is no public execute or reset API.
+Run the real isolated PostgreSQL/Redis suite with
+`.\scripts\test-cycle-reset.ps1`. Full lifecycle, worker, migration, and
+rollback boundaries are in [docs/27-CYCLE-RESET-EXPIRY.md](docs/27-CYCLE-RESET-EXPIRY.md).

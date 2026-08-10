@@ -1,4 +1,5 @@
 import os
+from datetime import timedelta
 from ipaddress import ip_network
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -195,3 +196,22 @@ CELERY_TASK_DEFAULT_QUEUE = "system_tasks"
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TIMEZONE = TIME_ZONE
 CELERY_RESULT_BACKEND = None
+CELERY_TASK_ACKS_LATE = True
+CELERY_TASK_REJECT_ON_WORKER_LOST = True
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+CELERY_TASK_SOFT_TIME_LIMIT = 50
+CELERY_TASK_TIME_LIMIT = 60
+CELERY_BEAT_SCHEDULE = {
+    "scan-due-renewals": {
+        "task": "plans.scan_due_renewals",
+        "schedule": timedelta(seconds=60),
+    },
+    "scan-due-expiries": {
+        "task": "plans.scan_due_expiries",
+        "schedule": timedelta(seconds=60),
+    },
+    "scan-due-quota-cycles": {
+        "task": "quotas.scan_due_cycles",
+        "schedule": timedelta(seconds=60),
+    },
+}
