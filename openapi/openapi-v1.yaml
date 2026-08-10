@@ -374,41 +374,149 @@ paths:
   /subjects:
     get:
       tags: [Subjects]
-      summary: 主体列表
+      summary: List the authenticated user's subjects
       responses:
-        '200': {description: 主体列表}
+        '200':
+          description: Subject summaries and current-subject context
+          headers:
+            X-Request-ID: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SubjectListEnvelope'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
     post:
       tags: [Subjects]
-      summary: 创建主体草稿
+      summary: Create a subject draft from the current canonical schema
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreateSubjectRequest'
+              $ref: '#/components/schemas/SubjectCreateRequest'
       responses:
-        '201': {description: 创建成功}
-        '409':
-          $ref: '#/components/responses/BusinessConflict'
+        '201':
+          description: Subject draft created
+          headers:
+            X-Request-ID: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SubjectEnvelope'}
+        '400': {$ref: '#/components/responses/InvalidJson'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/CsrfFailed'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+        '409': {$ref: '#/components/responses/BusinessConflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
   /subjects/{subjectId}:
     parameters:
       - $ref: '#/components/parameters/SubjectId'
     get:
       tags: [Subjects]
-      summary: 当前主体详情
+      summary: Read a subject with its persisted safe form schema
       responses:
-        '200': {description: 主体详情}
-        '404': {description: 不存在或无权访问}
-  /subjects/{subjectId}/commit:
+        '200':
+          description: Subject detail projected from the immutable schema snapshot
+          headers:
+            X-Request-ID: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SubjectEnvelope'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+  /subjects/{subjectId}/draft:
+    parameters:
+      - $ref: '#/components/parameters/SubjectId'
+    patch:
+      tags: [Subjects]
+      summary: Update values against the subject's persisted schema snapshot
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SubjectDraftUpdateRequest'}
+      responses:
+        '200':
+          description: Draft values updated
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SubjectEnvelope'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/CsrfFailed'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+        '409': {$ref: '#/components/responses/BusinessConflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /subjects/{subjectId}/archive:
     parameters:
       - $ref: '#/components/parameters/SubjectId'
     post:
       tags: [Subjects]
-      summary: 校验草稿并创建主体资料版本
+      summary: Archive a draft or active subject
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SubjectStatusRequest'}
       responses:
-        '201': {description: 新资料版本}
-        '422':
-          $ref: '#/components/responses/ValidationError'
+        '200':
+          description: Subject archived
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SubjectEnvelope'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/CsrfFailed'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+        '409': {$ref: '#/components/responses/BusinessConflict'}
+  /subjects/{subjectId}/activate:
+    parameters:
+      - $ref: '#/components/parameters/SubjectId'
+    post:
+      tags: [Subjects]
+      summary: Activate within the effective subscription's subject limit
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SubjectStatusRequest'}
+      responses:
+        '200':
+          description: Subject activated
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SubjectEnvelope'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/CsrfFailed'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+        '409': {$ref: '#/components/responses/BusinessConflict'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+  /subjects/current:
+    put:
+      tags: [Subjects]
+      summary: Select a non-archived subject as current
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SubjectCurrentRequest'}
+      responses:
+        '200':
+          description: Current subject context
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SubjectContextEnvelope'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/CsrfFailed'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+        '409': {$ref: '#/components/responses/BusinessConflict'}
   /subjects/{subjectId}/keywords/generate:
     parameters:
       - $ref: '#/components/parameters/SubjectId'
@@ -2207,6 +2315,15 @@ components:
         - SUBJECT_FIELD_KEY_CONFLICT
         - SUBJECT_FIELD_CONFIG_INVALID
         - SUBJECT_TYPE_STATE_CONFLICT
+        - SUBJECT_SCHEMA_MISMATCH
+        - SUBJECT_FIELD_VALUES_INVALID
+        - SUBJECT_LIMIT_REACHED
+        - SUBJECT_LIMIT_RECONCILIATION_REQUIRED
+        - SUBJECT_ENTITLEMENT_INTEGRITY_ERROR
+        - SUBJECT_VERSION_CONFLICT
+        - SUBJECT_CURRENT_VERSION_CONFLICT
+        - SUBJECT_STATE_CONFLICT
+        - PLAN_REQUIRED
     HealthEnvelope:
       allOf:
         - $ref: '#/components/schemas/EnvelopeBase'
@@ -2513,13 +2630,128 @@ components:
                     $ref: '#/components/schemas/Notification'
                 pagination:
                   $ref: '#/components/schemas/Pagination'
-    CreateSubjectRequest:
+    SubjectCreateRequest:
       type: object
-      required: [subject_type_id, name]
+      additionalProperties: false
+      required: [subject_type_id, expected_schema_version]
       properties:
         subject_type_id: {type: string, format: uuid}
+        expected_schema_version: {type: integer, minimum: 1}
+        initial_values: {type: object, additionalProperties: true, default: {}}
+    SubjectDraftUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version, values]
+      properties:
+        expected_version: {type: integer, minimum: 1}
+        values: {type: object, additionalProperties: true}
+    SubjectStatusRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version]
+      properties:
+        expected_version: {type: integer, minimum: 1}
+    SubjectCurrentRequest:
+      type: object
+      additionalProperties: false
+      required: [subject_id, expected_version]
+      properties:
+        subject_id: {type: string, format: uuid}
+        expected_version: {type: integer, minimum: 1}
+    SubjectSnapshotType:
+      type: object
+      additionalProperties: false
+      required: [id, key, name, icon_key]
+      properties:
+        id: {type: string, format: uuid}
+        key: {type: string}
         name: {type: string}
-        fields: {type: object, additionalProperties: true}
+        icon_key: {type: string}
+    PersistedSubjectFieldOption:
+      type: object
+      additionalProperties: false
+      required: [option_key, label, sort_order]
+      properties:
+        option_key: {type: string}
+        label: {type: string}
+        sort_order: {type: integer, minimum: 0}
+    PersistedSubjectField:
+      type: object
+      additionalProperties: false
+      required: [field_key, field_type, scope, label, description, required, default_value, sort_order, used_for_ai, name_role, options]
+      properties:
+        field_key: {type: string}
+        field_type: {$ref: '#/components/schemas/SubjectFieldType'}
+        scope: {type: string, enum: [common, custom]}
+        label: {type: string}
+        description: {type: string}
+        required: {type: boolean}
+        default_value: {}
+        sort_order: {type: integer, minimum: 0}
+        used_for_ai: {type: boolean}
+        name_role: {$ref: '#/components/schemas/SubjectFieldNameRole'}
+        options:
+          type: array
+          items: {$ref: '#/components/schemas/PersistedSubjectFieldOption'}
+    PersistedSubjectFormSchema:
+      type: object
+      additionalProperties: false
+      required: [id, key, name, description, icon_key, schema_version, fields]
+      properties:
+        id: {type: string, format: uuid}
+        key: {type: string}
+        name: {type: string}
+        description: {type: string}
+        icon_key: {type: string}
+        schema_version: {type: integer, minimum: 1}
+        fields:
+          type: array
+          items: {$ref: '#/components/schemas/PersistedSubjectField'}
+    SubjectSummary:
+      type: object
+      additionalProperties: false
+      required: [id, subject_type, status, version, is_current, created_at, updated_at]
+      properties:
+        id: {type: string, format: uuid}
+        subject_type: {$ref: '#/components/schemas/SubjectSnapshotType'}
+        status: {type: string, enum: [draft, active, archived]}
+        version: {type: integer, minimum: 1}
+        is_current: {type: boolean}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    SubjectDetail:
+      allOf:
+        - $ref: '#/components/schemas/SubjectSummary'
+        - type: object
+          required: [schema_version, draft_values, form_schema]
+          properties:
+            schema_version: {type: integer, minimum: 1}
+            draft_values: {type: object, additionalProperties: true}
+            form_schema: {$ref: '#/components/schemas/PersistedSubjectFormSchema'}
+    SubjectContext:
+      type: object
+      additionalProperties: false
+      required: [current_subject_id, version]
+      properties:
+        current_subject_id: {type: [string, 'null'], format: uuid}
+        version: {type: integer, minimum: 0}
+    SubjectEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, properties: {data: {$ref: '#/components/schemas/SubjectDetail'}}}]
+    SubjectContextEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, properties: {data: {$ref: '#/components/schemas/SubjectContext'}}}]
+    SubjectListEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          properties:
+            data:
+              type: object
+              required: [subjects, context]
+              properties:
+                subjects:
+                  type: array
+                  items: {$ref: '#/components/schemas/SubjectSummary'}
+                context: {$ref: '#/components/schemas/SubjectContext'}
     KeywordGenerationRequest:
       type: object
       required: [target_count]

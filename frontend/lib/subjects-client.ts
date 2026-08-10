@@ -177,3 +177,108 @@ export const reorderSubjectFields = (
       fields: fields.map((field) => ({ id: field.id, expected_version: field.version })),
     },
   );
+
+export type SubjectStatus = "draft" | "active" | "archived";
+
+export type PersistedSubjectFieldOption = Readonly<{
+  option_key: string;
+  label: string;
+  sort_order: number;
+}>;
+
+export type PersistedSubjectField = Readonly<{
+  field_key: string;
+  field_type: SubjectFieldType;
+  scope: "common" | "custom";
+  label: string;
+  description: string;
+  required: boolean;
+  default_value: unknown;
+  sort_order: number;
+  used_for_ai: boolean;
+  name_role: SubjectFieldConfig["name_role"];
+  options: PersistedSubjectFieldOption[];
+}>;
+
+export type PersistedFormSchema = Readonly<{
+  id: string;
+  key: string;
+  name: string;
+  description: string;
+  icon_key: string;
+  schema_version: number;
+  fields: PersistedSubjectField[];
+}>;
+
+export type SubjectSummary = Readonly<{
+  id: string;
+  subject_type: Readonly<{
+    id: string;
+    key: string;
+    name: string;
+    icon_key: string;
+  }>;
+  status: SubjectStatus;
+  version: number;
+  is_current: boolean;
+  created_at: string;
+  updated_at: string;
+}>;
+
+export type SubjectDetail = SubjectSummary &
+  Readonly<{
+    schema_version: number;
+    draft_values: Record<string, unknown>;
+    form_schema: PersistedFormSchema;
+  }>;
+
+export type SubjectContext = Readonly<{
+  current_subject_id: string | null;
+  version: number;
+}>;
+
+export type SubjectList = Readonly<{
+  subjects: SubjectSummary[];
+  context: SubjectContext;
+}>;
+
+export const getSubjects = (status = "") =>
+  get<SubjectList>(`/subjects${status ? `?status=${encodeURIComponent(status)}` : ""}`);
+
+export const createSubject = (
+  subjectTypeId: string,
+  expectedSchemaVersion: number,
+  initialValues: Record<string, unknown> = {},
+) =>
+  post<SubjectDetail>("/subjects", {
+    subject_type_id: subjectTypeId,
+    expected_schema_version: expectedSchemaVersion,
+    initial_values: initialValues,
+  });
+
+export const getSubject = (id: string) => get<SubjectDetail>(`/subjects/${id}`);
+
+export const updateSubjectDraft = (
+  subject: Pick<SubjectDetail, "id" | "version">,
+  values: Record<string, unknown>,
+) =>
+  write<SubjectDetail>("PATCH", `/subjects/${subject.id}/draft`, {
+    expected_version: subject.version,
+    values,
+  });
+
+export const archiveSubject = (subject: Pick<SubjectSummary, "id" | "version">) =>
+  post<SubjectDetail>(`/subjects/${subject.id}/archive`, {
+    expected_version: subject.version,
+  });
+
+export const activateSubject = (subject: Pick<SubjectSummary, "id" | "version">) =>
+  post<SubjectDetail>(`/subjects/${subject.id}/activate`, {
+    expected_version: subject.version,
+  });
+
+export const setCurrentSubject = (subjectId: string, expectedVersion: number) =>
+  write<SubjectContext>("PUT", "/subjects/current", {
+    subject_id: subjectId,
+    expected_version: expectedVersion,
+  });

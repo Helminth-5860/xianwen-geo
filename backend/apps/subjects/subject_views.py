@@ -1,0 +1,209 @@
+from django.utils.decorators import method_decorator
+from django.views.decorators.csrf import csrf_protect
+from rest_framework.response import Response
+from rest_framework.status import (
+    HTTP_403_FORBIDDEN,
+    HTTP_409_CONFLICT,
+    HTTP_422_UNPROCESSABLE_ENTITY,
+    HTTP_503_SERVICE_UNAVAILABLE,
+)
+from rest_framework.views import APIView
+
+from apps.core.error_codes import ErrorCode
+from apps.core.responses import error_response
+
+from .permissions import IsAvailableAuthenticatedUser
+from .serializers import (
+    SubjectContextSerializer,
+    SubjectCreateRequestSerializer,
+    SubjectCurrentRequestSerializer,
+    SubjectDetailSerializer,
+    SubjectDraftUpdateRequestSerializer,
+    SubjectStatusRequestSerializer,
+    SubjectSummarySerializer,
+)
+from .subject_services import (
+    SubjectBusinessError,
+    activate_subject,
+    archive_subject,
+    create_subject,
+    set_current_subject,
+    subject_context_for_user,
+    subject_for_user_or_404,
+    subjects_for_user,
+    update_subject_draft,
+)
+
+ERROR_STATUS = {
+    "SUBJECT_SCHEMA_MISMATCH": HTTP_409_CONFLICT,
+    "SUBJECT_FIELD_VALUES_INVALID": HTTP_422_UNPROCESSABLE_ENTITY,
+    "SUBJECT_LIMIT_REACHED": HTTP_409_CONFLICT,
+    "SUBJECT_LIMIT_RECONCILIATION_REQUIRED": HTTP_409_CONFLICT,
+    "SUBJECT_ENTITLEMENT_INTEGRITY_ERROR": HTTP_503_SERVICE_UNAVAILABLE,
+    "SUBJECT_VERSION_CONFLICT": HTTP_409_CONFLICT,
+    "SUBJECT_CURRENT_VERSION_CONFLICT": HTTP_409_CONFLICT,
+    "SUBJECT_STATE_CONFLICT": HTTP_409_CONFLICT,
+    "PLAN_REQUIRED": HTTP_403_FORBIDDEN,
+    "ACCOUNT_UNAVAILABLE": HTTP_403_FORBIDDEN,
+}
+
+
+def _error(exc, request):
+    details = {}
+    if getattr(exc, "field_key", ""):
+        details["fields"] = {exc.field_key: ["\u5b57\u6bb5\u503c\u4e0d\u6b63\u786e"]}
+    return error_response(
+        ErrorCode(exc.code),
+        status_code=ERROR_STATUS[exc.code],
+        request=request,
+        details=details,
+    )
+
+
+def _detail(subject, *, current_subject_id=None):
+    return SubjectDetailSerializer(
+        subject,
+        context={"current_subject_id": current_subject_id},
+    ).data
+
+
+class SubjectListCreateView(APIView):
+    permission_classes = [IsAvailableAuthenticatedUser]
+
+    def get(self, request):
+        context = subject_context_for_user(request.user)
+        current_id = context.current_subject_id if context else None
+        rows = subjects_for_user(request.user)
+        status_value = request.query_params.get("status")
+        if status_value in {"draft", "active", "archived"}:
+            rows = rows.filter(status=status_value)
+        return Response(
+            {
+                "subjects": SubjectSummarySerializer(
+                    rows,
+                    many=True,
+                    context={"current_subject_id": current_id},
+                ).data,
+                "context": (
+                    SubjectContextSerializer(context).data
+                    if context
+                    else {"current_subject_id": None, "version": 0}
+                ),
+            }
+        )
+
+    @method_decorator(csrf_protect)
+    def post(self, request):
+        serializer = SubjectCreateRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            subject = create_subject(
+                user_id=request.user.pk,
+                subject_type_id=serializer.validated_data["subject_type_id"],
+                expected_schema_version=serializer.validated_data["expected_schema_version"],
+                initial_values=dict(serializer.validated_data["initial_values"]),
+                request_id=request.request_id,
+            )
+        except SubjectBusinessError as exc:
+            return _error(exc, request)
+        context = subject_context_for_user(request.user)
+        return Response(
+            _detail(
+                subject,
+                current_subject_id=context.current_subject_id if context else None,
+            ),
+            status=201,
+        )
+
+
+class SubjectDetailView(APIView):
+    permission_classes = [IsAvailableAuthenticatedUser]
+
+    def get(self, request, subject_id):
+        subject = subject_for_user_or_404(user=request.user, subject_id=subject_id)
+        context = subject_context_for_user(request.user)
+        return Response(
+            _detail(
+                subject,
+                current_subject_id=context.current_subject_id if context else None,
+            )
+        )
+
+
+class SubjectDraftView(APIView):
+    permission_classes = [IsAvailableAuthenticatedUser]
+
+    @method_decorator(csrf_protect)
+    def patch(self, request, subject_id):
+        serializer = SubjectDraftUpdateRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            subject = update_subject_draft(
+                user_id=request.user.pk,
+                subject_id=subject_id,
+                expected_version=serializer.validated_data["expected_version"],
+                values=dict(serializer.validated_data["values"]),
+            )
+        except SubjectBusinessError as exc:
+            return _error(exc, request)
+        context = subject_context_for_user(request.user)
+        return Response(
+            _detail(
+                subject,
+                current_subject_id=context.current_subject_id if context else None,
+            )
+        )
+
+
+class SubjectStatusView(APIView):
+    permission_classes = [IsAvailableAuthenticatedUser]
+    operation = ""
+
+    @method_decorator(csrf_protect)
+    def post(self, request, subject_id):
+        serializer = SubjectStatusRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            service = activate_subject if self.operation == "activate" else archive_subject
+            subject = service(
+                user_id=request.user.pk,
+                subject_id=subject_id,
+                expected_version=serializer.validated_data["expected_version"],
+                request_id=request.request_id,
+            )
+        except SubjectBusinessError as exc:
+            return _error(exc, request)
+        context = subject_context_for_user(request.user)
+        return Response(
+            _detail(
+                subject,
+                current_subject_id=context.current_subject_id if context else None,
+            )
+        )
+
+
+class SubjectActivateView(SubjectStatusView):
+    operation = "activate"
+
+
+class SubjectArchiveView(SubjectStatusView):
+    operation = "archive"
+
+
+class SubjectCurrentView(APIView):
+    permission_classes = [IsAvailableAuthenticatedUser]
+
+    @method_decorator(csrf_protect)
+    def put(self, request):
+        serializer = SubjectCurrentRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            context = set_current_subject(
+                user_id=request.user.pk,
+                subject_id=serializer.validated_data["subject_id"],
+                expected_version=serializer.validated_data["expected_version"],
+                request_id=request.request_id,
+            )
+        except SubjectBusinessError as exc:
+            return _error(exc, request)
+        return Response(SubjectContextSerializer(context).data)

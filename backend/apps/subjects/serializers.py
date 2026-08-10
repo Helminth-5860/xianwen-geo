@@ -3,11 +3,14 @@ from rest_framework import serializers
 from apps.admin_rbac.serializers import StrictSerializer
 
 from .models import (
+    Subject,
+    SubjectContext,
     SubjectFieldDefinition,
     SubjectFieldOption,
     SubjectType,
     SubjectTypeFieldConfig,
 )
+from .schema_snapshots import public_form_schema
 
 
 class SubjectFieldOptionSerializer(serializers.ModelSerializer):
@@ -239,3 +242,75 @@ class FieldOrderItemSerializer(StrictSerializer):
 class FieldOrderSerializer(StrictSerializer):
     expected_schema_version = serializers.IntegerField(min_value=1)
     fields = FieldOrderItemSerializer(many=True, allow_empty=False)  # type: ignore[assignment]
+
+
+class SubjectCreateRequestSerializer(StrictSerializer):
+    subject_type_id = serializers.UUIDField()
+    expected_schema_version = serializers.IntegerField(min_value=1)
+    initial_values = serializers.DictField(required=False, default=dict)
+
+
+class SubjectDraftUpdateRequestSerializer(StrictSerializer):
+    expected_version = serializers.IntegerField(min_value=1)
+    values = serializers.DictField()
+
+
+class SubjectStatusRequestSerializer(StrictSerializer):
+    expected_version = serializers.IntegerField(min_value=1)
+
+
+class SubjectCurrentRequestSerializer(StrictSerializer):
+    subject_id = serializers.UUIDField()
+    expected_version = serializers.IntegerField(min_value=1)
+
+
+class SubjectSummarySerializer(serializers.ModelSerializer):
+    subject_type = serializers.SerializerMethodField()
+    is_current = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Subject
+        fields = (
+            "id",
+            "subject_type",
+            "status",
+            "version",
+            "is_current",
+            "created_at",
+            "updated_at",
+        )
+
+    def get_subject_type(self, obj):
+        snapshot_type = obj.schema_snapshot["subject_type"]
+        return {
+            "id": snapshot_type["id"],
+            "key": snapshot_type["key"],
+            "name": snapshot_type["name"],
+            "icon_key": snapshot_type["icon_key"],
+        }
+
+    def get_is_current(self, obj):
+        return obj.pk == self.context.get("current_subject_id")
+
+
+class SubjectDetailSerializer(SubjectSummarySerializer):
+    form_schema = serializers.SerializerMethodField()
+
+    class Meta(SubjectSummarySerializer.Meta):
+        fields = (  # type: ignore[assignment]
+            *SubjectSummarySerializer.Meta.fields,
+            "schema_version",
+            "draft_values",
+            "form_schema",
+        )
+
+    def get_form_schema(self, obj):
+        return public_form_schema(obj.schema_snapshot)
+
+
+class SubjectContextSerializer(serializers.ModelSerializer):
+    current_subject_id = serializers.UUIDField(read_only=True, allow_null=True)
+
+    class Meta:
+        model = SubjectContext
+        fields = ("current_subject_id", "version")

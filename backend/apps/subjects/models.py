@@ -240,3 +240,193 @@ class SubjectFieldOption(models.Model):  # noqa: DJ008
                 condition=models.Q(version__gte=1), name="subject_field_option_version_gte_1"
             ),
         ]
+
+
+class SubjectQuerySet(models.QuerySet):
+    def delete(self):
+        raise TypeError("Subjects cannot be deleted.")
+
+
+class Subject(models.Model):  # noqa: DJ008
+    class Status(models.TextChoices):
+        DRAFT = "draft", "\u8349\u7a3f"
+        ACTIVE = "active", "\u542f\u7528"
+        ARCHIVED = "archived", "\u5df2\u5f52\u6863"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="subjects",
+    )
+    subject_type = models.ForeignKey(
+        SubjectType,
+        on_delete=models.PROTECT,
+        related_name="subjects",
+    )
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.DRAFT)
+    draft_values = models.JSONField(default=dict)
+    schema_version = models.PositiveBigIntegerField()
+    schema_snapshot_format_version = models.PositiveSmallIntegerField(default=1)
+    schema_snapshot = models.JSONField()
+    schema_digest = models.CharField(max_length=64)
+    version = models.PositiveBigIntegerField(default=1)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    objects = SubjectQuerySet.as_manager()
+
+    class Meta:
+        db_table = "subjects"
+        ordering = ("-updated_at", "id")
+        indexes = [
+            models.Index(fields=("user", "status", "created_at"), name="subject_user_status_idx"),
+            models.Index(
+                fields=("subject_type", "status", "created_at"),
+                name="subject_type_status_idx",
+            ),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(status__in=("draft", "active", "archived")),
+                name="subject_valid_status",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(schema_version__gte=1),
+                name="subject_schema_version_gte_1",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(schema_snapshot_format_version=1),
+                name="subject_schema_format_v1",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(version__gte=1),
+                name="subject_version_gte_1",
+            ),
+        ]
+
+
+class AppendOnlySubjectVersionQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        raise TypeError("Subject versions are append-only.")
+
+    def delete(self):
+        raise TypeError("Subject versions are append-only.")
+
+
+class SubjectVersion(models.Model):  # noqa: DJ008
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    subject = models.ForeignKey(Subject, on_delete=models.PROTECT, related_name="versions")
+    version_no = models.PositiveBigIntegerField()
+    field_values = models.JSONField()
+    schema_version = models.PositiveBigIntegerField()
+    schema_snapshot_format_version = models.PositiveSmallIntegerField(default=1)
+    schema_snapshot = models.JSONField()
+    schema_digest = models.CharField(max_length=64)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="created_subject_versions",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = AppendOnlySubjectVersionQuerySet.as_manager()
+
+    class Meta:
+        db_table = "subject_versions"
+        ordering = ("subject_id", "version_no", "id")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("subject", "version_no"),
+                name="subject_version_number_unique",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(version_no__gte=1),
+                name="subject_version_number_gte_1",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(schema_version__gte=1),
+                name="subject_version_schema_gte_1",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(schema_snapshot_format_version=1),
+                name="subject_version_schema_format_v1",
+            ),
+        ]
+
+
+class AppendOnlySubjectEventQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        raise TypeError("Subject events are append-only.")
+
+    def delete(self):
+        raise TypeError("Subject events are append-only.")
+
+
+class SubjectEvent(models.Model):  # noqa: DJ008
+    class EventType(models.TextChoices):
+        CREATED = "created", "\u5df2\u521b\u5efa"
+        ACTIVATED = "activated", "\u5df2\u542f\u7528"
+        ARCHIVED = "archived", "\u5df2\u5f52\u6863"
+        CURRENT_SELECTED = "current_selected", "\u5df2\u8bbe\u4e3a\u5f53\u524d\u4e3b\u4f53"
+        CURRENT_CLEARED = "current_cleared", "\u5df2\u6e05\u9664\u5f53\u524d\u4e3b\u4f53"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    subject = models.ForeignKey(Subject, on_delete=models.PROTECT, related_name="events")
+    event_type = models.CharField(max_length=32, choices=EventType.choices)
+    from_status = models.CharField(max_length=16, blank=True)
+    to_status = models.CharField(max_length=16, choices=Subject.Status.choices)
+    safe_summary = models.JSONField(default=dict)
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="performed_subject_events",
+    )
+    request_id = models.UUIDField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = AppendOnlySubjectEventQuerySet.as_manager()
+
+    class Meta:
+        db_table = "subject_events"
+        ordering = ("subject_id", "created_at", "id")
+        indexes = [models.Index(fields=("subject", "created_at"), name="subject_event_created_idx")]
+
+
+class SubjectContextQuerySet(models.QuerySet):
+    def delete(self):
+        raise TypeError("Subject contexts cannot be deleted.")
+
+
+class SubjectContext(models.Model):  # noqa: DJ008
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="subject_context",
+    )
+    current_subject = models.ForeignKey(
+        Subject,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="selected_by_contexts",
+    )
+    version = models.PositiveBigIntegerField(default=1)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    objects = SubjectContextQuerySet.as_manager()
+
+    class Meta:
+        db_table = "subject_contexts"
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(version__gte=1),
+                name="subject_context_version_gte_1",
+            )
+        ]
