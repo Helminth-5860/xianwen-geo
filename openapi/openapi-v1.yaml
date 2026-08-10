@@ -1727,6 +1727,119 @@ paths:
         '422': {$ref: '#/components/responses/ValidationError'}
         '429': {$ref: '#/components/responses/RateLimited'}
         '503': {$ref: '#/components/responses/ServiceUnavailable'}
+  /subject-types:
+    get:
+      tags: [Subjects]
+      summary: 获取启用的主体类型目录
+      description: 可用账号均可读取，GET 完全只读。
+      responses: {'200': {description: 启用的主体类型, content: {application/json: {schema: {$ref: '#/components/schemas/PublicSubjectTypeListEnvelope'}}}}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/PermissionDenied'}}
+  /subject-types/{subjectTypeId}/form-schema:
+    parameters: [{name: subjectTypeId, in: path, required: true, schema: {type: string, format: uuid}}]
+    get:
+      tags: [Subjects]
+      summary: 获取当前只读表单 Schema
+      description: 仅返回启用字段和选项；image/file 仅声明 Schema，不提供上传。
+      responses: {'200': {description: 当前表单 Schema, content: {application/json: {schema: {$ref: '#/components/schemas/PublicSubjectFormSchemaEnvelope'}}}}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}}
+  /admin/subject-types:
+    get:
+      tags: [Admin, Subjects]
+      summary: 查询全局主体类型目录
+      parameters: [{name: status, in: query, schema: {$ref: '#/components/schemas/SubjectTypeStatus'}}, {name: keyword, in: query, schema: {type: string, maxLength: 100}}]
+      responses: {'200': {description: 主体类型目录, content: {application/json: {schema: {$ref: '#/components/schemas/AdminSubjectTypeListEnvelope'}}}}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/PermissionDenied'}}
+    post:
+      tags: [Admin, Subjects]
+      summary: 创建主体类型并原子创建全部公共字段配置
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/SubjectTypeCreateRequest'}}}}
+      responses: {'201': {description: 已创建, content: {application/json: {schema: {$ref: '#/components/schemas/AdminSubjectTypeEnvelope'}}}}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/CsrfFailed'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /admin/subject-types/{subjectTypeId}:
+    parameters: [{name: subjectTypeId, in: path, required: true, schema: {type: string, format: uuid}}]
+    get:
+      tags: [Admin, Subjects]
+      summary: 获取主体类型和全部 FieldConfig
+      responses: {'200': {description: 主体类型详情, content: {application/json: {schema: {$ref: '#/components/schemas/AdminSubjectTypeEnvelope'}}}}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}}
+    patch:
+      tags: [Admin, Subjects]
+      summary: 修改主体类型用户可见信息
+      description: 不允许修改 key 或 is_builtin；同时校验 version 与 schema_version。
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/SubjectTypeUpdateRequest'}}}}
+      responses: {'200': {description: 已更新, content: {application/json: {schema: {$ref: '#/components/schemas/AdminSubjectTypeEnvelope'}}}}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/CsrfFailed'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /admin/subject-types/{subjectTypeId}/enable:
+    parameters: [{name: subjectTypeId, in: path, required: true, schema: {type: string, format: uuid}}]
+    post:
+      tags: [Admin, Subjects]
+      summary: 启用主体类型
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ExpectedSubjectTypeVersions'}}}}
+      responses:
+        '200': {description: 状态已更新, content: {application/json: {schema: {$ref: '#/components/schemas/AdminSubjectTypeEnvelope'}}}}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/CsrfFailed'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /admin/subject-types/{subjectTypeId}/disable:
+    parameters: [{name: subjectTypeId, in: path, required: true, schema: {type: string, format: uuid}}]
+    post:
+      tags: [Admin, Subjects]
+      summary: 停用主体类型
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ExpectedSubjectTypeVersions'}}}}
+      responses:
+        '200': {description: 状态已更新, content: {application/json: {schema: {$ref: '#/components/schemas/AdminSubjectTypeEnvelope'}}}}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/CsrfFailed'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /admin/subject-types/{subjectTypeId}/fields:
+    parameters: [{name: subjectTypeId, in: path, required: true, schema: {type: string, format: uuid}}]
+    get:
+      tags: [Admin, Subjects]
+      summary: 获取全部 FieldConfig
+      responses: {'200': {description: 字段配置列表, content: {application/json: {schema: {$ref: '#/components/schemas/SubjectFieldConfigListEnvelope'}}}}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}}
+    post:
+      tags: [Admin, Subjects]
+      summary: 原子创建 custom Definition 和 Config
+      description: field_key、field_type、scope、owner 创建后不可修改。
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/CustomSubjectFieldCreateRequest'}}}}
+      responses: {'201': {description: 字段已创建, content: {application/json: {schema: {$ref: '#/components/schemas/SubjectFieldConfigEnvelope'}}}}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/CsrfFailed'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /admin/subject-types/{subjectTypeId}/field-order:
+    parameters: [{name: subjectTypeId, in: path, required: true, schema: {type: string, format: uuid}}]
+    put:
+      tags: [Admin, Subjects]
+      summary: 原子替换完整 FieldConfig 排列
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/SubjectFieldOrderRequest'}}}}
+      responses: {'200': {description: 已排序, content: {application/json: {schema: {$ref: '#/components/schemas/AdminSubjectTypeEnvelope'}}}}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/CsrfFailed'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /admin/subject-type-fields/{configId}:
+    parameters: [{name: configId, in: path, required: true, schema: {type: string, format: uuid}}]
+    patch:
+      tags: [Admin, Subjects]
+      summary: 修改 FieldConfig 展示和业务属性
+      description: 不接受 field_key、field_type、scope、owner 或 is_builtin。
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/SubjectFieldConfigUpdateRequest'}}}}
+      responses: {'200': {description: 已更新, content: {application/json: {schema: {$ref: '#/components/schemas/SubjectFieldConfigEnvelope'}}}}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/CsrfFailed'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /admin/subject-type-fields/{configId}/options:
+    parameters: [{name: configId, in: path, required: true, schema: {type: string, format: uuid}}]
+    post:
+      tags: [Admin, Subjects]
+      summary: 为 choice FieldConfig 创建稳定 option_key
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/SubjectFieldOptionCreateRequest'}}}}
+      responses: {'201': {description: 选项已创建, content: {application/json: {schema: {$ref: '#/components/schemas/SubjectFieldOptionEnvelope'}}}}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/CsrfFailed'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /admin/subject-field-options/{optionId}:
+    parameters: [{name: optionId, in: path, required: true, schema: {type: string, format: uuid}}]
+    patch:
+      tags: [Admin, Subjects]
+      summary: 修改选项 label、enabled 或排序
+      description: option_key 不可修改，不提供 DELETE。
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/SubjectFieldOptionUpdateRequest'}}}}
+      responses: {'200': {description: 选项已更新, content: {application/json: {schema: {$ref: '#/components/schemas/SubjectFieldOptionEnvelope'}}}}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/CsrfFailed'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}}
 components:
   pathItems:
     AdminStatusAction:
@@ -2088,6 +2201,12 @@ components:
         - SUBSCRIPTION_CONFIRMATION_REQUIRED
         - SUBSCRIPTION_OVERRIDE_FORBIDDEN
         - SUBSCRIPTION_NOTE_INVALID
+        - SUBJECT_TYPE_VERSION_CONFLICT
+        - SUBJECT_SCHEMA_VERSION_CONFLICT
+        - SUBJECT_TYPE_KEY_CONFLICT
+        - SUBJECT_FIELD_KEY_CONFLICT
+        - SUBJECT_FIELD_CONFIG_INVALID
+        - SUBJECT_TYPE_STATE_CONFLICT
     HealthEnvelope:
       allOf:
         - $ref: '#/components/schemas/EnvelopeBase'
@@ -3374,3 +3493,167 @@ components:
       allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, properties: {data: {type: object, properties: {results: {type: array, items: {$ref: '#/components/schemas/AdminQuotaLedgerEntry'}}, pagination: {$ref: '#/components/schemas/Pagination'}}}}}]
     QuotaAdjustmentEnvelope:
       allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, properties: {data: {type: object, additionalProperties: false, properties: {account_id: {type: string, format: uuid}, ledger_entry_id: {type: string, format: uuid}, available: {type: integer, minimum: 0}, frozen: {type: integer, minimum: 0}, version: {type: integer, minimum: 1}, replayed: {type: boolean}}}}}]
+    SubjectTypeStatus:
+      type: string
+      enum: [active, inactive]
+    SubjectFieldType:
+      type: string
+      enum: [text, textarea, number, date, single, multi, select, url, image, file]
+    SubjectFieldNameRole:
+      type: string
+      enum: [none, official_name, alias, english_name, product]
+    SubjectFieldOption:
+      type: object
+      additionalProperties: false
+      required: [id, option_key, label, enabled, sort_order, version]
+      properties:
+        id: {type: string, format: uuid}
+        option_key: {type: string, pattern: '^[a-z][a-z0-9_]{0,63}$', readOnly: true}
+        label: {type: string, maxLength: 100}
+        enabled: {type: boolean}
+        sort_order: {type: integer, minimum: 0}
+        version: {type: integer, minimum: 1}
+    SubjectFieldConfig:
+      type: object
+      additionalProperties: false
+      required: [id, field_key, field_type, scope, label, description, required, default_value, sort_order, enabled, used_for_ai, name_role, version, options]
+      properties:
+        id: {type: string, format: uuid}
+        field_key: {type: string, pattern: '^[a-z][a-z0-9_]{0,63}$', readOnly: true}
+        field_type: {$ref: '#/components/schemas/SubjectFieldType', readOnly: true}
+        scope: {type: string, enum: [common, custom], readOnly: true}
+        is_builtin: {type: boolean, readOnly: true}
+        label: {type: string, maxLength: 100}
+        description: {type: string, maxLength: 500}
+        required: {type: boolean}
+        default_value: {description: '按 field_type 校验；image/file 只能为 null；choice 引用 enabled option_key。'}
+        sort_order: {type: integer, minimum: 0}
+        enabled: {type: boolean}
+        used_for_ai: {type: boolean}
+        name_role: {$ref: '#/components/schemas/SubjectFieldNameRole'}
+        version: {type: integer, minimum: 1}
+        options: {type: array, items: {$ref: '#/components/schemas/SubjectFieldOption'}}
+    PublicSubjectFieldOption:
+      type: object
+      additionalProperties: false
+      required: [id, option_key, label, sort_order]
+      properties:
+        id: {type: string, format: uuid}
+        option_key: {type: string, pattern: '^[a-z][a-z0-9_]{0,63}$'}
+        label: {type: string, maxLength: 100}
+        sort_order: {type: integer, minimum: 0}
+    PublicSubjectFieldConfig:
+      type: object
+      additionalProperties: false
+      required: [id, field_key, field_type, scope, label, description, required, default_value, sort_order, used_for_ai, name_role, options]
+      properties:
+        id: {type: string, format: uuid}
+        field_key: {type: string, pattern: '^[a-z][a-z0-9_]{0,63}$'}
+        field_type: {$ref: '#/components/schemas/SubjectFieldType'}
+        scope: {type: string, enum: [common, custom]}
+        label: {type: string, maxLength: 100}
+        description: {type: string, maxLength: 500}
+        required: {type: boolean}
+        default_value:
+          description: 按 field_type 校验；image/file 只能为 null；choice 引用 enabled option_key。
+        sort_order: {type: integer, minimum: 0}
+        used_for_ai: {type: boolean}
+        name_role: {$ref: '#/components/schemas/SubjectFieldNameRole'}
+        options:
+          type: array
+          items: {$ref: '#/components/schemas/PublicSubjectFieldOption'}
+    SubjectTypeSummary:
+      type: object
+      required: [id, key, name, description, icon_key, status, sort_order, is_builtin, schema_version, version]
+      properties:
+        id: {type: string, format: uuid}
+        key: {type: string, pattern: '^[a-z][a-z0-9_]{0,63}$', readOnly: true}
+        name: {type: string, maxLength: 100}
+        description: {type: string, maxLength: 500}
+        icon_key: {type: string, maxLength: 64}
+        status: {$ref: '#/components/schemas/SubjectTypeStatus'}
+        sort_order: {type: integer, minimum: 0}
+        is_builtin: {type: boolean, readOnly: true}
+        schema_version: {type: integer, minimum: 1, readOnly: true}
+        version: {type: integer, minimum: 1, readOnly: true}
+    AdminSubjectType:
+      allOf: [{$ref: '#/components/schemas/SubjectTypeSummary'}, {type: object, required: [fields, created_at, updated_at], properties: {fields: {type: array, items: {$ref: '#/components/schemas/SubjectFieldConfig'}}, created_at: {type: string, format: date-time}, updated_at: {type: string, format: date-time}}}]
+    PublicSubjectType:
+      type: object
+      required: [id, key, name, description, icon_key, sort_order, schema_version]
+      properties: {id: {type: string, format: uuid}, key: {type: string}, name: {type: string}, description: {type: string}, icon_key: {type: string}, sort_order: {type: integer, minimum: 0}, schema_version: {type: integer, minimum: 1}}
+    PublicSubjectFormSchema:
+      allOf: [{$ref: '#/components/schemas/PublicSubjectType'}, {type: object, required: [fields], properties: {fields: {type: array, items: {$ref: '#/components/schemas/PublicSubjectFieldConfig'}}}}]
+    ExpectedSubjectTypeVersions:
+      type: object
+      additionalProperties: false
+      required: [expected_version, expected_schema_version]
+      properties: {expected_version: {type: integer, minimum: 1}, expected_schema_version: {type: integer, minimum: 1}}
+    SubjectTypeCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [key, name]
+      properties: {key: {type: string, pattern: '^[a-z][a-z0-9_]{0,63}$'}, name: {type: string, minLength: 1, maxLength: 100}, description: {type: string, maxLength: 500, default: ''}, icon_key: {type: string, maxLength: 64, default: subject}, sort_order: {type: integer, minimum: 0, default: 0}}
+    SubjectTypeUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version, expected_schema_version]
+      properties: {expected_version: {type: integer, minimum: 1}, expected_schema_version: {type: integer, minimum: 1}, name: {type: string, minLength: 1, maxLength: 100}, description: {type: string, maxLength: 500}, icon_key: {type: string, maxLength: 64}, sort_order: {type: integer, minimum: 0}}
+    SubjectFieldOptionInput:
+      type: object
+      additionalProperties: false
+      required: [option_key, label]
+      properties: {option_key: {type: string, pattern: '^[a-z][a-z0-9_]{0,63}$'}, label: {type: string, minLength: 1, maxLength: 100}, enabled: {type: boolean, default: true}, sort_order: {type: integer, minimum: 0, default: 0}}
+    CustomSubjectFieldCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_schema_version, field_key, field_type, label]
+      properties:
+        expected_schema_version: {type: integer, minimum: 1}
+        field_key: {type: string, pattern: '^[a-z][a-z0-9_]{0,63}$'}
+        field_type: {$ref: '#/components/schemas/SubjectFieldType'}
+        label: {type: string, minLength: 1, maxLength: 100}
+        description: {type: string, maxLength: 500, default: ''}
+        required: {type: boolean, default: false}
+        default_value: {default: null}
+        sort_order: {type: integer, minimum: 0, default: 0}
+        enabled: {type: boolean, default: false}
+        used_for_ai: {type: boolean, default: false}
+        name_role: {$ref: '#/components/schemas/SubjectFieldNameRole'}
+        options: {type: array, items: {$ref: '#/components/schemas/SubjectFieldOptionInput'}, default: []}
+    SubjectFieldConfigUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_schema_version, expected_version]
+      properties: {expected_schema_version: {type: integer, minimum: 1}, expected_version: {type: integer, minimum: 1}, label: {type: string, minLength: 1, maxLength: 100}, description: {type: string, maxLength: 500}, required: {type: boolean}, default_value: {}, sort_order: {type: integer, minimum: 0}, enabled: {type: boolean}, used_for_ai: {type: boolean}, name_role: {$ref: '#/components/schemas/SubjectFieldNameRole'}}
+    SubjectFieldOptionCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_schema_version, expected_config_version, option_key, label]
+      properties: {expected_schema_version: {type: integer, minimum: 1}, expected_config_version: {type: integer, minimum: 1}, option_key: {type: string, pattern: '^[a-z][a-z0-9_]{0,63}$'}, label: {type: string, minLength: 1, maxLength: 100}, enabled: {type: boolean, default: true}, sort_order: {type: integer, minimum: 0, default: 0}}
+    SubjectFieldOptionUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_schema_version, expected_version]
+      properties: {expected_schema_version: {type: integer, minimum: 1}, expected_version: {type: integer, minimum: 1}, label: {type: string, minLength: 1, maxLength: 100}, enabled: {type: boolean}, sort_order: {type: integer, minimum: 0}}
+    SubjectFieldOrderRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_schema_version, fields]
+      properties:
+        expected_schema_version: {type: integer, minimum: 1}
+        fields: {type: array, minItems: 1, items: {type: object, additionalProperties: false, required: [id, expected_version], properties: {id: {type: string, format: uuid}, expected_version: {type: integer, minimum: 1}}}}
+    PublicSubjectTypeListEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: array, items: {$ref: '#/components/schemas/PublicSubjectType'}}}}]
+    PublicSubjectFormSchemaEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/PublicSubjectFormSchema'}}}]
+    AdminSubjectTypeListEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: array, items: {$ref: '#/components/schemas/SubjectTypeSummary'}}}}]
+    AdminSubjectTypeEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/AdminSubjectType'}}}]
+    SubjectFieldConfigListEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: array, items: {$ref: '#/components/schemas/SubjectFieldConfig'}}}}]
+    SubjectFieldConfigEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/SubjectFieldConfig'}}}]
+    SubjectFieldOptionEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/SubjectFieldOption'}}}]

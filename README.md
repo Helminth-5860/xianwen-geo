@@ -333,3 +333,17 @@ rewrites old batches or releases Holds. There is no public execute or reset API.
 Run the real isolated PostgreSQL/Redis suite with
 `.\scripts\test-cycle-reset.ps1`. Full lifecycle, worker, migration, and
 rollback boundaries are in [docs/27-CYCLE-RESET-EXPIRY.md](docs/27-CYCLE-RESET-EXPIRY.md).
+
+## 主体类型与动态字段目录（XW-0201）
+
+独立 `apps.subjects` 使用 PostgreSQL 保存主体类型、不可变字段定义、每类型 FieldConfig
+和稳定 option_key。十类内置主体会在同一事务获得六个公共字段；所有 Schema 写入使用独立
+`schema_version`、对象版本、真实 CSRF、RBAC 和同事务 AuditEvent。数据库 Trigger 拒绝
+目录 DELETE、机器语义修改、字段冲突、无效默认值和 active Schema 丢失唯一正式名称。
+
+本任务不创建 Subject/SubjectVersion，不提供文件上传、COS、AI 补充或主体额度。image/file
+仅作为表单声明并显示“上传能力尚未启用”。XW-0202 必须保存提交时 schema_version、canonical
+schema snapshot 和 digest，不得用未来当前 Schema 解释历史主体版本。
+
+真实 PostgreSQL/Redis 套件运行 `.\scripts\test-subject-schema.ps1`；完整模型、API、迁移、
+回滚与验收边界见 [docs/28-SUBJECT-TYPES-DYNAMIC-FIELDS.md](docs/28-SUBJECT-TYPES-DYNAMIC-FIELDS.md)。
