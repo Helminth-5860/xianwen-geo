@@ -389,6 +389,7 @@ def test_cycle_reset_postgresql_suite_is_wired_into_docker_job():
     assert "cycle-reset-tests" in shell_script
     assert "cycle-reset-tests" in powershell_script
     assert "tests/test_cycle_reset_postgres.py" in compose
+    assert "tests/test_cycle_reset_verification_postgres.py" in compose
     assert "down --volumes --remove-orphans" in shell_script
     assert "down --volumes --remove-orphans" in powershell_script
     assert "openssl rand -hex 32" in shell_script
@@ -397,3 +398,7 @@ def test_cycle_reset_postgresql_suite_is_wired_into_docker_job():
         encoding="utf-8"
     )
     assert suite.count("def test_") == 9
+    verification = (
+        REPO_ROOT / "backend" / "tests" / "test_cycle_reset_verification_postgres.py"
+    ).read_text(encoding="utf-8")
+    assert verification.count("def test_") == 16

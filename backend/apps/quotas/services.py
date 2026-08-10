@@ -1124,7 +1124,17 @@ def _settle_hold(*, hold_id, amount, action: str, idempotency_key: str, request_
             business_type = ""
             business_id = None
             moment = timezone.now()
+            expiry_disposition = (
+                QuotaExpiryDisposition.objects.filter(account=account).only("policy").first()
+            )
             if (
+                expiry_disposition is not None
+                and expiry_disposition.policy == QuotaExpiryDisposition.Policy.ZERO
+            ):
+                late_action = QuotaLedgerEntry.Action.EXPIRY_LATE_RELEASE_FORFEIT
+                business_type = "subscription_expiry"
+                business_id = account.subscription_id
+            elif expiry_disposition is None and (
                 account.batch_type == QuotaAccount.BatchType.PRIMARY
                 and account.cycle_ends_at is not None
                 and account.cycle_ends_at <= moment
@@ -1132,12 +1142,6 @@ def _settle_hold(*, hold_id, amount, action: str, idempotency_key: str, request_
                 late_action = QuotaLedgerEntry.Action.CYCLE_LATE_RELEASE_FORFEIT
                 business_type = "quota_cycle_reset"
                 business_id = account.pk
-            elif QuotaExpiryDisposition.objects.filter(
-                account=account, policy=QuotaExpiryDisposition.Policy.ZERO
-            ).exists():
-                late_action = QuotaLedgerEntry.Action.EXPIRY_LATE_RELEASE_FORFEIT
-                business_type = "subscription_expiry"
-                business_id = account.subscription_id
             if late_action is not None:
                 late_digests = system_idempotency_digests(
                     operation=late_action,

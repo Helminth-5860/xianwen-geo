@@ -156,12 +156,7 @@ def _fail_expired_renewal_locked(change, code, request_id):
     return failed
 
 
-@transaction.atomic
-def expire_subscription(*, subscription_id, request_id, now=None):
-    moment = now or timezone.now()
-    user_id = Subscription.objects.only("user_id").get(pk=subscription_id).user_id
-    User.objects.select_for_update().get(pk=user_id)
-    subscription = Subscription.objects.select_for_update().get(pk=subscription_id)
+def _expire_subscription_locked(*, subscription, request_id, moment):
     if subscription.status == Subscription.Status.TERMINATED:
         return subscription
     if subscription.status == Subscription.Status.ACTIVE:
@@ -202,6 +197,19 @@ def expire_subscription(*, subscription_id, request_id, now=None):
     return subscription
 
 
+@transaction.atomic
+def expire_subscription(*, subscription_id, request_id, now=None):
+    moment = now or timezone.now()
+    user_id = Subscription.objects.only("user_id").get(pk=subscription_id).user_id
+    User.objects.select_for_update().get(pk=user_id)
+    subscription = Subscription.objects.select_for_update().get(pk=subscription_id)
+    return _expire_subscription_locked(
+        subscription=subscription,
+        request_id=request_id,
+        moment=moment,
+    )
+
+
 def _retry_blocked_locked(change, now):
     change.retry_count += 1
     delay = min(3600, 60 * (2 ** min(change.retry_count - 1, 6)))
@@ -221,9 +229,6 @@ def execute_due_renewal(*, change_id, request_id, now=None):
     binding = SubscriptionChange.objects.only(
         "target_plan_id", "target_plan_version_id", "from_subscription_id"
     ).get(pk=change_id)
-    expire_subscription(
-        subscription_id=binding.from_subscription_id, request_id=request_id, now=moment
-    )
     with transaction.atomic():
         plan, version = _lock_plan_and_version(
             binding.target_plan_id, binding.target_plan_version_id
@@ -246,6 +251,11 @@ def execute_due_renewal(*, change_id, request_id, now=None):
             return change
         if source.status == Subscription.Status.TERMINATED:
             return _mark_failed_locked(change, RENEWAL_SOURCE_TERMINATED, request_id)
+        _expire_subscription_locked(
+            subscription=source,
+            request_id=request_id,
+            moment=moment,
+        )
         try:
             approval, payload = _approval_payload(change)
         except ValueError as exc:

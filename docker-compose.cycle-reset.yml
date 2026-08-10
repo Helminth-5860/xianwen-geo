@@ -10,6 +10,7 @@ services:
       - -m
       - pytest
       - tests/test_cycle_reset_postgres.py
+      - tests/test_cycle_reset_verification_postgres.py
       - --ds=config.settings
       - -q
       - -p
