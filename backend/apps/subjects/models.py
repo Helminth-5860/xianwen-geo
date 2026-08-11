@@ -678,6 +678,7 @@ class AppendOnlySubjectRiskQuerySet(models.QuerySet):
 class SubjectRiskCatalogRevision(models.Model):  # noqa: DJ008
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     revision_no = models.PositiveBigIntegerField(unique=True)
+    draft_version = models.PositiveBigIntegerField()
     format_version = models.PositiveSmallIntegerField(default=1)
     snapshot = models.JSONField()
     snapshot_digest = models.CharField(max_length=64, unique=True)
@@ -706,6 +707,10 @@ class SubjectRiskCatalogRevision(models.Model):  # noqa: DJ008
             models.CheckConstraint(
                 condition=models.Q(revision_no__gte=1),
                 name="subject_risk_revision_no_gte_1",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(draft_version__gte=1),
+                name="subject_risk_revision_draft_version_gte_1",
             ),
             models.CheckConstraint(
                 condition=models.Q(format_version=1), name="subject_risk_revision_format_v1"
@@ -793,7 +798,8 @@ class SubjectReview(models.Model):  # noqa: DJ008
         related_name="review",
     )
     status = models.CharField(max_length=16, choices=Status.choices, default=Status.PENDING)
-    reason = models.CharField(max_length=500, blank=True)
+    public_reason = models.CharField(max_length=500, blank=True)
+    internal_note = models.CharField(max_length=1000, blank=True)
     reviewed_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         null=True,

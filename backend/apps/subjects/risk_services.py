@@ -1,5 +1,6 @@
 import copy
 import re
+import uuid
 from dataclasses import dataclass
 from typing import Any
 
@@ -163,6 +164,14 @@ def build_draft_snapshot() -> dict[str, Any]:
     )
 
 
+@transaction.atomic
+def draft_catalog_binding(expected_version: int) -> tuple[int, str]:
+    state = _locked_catalog_state()
+    if state.version != expected_version:
+        raise SubjectRiskCatalogVersionConflict
+    return state.version, catalog_digest(build_draft_snapshot())
+
+
 def _bump_state(state: SubjectRiskCatalogState) -> None:
     state.version += 1
     state.save(update_fields=["version", "updated_at"])
@@ -302,13 +311,19 @@ def update_risk_rule(*, request, risk_rule_id, data: dict[str, Any]) -> SubjectR
 
 @transaction.atomic
 def publish_catalog(
-    *, request, expected_version: int, approval_request: ApprovalRequest
+    *,
+    request,
+    expected_version: int,
+    expected_digest: str,
+    approval_request: ApprovalRequest,
 ) -> SubjectRiskCatalogRevision:
     state = _locked_catalog_state()
     if state.version != expected_version:
         raise SubjectRiskCatalogVersionConflict
     snapshot = build_draft_snapshot()
     digest = catalog_digest(snapshot)
+    if digest != expected_digest:
+        raise SubjectRiskCatalogVersionConflict
     previous = state.published_revision
     if previous is not None and previous.snapshot_digest == digest:
         raise SubjectRiskError
@@ -321,6 +336,7 @@ def publish_catalog(
     ) + 1
     revision = SubjectRiskCatalogRevision.objects.create(
         revision_no=revision_no,
+        draft_version=expected_version,
         snapshot=copy.deepcopy(snapshot),
         snapshot_digest=digest,
         published_by=request.user,
@@ -359,8 +375,9 @@ def assess_subject_version(
     subject: Subject,
     version: SubjectVersion,
     revision: SubjectRiskCatalogRevision,
-    actor: User,
+    actor: User | None,
     request_id,
+    create_review: bool = True,
 ) -> SubjectRiskAssessment:
     hits = evaluate_catalog(
         snapshot=copy.deepcopy(revision.snapshot),
@@ -388,7 +405,7 @@ def assess_subject_version(
     SubjectRiskHit.objects.bulk_create(
         [SubjectRiskHit(assessment=assessment, **hit) for hit in hits]
     )
-    if review_required:
+    if review_required and create_review:
         review = SubjectReview.objects.create(
             assessment=assessment, subject=subject, subject_version=version
         )
@@ -402,6 +419,53 @@ def assess_subject_version(
             request_id=request_id,
         )
     return assessment
+
+
+def assess_existing_subject_versions(*, request_id=None) -> dict[str, Any]:
+    revision = published_catalog_revision()
+    fixed_revision_id = revision.pk
+    version_ids = list(
+        SubjectVersion.objects.filter(risk_assessment__isnull=True)
+        .order_by("subject_id", "version_no", "id")
+        .values_list("id", flat=True)
+    )
+    assessed = 0
+    reviews_created = 0
+    for version_id in version_ids:
+        with transaction.atomic():
+            pending_version = SubjectVersion.objects.only("subject_id").get(pk=version_id)
+            user_id = Subject.objects.values_list("user_id", flat=True).get(
+                pk=pending_version.subject_id
+            )
+            User.objects.select_for_update().get(pk=user_id)
+            subject = (
+                Subject.objects.select_for_update()
+                .select_related("subject_type")
+                .get(pk=pending_version.subject_id)
+            )
+            version = SubjectVersion.objects.select_for_update().get(pk=version_id)
+            if SubjectRiskAssessment.objects.filter(subject_version=version).exists():
+                continue
+            fixed_revision = SubjectRiskCatalogRevision.objects.get(pk=fixed_revision_id)
+            create_review = subject.current_version_id == version.pk
+            assessment = assess_subject_version(
+                subject=subject,
+                version=version,
+                revision=fixed_revision,
+                actor=None,
+                request_id=request_id or uuid.uuid4(),
+                create_review=create_review,
+            )
+            assessed += 1
+            reviews_created += int(
+                create_review
+                and assessment.outcome == SubjectRiskAssessment.Outcome.REVIEW_REQUIRED
+            )
+    return {
+        "revision_id": str(fixed_revision_id),
+        "assessed": assessed,
+        "reviews_created": reviews_created,
+    }
 
 
 def scoped_reviews(*, user: User, admin_context) -> QuerySet[SubjectReview]:
@@ -427,7 +491,13 @@ def scoped_review_or_404(*, user: User, admin_context, review_id, lock=False) ->
 
 @transaction.atomic
 def decide_review(
-    *, request, review_id, decision: str, expected_version: int, reason: str
+    *,
+    request,
+    review_id,
+    decision: str,
+    expected_version: int,
+    public_reason: str,
+    internal_note: str,
 ) -> SubjectReview:
     scoped = scoped_review_or_404(
         user=request.user,
@@ -456,12 +526,14 @@ def decide_review(
         SubjectReview.Status.REJECTED,
     }:
         raise SubjectReviewStateConflict
-    reason = _plain_text(reason, limit=500) if reason else ""
-    if decision == SubjectReview.Status.REJECTED and not reason:
+    public_reason = _plain_text(public_reason, limit=500) if public_reason else ""
+    internal_note = _plain_text(internal_note, limit=1000) if internal_note else ""
+    if decision == SubjectReview.Status.REJECTED and not public_reason:
         raise SubjectReviewReasonRequired
     before = {"status": review.status, "version": review.version}
     review.status = decision
-    review.reason = reason
+    review.public_reason = public_reason
+    review.internal_note = internal_note
     review.reviewed_by = request.user
     review.reviewed_at = timezone.now()
     review.version += 1
@@ -533,11 +605,17 @@ def capabilities_for_subject(subject: Subject) -> SubjectCapabilities:
         raise SubjectReviewRejected
     revision = published_catalog_revision()
     policies = {item["key"]: item for item in revision.snapshot["risk_types"]}
-    matched = [
-        policies[hit.risk_type_key]
-        for hit in SubjectRiskHit.objects.filter(assessment=assessment)
-        if hit.risk_type_key in policies
-    ]
+    hit_keys = [hit.risk_type_key for hit in SubjectRiskHit.objects.filter(assessment=assessment)]
+    return merge_feature_policies(policies=policies, hit_keys=hit_keys)
+
+
+def merge_feature_policies(
+    *, policies: dict[str, dict[str, Any]], hit_keys: list[str]
+) -> SubjectCapabilities:
+    missing_policy_keys = set(hit_keys) - set(policies)
+    if missing_policy_keys:
+        raise SubjectRiskError
+    matched = [policies[key] for key in hit_keys]
     return SubjectCapabilities(
         geo_detection=all(item["allow_geo_detection"] for item in matched),
         article_generation=all(item["allow_article_generation"] for item in matched),
@@ -551,14 +629,14 @@ def capabilities_for_subject(subject: Subject) -> SubjectCapabilities:
 
 def subject_risk_summary(subject: Subject) -> dict[str, Any]:
     if subject.current_version_id is None:
-        return {"status": "not_assessed", "review_id": None}
+        return {"status": "not_assessed", "review_id": None, "public_reason": ""}
     current_version = subject.current_version
     if current_version is None:
-        return {"status": "not_assessed", "review_id": None}
+        return {"status": "not_assessed", "review_id": None, "public_reason": ""}
     try:
         assessment = current_version.risk_assessment
     except SubjectRiskAssessment.DoesNotExist:
-        return {"status": "unavailable", "review_id": None}
+        return {"status": "unavailable", "review_id": None, "public_reason": ""}
     try:
         review = assessment.review
     except SubjectReview.DoesNotExist:
@@ -566,6 +644,7 @@ def subject_risk_summary(subject: Subject) -> dict[str, Any]:
     return {
         "status": review.status if review is not None else assessment.outcome,
         "review_id": str(review.pk) if review is not None else None,
+        "public_reason": review.public_reason if review is not None else "",
     }
 
 

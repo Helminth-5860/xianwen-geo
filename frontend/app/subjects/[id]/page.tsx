@@ -268,6 +268,14 @@ export default function SubjectDetailPage() {
               {`\u98ce\u9669\u72b6\u6001: ${subject.risk.status}`}
             </Tag>
           </Space>
+          {subject.risk.public_reason && (
+            <Alert
+              type="warning"
+              showIcon
+              message={"\u5ba1\u6838\u539f\u56e0"}
+              description={subject.risk.public_reason}
+            />
+          )}
           <Typography.Paragraph>
             <Link href={`/subjects/${subject.id}/versions`}>
               {"\u67e5\u770b\u6b63\u5f0f\u7248\u672c\u5386\u53f2"}

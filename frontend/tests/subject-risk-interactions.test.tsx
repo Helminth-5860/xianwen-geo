@@ -78,7 +78,16 @@ const review = {
   official_name: "\u6d4b\u8bd5\u4e3b\u4f53",
   status: "pending" as const,
   reason_types: ["data_conflict"],
-  reason: "",
+  review_evidence: [
+    {
+      risk_type_key: "test.restricted",
+      rule_key: "test.rule",
+      reason_type: "data_conflict",
+      field_key: "name",
+    },
+  ],
+  public_reason: "",
+  internal_note: "",
   version: 3,
   reviewed_at: null,
   created_at: "2026-08-11T00:00:00Z",
@@ -178,7 +187,7 @@ describe("direct subject review interactions", () => {
     render(<SubjectReviewDetailPage />);
     expect(await screen.findByText("\u6d4b\u8bd5\u4e3b\u4f53")).toBeTruthy();
     await userEvent.click(screen.getByRole("button", { name: /\u901a\s*\u8fc7/ }));
-    await waitFor(() => expect(mocks.approve).toHaveBeenCalledWith(review, ""));
+    await waitFor(() => expect(mocks.approve).toHaveBeenCalledWith(review, "", ""));
     expect(mocks.publish).not.toHaveBeenCalled();
   });
 
@@ -186,7 +195,11 @@ describe("direct subject review interactions", () => {
     render(<SubjectReviewDetailPage />);
     await screen.findByText("\u6d4b\u8bd5\u4e3b\u4f53");
     await userEvent.click(screen.getByRole("button", { name: /\u62d2\s*\u7edd/ }));
-    expect(screen.getByText("\u62d2\u7edd\u65f6\u5fc5\u987b\u586b\u5199\u539f\u56e0")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "\u62d2\u7edd\u65f6\u5fc5\u987b\u586b\u5199\u5bf9\u7528\u6237\u516c\u5f00\u7684\u539f\u56e0",
+      ),
+    ).toBeTruthy();
     expect(mocks.reject).not.toHaveBeenCalled();
 
     mocks.approve.mockRejectedValueOnce(new Error("\u65e0\u6743\u6267\u884c\u8be5\u64cd\u4f5c"));
@@ -206,5 +219,38 @@ describe("direct subject review interactions", () => {
     expect(
       (screen.getByRole("button", { name: /\u62d2\s*\u7edd/ }) as HTMLButtonElement).disabled,
     ).toBe(true);
+  });
+});
+describe("subject review evidence boundaries", () => {
+  it("renders safe evidence and submits public reason separately from the internal note", async () => {
+    mocks.reject.mockResolvedValueOnce({
+      ...review,
+      status: "rejected",
+      public_reason: "\u8bf7\u6838\u5bf9\u516c\u5f00\u8d44\u6599",
+      internal_note: "\u4ec5\u7ba1\u7406\u5458\u53ef\u89c1\u7ebf\u7d22",
+      version: 4,
+    });
+    render(<SubjectReviewDetailPage />);
+
+    expect(await screen.findByText(/test\.restricted \/ test\.rule \/ name/)).toBeTruthy();
+    await userEvent.type(
+      screen.getByLabelText("\u5bf9\u7528\u6237\u516c\u5f00\u7684\u539f\u56e0"),
+      "\u8bf7\u6838\u5bf9\u516c\u5f00\u8d44\u6599",
+    );
+    await userEvent.type(
+      screen.getByLabelText("\u4ec5\u7ba1\u7406\u5458\u53ef\u89c1\u7684\u5907\u6ce8"),
+      "\u4ec5\u7ba1\u7406\u5458\u53ef\u89c1\u7ebf\u7d22",
+    );
+    await userEvent.click(screen.getByRole("button", { name: /\u62d2\s*\u7edd/ }));
+
+    await waitFor(() =>
+      expect(mocks.reject).toHaveBeenCalledWith(
+        review,
+        "\u8bf7\u6838\u5bf9\u516c\u5f00\u8d44\u6599",
+        "\u4ec5\u7ba1\u7406\u5458\u53ef\u89c1\u7ebf\u7d22",
+      ),
+    );
+    expect(await screen.findByText("\u8bf7\u6838\u5bf9\u516c\u5f00\u8d44\u6599")).toBeTruthy();
+    expect(screen.getByText("\u4ec5\u7ba1\u7406\u5458\u53ef\u89c1\u7ebf\u7d22")).toBeTruthy();
   });
 });

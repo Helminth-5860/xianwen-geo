@@ -29,6 +29,8 @@ def install_empty_published_risk_catalog() -> SubjectRiskCatalogRevision:
         password="Test-Risk-Catalog-2026!",
     )
     action = RiskAction.objects.get(pk="subject_risk.catalog.publish")
+    snapshot = {"format_version": 1, "risk_types": [], "rules": []}
+    draft_digest = catalog_digest(snapshot)
     now = timezone.now()
     approval = ApprovalRequest.objects.create(
         action=action,
@@ -38,7 +40,7 @@ def install_empty_published_risk_catalog() -> SubjectRiskCatalogRevision:
         target_type=action.target_type,
         target_id=uuid.UUID("00000000-0000-0000-0000-000000000001"),
         target_version=1,
-        sanitized_payload={},
+        sanitized_payload={"draft_digest": draft_digest},
         payload_digest="0" * 64,
         safe_summary="Test-only empty catalog publication.",
         status=ApprovalRequest.Status.EXECUTED,
@@ -49,11 +51,11 @@ def install_empty_published_risk_catalog() -> SubjectRiskCatalogRevision:
         execution_result={"revision_no": 1},
         request_id=uuid.uuid4(),
     )
-    snapshot = {"format_version": 1, "risk_types": [], "rules": []}
     revision = SubjectRiskCatalogRevision.objects.create(
         revision_no=1,
+        draft_version=1,
         snapshot=snapshot,
-        snapshot_digest=catalog_digest(snapshot),
+        snapshot_digest=draft_digest,
         published_by=approver,
         approval_request=approval,
     )

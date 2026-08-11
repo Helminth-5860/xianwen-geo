@@ -33,7 +33,7 @@ When a new SubjectVersion becomes current, only an older pending Review is super
 - `POST /api/v1/admin/subject-reviews/{id}/approve`
 - `POST /api/v1/admin/subject-reviews/{id}/reject`
 
-Subject detail exposes only `{status, review_id}` as its risk summary. All writes use the standard JSON envelope, X-Request-ID, simplified-Chinese errors, secure Session and CSRF boundaries.
+Subject detail exposes only `{status, review_id, public_reason}` as its risk summary; administrator-only notes and evidence never cross this boundary. All writes use the standard JSON envelope, X-Request-ID, simplified-Chinese errors, secure Session and CSRF boundaries.
 
 ## Migrations and rollback
 
@@ -50,3 +50,19 @@ Fast tests run with the normal backend and frontend suites. Real PostgreSQL/Redi
 ```
 
 The isolated Compose service includes `tests/test_subject_risk_postgres.py`, covering database guards, mandatory publication approval, concurrent exactly-once review decisions, current-version invalidation, `own`/`role`/`all` scope, and historical-classification/current-policy separation.
+
+## Publication binding and runtime integrity
+
+A catalog publication approval is bound to both the locked draft catalog version and the canonical SHA-256 digest of that draft snapshot. The immutable published revision records the same `draft_version` and `snapshot_digest`; a changed draft makes the approval stale, and PostgreSQL rejects a revision whose approval evidence does not match. Draft edits never alter runtime behavior before a newly approved revision is published.
+
+Each assessment permanently references the immutable catalog revision used for classification. Runtime feature enforcement deliberately uses the current published revision for policy flags. Every historical hit key must exist in that revision; a missing policy is treated as catalog-integrity failure and returns the generic 503 boundary rather than silently allowing a feature.
+
+## Review data boundaries
+
+Review decisions store `public_reason` separately from the administrator-only `internal_note`. Subject-owner APIs expose only the public reason. Administrator review responses may expose immutable hit metadata (`risk_type_key`, `rule_key`, `reason_type`, and `field_key`) but never field values, matched values, rule patterns, snapshots, digests, cookies, or audit payloads. Reject requires a public reason. Approve and reject remain single-admin domain decisions protected by the full administrator session, CSRF, permission, scoped object lookup, expected version, transaction, append-only event, and audit evidence.
+
+## Existing-version assessment
+
+`python manage.py assess_existing_subject_versions` is dry-run by default. `--apply` captures one published revision before processing and binds the entire run to that immutable revision. Only the current version of a subject may receive a pending Review; historical versions receive immutable Assessments and Hits only. The command does not fabricate clear history during migration and does not republish or mutate catalog facts.
+
+Migration `0011_catalog_publish_binding_and_review_boundaries` refuses to guess `draft_version` or approval digest evidence when an earlier development database already contains revisions. Such a database requires an audited forward migration after evidence review. The migration never fabricates Assessment, Review, Hit, or clear outcomes.

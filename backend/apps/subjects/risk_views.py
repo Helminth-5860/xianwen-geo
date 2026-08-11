@@ -38,6 +38,7 @@ from .risk_services import (
     create_risk_rule,
     create_risk_type,
     decide_review,
+    draft_catalog_binding,
     scoped_review_or_404,
     scoped_reviews,
     update_risk_rule,
@@ -210,12 +211,15 @@ class AdminRiskCatalogPublishView(APIView):
         serializer = CatalogPublishSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
+            draft_version, draft_digest = draft_catalog_binding(
+                serializer.validated_data["expected_catalog_version"]
+            )
             result = perform_risk_action(
                 request=request,
                 action_key="subject_risk.catalog.publish",
                 target_id=CATALOG_TARGET_ID,
-                target_version=serializer.validated_data["expected_catalog_version"],
-                raw_payload={},
+                target_version=draft_version,
+                raw_payload={"draft_digest": draft_digest},
                 confirmed=serializer.validated_data["confirmed"],
                 current_password=serializer.validated_data["current_password"],
             )

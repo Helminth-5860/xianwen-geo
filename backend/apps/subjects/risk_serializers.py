@@ -1,6 +1,7 @@
 from rest_framework import serializers
 
 from apps.admin_rbac.serializers import StrictSerializer
+from apps.users.validators import validate_safe_plain_text
 
 from .models import (
     SubjectReview,
@@ -168,7 +169,14 @@ class CatalogPublishSerializer(StrictSerializer):
 class CatalogRevisionSerializer(serializers.ModelSerializer):
     class Meta:
         model = SubjectRiskCatalogRevision
-        fields = ("id", "revision_no", "format_version", "snapshot_digest", "created_at")
+        fields = (
+            "id",
+            "revision_no",
+            "draft_version",
+            "format_version",
+            "snapshot_digest",
+            "created_at",
+        )
 
 
 class ReviewSerializer(serializers.ModelSerializer):
@@ -178,6 +186,7 @@ class ReviewSerializer(serializers.ModelSerializer):
     version_no = serializers.IntegerField(source="subject_version.version_no", read_only=True)
     official_name = serializers.CharField(source="subject_version.official_name", read_only=True)
     reason_types = serializers.SerializerMethodField()
+    review_evidence = serializers.SerializerMethodField()
 
     class Meta:
         model = SubjectReview
@@ -190,7 +199,9 @@ class ReviewSerializer(serializers.ModelSerializer):
             "official_name",
             "status",
             "reason_types",
-            "reason",
+            "review_evidence",
+            "public_reason",
+            "internal_note",
             "version",
             "reviewed_at",
             "created_at",
@@ -200,7 +211,39 @@ class ReviewSerializer(serializers.ModelSerializer):
     def get_reason_types(self, obj):
         return sorted(set(obj.assessment.hits.values_list("reason_type", flat=True)))
 
+    def get_review_evidence(self, obj):
+        return [
+            {
+                "risk_type_key": hit.risk_type_key,
+                "rule_key": hit.rule_key,
+                "reason_type": hit.reason_type,
+                "field_key": hit.field_key,
+            }
+            for hit in obj.assessment.hits.order_by("rule_key", "field_key", "id")
+        ]
+
 
 class ReviewDecisionSerializer(StrictSerializer):
     expected_version = serializers.IntegerField(min_value=1)
-    reason = serializers.CharField(max_length=500, allow_blank=True, required=False, default="")
+    public_reason = serializers.CharField(
+        max_length=500, allow_blank=True, required=False, default="", trim_whitespace=False
+    )
+    internal_note = serializers.CharField(
+        max_length=1000, allow_blank=True, required=False, default="", trim_whitespace=False
+    )
+
+    def validate_public_reason(self, value):
+        return validate_safe_plain_text(
+            value,
+            field_label="\u516c\u5f00\u5ba1\u6838\u539f\u56e0",
+            max_length=500,
+            required=False,
+        )
+
+    def validate_internal_note(self, value):
+        return validate_safe_plain_text(
+            value,
+            field_label="\u5185\u90e8\u5ba1\u6838\u5907\u6ce8",
+            max_length=1000,
+            required=False,
+        )

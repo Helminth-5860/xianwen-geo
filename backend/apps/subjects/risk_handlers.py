@@ -1,11 +1,16 @@
+from rest_framework import serializers
 from rest_framework.exceptions import NotFound
 
 from apps.admin_rbac.permissions import AdminContext
 from apps.admin_rbac.risk_handlers import HandlerContext, HandlerResult, HandlerSpec
-from apps.admin_rbac.risk_serializers import EmptyPayloadSerializer
+from apps.admin_rbac.risk_serializers import StrictPayloadSerializer
 
 from .models import SubjectRiskCatalogState
 from .risk_services import publish_catalog
+
+
+class CatalogPublishPayloadSerializer(StrictPayloadSerializer):
+    draft_digest = serializers.RegexField(r"^[0-9a-f]{64}$", max_length=64, min_length=64)
 
 
 def _catalog_version(user, context: AdminContext, target_id, lock):
@@ -26,6 +31,7 @@ def handle_catalog_publish(context: HandlerContext) -> HandlerResult:
         request=context.request,
         expected_version=context.target_version,
         approval_request=context.approval_request,
+        expected_digest=context.payload["draft_digest"],
     )
     after = {
         "catalog_version": context.target_version + 1,
@@ -43,7 +49,7 @@ SUBJECT_RISK_HANDLER_SPECS = {
     "subject_risk.catalog.publish": HandlerSpec(
         "subject_risk.catalog.publish",
         False,
-        EmptyPayloadSerializer,
+        CatalogPublishPayloadSerializer,
         _catalog_version,
         handle_catalog_publish,
     ),

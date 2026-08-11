@@ -2971,10 +2971,11 @@ components:
     SubjectRiskCatalogRevisionSummary:
       type: object
       additionalProperties: false
-      required: [id, revision_no, format_version, snapshot_digest, created_at]
+      required: [id, revision_no, draft_version, format_version, snapshot_digest, created_at]
       properties:
         id: {type: string, format: uuid}
         revision_no: {type: integer, minimum: 1}
+        draft_version: {type: integer, minimum: 1, description: Immutable draft catalog version approved for this revision}
         format_version: {type: integer, const: 1}
         snapshot_digest: {type: string, minLength: 64, maxLength: 64}
         created_at: {type: string, format: date-time}
@@ -2983,12 +2984,24 @@ components:
     SubjectReviewDecisionRequest:
       type: object
       additionalProperties: false
-      required: [expected_version, reason]
-      properties: {expected_version: {type: integer, minimum: 1}, reason: {type: string, maxLength: 500}}
+      required: [expected_version]
+      properties:
+        expected_version: {type: integer, minimum: 1}
+        public_reason: {type: string, maxLength: 500, description: Safe reason visible to the subject owner; required when rejecting}
+        internal_note: {type: string, maxLength: 1000, description: Administrator-only plain-text note}
+    SubjectReviewEvidence:
+      type: object
+      additionalProperties: false
+      required: [risk_type_key, rule_key, reason_type, field_key]
+      properties:
+        risk_type_key: {type: string, maxLength: 64}
+        rule_key: {type: string, maxLength: 64}
+        reason_type: {$ref: '#/components/schemas/SubjectRiskReasonType'}
+        field_key: {type: string, maxLength: 64}
     SubjectReview:
       type: object
       additionalProperties: false
-      required: [id, user_id, subject_id, subject_version_id, version_no, official_name, status, reason_types, reason, version, reviewed_at, created_at, updated_at]
+      required: [id, user_id, subject_id, subject_version_id, version_no, official_name, status, reason_types, review_evidence, public_reason, internal_note, version, reviewed_at, created_at, updated_at]
       properties:
         id: {type: string, format: uuid}
         user_id: {type: string, format: uuid}
@@ -2998,7 +3011,9 @@ components:
         official_name: {type: string, maxLength: 500}
         status: {$ref: '#/components/schemas/SubjectReviewStatus'}
         reason_types: {type: array, items: {$ref: '#/components/schemas/SubjectRiskReasonType'}}
-        reason: {type: string, maxLength: 500}
+        review_evidence: {type: array, items: {$ref: '#/components/schemas/SubjectReviewEvidence'}, description: Administrator-only immutable hit metadata; never includes field values or patterns}
+        public_reason: {type: string, maxLength: 500}
+        internal_note: {type: string, maxLength: 1000}
         version: {type: integer, minimum: 1}
         reviewed_at: {type: [string, 'null'], format: date-time}
         created_at: {type: string, format: date-time}
@@ -3010,10 +3025,11 @@ components:
     SubjectRiskSummary:
       type: object
       additionalProperties: false
-      required: [status, review_id]
+      required: [status, review_id, public_reason]
       properties:
         status: {type: string, enum: [not_assessed, unavailable, clear, restricted, review_required, pending, approved, rejected, superseded]}
         review_id: {type: [string, 'null'], format: uuid}
+        public_reason: {type: string, maxLength: 500, description: Safe decision reason visible to the subject owner}
     SubjectSummary:
       type: object
       additionalProperties: false

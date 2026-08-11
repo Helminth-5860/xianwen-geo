@@ -251,6 +251,7 @@ export type SubjectDetail = SubjectSummary &
         | "rejected"
         | "superseded";
       review_id: string | null;
+      public_reason: string;
     }>;
   }>;
 

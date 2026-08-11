@@ -18,7 +18,8 @@ export default function SubjectReviewDetailPage() {
   const { id } = useParams<{ id: string }>();
   const capabilities = useAdminCapabilities();
   const [review, setReview] = useState<SubjectReview | null>(null);
-  const [reason, setReason] = useState("");
+  const [publicReason, setPublicReason] = useState("");
+  const [internalNote, setInternalNote] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const canReview = capabilities?.permission_keys.includes("subject_reviews.review") ?? false;
@@ -31,8 +32,10 @@ export default function SubjectReviewDetailPage() {
 
   const decide = async (decision: "approve" | "reject") => {
     if (!review) return;
-    if (decision === "reject" && !reason.trim()) {
-      setError("\u62d2\u7edd\u65f6\u5fc5\u987b\u586b\u5199\u539f\u56e0");
+    if (decision === "reject" && !publicReason.trim()) {
+      setError(
+        "\u62d2\u7edd\u65f6\u5fc5\u987b\u586b\u5199\u5bf9\u7528\u6237\u516c\u5f00\u7684\u539f\u56e0",
+      );
       return;
     }
     setBusy(true);
@@ -40,8 +43,8 @@ export default function SubjectReviewDetailPage() {
     try {
       const updated =
         decision === "approve"
-          ? await approveSubjectReview(review, reason)
-          : await rejectSubjectReview(review, reason);
+          ? await approveSubjectReview(review, publicReason, internalNote)
+          : await rejectSubjectReview(review, publicReason, internalNote);
       setReview(updated);
     } catch (failure) {
       setError(userMessage(failure));
@@ -67,9 +70,26 @@ export default function SubjectReviewDetailPage() {
             <Descriptions.Item label={"\u72b6\u6001"}>
               <Tag>{review.status}</Tag>
             </Descriptions.Item>
-            <Descriptions.Item label={"\u547d\u4e2d\u539f\u56e0"}>
+            <Descriptions.Item label={"\u547d\u4e2d\u539f\u56e0\u7c7b\u578b"}>
               {review.reason_types.join(", ")}
             </Descriptions.Item>
+            <Descriptions.Item label={"\u5ba1\u6838\u8bc1\u636e"}>
+              {review.review_evidence.map((item) => (
+                <Tag key={`${item.rule_key}:${item.field_key}`}>
+                  {item.risk_type_key} / {item.rule_key} / {item.field_key}
+                </Tag>
+              ))}
+            </Descriptions.Item>
+            {review.public_reason && (
+              <Descriptions.Item label={"\u5bf9\u7528\u6237\u516c\u5f00\u7684\u539f\u56e0"}>
+                {review.public_reason}
+              </Descriptions.Item>
+            )}
+            {review.internal_note && (
+              <Descriptions.Item label={"\u4ec5\u7ba1\u7406\u5458\u53ef\u89c1\u7684\u5907\u6ce8"}>
+                {review.internal_note}
+              </Descriptions.Item>
+            )}
           </Descriptions>
           {review.status === "pending" && (
             <Card title={"\u5ba1\u6838\u51b3\u7b56"}>
@@ -80,10 +100,17 @@ export default function SubjectReviewDetailPage() {
                 />
               )}
               <Input.TextArea
-                aria-label={"\u5ba1\u6838\u539f\u56e0"}
-                value={reason}
+                aria-label={"\u5bf9\u7528\u6237\u516c\u5f00\u7684\u539f\u56e0"}
+                value={publicReason}
                 maxLength={500}
-                onChange={(event) => setReason(event.target.value)}
+                onChange={(event) => setPublicReason(event.target.value)}
+                disabled={!canReview || busy}
+              />
+              <Input.TextArea
+                aria-label={"\u4ec5\u7ba1\u7406\u5458\u53ef\u89c1\u7684\u5907\u6ce8"}
+                value={internalNote}
+                maxLength={1000}
+                onChange={(event) => setInternalNote(event.target.value)}
                 disabled={!canReview || busy}
               />
               <Space>

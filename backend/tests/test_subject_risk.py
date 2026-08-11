@@ -1,21 +1,37 @@
 import pytest
+from django.apps import apps as django_apps
 from django.core.management import call_command
 from rest_framework.test import APIClient
 
 from apps.admin_rbac.models import ApprovalRequest, AuditEvent, RiskAction
+from apps.subjects import version_services
 from apps.subjects.models import (
     Subject,
+    SubjectEvent,
+    SubjectName,
+    SubjectProduct,
     SubjectReview,
     SubjectReviewEvent,
     SubjectRiskAssessment,
     SubjectRiskCatalogRevision,
     SubjectRiskCatalogState,
+    SubjectRiskHit,
+    SubjectRiskType,
     SubjectType,
+    SubjectVersion,
 )
 from apps.subjects.risk_engine import (
     RiskCatalogInvalid,
     evaluate_catalog,
     normalize_patterns,
+)
+from apps.subjects.risk_services import (
+    SubjectReviewPending,
+    SubjectReviewRejected,
+    SubjectRiskError,
+    assess_existing_subject_versions,
+    capabilities_for_subject,
+    merge_feature_policies,
 )
 from apps.users.models import Notification, User
 from tests.admin_session_helpers import authenticate_admin_client
@@ -115,10 +131,12 @@ def publish_matching_catalog(*, pattern="flagged"):
     assert approval.status == ApprovalRequest.Status.EXECUTED
     revision = SubjectRiskCatalogState.objects.get(pk=1).published_revision
     assert revision.approval_request_id == approval.id
+    assert revision.draft_version == approval.target_version == 3
+    assert approval.sanitized_payload == {"draft_digest": revision.snapshot_digest}
     return requester, approver, revision
 
 
-def create_and_commit_flagged_subject(phone="13800138000"):
+def create_flagged_subject(phone="13800138000"):
     user = User.objects.create_user(
         phone=phone,
         nickname="Subject owner",
@@ -137,7 +155,11 @@ def create_and_commit_flagged_subject(phone="13800138000"):
         format="json",
     )
     assert created.status_code == 201
-    detail = payload(created)
+    return user, client, payload(created)
+
+
+def create_and_commit_flagged_subject(phone="13800138000"):
+    user, client, detail = create_flagged_subject(phone)
     committed = client.post(
         f"/api/v1/subjects/{detail['id']}/commit",
         {"expected_version": detail["version"], "products": []},
@@ -225,7 +247,7 @@ def test_commit_binds_immutable_revision_and_direct_review_supersedes_only_pendi
 
     decision = admin_client(approver).post(
         f"/api/v1/admin/subject-reviews/{review.id}/approve",
-        {"expected_version": review.version, "reason": ""},
+        {"expected_version": review.version, "public_reason": "", "internal_note": ""},
         format="json",
     )
     assert decision.status_code == 200
@@ -290,7 +312,7 @@ def test_new_version_supersedes_pending_review_and_old_review_cannot_authorize()
 
     stale = admin_client(approver).post(
         f"/api/v1/admin/subject-reviews/{old_review.id}/approve",
-        {"expected_version": old_review.version, "reason": ""},
+        {"expected_version": old_review.version, "public_reason": "", "internal_note": ""},
         format="json",
     )
     assert stale.status_code == 409
@@ -309,7 +331,11 @@ def test_review_api_requires_secure_admin_csrf_and_exposes_no_subject_values():
     csrf_client = admin_client(approver, csrf=True)
     csrf_failed = csrf_client.post(
         f"/api/v1/admin/subject-reviews/{review.id}/reject",
-        {"expected_version": review.version, "reason": "Test rejection"},
+        {
+            "expected_version": review.version,
+            "public_reason": "Test rejection",
+            "internal_note": "Internal evidence",
+        },
         format="json",
     )
     assert csrf_failed.status_code == 403
@@ -321,3 +347,344 @@ def test_review_api_requires_secure_admin_csrf_and_exposes_no_subject_values():
     assert "field_values" not in encoded
     assert "schema_snapshot" not in encoded
     assert "semantic_digest" not in encoded
+
+
+@pytest.mark.django_db
+def test_commit_without_published_catalog_returns_503_and_rolls_back_all_version_facts():
+    _, client, detail = create_flagged_subject()
+
+    response = client.post(
+        f"/api/v1/subjects/{detail['id']}/commit",
+        {"expected_version": detail["version"], "products": []},
+        format="json",
+    )
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "SUBJECT_RISK_CONFIG_INTEGRITY_ERROR"
+    subject = Subject.objects.get(pk=detail["id"])
+    assert subject.current_version_id is None
+    assert subject.version == detail["version"]
+    assert not SubjectVersion.objects.filter(subject=subject).exists()
+    assert not SubjectName.objects.exists()
+    assert not SubjectProduct.objects.exists()
+    assert not SubjectEvent.objects.filter(
+        event_type=SubjectEvent.EventType.VERSION_COMMITTED
+    ).exists()
+    assert not SubjectRiskAssessment.objects.exists()
+    assert not SubjectReview.objects.exists()
+
+
+@pytest.mark.django_db
+def test_draft_changes_do_not_affect_runtime_and_pending_publish_becomes_stale():
+    requester, approver, revision = publish_matching_catalog()
+    _, _, subject_data = create_and_commit_flagged_subject()
+    review = SubjectReview.objects.get(subject_id=subject_data["id"])
+    decided = admin_client(approver).post(
+        f"/api/v1/admin/subject-reviews/{review.id}/approve",
+        {"expected_version": review.version, "public_reason": "", "internal_note": ""},
+        format="json",
+    )
+    assert decided.status_code == 200
+    subject = Subject.objects.select_related("current_version").get(pk=subject_data["id"])
+    assert capabilities_for_subject(subject).geo_detection is False
+
+    risk_type = SubjectRiskType.objects.get(key="test.review_required")
+    changed = admin_client(requester).patch(
+        f"/api/v1/admin/subject-risk-types/{risk_type.id}",
+        {
+            "expected_catalog_version": 4,
+            "expected_version": risk_type.version,
+            "allow_geo_detection": True,
+        },
+        format="json",
+    )
+    assert changed.status_code == 200
+    assert capabilities_for_subject(subject).geo_detection is False
+
+    requested = admin_client(requester).post(
+        "/api/v1/admin/subject-risk-catalog/publish",
+        {"expected_catalog_version": 5},
+        format="json",
+    )
+    assert requested.status_code == 202
+    approval = ApprovalRequest.objects.get(pk=payload(requested)["approval_id"])
+    assert approval.target_version == 5
+    assert set(approval.sanitized_payload) == {"draft_digest"}
+
+    risk_type.refresh_from_db()
+    changed_again = admin_client(requester).patch(
+        f"/api/v1/admin/subject-risk-types/{risk_type.id}",
+        {
+            "expected_catalog_version": 5,
+            "expected_version": risk_type.version,
+            "allow_article_generation": True,
+        },
+        format="json",
+    )
+    assert changed_again.status_code == 200
+    stale = admin_client(approver).post(
+        f"/api/v1/admin/approvals/{approval.id}/approve",
+        {"current_password": PASSWORD},
+        format="json",
+    )
+    assert stale.status_code == 409
+    assert stale.json()["error"]["code"] == "APPROVAL_STALE"
+    approval.refresh_from_db()
+    assert approval.status == ApprovalRequest.Status.STALE
+    state = SubjectRiskCatalogState.objects.get(pk=1)
+    assert state.published_revision_id == revision.id
+    assert SubjectRiskCatalogRevision.objects.count() == 1
+
+
+@pytest.mark.django_db
+def test_current_feature_policy_merges_deny_and_requirements_and_missing_key_fails_closed():
+    def policy(*, allow=True, citations=False, disclaimer=False):
+        return {
+            "allow_geo_detection": allow,
+            "allow_article_generation": allow,
+            "allow_image_generation": allow,
+            "require_authoritative_citations": citations,
+            "require_disclaimer": disclaimer,
+        }
+
+    clear = merge_feature_policies(policies={}, hit_keys=[])
+    assert clear.geo_detection is True
+    assert clear.article_generation is True
+    assert clear.require_disclaimer is False
+
+    merged = merge_feature_policies(
+        policies={
+            "test.a": policy(allow=True, citations=True),
+            "test.b": policy(allow=False, disclaimer=True),
+        },
+        hit_keys=["test.a", "test.b"],
+    )
+    assert merged.geo_detection is False
+    assert merged.article_generation is False
+    assert merged.image_generation is False
+    assert merged.require_authoritative_citations is True
+    assert merged.require_disclaimer is True
+
+    with pytest.raises(SubjectRiskError):
+        merge_feature_policies(policies={"test.a": policy()}, hit_keys=["test.missing"])
+
+
+@pytest.mark.django_db
+def test_review_public_reason_internal_note_and_evidence_have_separate_api_boundaries():
+    _, approver, _ = publish_matching_catalog()
+    owner, _, subject_data = create_and_commit_flagged_subject()
+    review = SubjectReview.objects.get(subject_id=subject_data["id"])
+
+    decision = admin_client(approver).post(
+        f"/api/v1/admin/subject-reviews/{review.id}/reject",
+        {
+            "expected_version": review.version,
+            "public_reason": "请核对公开主体资料",
+            "internal_note": "仅管理员可见的核验线索",
+        },
+        format="json",
+    )
+    assert decision.status_code == 200
+    admin_data = payload(decision)
+    assert admin_data["public_reason"] == "请核对公开主体资料"
+    assert admin_data["internal_note"] == "仅管理员可见的核验线索"
+    assert admin_data["review_evidence"] == [
+        {
+            "risk_type_key": "test.review_required",
+            "rule_key": "test.name_contains",
+            "reason_type": "data_conflict",
+            "field_key": "name",
+        }
+    ]
+    assert "patterns" not in str(admin_data)
+    assert "field_values" not in str(admin_data)
+
+    user_detail = user_client(owner).get(f"/api/v1/subjects/{subject_data['id']}")
+    assert user_detail.status_code == 200
+    user_data = payload(user_detail)
+    assert user_data["risk"] == {
+        "status": "rejected",
+        "review_id": str(review.id),
+        "public_reason": "请核对公开主体资料",
+    }
+    encoded = str(user_data)
+    assert "仅管理员可见的核验线索" not in encoded
+    assert "review_evidence" not in encoded
+    assert "test.name_contains" not in encoded
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "failure_point",
+    ["current_version", "subject_event", "assessment", "hit", "review", "review_event"],
+)
+def test_subject_commit_risk_fact_failures_roll_back_every_formal_fact(monkeypatch, failure_point):
+    publish_matching_catalog()
+    _, client, detail = create_flagged_subject()
+
+    def fail(*args, **kwargs):
+        raise RuntimeError(f"injected {failure_point} failure")
+
+    if failure_point == "current_version":
+        original_save = Subject.save
+
+        def fail_current_version(instance, *args, **kwargs):
+            if instance.current_version_id is not None:
+                fail()
+            return original_save(instance, *args, **kwargs)
+
+        monkeypatch.setattr(Subject, "save", fail_current_version)
+    else:
+        managers = {
+            "subject_event": (SubjectEvent.objects, "create"),
+            "assessment": (SubjectRiskAssessment.objects, "create"),
+            "hit": (SubjectRiskHit.objects, "bulk_create"),
+            "review": (SubjectReview.objects, "create"),
+            "review_event": (SubjectReviewEvent.objects, "create"),
+        }
+        manager, method = managers[failure_point]
+        monkeypatch.setattr(manager, method, fail)
+
+    response = client.post(
+        f"/api/v1/subjects/{detail['id']}/commit",
+        {"expected_version": detail["version"], "products": []},
+        format="json",
+    )
+    assert response.status_code == 500
+    assert response.json()["error"]["code"] == "INTERNAL_ERROR"
+    subject = Subject.objects.get(pk=detail["id"])
+    assert subject.current_version_id is None
+    assert subject.version == detail["version"]
+    assert not SubjectVersion.objects.filter(subject=subject).exists()
+    assert not SubjectName.objects.exists()
+    assert not SubjectProduct.objects.exists()
+    assert not SubjectEvent.objects.filter(
+        event_type=SubjectEvent.EventType.VERSION_COMMITTED
+    ).exists()
+    assert not SubjectRiskAssessment.objects.exists()
+    assert not SubjectRiskHit.objects.exists()
+    assert not SubjectReview.objects.exists()
+    assert not SubjectReviewEvent.objects.exists()
+
+
+@pytest.mark.django_db
+def test_existing_version_batch_uses_one_revision_and_reviews_only_current_version(monkeypatch):
+    _, _, revision = publish_matching_catalog()
+    _, client, detail = create_flagged_subject()
+    original_assess = version_services.assess_subject_version
+    monkeypatch.setattr(version_services, "assess_subject_version", lambda **kwargs: None)
+
+    first = client.post(
+        f"/api/v1/subjects/{detail['id']}/commit",
+        {"expected_version": detail["version"], "products": []},
+        format="json",
+    )
+    assert first.status_code == 201
+    first_subject = payload(first)["subject"]
+    draft = client.patch(
+        f"/api/v1/subjects/{detail['id']}/draft",
+        {"expected_version": first_subject["version"], "values": {"name": "Flagged v2"}},
+        format="json",
+    )
+    second = client.post(
+        f"/api/v1/subjects/{detail['id']}/commit",
+        {"expected_version": payload(draft)["version"], "products": []},
+        format="json",
+    )
+    assert second.status_code == 201
+    monkeypatch.setattr(version_services, "assess_subject_version", original_assess)
+    assert SubjectRiskAssessment.objects.count() == 0
+
+    call_command("assess_existing_subject_versions", verbosity=0)
+    assert SubjectRiskAssessment.objects.count() == 0
+    result = assess_existing_subject_versions()
+
+    assert result == {
+        "revision_id": str(revision.id),
+        "assessed": 2,
+        "reviews_created": 1,
+    }
+    versions = list(SubjectVersion.objects.order_by("version_no"))
+    assessments = list(SubjectRiskAssessment.objects.order_by("subject_version__version_no"))
+    assert [item.catalog_revision_id for item in assessments] == [revision.id, revision.id]
+    assert not SubjectReview.objects.filter(subject_version=versions[0]).exists()
+    assert (
+        SubjectReview.objects.filter(
+            subject_version=versions[1], status=SubjectReview.Status.PENDING
+        ).count()
+        == 1
+    )
+
+
+@pytest.mark.django_db
+def test_catalog_binding_migration_refuses_to_guess_existing_revision_evidence():
+    publish_matching_catalog()
+    import importlib
+
+    migration = importlib.import_module(
+        "apps.subjects.migrations.0011_catalog_publish_binding_and_review_boundaries"
+    )
+
+    with pytest.raises(RuntimeError, match="will not be guessed"):
+        migration.reject_existing_revisions(django_apps, None)
+
+
+@pytest.mark.django_db
+def test_feature_state_matrix_pending_and_rejected_are_fail_closed():
+    _, approver, _ = publish_matching_catalog()
+    _, _, subject_data = create_and_commit_flagged_subject()
+    subject = Subject.objects.select_related("current_version").get(pk=subject_data["id"])
+    review = SubjectReview.objects.get(subject=subject)
+
+    with pytest.raises(SubjectReviewPending):
+        capabilities_for_subject(subject)
+
+    rejected = admin_client(approver).post(
+        f"/api/v1/admin/subject-reviews/{review.id}/reject",
+        {
+            "expected_version": review.version,
+            "public_reason": "公开拒绝原因",
+            "internal_note": "内部说明",
+        },
+        format="json",
+    )
+    assert rejected.status_code == 200
+    subject = Subject.objects.select_related("current_version").get(pk=subject.id)
+    with pytest.raises(SubjectReviewRejected):
+        capabilities_for_subject(subject)
+
+
+@pytest.mark.django_db
+def test_current_catalog_missing_a_historical_hit_policy_fails_closed(monkeypatch):
+    _, approver, _ = publish_matching_catalog()
+    _, _, subject_data = create_and_commit_flagged_subject()
+    review = SubjectReview.objects.get(subject_id=subject_data["id"])
+    approved = admin_client(approver).post(
+        f"/api/v1/admin/subject-reviews/{review.id}/approve",
+        {"expected_version": review.version, "public_reason": "", "internal_note": ""},
+        format="json",
+    )
+    assert approved.status_code == 200
+    subject = Subject.objects.select_related("current_version").get(pk=subject_data["id"])
+    import apps.subjects.risk_services as services
+
+    current_without_historical_policy = type(
+        "Revision", (), {"snapshot": {"format_version": 1, "risk_types": [], "rules": []}}
+    )()
+    monkeypatch.setattr(
+        services, "published_catalog_revision", lambda: current_without_historical_policy
+    )
+
+    with pytest.raises(SubjectRiskError):
+        capabilities_for_subject(subject)
+
+
+@pytest.mark.django_db
+def test_subject_risk_seed_and_migration_do_not_invent_catalog_or_history():
+    state = SubjectRiskCatalogState.objects.get(pk=1)
+    assert state.version == 1
+    assert state.published_revision_id is None
+    assert not SubjectRiskType.objects.exists()
+    assert not SubjectRiskCatalogRevision.objects.exists()
+    assert not SubjectRiskAssessment.objects.exists()
+    assert not SubjectReview.objects.exists()

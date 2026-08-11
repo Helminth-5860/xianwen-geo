@@ -39,6 +39,7 @@ export type SubjectRiskCatalog = Readonly<{
   published_revision: null | {
     id: string;
     revision_no: number;
+    draft_version: number;
     format_version: number;
     snapshot_digest: string;
     created_at: string;
@@ -54,7 +55,14 @@ export type SubjectReview = Readonly<{
   official_name: string;
   status: "pending" | "approved" | "rejected" | "superseded";
   reason_types: string[];
-  reason: string;
+  review_evidence: ReadonlyArray<{
+    risk_type_key: string;
+    rule_key: string;
+    reason_type: string;
+    field_key: string;
+  }>;
+  public_reason: string;
+  internal_note: string;
   version: number;
   reviewed_at: string | null;
   created_at: string;
@@ -124,14 +132,16 @@ export const getSubjectReviews = (page = 1, status = "") => {
 
 export const getSubjectReview = (id: string) => get<SubjectReview>(`/admin/subject-reviews/${id}`);
 
-export const approveSubjectReview = (item: SubjectReview, reason = "") =>
+export const approveSubjectReview = (item: SubjectReview, publicReason = "", internalNote = "") =>
   post<SubjectReview>(`/admin/subject-reviews/${item.id}/approve`, {
     expected_version: item.version,
-    reason,
+    public_reason: publicReason,
+    internal_note: internalNote,
   });
 
-export const rejectSubjectReview = (item: SubjectReview, reason: string) =>
+export const rejectSubjectReview = (item: SubjectReview, publicReason: string, internalNote = "") =>
   post<SubjectReview>(`/admin/subject-reviews/${item.id}/reject`, {
     expected_version: item.version,
-    reason,
+    public_reason: publicReason,
+    internal_note: internalNote,
   });
