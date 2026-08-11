@@ -329,6 +329,27 @@ def test_all_name_roles_use_frozen_choice_labels_and_nfkc_casefold_normalization
     assert product.display_value == "Product One"
     assert product.matching_value == "product one"
 
+    patched_response = client.patch(
+        f"/api/v1/subjects/{detail['id']}/draft",
+        {
+            "expected_version": payload(committed)["subject"]["version"],
+            "values": {"name": "Bad\u0001Name"},
+        },
+        format="json",
+    )
+    assert patched_response.status_code == 200
+    patched = payload(patched_response)
+    rejected = client.post(
+        f"/api/v1/subjects/{detail['id']}/commit",
+        {
+            "expected_version": patched["version"],
+            "products": confirmations(patched, unique=True),
+        },
+        format="json",
+    )
+    assert rejected.status_code == 422
+    assert rejected.json()["error"]["code"] == "SUBJECT_SEMANTICS_INVALID"
+
 
 @pytest.mark.django_db
 def test_required_fields_archived_state_and_account_approval_boundaries():
