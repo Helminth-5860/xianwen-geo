@@ -25,6 +25,7 @@ from .subscription_services import (
     SubscriptionError,
     SubscriptionPlanUnavailable,
     SubscriptionPlanVersionMismatch,
+    SubscriptionSubjectLimitReconciliationRequired,
     SubscriptionVersionConflict,
     _create_active_subscription,
     _ends_at,
@@ -83,6 +84,9 @@ class ChangePreview:
     changed_limit_keys: tuple[str, ...]
     added_model_keys: tuple[str, ...]
     removed_model_keys: tuple[str, ...]
+    active_count: int
+    target_limit: int
+    required_archive_count: int
 
 
 def _benefit_values(snapshot):
@@ -171,6 +175,12 @@ def preview_subscription_change(
             raise SubscriptionChangeStateConflict
     source_values, source_models = _benefit_values(source.entitlement_snapshot)
     target_values, target_models = _benefit_values(target_version.effective_config)
+    from apps.subjects.subject_services import subject_limit_preview
+
+    limit_preview = subject_limit_preview(
+        user=source.user,
+        target_snapshot=target_version.effective_config,
+    )
     changed = tuple(
         sorted(
             key.removeprefix("limit:")
@@ -204,6 +214,9 @@ def preview_subscription_change(
         changed_limit_keys=changed,
         added_model_keys=tuple(sorted(target_models - source_models)),
         removed_model_keys=tuple(sorted(source_models - target_models)),
+        active_count=limit_preview.active_count,
+        target_limit=limit_preview.target_limit,
+        required_archive_count=limit_preview.required_archive_count,
     )
 
 
@@ -356,7 +369,6 @@ def execute_subscription_change(
         raise SubscriptionChangeStateConflict
 
     snapshot, digest = _validate_snapshot(target_version)
-    del snapshot
     now = timezone.now()
     preview = preview_subscription_change(
         source=source,
@@ -365,6 +377,11 @@ def execute_subscription_change(
         quota_policy=quota_policy,
         now=now,
     )
+    if (
+        preview.required_archive_count
+        and preview.change_type != SubscriptionChange.ChangeType.RENEWAL
+    ):
+        raise SubscriptionSubjectLimitReconciliationRequired
     normalized_reason = normalize_note(reason, required=True)
 
     if preview.change_type == SubscriptionChange.ChangeType.RENEWAL:

@@ -12,6 +12,12 @@ def load_spec():
 def test_subject_catalog_paths_are_complete_without_upload_or_delete_routes():
     paths = load_spec()["paths"]
     expected_methods = {
+        "/subjects": {"get", "post"},
+        "/subjects/{subjectId}": {"get"},
+        "/subjects/{subjectId}/draft": {"patch"},
+        "/subjects/{subjectId}/archive": {"post"},
+        "/subjects/{subjectId}/activate": {"post"},
+        "/subjects/current": {"put"},
         "/subject-types": {"get"},
         "/subject-types/{subjectTypeId}/form-schema": {"get"},
         "/admin/subject-types": {"get", "post"},
@@ -29,6 +35,8 @@ def test_subject_catalog_paths_are_complete_without_upload_or_delete_routes():
         assert methods <= paths[path].keys()
         assert "delete" not in paths[path]
     assert not any("upload" in path or "presign" in path for path in paths)
+    assert "/subjects/{subjectId}/commit" not in paths
+    assert not any(path.startswith("/subjects/") and "/versions" in path for path in paths)
 
 
 def test_subject_schema_writes_require_csrf_and_expected_versions():
@@ -36,6 +44,11 @@ def test_subject_schema_writes_require_csrf_and_expected_versions():
     paths = spec["paths"]
     writes = (
         ("/admin/subject-types", "post"),
+        ("/subjects", "post"),
+        ("/subjects/{subjectId}/draft", "patch"),
+        ("/subjects/{subjectId}/archive", "post"),
+        ("/subjects/{subjectId}/activate", "post"),
+        ("/subjects/current", "put"),
         ("/admin/subject-types/{subjectTypeId}", "patch"),
         ("/admin/subject-types/{subjectTypeId}/enable", "post"),
         ("/admin/subject-types/{subjectTypeId}/disable", "post"),
@@ -65,6 +78,10 @@ def test_subject_schema_writes_require_csrf_and_expected_versions():
     assert "expected_version" in schemas["SubjectFieldConfigUpdateRequest"]["required"]
     assert "expected_version" in schemas["SubjectFieldOptionUpdateRequest"]["required"]
     assert "expected_config_version" in schemas["SubjectFieldOptionCreateRequest"]["required"]
+    assert "expected_schema_version" in schemas["SubjectCreateRequest"]["required"]
+    assert "expected_version" in schemas["SubjectDraftUpdateRequest"]["required"]
+    assert "expected_version" in schemas["SubjectStatusRequest"]["required"]
+    assert "expected_version" in schemas["SubjectCurrentRequest"]["required"]
 
 
 def test_subject_machine_semantics_and_public_schema_are_minimal():
@@ -103,4 +120,13 @@ def test_subject_error_codes_are_registered_in_the_common_envelope():
         "SUBJECT_FIELD_KEY_CONFLICT",
         "SUBJECT_FIELD_CONFIG_INVALID",
         "SUBJECT_TYPE_STATE_CONFLICT",
+        "SUBJECT_SCHEMA_MISMATCH",
+        "SUBJECT_FIELD_VALUES_INVALID",
+        "SUBJECT_LIMIT_REACHED",
+        "SUBJECT_LIMIT_RECONCILIATION_REQUIRED",
+        "SUBJECT_ENTITLEMENT_INTEGRITY_ERROR",
+        "SUBJECT_VERSION_CONFLICT",
+        "SUBJECT_CURRENT_VERSION_CONFLICT",
+        "SUBJECT_STATE_CONFLICT",
+        "PLAN_REQUIRED",
     } <= codes

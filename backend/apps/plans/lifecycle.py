@@ -34,6 +34,7 @@ RENEWAL_PLAN_ARCHIVED = "RENEWAL_PLAN_ARCHIVED"
 RENEWAL_CONFIRMATION_INVALID = "RENEWAL_CONFIRMATION_INVALID"
 RENEWAL_DIGEST_MISMATCH = "RENEWAL_DIGEST_MISMATCH"
 RENEWAL_APPROVAL_INVALID = "RENEWAL_APPROVAL_INVALID"
+SUBJECT_LIMIT_RECONCILIATION_REQUIRED = "SUBJECT_LIMIT_RECONCILIATION_REQUIRED"
 
 
 def _audit(
@@ -210,16 +211,16 @@ def expire_subscription(*, subscription_id, request_id, now=None):
     )
 
 
-def _retry_blocked_locked(change, now):
+def _retry_blocked_locked(change, now, code=RENEWAL_BLOCKED_BY_HOLD):
     change.retry_count += 1
     delay = min(3600, 60 * (2 ** min(change.retry_count - 1, 6)))
     change.next_attempt_at = now + timedelta(seconds=delay)
-    change.stable_error_code = RENEWAL_BLOCKED_BY_HOLD
+    change.stable_error_code = code
     change.save(update_fields=["retry_count", "next_attempt_at", "stable_error_code", "updated_at"])
     if change.retry_count in (5, 10, 20):
         logger.error(
             "scheduled renewal remains blocked",
-            extra={"request_id": str(change.request_id), "exception_type": RENEWAL_BLOCKED_BY_HOLD},
+            extra={"request_id": str(change.request_id), "exception_type": code},
         )
     return change
 
@@ -280,6 +281,14 @@ def execute_due_renewal(*, change_id, request_id, now=None):
             return _fail_expired_renewal_locked(change, RENEWAL_DIGEST_MISMATCH, request_id)
         if digest != change.target_entitlement_digest:
             return _fail_expired_renewal_locked(change, RENEWAL_DIGEST_MISMATCH, request_id)
+        from apps.subjects.subject_services import subject_limit_preview
+
+        limit_preview = subject_limit_preview(
+            user=user,
+            target_snapshot=version.effective_config,
+        )
+        if limit_preview.required_archive_count:
+            return _retry_blocked_locked(change, moment, SUBJECT_LIMIT_RECONCILIATION_REQUIRED)
         target_ends_at = _ends_at(change.effective_at, version.valid_days)
         if target_ends_at <= moment:
             return _fail_expired_renewal_locked(change, RENEWAL_WINDOW_ELAPSED, request_id)

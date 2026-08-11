@@ -347,3 +347,22 @@ schema snapshot 和 digest，不得用未来当前 Schema 解释历史主体版�
 
 真实 PostgreSQL/Redis 套件运行 `.\scripts\test-subject-schema.ps1`；完整模型、API、迁移、
 回滚与验收边界见 [docs/28-SUBJECT-TYPES-DYNAMIC-FIELDS.md](docs/28-SUBJECT-TYPES-DYNAMIC-FIELDS.md)。
+
+## Subject drafts and active limits (XW-0202)
+
+User-owned subjects persist an immutable canonical schema snapshot and digest at
+draft creation, while `SubjectVersion` remains reserved with no production
+write path until XW-0203. Existing drafts continue to use their saved schema
+projection even when the administrator catalog changes.
+
+PostgreSQL enforces immutable bindings, append-only events and versions, legal
+status transitions, current-subject ownership, no-plan draft concurrency, and
+the final active slot. Subscription, trial, plan-change, and renewal paths fail
+closed when `subject_active_limit` would be exceeded; no subject is
+automatically archived. There is no upload, AI enrichment, subject quota
+account, commit, or version API in this task.
+
+Run the real PostgreSQL/Redis suites with
+`.\\scripts\\test-subject-schema.ps1`. Full API, lock order, migration,
+rollback, and verification boundaries are documented in
+[docs/29-SUBJECT-DRAFTS-ACTIVE-LIMITS.md](docs/29-SUBJECT-DRAFTS-ACTIVE-LIMITS.md).

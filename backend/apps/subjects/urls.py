@@ -1,5 +1,13 @@
 from django.urls import path
 
+from .subject_views import (
+    SubjectActivateView,
+    SubjectArchiveView,
+    SubjectCurrentView,
+    SubjectDetailView,
+    SubjectDraftView,
+    SubjectListCreateView,
+)
 from .views import (
     AdminSubjectFieldOptionDetailView,
     AdminSubjectFieldOptionListView,
@@ -16,6 +24,28 @@ from .views import (
 
 urlpatterns = [
     path("subject-types", PublicSubjectTypeListView.as_view(), name="subject-type-list"),
+    path("subjects", SubjectListCreateView.as_view(), name="subject-list-create"),
+    path("subjects/current", SubjectCurrentView.as_view(), name="subject-current"),
+    path(
+        "subjects/<uuid:subject_id>",
+        SubjectDetailView.as_view(),
+        name="subject-detail",
+    ),
+    path(
+        "subjects/<uuid:subject_id>/draft",
+        SubjectDraftView.as_view(),
+        name="subject-draft",
+    ),
+    path(
+        "subjects/<uuid:subject_id>/activate",
+        SubjectActivateView.as_view(),
+        name="subject-activate",
+    ),
+    path(
+        "subjects/<uuid:subject_id>/archive",
+        SubjectArchiveView.as_view(),
+        name="subject-archive",
+    ),
     path(
         "subject-types/<uuid:subject_type_id>/form-schema",
         PublicSubjectFormSchemaView.as_view(),

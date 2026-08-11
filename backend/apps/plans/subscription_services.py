@@ -62,6 +62,10 @@ class SubscriptionOverrideForbidden(SubscriptionError):
     code = "SUBSCRIPTION_OVERRIDE_FORBIDDEN"
 
 
+class SubscriptionSubjectLimitReconciliationRequired(SubscriptionError):
+    code = "SUBJECT_LIMIT_RECONCILIATION_REQUIRED"
+
+
 class SubscriptionNoteInvalid(SubscriptionError):
     code = "SUBSCRIPTION_NOTE_INVALID"
 
@@ -365,6 +369,15 @@ def activate_application(
         or version.config_digest != application.requested_config_digest
     ):
         raise SubscriptionPlanVersionMismatch
+    from apps.subjects.subject_services import (
+        SubjectLimitReconciliationRequired,
+        assert_target_subject_limit_locked,
+    )
+
+    try:
+        assert_target_subject_limit_locked(user=user, target_snapshot=version.effective_config)
+    except SubjectLimitReconciliationRequired as exc:
+        raise SubscriptionSubjectLimitReconciliationRequired from exc
     note = normalize_note(opening_note)
     subscription = _create_active_subscription(
         user=user,
@@ -450,6 +463,15 @@ def grant_trial(
         )
     except PlanVersion.DoesNotExist as exc:
         raise SubscriptionPlanVersionMismatch from exc
+    from apps.subjects.subject_services import (
+        SubjectLimitReconciliationRequired,
+        assert_target_subject_limit_locked,
+    )
+
+    try:
+        assert_target_subject_limit_locked(user=user, target_snapshot=version.effective_config)
+    except SubjectLimitReconciliationRequired as exc:
+        raise SubscriptionSubjectLimitReconciliationRequired from exc
     subscription = _create_active_subscription(
         user=user,
         application=None,
