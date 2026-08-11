@@ -366,3 +366,21 @@ Run the real PostgreSQL/Redis suites with
 `.\\scripts\\test-subject-schema.ps1`. Full API, lock order, migration,
 rollback, and verification boundaries are documented in
 [docs/29-SUBJECT-DRAFTS-ACTIVE-LIMITS.md](docs/29-SUBJECT-DRAFTS-ACTIVE-LIMITS.md).
+
+## Subject formal versions, names, and products (XW-0203)
+
+Saved drafts can now be committed as immutable, strictly contiguous formal
+versions. The commit API accepts only a stale-write version and confirmations
+for server-derived product candidates; field values, frozen schema, names,
+products, digests, and version numbers are derived under the locked PostgreSQL
+transaction. Draft and active subjects may commit without changing activation
+or Subscription state. Archived subjects cannot commit.
+
+Every formal version preserves its own schema snapshot, canonical field values,
+official/alternate names, and product-confirmation semantics. Historical pages
+therefore do not consult the mutable SubjectType catalog. PostgreSQL deferred
+guards enforce version 1/contiguous chains, same-Subject maximum current pointer,
+schema binding, exactly one official name, bound commit events, and append-only
+semantic facts. No historical XW-0202 SubjectVersion is fabricated.
+
+See [docs/30-SUBJECT-VERSIONS-NAMES-PRODUCTS.md](docs/30-SUBJECT-VERSIONS-NAMES-PRODUCTS.md).

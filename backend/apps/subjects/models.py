@@ -270,6 +270,14 @@ class Subject(models.Model):  # noqa: DJ008
     schema_snapshot_format_version = models.PositiveSmallIntegerField(default=1)
     schema_snapshot = models.JSONField()
     schema_digest = models.CharField(max_length=64)
+    current_version = models.ForeignKey(
+        "SubjectVersion",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="current_for_subjects",
+    )
+    retest_required = models.BooleanField(default=False)
     version = models.PositiveBigIntegerField(default=1)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -323,6 +331,9 @@ class SubjectVersion(models.Model):  # noqa: DJ008
     schema_snapshot_format_version = models.PositiveSmallIntegerField(default=1)
     schema_snapshot = models.JSONField()
     schema_digest = models.CharField(max_length=64)
+    field_values_digest = models.CharField(max_length=64)
+    semantic_digest = models.CharField(max_length=64)
+    official_name = models.CharField(max_length=500)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         null=True,
@@ -357,6 +368,85 @@ class SubjectVersion(models.Model):  # noqa: DJ008
         ]
 
 
+class AppendOnlySubjectSemanticQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        raise TypeError("Subject version semantics are append-only.")
+
+    def delete(self):
+        raise TypeError("Subject version semantics are append-only.")
+
+
+class SubjectName(models.Model):  # noqa: DJ008
+    class Role(models.TextChoices):
+        OFFICIAL_NAME = "official_name", "\u6b63\u5f0f\u540d\u79f0"
+        ALIAS = "alias", "\u522b\u540d"
+        ENGLISH_NAME = "english_name", "\u82f1\u6587\u540d"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    subject_version = models.ForeignKey(
+        SubjectVersion,
+        on_delete=models.PROTECT,
+        related_name="names",
+    )
+    role = models.CharField(max_length=32, choices=Role.choices)
+    display_value = models.CharField(max_length=500)
+    matching_value = models.CharField(max_length=500)
+    source_field_key = models.CharField(max_length=64)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = AppendOnlySubjectSemanticQuerySet.as_manager()
+
+    class Meta:
+        db_table = "subject_names"
+        ordering = ("subject_version_id", "role", "display_value", "id")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("subject_version", "role", "matching_value"),
+                name="subject_name_version_role_value_unique",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(role__in=("official_name", "alias", "english_name")),
+                name="subject_name_valid_role",
+            ),
+        ]
+
+
+class SubjectProduct(models.Model):  # noqa: DJ008
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    subject_version = models.ForeignKey(
+        SubjectVersion,
+        on_delete=models.PROTECT,
+        related_name="products",
+    )
+    candidate_key = models.CharField(max_length=64)
+    display_value = models.CharField(max_length=500)
+    matching_value = models.CharField(max_length=500)
+    source_field_key = models.CharField(max_length=64)
+    uniqueness_confirmed = models.BooleanField(default=False)
+    include_in_mention = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = AppendOnlySubjectSemanticQuerySet.as_manager()
+
+    class Meta:
+        db_table = "subject_products"
+        ordering = ("subject_version_id", "display_value", "id")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("subject_version", "candidate_key"),
+                name="subject_product_candidate_unique",
+            ),
+            models.UniqueConstraint(
+                fields=("subject_version", "matching_value"),
+                name="subject_product_value_unique",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(include_in_mention=False) | models.Q(uniqueness_confirmed=True),
+                name="subject_product_mention_requires_unique",
+            ),
+        ]
+
+
 class AppendOnlySubjectEventQuerySet(models.QuerySet):
     def update(self, **kwargs):
         raise TypeError("Subject events are append-only.")
@@ -372,9 +462,17 @@ class SubjectEvent(models.Model):  # noqa: DJ008
         ARCHIVED = "archived", "\u5df2\u5f52\u6863"
         CURRENT_SELECTED = "current_selected", "\u5df2\u8bbe\u4e3a\u5f53\u524d\u4e3b\u4f53"
         CURRENT_CLEARED = "current_cleared", "\u5df2\u6e05\u9664\u5f53\u524d\u4e3b\u4f53"
+        VERSION_COMMITTED = "version_committed", "\u5df2\u63d0\u4ea4\u6b63\u5f0f\u7248\u672c"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     subject = models.ForeignKey(Subject, on_delete=models.PROTECT, related_name="events")
+    subject_version = models.ForeignKey(
+        SubjectVersion,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="events",
+    )
     event_type = models.CharField(max_length=32, choices=EventType.choices)
     from_status = models.CharField(max_length=16, blank=True)
     to_status = models.CharField(max_length=16, choices=Subject.Status.choices)

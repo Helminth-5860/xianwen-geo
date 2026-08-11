@@ -190,3 +190,180 @@ def assert_snapshot_integrity(snapshot: dict[str, Any], digest: str) -> None:
         or snapshot_digest(snapshot) != digest
     ):
         raise ValueError("Invalid subject schema snapshot.")
+
+
+class FrozenRequiredFieldsError(ValueError):
+    def __init__(self, field_keys: list[str]):
+        self.field_keys = field_keys
+        super().__init__(",".join(field_keys))
+
+
+class FrozenSemanticError(ValueError):
+    pass
+
+
+def values_digest(values: dict[str, Any]) -> str:
+    return hashlib.sha256(canonical_json(values).encode("utf-8")).hexdigest()
+
+
+def normalize_semantic_text(value: str) -> tuple[str, str]:
+    import unicodedata
+
+    normalized = unicodedata.normalize("NFKC", value)
+    if any(unicodedata.category(char) == "Cc" for char in normalized):
+        raise FrozenSemanticError("Semantic value contains control characters.")
+    display = " ".join(normalized.split())
+    if not display or len(display) > 500:
+        raise FrozenSemanticError("Semantic value is empty or too long.")
+    return display, display.casefold()
+
+
+def _required_value_present(field: dict[str, Any], value: Any) -> bool:
+    if value is None:
+        return False
+    field_type = field["field_type"]
+    if field_type in {"text", "textarea", "url"}:
+        return isinstance(value, str) and bool(value.strip())
+    if field_type == "multi":
+        return isinstance(value, list) and bool(value)
+    if field_type in {"image", "file"}:
+        return False
+    return True
+
+
+def validate_frozen_commit_values(
+    snapshot: dict[str, Any], values: dict[str, Any]
+) -> dict[str, Any]:
+    validated = merge_and_validate_values(snapshot, updates=values)
+    missing = [
+        field["field_key"]
+        for field in snapshot["fields"]
+        if field.get("required")
+        and not _required_value_present(field, validated.get(field["field_key"]))
+    ]
+    if missing:
+        raise FrozenRequiredFieldsError(sorted(missing))
+    return validated
+
+
+def _semantic_values(field: dict[str, Any], value: Any) -> list[tuple[str, str]]:
+    if value is None or value == "" or value == []:
+        return []
+    field_type = field["field_type"]
+    if field_type == "text":
+        return [normalize_semantic_text(value)]
+    if field_type in {"single", "select"}:
+        option_labels = {
+            option["option_key"]: option["label"] for option in field.get("options", [])
+        }
+        try:
+            return [normalize_semantic_text(option_labels[value])]
+        except KeyError as exc:
+            raise FrozenSemanticError("Unknown frozen option key.") from exc
+    if field_type == "multi":
+        option_labels = {
+            option["option_key"]: option["label"] for option in field.get("options", [])
+        }
+        try:
+            return [normalize_semantic_text(option_labels[item]) for item in value]
+        except KeyError as exc:
+            raise FrozenSemanticError("Unknown frozen option key.") from exc
+    raise FrozenSemanticError("name_role is incompatible with the frozen field type.")
+
+
+def derive_frozen_semantics(
+    snapshot: dict[str, Any], values: dict[str, Any]
+) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+    allowed_types = {
+        "official_name": {"text", "single", "select"},
+        "alias": {"text", "single", "select", "multi"},
+        "english_name": {"text", "single", "select", "multi"},
+        "product": {"text", "single", "select", "multi"},
+    }
+    names: list[dict[str, str]] = []
+    products: list[dict[str, str]] = []
+    seen_names: set[tuple[str, str]] = set()
+    seen_products: set[str] = set()
+    for field in snapshot["fields"]:
+        role = field.get("name_role", "none")
+        if role == "none":
+            continue
+        if role not in allowed_types or field["field_type"] not in allowed_types[role]:
+            raise FrozenSemanticError("name_role is incompatible with the frozen field type.")
+        for display, matching in _semantic_values(field, values.get(field["field_key"])):
+            if role == "product":
+                if matching in seen_products:
+                    continue
+                seen_products.add(matching)
+                candidate_key = hashlib.sha256(
+                    canonical_json(
+                        {"field_key": field["field_key"], "matching_value": matching}
+                    ).encode("utf-8")
+                ).hexdigest()
+                products.append(
+                    {
+                        "candidate_key": candidate_key,
+                        "display_value": display,
+                        "matching_value": matching,
+                        "source_field_key": field["field_key"],
+                    }
+                )
+                continue
+            key = (role, matching)
+            if key in seen_names:
+                continue
+            seen_names.add(key)
+            names.append(
+                {
+                    "role": role,
+                    "display_value": display,
+                    "matching_value": matching,
+                    "source_field_key": field["field_key"],
+                }
+            )
+    if sum(name["role"] == "official_name" for name in names) != 1:
+        raise FrozenSemanticError("Exactly one official name is required.")
+    return names, products
+
+
+def committed_semantic_digest(
+    *,
+    schema_digest_value: str,
+    field_values: dict[str, Any],
+    product_confirmations: list[dict[str, Any]],
+) -> str:
+    payload = {
+        "schema_digest": schema_digest_value,
+        "field_values": field_values,
+        "products": sorted(product_confirmations, key=lambda item: item["candidate_key"]),
+    }
+    return hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()
+
+
+def derive_product_candidates(
+    snapshot: dict[str, Any], values: dict[str, Any]
+) -> list[dict[str, str]]:
+    products: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for field in snapshot["fields"]:
+        if field.get("name_role", "none") != "product":
+            continue
+        if field["field_type"] not in {"text", "single", "select", "multi"}:
+            raise FrozenSemanticError("Product role is incompatible with the frozen field type.")
+        for display, matching in _semantic_values(field, values.get(field["field_key"])):
+            if matching in seen:
+                continue
+            seen.add(matching)
+            products.append(
+                {
+                    "candidate_key": hashlib.sha256(
+                        canonical_json(
+                            {"field_key": field["field_key"], "matching_value": matching}
+                        ).encode("utf-8")
+                    ).hexdigest(),
+                    "display_value": display,
+                    "matching_value": matching,
+                    "source_field_key": field["field_key"],
+                }
+            )
+    return products

@@ -24,6 +24,7 @@ def test_subject_schema_postgresql_suite_is_wired_into_docker_job():
     assert "subject-schema-tests" in powershell_script
     assert "tests/test_subject_schema_postgres.py" in compose
     assert "tests/test_subject_drafts_postgres.py" in compose
+    assert "tests/test_subject_versions_postgres.py" in compose
     assert "down --volumes --remove-orphans" in shell_script
     assert "down --volumes --remove-orphans" in powershell_script
     assert "openssl rand -hex 32" in shell_script
@@ -57,6 +58,32 @@ def test_subject_schema_postgresql_suite_is_wired_into_docker_job():
     )
     for test_name in draft_required:
         assert f"def {test_name}" in draft_suite
+    version_suite = (
+        REPO_ROOT / "backend" / "tests" / "test_subject_versions_postgres.py"
+    ).read_text(encoding="utf-8")
+    version_required = (
+        "test_concurrent_first_commit_is_exactly_once_and_strictly_starts_at_one",
+        "test_raw_sql_rejects_gap_schema_mismatch_and_non_max_current_pointer",
+        "test_deferred_chain_requires_official_name_current_max_and_bound_event",
+        "test_version_name_product_and_event_evidence_is_immutable_by_raw_sql",
+        "test_name_role_type_guard_rejects_invalid_machine_semantics",
+        "test_commit_failure_injection_rolls_back_every_formal_fact",
+        "test_migration_preflight_refuses_to_invent_semantics_for_existing_versions",
+    )
+    for test_name in version_required:
+        assert f"def {test_name}" in version_suite
+    guard_migration = (
+        REPO_ROOT
+        / "backend"
+        / "apps"
+        / "subjects"
+        / "migrations"
+        / "0007_subject_version_postgresql_guards.py"
+    ).read_text(encoding="utf-8")
+    assert "BEFORE INSERT OR UPDATE OR DELETE ON subject_names" in guard_migration
+    assert "BEFORE INSERT OR UPDATE OR DELETE ON subject_products" in guard_migration
+    assert "OLD.status = 'archived' AND NEW.draft_values" in guard_migration
+    assert guard_migration.count("CREATE OR REPLACE FUNCTION subjects_guard_subject()") == 2
 
 
 def test_subject_schema_document_freezes_snapshot_and_safe_rollback_boundaries():

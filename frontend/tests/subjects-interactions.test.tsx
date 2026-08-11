@@ -19,6 +19,7 @@ const updateSubjectDraft = vi.fn();
 const archiveSubject = vi.fn();
 const activateSubject = vi.fn();
 const setCurrentSubject = vi.fn();
+const commitSubject = vi.fn();
 
 vi.mock("../lib/subjects-client", async () => {
   const actual =
@@ -34,6 +35,7 @@ vi.mock("../lib/subjects-client", async () => {
     archiveSubject: (...args: unknown[]) => archiveSubject(...args),
     activateSubject: (...args: unknown[]) => activateSubject(...args),
     setCurrentSubject: (...args: unknown[]) => setCurrentSubject(...args),
+    commitSubject: (...args: unknown[]) => commitSubject(...args),
   };
 });
 
@@ -60,6 +62,9 @@ const detail: SubjectDetail = {
   status: "draft",
   version: 4,
   is_current: true,
+  current_version_no: null,
+  official_name: null,
+  retest_required: false,
   created_at: "2026-08-10T10:00:00+08:00",
   updated_at: "2026-08-10T10:00:00+08:00",
   schema_version: 2,
@@ -113,7 +118,7 @@ const detail: SubjectDetail = {
         default_value: [],
         sort_order: 30,
         used_for_ai: false,
-        name_role: "none",
+        name_role: "product",
         options: [{ option_key: "east", label: "\u534e\u4e1c", sort_order: 10 }],
       },
       {
@@ -131,6 +136,10 @@ const detail: SubjectDetail = {
       },
     ],
   },
+  product_candidates: [
+    { candidate_key: "a".repeat(64), display_value: "\u534e\u4e1c", source_field_key: "regions" },
+  ],
+  has_uncommitted_changes: true,
 };
 
 const list: SubjectList = {
@@ -142,6 +151,9 @@ const list: SubjectList = {
       version: detail.version,
       is_current: detail.is_current,
       created_at: detail.created_at,
+      current_version_no: detail.current_version_no,
+      official_name: detail.official_name,
+      retest_required: detail.retest_required,
       updated_at: detail.updated_at,
     },
   ],
@@ -184,6 +196,26 @@ beforeEach(() => {
   archiveSubject.mockResolvedValue({ ...detail, status: "archived" });
   activateSubject.mockResolvedValue({ ...detail, status: "active" });
   setCurrentSubject.mockResolvedValue(list.context);
+  commitSubject.mockResolvedValue({
+    subject: {
+      ...detail,
+      version: 5,
+      current_version_no: 1,
+      official_name: "\u5386\u53f2\u540d\u79f0",
+      has_uncommitted_changes: false,
+    },
+    version: {
+      id: "version-1",
+      version_no: 1,
+      official_name: "\u5386\u53f2\u540d\u79f0",
+      created_at: "2026-08-11T10:00:00+08:00",
+      schema_version: 2,
+      field_values: detail.draft_values,
+      form_schema: detail.form_schema,
+      names: [],
+      products: [],
+    },
+  });
 });
 
 afterEach(() => {
@@ -243,5 +275,55 @@ describe("subject draft interactions", () => {
     expect(
       screen.getByLabelText("\u5386\u53f2\u4e3b\u4f53\u540d\u79f0") as HTMLInputElement,
     ).toHaveProperty("disabled", true);
+    expect(
+      screen.getByRole("button", {
+        name: "\u63d0\u4ea4\u6b63\u5f0f\u7248\u672c",
+      }) as HTMLButtonElement,
+    ).toHaveProperty("disabled", true);
+  });
+
+  it("submits only server candidates and explicit product confirmations", async () => {
+    render(<SubjectDetailPage />);
+    await screen.findByText("\u4ea7\u54c1\u5019\u9009\u786e\u8ba4");
+    const mention = screen.getByLabelText(
+      "\u534e\u4e1c\u52a0\u5165\u63d0\u53ca\u8bcd",
+    ) as HTMLInputElement;
+    expect(mention.disabled).toBe(true);
+    await userEvent.click(
+      screen.getByLabelText("\u534e\u4e1c\u552f\u4e00\u6027\u5df2\u786e\u8ba4"),
+    );
+    expect(mention.disabled).toBe(false);
+    await userEvent.click(mention);
+    await userEvent.click(
+      screen.getByRole("button", { name: "\u63d0\u4ea4\u6b63\u5f0f\u7248\u672c" }),
+    );
+    await userEvent.click(await screen.findByRole("button", { name: "\u786e\u8ba4\u63d0\u4ea4" }));
+    await waitFor(() =>
+      expect(commitSubject).toHaveBeenCalledWith(detail, [
+        {
+          candidate_key: "a".repeat(64),
+          uniqueness_confirmed: true,
+          include_in_mention: true,
+        },
+      ]),
+    );
+    expect(await screen.findByText("\u6b63\u5f0f\u7248\u672c v1 \u5df2\u63d0\u4ea4")).toBeTruthy();
+  });
+
+  it("requires local draft edits to be saved before formal commit", async () => {
+    render(<SubjectDetailPage />);
+    const name = await screen.findByLabelText("\u5386\u53f2\u4e3b\u4f53\u540d\u79f0");
+    await userEvent.clear(name);
+    await userEvent.type(name, "\u672a\u4fdd\u5b58\u540d\u79f0");
+    await userEvent.click(
+      screen.getByRole("button", { name: "\u63d0\u4ea4\u6b63\u5f0f\u7248\u672c" }),
+    );
+    await userEvent.click(await screen.findByRole("button", { name: "\u786e\u8ba4\u63d0\u4ea4" }));
+    expect(
+      await screen.findByText(
+        "\u8bf7\u5148\u4fdd\u5b58\u8349\u7a3f\uff0c\u518d\u63d0\u4ea4\u6b63\u5f0f\u7248\u672c",
+      ),
+    ).toBeTruthy();
+    expect(commitSubject).not.toHaveBeenCalled();
   });
 });

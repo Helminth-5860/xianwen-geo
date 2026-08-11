@@ -425,6 +425,67 @@ paths:
               schema: {$ref: '#/components/schemas/SubjectEnvelope'}
         '401': {$ref: '#/components/responses/AuthRequired'}
         '404': {$ref: '#/components/responses/ResourceNotFound'}
+  /subjects/{subjectId}/commit:
+    parameters:
+      - $ref: '#/components/parameters/SubjectId'
+    post:
+      tags: [Subjects]
+      summary: Commit the locked latest draft as an immutable formal version
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SubjectCommitRequest'}
+      responses:
+        '201':
+          description: Formal subject version committed
+          headers:
+            X-Request-ID: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SubjectCommitEnvelope'}
+        '400': {$ref: '#/components/responses/InvalidJson'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/CsrfFailed'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+        '409': {$ref: '#/components/responses/BusinessConflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+  /subjects/{subjectId}/versions:
+    parameters:
+      - $ref: '#/components/parameters/SubjectId'
+    get:
+      tags: [Subjects]
+      summary: List immutable formal versions for the authenticated user's subject
+      responses:
+        '200':
+          description: Formal subject version summaries
+          headers:
+            X-Request-ID: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SubjectVersionListEnvelope'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+  /subjects/{subjectId}/versions/{versionId}:
+    parameters:
+      - $ref: '#/components/parameters/SubjectId'
+      - $ref: '#/components/parameters/SubjectVersionId'
+    get:
+      tags: [Subjects]
+      summary: Read an immutable formal version using its own frozen schema
+      responses:
+        '200':
+          description: Formal version detail
+          headers:
+            X-Request-ID: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SubjectVersionEnvelope'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
   /subjects/{subjectId}/draft:
     parameters:
       - $ref: '#/components/parameters/SubjectId'
@@ -2033,6 +2094,11 @@ components:
       in: path
       required: true
       schema: {type: string, format: uuid}
+    SubjectVersionId:
+      name: versionId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
     IdempotencyKey:
       name: Idempotency-Key
       in: header
@@ -2323,6 +2389,10 @@ components:
         - SUBJECT_VERSION_CONFLICT
         - SUBJECT_CURRENT_VERSION_CONFLICT
         - SUBJECT_STATE_CONFLICT
+        - SUBJECT_REQUIRED_FIELDS_INCOMPLETE
+        - SUBJECT_SEMANTICS_INVALID
+        - SUBJECT_PRODUCT_CONFIRMATION_INVALID
+        - SUBJECT_VERSION_NO_CHANGES
         - PLAN_REQUIRED
     HealthEnvelope:
       allOf:
@@ -2658,6 +2728,31 @@ components:
       properties:
         subject_id: {type: string, format: uuid}
         expected_version: {type: integer, minimum: 1}
+    SubjectProductConfirmation:
+      type: object
+      additionalProperties: false
+      required: [candidate_key, uniqueness_confirmed, include_in_mention]
+      properties:
+        candidate_key: {type: string, minLength: 64, maxLength: 64}
+        uniqueness_confirmed: {type: boolean}
+        include_in_mention: {type: boolean}
+    SubjectCommitRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version, products]
+      properties:
+        expected_version: {type: integer, minimum: 1}
+        products:
+          type: array
+          items: {$ref: '#/components/schemas/SubjectProductConfirmation'}
+    SubjectProductCandidate:
+      type: object
+      additionalProperties: false
+      required: [candidate_key, display_value, source_field_key]
+      properties:
+        candidate_key: {type: string, minLength: 64, maxLength: 64}
+        display_value: {type: string, maxLength: 500}
+        source_field_key: {type: string, maxLength: 64}
     SubjectSnapshotType:
       type: object
       additionalProperties: false
@@ -2710,24 +2805,76 @@ components:
     SubjectSummary:
       type: object
       additionalProperties: false
-      required: [id, subject_type, status, version, is_current, created_at, updated_at]
+      required: [id, subject_type, status, version, is_current, current_version_no, official_name, retest_required, created_at, updated_at]
       properties:
         id: {type: string, format: uuid}
         subject_type: {$ref: '#/components/schemas/SubjectSnapshotType'}
         status: {type: string, enum: [draft, active, archived]}
         version: {type: integer, minimum: 1}
         is_current: {type: boolean}
+        current_version_no: {type: [integer, 'null'], minimum: 1}
+        official_name: {type: [string, 'null'], maxLength: 500}
+        retest_required: {type: boolean}
         created_at: {type: string, format: date-time}
         updated_at: {type: string, format: date-time}
     SubjectDetail:
       allOf:
         - $ref: '#/components/schemas/SubjectSummary'
         - type: object
-          required: [schema_version, draft_values, form_schema]
+          required: [schema_version, draft_values, form_schema, product_candidates, has_uncommitted_changes]
           properties:
             schema_version: {type: integer, minimum: 1}
             draft_values: {type: object, additionalProperties: true}
             form_schema: {$ref: '#/components/schemas/PersistedSubjectFormSchema'}
+            product_candidates:
+              type: array
+              items: {$ref: '#/components/schemas/SubjectProductCandidate'}
+            has_uncommitted_changes: {type: boolean}
+    SubjectVersionSummary:
+      type: object
+      additionalProperties: false
+      required: [id, version_no, official_name, created_at]
+      properties:
+        id: {type: string, format: uuid}
+        version_no: {type: integer, minimum: 1}
+        official_name: {type: string, maxLength: 500}
+        created_at: {type: string, format: date-time}
+    SubjectName:
+      type: object
+      additionalProperties: false
+      required: [role, display_value, source_field_key]
+      properties:
+        role: {type: string, enum: [official_name, alias, english_name]}
+        display_value: {type: string, maxLength: 500}
+        source_field_key: {type: string, maxLength: 64}
+    SubjectProduct:
+      type: object
+      additionalProperties: false
+      required: [candidate_key, display_value, source_field_key, uniqueness_confirmed, include_in_mention]
+      properties:
+        candidate_key: {type: string, minLength: 64, maxLength: 64}
+        display_value: {type: string, maxLength: 500}
+        source_field_key: {type: string, maxLength: 64}
+        uniqueness_confirmed: {type: boolean}
+        include_in_mention: {type: boolean}
+    SubjectVersionDetail:
+      allOf:
+        - $ref: '#/components/schemas/SubjectVersionSummary'
+        - type: object
+          required: [schema_version, field_values, form_schema, names, products]
+          properties:
+            schema_version: {type: integer, minimum: 1}
+            field_values: {type: object, additionalProperties: true}
+            form_schema: {$ref: '#/components/schemas/PersistedSubjectFormSchema'}
+            names: {type: array, items: {$ref: '#/components/schemas/SubjectName'}}
+            products: {type: array, items: {$ref: '#/components/schemas/SubjectProduct'}}
+    SubjectCommitResult:
+      type: object
+      additionalProperties: false
+      required: [subject, version]
+      properties:
+        subject: {$ref: '#/components/schemas/SubjectDetail'}
+        version: {$ref: '#/components/schemas/SubjectVersionDetail'}
     SubjectContext:
       type: object
       additionalProperties: false
@@ -2737,6 +2884,23 @@ components:
         version: {type: integer, minimum: 0}
     SubjectEnvelope:
       allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, properties: {data: {$ref: '#/components/schemas/SubjectDetail'}}}]
+    SubjectCommitEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, properties: {data: {$ref: '#/components/schemas/SubjectCommitResult'}}}]
+    SubjectVersionEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, properties: {data: {$ref: '#/components/schemas/SubjectVersionDetail'}}}]
+    SubjectVersionListEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          properties:
+            data:
+              type: object
+              additionalProperties: false
+              required: [versions]
+              properties:
+                versions:
+                  type: array
+                  items: {$ref: '#/components/schemas/SubjectVersionSummary'}
     SubjectContextEnvelope:
       allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, properties: {data: {$ref: '#/components/schemas/SubjectContext'}}}]
     SubjectListEnvelope:

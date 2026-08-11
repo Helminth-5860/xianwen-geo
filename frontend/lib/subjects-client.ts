@@ -221,6 +221,9 @@ export type SubjectSummary = Readonly<{
   status: SubjectStatus;
   version: number;
   is_current: boolean;
+  current_version_no: number | null;
+  official_name: string | null;
+  retest_required: boolean;
   created_at: string;
   updated_at: string;
 }>;
@@ -230,6 +233,44 @@ export type SubjectDetail = SubjectSummary &
     schema_version: number;
     draft_values: Record<string, unknown>;
     form_schema: PersistedFormSchema;
+    product_candidates: ReadonlyArray<{
+      candidate_key: string;
+      display_value: string;
+      source_field_key: string;
+    }>;
+    has_uncommitted_changes: boolean;
+  }>;
+
+export type SubjectProductConfirmation = Readonly<{
+  candidate_key: string;
+  uniqueness_confirmed: boolean;
+  include_in_mention: boolean;
+}>;
+
+export type SubjectVersionSummary = Readonly<{
+  id: string;
+  version_no: number;
+  official_name: string;
+  created_at: string;
+}>;
+
+export type SubjectVersionDetail = SubjectVersionSummary &
+  Readonly<{
+    schema_version: number;
+    field_values: Record<string, unknown>;
+    form_schema: PersistedFormSchema;
+    names: ReadonlyArray<{
+      role: "official_name" | "alias" | "english_name";
+      display_value: string;
+      source_field_key: string;
+    }>;
+    products: ReadonlyArray<{
+      candidate_key: string;
+      display_value: string;
+      source_field_key: string;
+      uniqueness_confirmed: boolean;
+      include_in_mention: boolean;
+    }>;
   }>;
 
 export type SubjectContext = Readonly<{
@@ -282,3 +323,18 @@ export const setCurrentSubject = (subjectId: string, expectedVersion: number) =>
     subject_id: subjectId,
     expected_version: expectedVersion,
   });
+
+export const commitSubject = (
+  subject: Pick<SubjectDetail, "id" | "version">,
+  products: SubjectProductConfirmation[],
+) =>
+  post<{ subject: SubjectDetail; version: SubjectVersionDetail }>(
+    `/subjects/${subject.id}/commit`,
+    { expected_version: subject.version, products },
+  );
+
+export const getSubjectVersions = (subjectId: string) =>
+  get<{ versions: SubjectVersionSummary[] }>(`/subjects/${subjectId}/versions`);
+
+export const getSubjectVersion = (subjectId: string, versionId: string) =>
+  get<SubjectVersionDetail>(`/subjects/${subjectId}/versions/${versionId}`);

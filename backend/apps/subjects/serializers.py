@@ -7,10 +7,25 @@ from .models import (
     SubjectContext,
     SubjectFieldDefinition,
     SubjectFieldOption,
+    SubjectName,
+    SubjectProduct,
     SubjectType,
     SubjectTypeFieldConfig,
+    SubjectVersion,
 )
-from .schema_snapshots import public_form_schema
+from .schema_snapshots import (
+    FrozenSemanticError,
+    derive_product_candidates,
+    public_form_schema,
+    values_digest,
+)
+
+NAME_ROLE_FIELD_TYPES = {
+    "official_name": {"text", "single", "select"},
+    "alias": {"text", "single", "select", "multi"},
+    "english_name": {"text", "single", "select", "multi"},
+    "product": {"text", "single", "select", "multi"},
+}
 
 
 class SubjectFieldOptionSerializer(serializers.ModelSerializer):
@@ -177,6 +192,17 @@ class CustomFieldCreateSerializer(StrictSerializer):
             SubjectFieldDefinition.FieldType.MULTI,
             SubjectFieldDefinition.FieldType.SELECT,
         }
+        role = attrs.get("name_role", SubjectTypeFieldConfig.NameRole.NONE)
+        if role != SubjectTypeFieldConfig.NameRole.NONE and attrs["field_type"] not in (
+            NAME_ROLE_FIELD_TYPES.get(role, set())
+        ):
+            raise serializers.ValidationError(
+                {
+                    "name_role": [
+                        "\u5f53\u524d\u5b57\u6bb5\u7c7b\u578b\u4e0d\u652f\u6301\u8be5\u540d\u79f0\u8bed\u4e49\u89d2\u8272\u3002"
+                    ]
+                }
+            )
         if not choice and attrs.get("options"):
             raise serializers.ValidationError({"options": ["非选择字段不能配置选项。"]})
         if (
@@ -264,9 +290,69 @@ class SubjectCurrentRequestSerializer(StrictSerializer):
     expected_version = serializers.IntegerField(min_value=1)
 
 
+class SubjectProductConfirmationSerializer(StrictSerializer):
+    candidate_key = serializers.CharField(min_length=64, max_length=64)
+    uniqueness_confirmed = serializers.BooleanField()
+    include_in_mention = serializers.BooleanField()
+
+
+class SubjectCommitRequestSerializer(StrictSerializer):
+    expected_version = serializers.IntegerField(min_value=1)
+    products = SubjectProductConfirmationSerializer(many=True, allow_empty=True)
+
+
+class SubjectNameSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SubjectName
+        fields = ("role", "display_value", "source_field_key")
+
+
+class SubjectProductSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SubjectProduct
+        fields = (
+            "candidate_key",
+            "display_value",
+            "source_field_key",
+            "uniqueness_confirmed",
+            "include_in_mention",
+        )
+
+
+class SubjectVersionSummarySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SubjectVersion
+        fields = ("id", "version_no", "official_name", "created_at")
+
+
+class SubjectVersionDetailSerializer(SubjectVersionSummarySerializer):
+    form_schema = serializers.SerializerMethodField()
+    names = SubjectNameSerializer(many=True, read_only=True)
+    products = SubjectProductSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = SubjectVersion
+        fields = (
+            "id",
+            "version_no",
+            "official_name",
+            "created_at",
+            "schema_version",
+            "field_values",
+            "form_schema",
+            "names",
+            "products",
+        )
+
+    def get_form_schema(self, obj):
+        return public_form_schema(obj.schema_snapshot)
+
+
 class SubjectSummarySerializer(serializers.ModelSerializer):
     subject_type = serializers.SerializerMethodField()
     is_current = serializers.SerializerMethodField()
+    current_version_no = serializers.SerializerMethodField()
+    official_name = serializers.SerializerMethodField()
 
     class Meta:
         model = Subject
@@ -276,6 +362,9 @@ class SubjectSummarySerializer(serializers.ModelSerializer):
             "status",
             "version",
             "is_current",
+            "current_version_no",
+            "official_name",
+            "retest_required",
             "created_at",
             "updated_at",
         )
@@ -292,20 +381,59 @@ class SubjectSummarySerializer(serializers.ModelSerializer):
     def get_is_current(self, obj):
         return obj.pk == self.context.get("current_subject_id")
 
+    def get_current_version_no(self, obj):
+        return obj.current_version.version_no if obj.current_version_id else None
+
+    def get_official_name(self, obj):
+        return obj.current_version.official_name if obj.current_version_id else None
+
 
 class SubjectDetailSerializer(SubjectSummarySerializer):
     form_schema = serializers.SerializerMethodField()
+    product_candidates = serializers.SerializerMethodField()
+    has_uncommitted_changes = serializers.SerializerMethodField()
 
-    class Meta(SubjectSummarySerializer.Meta):
-        fields = (  # type: ignore[assignment]
-            *SubjectSummarySerializer.Meta.fields,
+    class Meta:
+        model = Subject
+        fields = (
+            "id",
+            "subject_type",
+            "status",
+            "version",
+            "is_current",
+            "current_version_no",
+            "official_name",
+            "retest_required",
+            "created_at",
+            "updated_at",
             "schema_version",
             "draft_values",
             "form_schema",
+            "product_candidates",
+            "has_uncommitted_changes",
         )
 
     def get_form_schema(self, obj):
         return public_form_schema(obj.schema_snapshot)
+
+    def get_product_candidates(self, obj):
+        try:
+            candidates = derive_product_candidates(obj.schema_snapshot, obj.draft_values)
+        except FrozenSemanticError:
+            return []
+        return [
+            {
+                "candidate_key": item["candidate_key"],
+                "display_value": item["display_value"],
+                "source_field_key": item["source_field_key"],
+            }
+            for item in candidates
+        ]
+
+    def get_has_uncommitted_changes(self, obj):
+        if obj.current_version_id is None:
+            return True
+        return values_digest(obj.draft_values) != obj.current_version.field_values_digest
 
 
 class SubjectContextSerializer(serializers.ModelSerializer):
