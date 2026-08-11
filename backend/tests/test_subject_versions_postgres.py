@@ -24,6 +24,7 @@ from apps.subjects.schema_snapshots import derive_product_candidates
 from apps.subjects.subject_services import create_subject, update_subject_draft
 from apps.subjects.version_services import SubjectVersionConflict, commit_subject_version
 from apps.users.models import User
+from tests.subject_risk_helpers import install_empty_published_risk_catalog
 
 reject_existing_subject_versions = import_module(
     "apps.subjects.migrations.0006_subject_versions_names_products"
@@ -38,6 +39,7 @@ def require_postgres_and_redis():
         pytest.skip("Run through scripts/test-subject-schema.* with PostgreSQL and Redis.")
     call_command("sync_subject_catalog", "--apply", verbosity=0)
     redis = get_redis_connection("default")
+    install_empty_published_risk_catalog()
     assert redis.ping()
     redis.flushdb()
     yield

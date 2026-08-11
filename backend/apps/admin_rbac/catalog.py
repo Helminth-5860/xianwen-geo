@@ -106,6 +106,55 @@ PERMISSION_CATALOG = (
     CatalogPermission("subject_fields.list", "主体字段列表", "subject_types", "action", 940),
     CatalogPermission("subject_fields.create", "创建主体字段", "subject_types", "action", 950),
     CatalogPermission("subject_fields.update", "修改主体字段", "subject_types", "action", 960),
+    CatalogPermission(
+        "menu.admin.subject-risk",
+        "\u4e3b\u4f53\u98ce\u9669\u5ba1\u6838\u83dc\u5355",
+        "subject_risk",
+        "menu",
+        89,
+    ),
+    CatalogPermission(
+        "subject_risk.catalog.view",
+        "\u67e5\u770b\u4e3b\u4f53\u98ce\u9669\u76ee\u5f55",
+        "subject_risk",
+        "action",
+        970,
+    ),
+    CatalogPermission(
+        "subject_risk.catalog.update",
+        "\u7ef4\u62a4\u4e3b\u4f53\u98ce\u9669\u8349\u7a3f",
+        "subject_risk",
+        "action",
+        980,
+    ),
+    CatalogPermission(
+        "subject_risk.catalog.publish",
+        "\u53d1\u5e03\u4e3b\u4f53\u98ce\u9669\u76ee\u5f55",
+        "subject_risk",
+        "action",
+        990,
+    ),
+    CatalogPermission(
+        "subject_reviews.list",
+        "\u4e3b\u4f53\u5ba1\u6838\u5217\u8868",
+        "subject_risk",
+        "action",
+        1000,
+    ),
+    CatalogPermission(
+        "subject_reviews.view",
+        "\u4e3b\u4f53\u5ba1\u6838\u8be6\u60c5",
+        "subject_risk",
+        "action",
+        1010,
+    ),
+    CatalogPermission(
+        "subject_reviews.review",
+        "\u5ba1\u6838\u4e3b\u4f53\u8d44\u6599",
+        "subject_risk",
+        "action",
+        1020,
+    ),
 )
 
 CATALOG_BY_KEY = {item.key: item for item in PERMISSION_CATALOG}

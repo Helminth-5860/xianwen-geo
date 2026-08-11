@@ -528,3 +528,332 @@ class SubjectContext(models.Model):  # noqa: DJ008
                 name="subject_context_version_gte_1",
             )
         ]
+
+
+class SubjectRiskCatalogState(models.Model):  # noqa: DJ008
+    id = models.PositiveSmallIntegerField(primary_key=True, default=1, editable=False)
+    version = models.PositiveBigIntegerField(default=1)
+    published_revision = models.OneToOneField(
+        "SubjectRiskCatalogRevision",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="published_for_state",
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "subject_risk_catalog_state"
+        constraints = [
+            models.CheckConstraint(condition=models.Q(id=1), name="subject_risk_state_singleton"),
+            models.CheckConstraint(
+                condition=models.Q(version__gte=1), name="subject_risk_state_version_gte_1"
+            ),
+        ]
+
+
+class SubjectRiskType(models.Model):  # noqa: DJ008
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    key = models.CharField(max_length=64, unique=True)
+    name = models.CharField(max_length=100)
+    description = models.CharField(max_length=500, blank=True)
+    enabled = models.BooleanField(default=False)
+    manual_review_required = models.BooleanField(default=True)
+    allow_geo_detection = models.BooleanField(default=False)
+    allow_article_generation = models.BooleanField(default=False)
+    allow_image_generation = models.BooleanField(default=False)
+    require_authoritative_citations = models.BooleanField(default=True)
+    require_disclaimer = models.BooleanField(default=True)
+    sort_order = models.PositiveIntegerField(default=0)
+    version = models.PositiveBigIntegerField(default=1)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="created_subject_risk_types",
+    )
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="updated_subject_risk_types",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "subject_risk_types"
+        ordering = ("sort_order", "key", "id")
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(version__gte=1), name="subject_risk_type_version_gte_1"
+            )
+        ]
+
+
+class SubjectRiskRule(models.Model):  # noqa: DJ008
+    class Operator(models.TextChoices):
+        EQUALS_ANY = "equals_any", "\u7b49\u4e8e\u4efb\u4e00\u503c"
+        CONTAINS_ANY = "contains_any", "\u5305\u542b\u4efb\u4e00\u503c"
+
+    class ReasonType(models.TextChoices):
+        SUSPECTED_VIOLATION = "suspected_violation", "\u7591\u4f3c\u8fdd\u89c4"
+        SUSPECTED_IMPERSONATION = "suspected_impersonation", "\u7591\u4f3c\u5192\u7528"
+        DATA_CONFLICT = "data_conflict", "\u8d44\u6599\u51b2\u7a81"
+        HIGH_RISK_INDUSTRY = "high_risk_industry", "\u9ad8\u98ce\u9669\u884c\u4e1a"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    key = models.CharField(max_length=64, unique=True)
+    risk_type = models.ForeignKey(
+        SubjectRiskType,
+        on_delete=models.PROTECT,
+        related_name="rules",
+    )
+    subject_type = models.ForeignKey(
+        SubjectType,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="risk_rules",
+    )
+    field_key = models.CharField(max_length=64, blank=True)
+    operator = models.CharField(max_length=16, choices=Operator.choices)
+    patterns = models.JSONField(default=list)
+    reason_type = models.CharField(max_length=32, choices=ReasonType.choices)
+    enabled = models.BooleanField(default=False)
+    priority = models.PositiveIntegerField(default=0)
+    version = models.PositiveBigIntegerField(default=1)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="created_subject_risk_rules",
+    )
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="updated_subject_risk_rules",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "subject_risk_rules"
+        ordering = ("priority", "key", "id")
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(operator__in=("equals_any", "contains_any")),
+                name="subject_risk_rule_valid_operator",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(
+                    reason_type__in=(
+                        "suspected_violation",
+                        "suspected_impersonation",
+                        "data_conflict",
+                        "high_risk_industry",
+                    )
+                ),
+                name="subject_risk_rule_valid_reason",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(version__gte=1), name="subject_risk_rule_version_gte_1"
+            ),
+        ]
+
+
+class AppendOnlySubjectRiskQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        raise TypeError("Subject risk evidence is append-only.")
+
+    def delete(self):
+        raise TypeError("Subject risk evidence is append-only.")
+
+
+class SubjectRiskCatalogRevision(models.Model):  # noqa: DJ008
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    revision_no = models.PositiveBigIntegerField(unique=True)
+    draft_version = models.PositiveBigIntegerField()
+    format_version = models.PositiveSmallIntegerField(default=1)
+    snapshot = models.JSONField()
+    snapshot_digest = models.CharField(max_length=64, unique=True)
+    published_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="published_subject_risk_revisions",
+    )
+    approval_request = models.OneToOneField(
+        "admin_rbac.ApprovalRequest",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="subject_risk_catalog_revision",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = AppendOnlySubjectRiskQuerySet.as_manager()
+
+    class Meta:
+        db_table = "subject_risk_catalog_revisions"
+        ordering = ("-revision_no", "id")
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(revision_no__gte=1),
+                name="subject_risk_revision_no_gte_1",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(draft_version__gte=1),
+                name="subject_risk_revision_draft_version_gte_1",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(format_version=1), name="subject_risk_revision_format_v1"
+            ),
+        ]
+
+
+class SubjectRiskAssessment(models.Model):  # noqa: DJ008
+    class Outcome(models.TextChoices):
+        CLEAR = "clear", "\u81ea\u52a8\u68c0\u67e5\u901a\u8fc7"
+        RESTRICTED = "restricted", "\u81ea\u52a8\u9650\u5236"
+        REVIEW_REQUIRED = "review_required", "\u9700\u8981\u4eba\u5de5\u5ba1\u6838"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    subject_version = models.OneToOneField(
+        SubjectVersion,
+        on_delete=models.PROTECT,
+        related_name="risk_assessment",
+    )
+    catalog_revision = models.ForeignKey(
+        SubjectRiskCatalogRevision,
+        on_delete=models.PROTECT,
+        related_name="assessments",
+    )
+    semantic_digest = models.CharField(max_length=64)
+    outcome = models.CharField(max_length=24, choices=Outcome.choices)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = AppendOnlySubjectRiskQuerySet.as_manager()
+
+    class Meta:
+        db_table = "subject_risk_assessments"
+        ordering = ("subject_version_id", "id")
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(outcome__in=("clear", "restricted", "review_required")),
+                name="subject_risk_assessment_valid_outcome",
+            )
+        ]
+
+
+class SubjectRiskHit(models.Model):  # noqa: DJ008
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    assessment = models.ForeignKey(
+        SubjectRiskAssessment,
+        on_delete=models.PROTECT,
+        related_name="hits",
+    )
+    risk_type_key = models.CharField(max_length=64)
+    rule_key = models.CharField(max_length=64)
+    reason_type = models.CharField(max_length=32, choices=SubjectRiskRule.ReasonType.choices)
+    field_key = models.CharField(max_length=64)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = AppendOnlySubjectRiskQuerySet.as_manager()
+
+    class Meta:
+        db_table = "subject_risk_hits"
+        ordering = ("assessment_id", "rule_key", "field_key", "id")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("assessment", "rule_key", "field_key"),
+                name="subject_risk_hit_rule_field_unique",
+            )
+        ]
+
+
+class SubjectReview(models.Model):  # noqa: DJ008
+    class Status(models.TextChoices):
+        PENDING = "pending", "\u5f85\u5ba1\u6838"
+        APPROVED = "approved", "\u5df2\u901a\u8fc7"
+        REJECTED = "rejected", "\u5df2\u62d2\u7edd"
+        SUPERSEDED = "superseded", "\u5df2\u88ab\u65b0\u7248\u672c\u66ff\u4ee3"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    assessment = models.OneToOneField(
+        SubjectRiskAssessment,
+        on_delete=models.PROTECT,
+        related_name="review",
+    )
+    subject = models.ForeignKey(Subject, on_delete=models.PROTECT, related_name="reviews")
+    subject_version = models.OneToOneField(
+        SubjectVersion,
+        on_delete=models.PROTECT,
+        related_name="review",
+    )
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.PENDING)
+    public_reason = models.CharField(max_length=500, blank=True)
+    internal_note = models.CharField(max_length=1000, blank=True)
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="reviewed_subjects",
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    version = models.PositiveBigIntegerField(default=1)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "subject_reviews"
+        ordering = ("-created_at", "-id")
+        indexes = [
+            models.Index(fields=("status", "created_at", "id"), name="subject_review_queue_idx"),
+            models.Index(fields=("subject", "created_at", "id"), name="subject_review_subject_idx"),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(status__in=("pending", "approved", "rejected", "superseded")),
+                name="subject_review_valid_status",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(version__gte=1), name="subject_review_version_gte_1"
+            ),
+        ]
+
+
+class SubjectReviewEvent(models.Model):  # noqa: DJ008
+    class EventType(models.TextChoices):
+        REQUESTED = "requested", "\u5df2\u8fdb\u5165\u5ba1\u6838"
+        APPROVED = "approved", "\u5ba1\u6838\u901a\u8fc7"
+        REJECTED = "rejected", "\u5ba1\u6838\u62d2\u7edd"
+        SUPERSEDED = "superseded", "\u5df2\u88ab\u65b0\u7248\u672c\u66ff\u4ee3"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    review = models.ForeignKey(SubjectReview, on_delete=models.PROTECT, related_name="events")
+    event_type = models.CharField(max_length=16, choices=EventType.choices)
+    from_status = models.CharField(max_length=16, blank=True)
+    to_status = models.CharField(max_length=16, choices=SubjectReview.Status.choices)
+    safe_summary = models.JSONField(default=dict)
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="subject_review_events",
+    )
+    request_id = models.UUIDField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = AppendOnlySubjectRiskQuerySet.as_manager()
+
+    class Meta:
+        db_table = "subject_review_events"

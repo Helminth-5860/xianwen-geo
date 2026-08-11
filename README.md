@@ -384,3 +384,17 @@ schema binding, exactly one official name, bound commit events, and append-only
 semantic facts. No historical XW-0202 SubjectVersion is fabricated.
 
 See [docs/30-SUBJECT-VERSIONS-NAMES-PRODUCTS.md](docs/30-SUBJECT-VERSIONS-NAMES-PRODUCTS.md).
+
+## Subject risk catalog and review (XW-0204)
+
+Subject risk types and rules are draft configuration. Only the fixed two-person
+`subject_risk.catalog.publish` action activates an immutable catalog revision;
+no production risk keywords, industry decisions, AI classifier, or external
+moderation provider is seeded. Each formal SubjectVersion is classified against
+and permanently bound to the then-current revision, while feature enforcement
+uses the current published policy without rewriting historical evidence.
+
+Scoped manual review is a direct single-administrator decision protected by a
+secure admin Session, CSRF, RBAC, own/role/all customer scope, expected versions,
+and append-only audit evidence. See
+[docs/31-SUBJECT-RISK-RULES-REVIEW.md](docs/31-SUBJECT-RISK-RULES-REVIEW.md).

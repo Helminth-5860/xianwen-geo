@@ -11,6 +11,7 @@ services:
       - pytest
       - tests/test_subject_schema_postgres.py
       - tests/test_subject_versions_postgres.py
+      - tests/test_subject_risk_postgres.py
       - tests/test_subject_drafts_postgres.py
       - --ds=config.settings
       - -q

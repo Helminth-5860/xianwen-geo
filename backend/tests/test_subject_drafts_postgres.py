@@ -51,6 +51,7 @@ from apps.subjects.subject_services import (
 )
 from apps.subjects.version_services import commit_subject_version
 from apps.users.models import User
+from tests.subject_risk_helpers import install_empty_published_risk_catalog
 from tests.test_plan_changes import admin, customer
 from tests.test_plan_changes_postgres import cancel_digests, change_operation
 from tests.test_subscriptions_postgres import activate, make_application
@@ -64,6 +65,7 @@ def require_postgres_and_redis():
         pytest.skip("Run through scripts/test-subject-schema.* with PostgreSQL and Redis.")
     call_command("sync_subject_catalog", "--apply", verbosity=0)
     call_command("sync_plan_catalog", "--apply", verbosity=0)
+    install_empty_published_risk_catalog()
     call_command("sync_admin_rbac", "--apply", verbosity=0)
     redis = get_redis_connection("default")
     assert redis.ping()

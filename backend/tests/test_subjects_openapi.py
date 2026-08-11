@@ -140,3 +140,57 @@ def test_subject_error_codes_are_registered_in_the_common_envelope():
         "SUBJECT_PRODUCT_CONFIRMATION_INVALID",
         "SUBJECT_VERSION_NO_CHANGES",
     } <= codes
+
+
+def test_subject_risk_catalog_review_and_minimal_exposure_contract():
+    spec = load_spec()
+    paths = spec["paths"]
+    expected = {
+        "/admin/subject-risk-types": {"get", "post"},
+        "/admin/subject-risk-types/{riskTypeId}": {"patch"},
+        "/admin/subject-risk-rules": {"get", "post"},
+        "/admin/subject-risk-rules/{riskRuleId}": {"patch"},
+        "/admin/subject-risk-catalog": {"get"},
+        "/admin/subject-risk-catalog/publish": {"post"},
+        "/admin/subject-reviews": {"get"},
+        "/admin/subject-reviews/{reviewId}": {"get"},
+        "/admin/subject-reviews/{reviewId}/approve": {"post"},
+        "/admin/subject-reviews/{reviewId}/reject": {"post"},
+    }
+    for path, methods in expected.items():
+        assert path in paths
+        assert methods <= paths[path].keys()
+        assert "delete" not in paths[path]
+
+    writes = [
+        (path, method)
+        for path, methods in expected.items()
+        for method in methods
+        if method in {"post", "patch", "put"}
+    ]
+    for path, method in writes:
+        refs = {item.get("$ref") for item in paths[path][method].get("parameters", [])}
+        assert "#/components/parameters/CsrfToken" in refs
+
+    schemas = spec["components"]["schemas"]
+    assert schemas["SubjectRiskOperator"]["enum"] == ["equals_any", "contains_any"]
+    assert set(schemas["SubjectRiskCatalogPublishRequest"]["required"]) == {
+        "expected_catalog_version"
+    }
+    assert schemas["SubjectRiskCatalogPublishRequest"]["additionalProperties"] is False
+    assert schemas["SubjectReviewDecisionRequest"]["additionalProperties"] is False
+    review_properties = set(schemas["SubjectReview"]["properties"])
+    assert (
+        not {
+            "field_values",
+            "schema_snapshot",
+            "semantic_digest",
+            "catalog_snapshot",
+            "matched_value",
+        }
+        & review_properties
+    )
+    detail_required = spec["components"]["schemas"]["SubjectDetail"]["allOf"][1]["required"]
+    assert "risk" in detail_required
+    assert "/admin/approvals" in paths
+    assert "post" not in paths["/admin/approvals"]

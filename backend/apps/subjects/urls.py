@@ -1,5 +1,17 @@
 from django.urls import path
 
+from .risk_views import (
+    AdminRiskCatalogPublishView,
+    AdminRiskCatalogView,
+    AdminRiskRuleDetailView,
+    AdminRiskRuleListView,
+    AdminRiskTypeDetailView,
+    AdminRiskTypeListView,
+    AdminSubjectReviewApproveView,
+    AdminSubjectReviewDetailView,
+    AdminSubjectReviewListView,
+    AdminSubjectReviewRejectView,
+)
 from .subject_views import (
     SubjectActivateView,
     SubjectArchiveView,
@@ -109,5 +121,55 @@ urlpatterns = [
         "admin/subject-field-options/<uuid:option_id>",
         AdminSubjectFieldOptionDetailView.as_view(),
         name="admin-subject-field-option-detail",
+    ),
+    path(
+        "admin/subject-risk-types",
+        AdminRiskTypeListView.as_view(),
+        name="admin-subject-risk-types",
+    ),
+    path(
+        "admin/subject-risk-types/<uuid:risk_type_id>",
+        AdminRiskTypeDetailView.as_view(),
+        name="admin-subject-risk-type-detail",
+    ),
+    path(
+        "admin/subject-risk-rules",
+        AdminRiskRuleListView.as_view(),
+        name="admin-subject-risk-rules",
+    ),
+    path(
+        "admin/subject-risk-rules/<uuid:risk_rule_id>",
+        AdminRiskRuleDetailView.as_view(),
+        name="admin-subject-risk-rule-detail",
+    ),
+    path(
+        "admin/subject-risk-catalog",
+        AdminRiskCatalogView.as_view(),
+        name="admin-subject-risk-catalog",
+    ),
+    path(
+        "admin/subject-risk-catalog/publish",
+        AdminRiskCatalogPublishView.as_view(),
+        name="admin-subject-risk-catalog-publish",
+    ),
+    path(
+        "admin/subject-reviews",
+        AdminSubjectReviewListView.as_view(),
+        name="subject-review-list",
+    ),
+    path(
+        "admin/subject-reviews/<uuid:review_id>",
+        AdminSubjectReviewDetailView.as_view(),
+        name="subject-review-detail",
+    ),
+    path(
+        "admin/subject-reviews/<uuid:review_id>/approve",
+        AdminSubjectReviewApproveView.as_view(),
+        name="subject-review-approve",
+    ),
+    path(
+        "admin/subject-reviews/<uuid:review_id>/reject",
+        AdminSubjectReviewRejectView.as_view(),
+        name="subject-review-reject",
     ),
 ]

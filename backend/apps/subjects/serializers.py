@@ -13,6 +13,7 @@ from .models import (
     SubjectTypeFieldConfig,
     SubjectVersion,
 )
+from .risk_services import subject_risk_summary
 from .schema_snapshots import (
     FrozenSemanticError,
     derive_product_candidates,
@@ -392,6 +393,7 @@ class SubjectDetailSerializer(SubjectSummarySerializer):
     form_schema = serializers.SerializerMethodField()
     product_candidates = serializers.SerializerMethodField()
     has_uncommitted_changes = serializers.SerializerMethodField()
+    risk = serializers.SerializerMethodField()
 
     class Meta:
         model = Subject
@@ -411,6 +413,7 @@ class SubjectDetailSerializer(SubjectSummarySerializer):
             "form_schema",
             "product_candidates",
             "has_uncommitted_changes",
+            "risk",
         )
 
     def get_form_schema(self, obj):
@@ -434,6 +437,9 @@ class SubjectDetailSerializer(SubjectSummarySerializer):
         if obj.current_version_id is None:
             return True
         return values_digest(obj.draft_values) != obj.current_version.field_values_digest
+
+    def get_risk(self, obj):
+        return subject_risk_summary(obj)
 
 
 class SubjectContextSerializer(serializers.ModelSerializer):

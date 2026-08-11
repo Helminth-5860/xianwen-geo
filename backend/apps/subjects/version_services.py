@@ -7,6 +7,11 @@ from rest_framework.exceptions import NotFound
 from apps.users.models import User
 
 from .models import Subject, SubjectEvent, SubjectName, SubjectProduct, SubjectVersion
+from .risk_services import (
+    assess_subject_version,
+    lock_published_catalog_revision,
+    supersede_pending_review,
+)
 from .schema_snapshots import (
     FrozenRequiredFieldsError,
     FrozenSemanticError,
@@ -98,6 +103,7 @@ def commit_subject_version(
     product_confirmations: list[dict[str, Any]],
     request_id,
 ) -> tuple[Subject, SubjectVersion]:
+    catalog_revision = lock_published_catalog_revision()
     user = User.objects.select_for_update().get(pk=user_id)
     _ensure_subject_write_allowed(user)
     subject = subject_for_user_or_404(user=user, subject_id=subject_id, lock=True)
@@ -132,6 +138,7 @@ def commit_subject_version(
     if current is not None and current.semantic_digest == semantic_digest:
         raise SubjectVersionNoChanges
     next_version_no = 1 if current is None else current.version_no + 1
+    supersede_pending_review(subject=subject, actor=user, request_id=request_id)
     official_name = next(
         name["display_value"] for name in names if name["role"] == SubjectName.Role.OFFICIAL_NAME
     )
@@ -177,6 +184,13 @@ def commit_subject_version(
         from_status=subject.status,
         to_status=subject.status,
         safe_summary={"version_no": version.version_no},
+        actor=user,
+        request_id=request_id,
+    )
+    assess_subject_version(
+        subject=subject,
+        version=version,
+        revision=catalog_revision,
         actor=user,
         request_id=request_id,
     )

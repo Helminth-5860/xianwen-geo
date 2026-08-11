@@ -25,6 +25,7 @@ def test_subject_schema_postgresql_suite_is_wired_into_docker_job():
     assert "tests/test_subject_schema_postgres.py" in compose
     assert "tests/test_subject_drafts_postgres.py" in compose
     assert "tests/test_subject_versions_postgres.py" in compose
+    assert "tests/test_subject_risk_postgres.py" in compose
     assert "down --volumes --remove-orphans" in shell_script
     assert "down --volumes --remove-orphans" in powershell_script
     assert "openssl rand -hex 32" in shell_script

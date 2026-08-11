@@ -16,6 +16,7 @@ from apps.subjects.models import (
     SubjectVersion,
 )
 from apps.users.models import User
+from tests.subject_risk_helpers import install_empty_published_risk_catalog
 
 PASSWORD = "Correct-Horse-Battery-2026!"
 
@@ -23,6 +24,8 @@ PASSWORD = "Correct-Horse-Battery-2026!"
 @pytest.fixture(autouse=True)
 def seed_subject_catalog():
     call_command("sync_subject_catalog", "--apply", verbosity=0)
+
+    install_empty_published_risk_catalog()
 
 
 def make_user(*, phone="13800138000", approval_status=User.ApprovalStatus.PENDING):

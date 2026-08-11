@@ -140,6 +140,7 @@ const detail: SubjectDetail = {
     { candidate_key: "a".repeat(64), display_value: "\u534e\u4e1c", source_field_key: "regions" },
   ],
   has_uncommitted_changes: true,
+  risk: { status: "not_assessed", review_id: null, public_reason: "" },
 };
 
 const list: SubjectList = {
@@ -325,5 +326,23 @@ describe("subject draft interactions", () => {
       ),
     ).toBeTruthy();
     expect(commitSubject).not.toHaveBeenCalled();
+  });
+});
+describe("subject risk public boundary", () => {
+  it("shows the safe public rejection reason without administrator evidence", async () => {
+    getSubject.mockResolvedValueOnce({
+      ...detail,
+      risk: {
+        status: "rejected",
+        review_id: "review-1",
+        public_reason: "\u8bf7\u6838\u5bf9\u516c\u5f00\u4e3b\u4f53\u8d44\u6599",
+      },
+    });
+    render(<SubjectDetailPage />);
+
+    expect(
+      await screen.findByText("\u8bf7\u6838\u5bf9\u516c\u5f00\u4e3b\u4f53\u8d44\u6599"),
+    ).toBeTruthy();
+    expect(screen.queryByText(/internal_note|review_evidence|test\.rule/)).toBeNull();
   });
 });

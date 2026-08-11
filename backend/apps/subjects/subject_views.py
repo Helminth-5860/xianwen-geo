@@ -13,6 +13,7 @@ from apps.core.error_codes import ErrorCode
 from apps.core.responses import error_response
 
 from .permissions import IsAvailableAuthenticatedUser
+from .risk_services import SubjectRiskError
 from .serializers import (
     SubjectCommitRequestSerializer,
     SubjectContextSerializer,
@@ -55,6 +56,7 @@ ERROR_STATUS = {
     "SUBJECT_SEMANTICS_INVALID": HTTP_422_UNPROCESSABLE_ENTITY,
     "SUBJECT_PRODUCT_CONFIRMATION_INVALID": HTTP_422_UNPROCESSABLE_ENTITY,
     "SUBJECT_VERSION_NO_CHANGES": HTTP_409_CONFLICT,
+    "SUBJECT_RISK_CONFIG_INTEGRITY_ERROR": HTTP_503_SERVICE_UNAVAILABLE,
     "PLAN_REQUIRED": HTTP_403_FORBIDDEN,
     "ACCOUNT_UNAVAILABLE": HTTP_403_FORBIDDEN,
 }
@@ -240,7 +242,7 @@ class SubjectCommitView(APIView):
                 product_confirmations=list(serializer.validated_data["products"]),
                 request_id=request.request_id,
             )
-        except SubjectBusinessError as exc:
+        except (SubjectBusinessError, SubjectRiskError) as exc:
             return _error(exc, request)
         context = subject_context_for_user(request.user)
         return Response(
