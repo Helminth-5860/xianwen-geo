@@ -177,13 +177,13 @@ def _subject_event(
 def subjects_for_user(user: User):
     return (
         Subject.objects.filter(user=user)
-        .select_related("subject_type")
+        .select_related("subject_type", "current_version")
         .order_by("-updated_at", "id")
     )
 
 
 def subject_for_user_or_404(*, user: User, subject_id, lock: bool = False) -> Subject:
-    query = Subject.objects.filter(user=user).select_related("subject_type")
+    query = Subject.objects.filter(user=user).select_related("subject_type", "current_version")
     if lock:
         query = query.select_for_update(of=("self",))
     try:

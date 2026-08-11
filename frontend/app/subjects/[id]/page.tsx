@@ -4,9 +4,11 @@ import {
   Alert,
   Button,
   Card,
+  Checkbox,
   Form,
   Input,
   InputNumber,
+  Popconfirm,
   Select,
   Space,
   Spin,
@@ -19,10 +21,12 @@ import { useEffect, useState } from "react";
 
 import { userMessage } from "@/lib/auth-client";
 import {
+  commitSubject,
   getSubject,
   updateSubjectDraft,
   type PersistedSubjectField,
   type SubjectDetail,
+  type SubjectProductConfirmation,
 } from "@/lib/subjects-client";
 
 const statusLabels = {
@@ -126,6 +130,19 @@ function FieldInput({
   );
 }
 
+function defaultProductConfirmations(subject: SubjectDetail) {
+  return Object.fromEntries(
+    subject.product_candidates.map((candidate) => [
+      candidate.candidate_key,
+      {
+        candidate_key: candidate.candidate_key,
+        uniqueness_confirmed: false,
+        include_in_mention: false,
+      },
+    ]),
+  ) as Record<string, SubjectProductConfirmation>;
+}
+
 export default function SubjectDetailPage() {
   const params = useParams<{ id: string }>();
   const [subject, setSubject] = useState<SubjectDetail>();
@@ -133,6 +150,10 @@ export default function SubjectDetailPage() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [saving, setSaving] = useState(false);
+  const [committing, setCommitting] = useState(false);
+  const [productConfirmations, setProductConfirmations] = useState<
+    Record<string, SubjectProductConfirmation>
+  >({});
 
   useEffect(() => {
     let current = true;
@@ -141,6 +162,7 @@ export default function SubjectDetailPage() {
         if (!current) return;
         setSubject(data);
         setValues(data.draft_values);
+        setProductConfirmations(defaultProductConfirmations(data));
       })
       .catch((reason) => {
         if (current) setError(userMessage(reason));
@@ -158,6 +180,7 @@ export default function SubjectDetailPage() {
       setSubject(updated);
       setValues(updated.draft_values);
       setError("");
+      setProductConfirmations(defaultProductConfirmations(updated));
       setNotice("\u8349\u7a3f\u5df2\u4fdd\u5b58");
     } catch (reason) {
       setNotice("");
@@ -167,6 +190,51 @@ export default function SubjectDetailPage() {
     }
   };
 
+  const commit = async () => {
+    if (!subject) return;
+    if (JSON.stringify(values) !== JSON.stringify(subject.draft_values)) {
+      setError(
+        "\u8bf7\u5148\u4fdd\u5b58\u8349\u7a3f\uff0c\u518d\u63d0\u4ea4\u6b63\u5f0f\u7248\u672c",
+      );
+      return;
+    }
+    const missingRequired = subject.form_schema.fields.some((field) => {
+      if (!field.required) return false;
+      const value = subject.draft_values[field.field_key];
+      if (value === null || value === undefined) return true;
+      if (typeof value === "string") return value.trim().length === 0;
+      if (Array.isArray(value)) return value.length === 0;
+      return false;
+    });
+    if (missingRequired) {
+      setError("\u8bf7\u5148\u5b8c\u6574\u586b\u5199\u6240\u6709\u5fc5\u586b\u5b57\u6bb5");
+      return;
+    }
+    setCommitting(true);
+    try {
+      const result = await commitSubject(
+        subject,
+        subject.product_candidates.map(
+          (candidate) =>
+            productConfirmations[candidate.candidate_key] ?? {
+              candidate_key: candidate.candidate_key,
+              uniqueness_confirmed: false,
+              include_in_mention: false,
+            },
+        ),
+      );
+      setSubject(result.subject);
+      setValues(result.subject.draft_values);
+      setProductConfirmations(defaultProductConfirmations(result.subject));
+      setError("");
+      setNotice(`\u6b63\u5f0f\u7248\u672c v${result.version.version_no} \u5df2\u63d0\u4ea4`);
+    } catch (reason) {
+      setNotice("");
+      setError(userMessage(reason));
+    } finally {
+      setCommitting(false);
+    }
+  };
   if (!subject && !error) {
     return <Spin fullscreen description={"\u6b63\u5728\u52a0\u8f7d\u4e3b\u4f53\u8349\u7a3f"} />;
   }
@@ -182,7 +250,18 @@ export default function SubjectDetailPage() {
             <Typography.Title>{subject.form_schema.name}</Typography.Title>
             <Tag>{statusLabels[subject.status]}</Tag>
             {subject.is_current && <Tag color="blue">{"\u5f53\u524d\u4e3b\u4f53"}</Tag>}
+            {subject.current_version_no !== null && (
+              <Tag color="green">{`\u6b63\u5f0f\u7248\u672c v${subject.current_version_no}`}</Tag>
+            )}
+            {subject.retest_required && (
+              <Tag color="orange">{"\u9700\u91cd\u65b0\u68c0\u6d4b"}</Tag>
+            )}
           </Space>
+          <Typography.Paragraph>
+            <Link href={`/subjects/${subject.id}/versions`}>
+              {"\u67e5\u770b\u6b63\u5f0f\u7248\u672c\u5386\u53f2"}
+            </Link>
+          </Typography.Paragraph>
           <Typography.Paragraph type="secondary">
             {subject.form_schema.description}
           </Typography.Paragraph>
@@ -213,14 +292,90 @@ export default function SubjectDetailPage() {
                   />
                 </Form.Item>
               ))}
-              <Button
-                htmlType="submit"
-                type="primary"
-                loading={saving}
-                disabled={subject.status === "archived"}
-              >
-                {"\u4fdd\u5b58\u8349\u7a3f"}
-              </Button>
+              {subject.product_candidates.length > 0 && (
+                <Card
+                  size="small"
+                  title={"\u4ea7\u54c1\u5019\u9009\u786e\u8ba4"}
+                  style={{ marginBottom: 20 }}
+                >
+                  <Typography.Paragraph type="secondary">
+                    {
+                      "\u5019\u9009\u4ea7\u54c1\u7531\u670d\u52a1\u7aef\u4ece\u5df2\u4fdd\u5b58\u8349\u7a3f\u6d3e\u751f\uff0c\u4e0d\u80fd\u81ea\u884c\u6dfb\u52a0\u3002"
+                    }
+                  </Typography.Paragraph>
+                  <Space direction="vertical">
+                    {subject.product_candidates.map((candidate) => {
+                      const confirmation = productConfirmations[candidate.candidate_key];
+                      const unique = confirmation?.uniqueness_confirmed ?? false;
+                      return (
+                        <Space key={candidate.candidate_key} wrap>
+                          <Typography.Text>{candidate.display_value}</Typography.Text>
+                          <Checkbox
+                            aria-label={`${candidate.display_value}\u552f\u4e00\u6027\u5df2\u786e\u8ba4`}
+                            checked={unique}
+                            disabled={subject.status === "archived"}
+                            onChange={(event) =>
+                              setProductConfirmations((current) => ({
+                                ...current,
+                                [candidate.candidate_key]: {
+                                  candidate_key: candidate.candidate_key,
+                                  uniqueness_confirmed: event.target.checked,
+                                  include_in_mention: event.target.checked
+                                    ? (current[candidate.candidate_key]?.include_in_mention ??
+                                      false)
+                                    : false,
+                                },
+                              }))
+                            }
+                          >
+                            {"\u5df2\u786e\u8ba4\u552f\u4e00\u6027"}
+                          </Checkbox>
+                          <Checkbox
+                            aria-label={`${candidate.display_value}\u52a0\u5165\u63d0\u53ca\u8bcd`}
+                            checked={confirmation?.include_in_mention ?? false}
+                            disabled={subject.status === "archived" || !unique}
+                            onChange={(event) =>
+                              setProductConfirmations((current) => ({
+                                ...current,
+                                [candidate.candidate_key]: {
+                                  candidate_key: candidate.candidate_key,
+                                  uniqueness_confirmed: true,
+                                  include_in_mention: event.target.checked,
+                                },
+                              }))
+                            }
+                          >
+                            {"\u52a0\u5165\u63d0\u53ca\u8bcd"}
+                          </Checkbox>
+                        </Space>
+                      );
+                    })}
+                  </Space>
+                </Card>
+              )}
+              <Space>
+                <Button
+                  htmlType="submit"
+                  type="primary"
+                  loading={saving}
+                  disabled={subject.status === "archived"}
+                >
+                  {"\u4fdd\u5b58\u8349\u7a3f"}
+                </Button>
+                <Popconfirm
+                  title={"\u63d0\u4ea4\u6b63\u5f0f\u7248\u672c"}
+                  description={
+                    "\u6b63\u5f0f\u7248\u672c\u5c06\u4f5c\u4e3a\u4e0d\u53ef\u53d8\u5386\u53f2\u4fdd\u5b58\u3002"
+                  }
+                  okText={"\u786e\u8ba4\u63d0\u4ea4"}
+                  cancelText={"\u53d6\u6d88"}
+                  onConfirm={() => void commit()}
+                >
+                  <Button loading={committing} disabled={subject.status === "archived"}>
+                    {"\u63d0\u4ea4\u6b63\u5f0f\u7248\u672c"}
+                  </Button>
+                </Popconfirm>
+              </Space>
             </Form>
           </Card>
         </>

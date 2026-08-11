@@ -17,6 +17,9 @@ def test_subject_catalog_paths_are_complete_without_upload_or_delete_routes():
         "/subjects/{subjectId}/draft": {"patch"},
         "/subjects/{subjectId}/archive": {"post"},
         "/subjects/{subjectId}/activate": {"post"},
+        "/subjects/{subjectId}/commit": {"post"},
+        "/subjects/{subjectId}/versions": {"get"},
+        "/subjects/{subjectId}/versions/{versionId}": {"get"},
         "/subjects/current": {"put"},
         "/subject-types": {"get"},
         "/subject-types/{subjectTypeId}/form-schema": {"get"},
@@ -35,8 +38,6 @@ def test_subject_catalog_paths_are_complete_without_upload_or_delete_routes():
         assert methods <= paths[path].keys()
         assert "delete" not in paths[path]
     assert not any("upload" in path or "presign" in path for path in paths)
-    assert "/subjects/{subjectId}/commit" not in paths
-    assert not any(path.startswith("/subjects/") and "/versions" in path for path in paths)
 
 
 def test_subject_schema_writes_require_csrf_and_expected_versions():
@@ -48,6 +49,7 @@ def test_subject_schema_writes_require_csrf_and_expected_versions():
         ("/subjects/{subjectId}/draft", "patch"),
         ("/subjects/{subjectId}/archive", "post"),
         ("/subjects/{subjectId}/activate", "post"),
+        ("/subjects/{subjectId}/commit", "post"),
         ("/subjects/current", "put"),
         ("/admin/subject-types/{subjectTypeId}", "patch"),
         ("/admin/subject-types/{subjectTypeId}/enable", "post"),
@@ -82,6 +84,10 @@ def test_subject_schema_writes_require_csrf_and_expected_versions():
     assert "expected_version" in schemas["SubjectDraftUpdateRequest"]["required"]
     assert "expected_version" in schemas["SubjectStatusRequest"]["required"]
     assert "expected_version" in schemas["SubjectCurrentRequest"]["required"]
+    commit = schemas["SubjectCommitRequest"]
+    assert commit["additionalProperties"] is False
+    assert set(commit["required"]) == {"expected_version", "products"}
+    assert set(commit["properties"]) == {"expected_version", "products"}
 
 
 def test_subject_machine_semantics_and_public_schema_are_minimal():
@@ -129,4 +135,8 @@ def test_subject_error_codes_are_registered_in_the_common_envelope():
         "SUBJECT_CURRENT_VERSION_CONFLICT",
         "SUBJECT_STATE_CONFLICT",
         "PLAN_REQUIRED",
+        "SUBJECT_REQUIRED_FIELDS_INCOMPLETE",
+        "SUBJECT_SEMANTICS_INVALID",
+        "SUBJECT_PRODUCT_CONFIRMATION_INVALID",
+        "SUBJECT_VERSION_NO_CHANGES",
     } <= codes

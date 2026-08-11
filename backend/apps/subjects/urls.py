@@ -3,10 +3,13 @@ from django.urls import path
 from .subject_views import (
     SubjectActivateView,
     SubjectArchiveView,
+    SubjectCommitView,
     SubjectCurrentView,
     SubjectDetailView,
     SubjectDraftView,
     SubjectListCreateView,
+    SubjectVersionDetailView,
+    SubjectVersionListView,
 )
 from .views import (
     AdminSubjectFieldOptionDetailView,
@@ -35,6 +38,21 @@ urlpatterns = [
         "subjects/<uuid:subject_id>/draft",
         SubjectDraftView.as_view(),
         name="subject-draft",
+    ),
+    path(
+        "subjects/<uuid:subject_id>/commit",
+        SubjectCommitView.as_view(),
+        name="subject-commit",
+    ),
+    path(
+        "subjects/<uuid:subject_id>/versions",
+        SubjectVersionListView.as_view(),
+        name="subject-version-list",
+    ),
+    path(
+        "subjects/<uuid:subject_id>/versions/<uuid:version_id>",
+        SubjectVersionDetailView.as_view(),
+        name="subject-version-detail",
     ),
     path(
         "subjects/<uuid:subject_id>/activate",

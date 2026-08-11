@@ -14,6 +14,7 @@ from apps.core.responses import error_response
 
 from .permissions import IsAvailableAuthenticatedUser
 from .serializers import (
+    SubjectCommitRequestSerializer,
     SubjectContextSerializer,
     SubjectCreateRequestSerializer,
     SubjectCurrentRequestSerializer,
@@ -21,6 +22,8 @@ from .serializers import (
     SubjectDraftUpdateRequestSerializer,
     SubjectStatusRequestSerializer,
     SubjectSummarySerializer,
+    SubjectVersionDetailSerializer,
+    SubjectVersionSummarySerializer,
 )
 from .subject_services import (
     SubjectBusinessError,
@@ -33,6 +36,11 @@ from .subject_services import (
     subjects_for_user,
     update_subject_draft,
 )
+from .version_services import (
+    commit_subject_version,
+    subject_version_for_user_or_404,
+    subject_versions_for_user,
+)
 
 ERROR_STATUS = {
     "SUBJECT_SCHEMA_MISMATCH": HTTP_409_CONFLICT,
@@ -43,6 +51,10 @@ ERROR_STATUS = {
     "SUBJECT_VERSION_CONFLICT": HTTP_409_CONFLICT,
     "SUBJECT_CURRENT_VERSION_CONFLICT": HTTP_409_CONFLICT,
     "SUBJECT_STATE_CONFLICT": HTTP_409_CONFLICT,
+    "SUBJECT_REQUIRED_FIELDS_INCOMPLETE": HTTP_422_UNPROCESSABLE_ENTITY,
+    "SUBJECT_SEMANTICS_INVALID": HTTP_422_UNPROCESSABLE_ENTITY,
+    "SUBJECT_PRODUCT_CONFIRMATION_INVALID": HTTP_422_UNPROCESSABLE_ENTITY,
+    "SUBJECT_VERSION_NO_CHANGES": HTTP_409_CONFLICT,
     "PLAN_REQUIRED": HTTP_403_FORBIDDEN,
     "ACCOUNT_UNAVAILABLE": HTTP_403_FORBIDDEN,
 }
@@ -52,6 +64,10 @@ def _error(exc, request):
     details = {}
     if getattr(exc, "field_key", ""):
         details["fields"] = {exc.field_key: ["\u5b57\u6bb5\u503c\u4e0d\u6b63\u786e"]}
+    if getattr(exc, "field_keys", None):
+        details["fields"] = {
+            key: ["\u5fc5\u586b\u5b57\u6bb5\u4e0d\u80fd\u4e3a\u7a7a"] for key in exc.field_keys
+        }
     return error_response(
         ErrorCode(exc.code),
         status_code=ERROR_STATUS[exc.code],
@@ -207,3 +223,53 @@ class SubjectCurrentView(APIView):
         except SubjectBusinessError as exc:
             return _error(exc, request)
         return Response(SubjectContextSerializer(context).data)
+
+
+class SubjectCommitView(APIView):
+    permission_classes = [IsAvailableAuthenticatedUser]
+
+    @method_decorator(csrf_protect)
+    def post(self, request, subject_id):
+        serializer = SubjectCommitRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            subject, version = commit_subject_version(
+                user_id=request.user.pk,
+                subject_id=subject_id,
+                expected_version=serializer.validated_data["expected_version"],
+                product_confirmations=list(serializer.validated_data["products"]),
+                request_id=request.request_id,
+            )
+        except SubjectBusinessError as exc:
+            return _error(exc, request)
+        context = subject_context_for_user(request.user)
+        return Response(
+            {
+                "subject": _detail(
+                    subject,
+                    current_subject_id=context.current_subject_id if context else None,
+                ),
+                "version": SubjectVersionDetailSerializer(version).data,
+            },
+            status=201,
+        )
+
+
+class SubjectVersionListView(APIView):
+    permission_classes = [IsAvailableAuthenticatedUser]
+
+    def get(self, request, subject_id):
+        versions = subject_versions_for_user(user=request.user, subject_id=subject_id)
+        return Response({"versions": SubjectVersionSummarySerializer(versions, many=True).data})
+
+
+class SubjectVersionDetailView(APIView):
+    permission_classes = [IsAvailableAuthenticatedUser]
+
+    def get(self, request, subject_id, version_id):
+        version = subject_version_for_user_or_404(
+            user=request.user,
+            subject_id=subject_id,
+            version_id=version_id,
+        )
+        return Response(SubjectVersionDetailSerializer(version).data)

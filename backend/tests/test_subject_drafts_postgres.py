@@ -49,6 +49,7 @@ from apps.subjects.subject_services import (
     create_subject,
     effective_subject_activation_limit,
 )
+from apps.subjects.version_services import commit_subject_version
 from apps.users.models import User
 from tests.test_plan_changes import admin, customer
 from tests.test_plan_changes_postgres import cancel_digests, change_operation
@@ -80,13 +81,15 @@ def make_user(phone=None):
     )
 
 
-def make_subject(user, subject_type, *, status=Subject.Status.DRAFT):
+def make_subject(user, subject_type, *, status=Subject.Status.DRAFT, values=None):
     snapshot, digest = build_schema_snapshot(subject_type)
+    draft_values = materialize_defaults(snapshot)
+    draft_values.update(values or {})
     return Subject.objects.create(
         user=user,
         subject_type=subject_type,
         status=status,
-        draft_values=materialize_defaults(snapshot),
+        draft_values=draft_values,
         schema_version=subject_type.schema_version,
         schema_snapshot_format_version=1,
         schema_snapshot=snapshot,
@@ -149,7 +152,7 @@ def test_create_has_frozen_snapshot_and_reserves_first_version_number():
 def test_subject_version_event_context_and_subject_reject_raw_delete():
     user = make_user()
     subject_type = SubjectType.objects.get(key="enterprise")
-    subject = make_subject(user, subject_type)
+    subject = make_subject(user, subject_type, values={"name": "Guarded subject"})
     context = SubjectContext.objects.create(user=user, current_subject=subject)
     event = SubjectEvent.objects.create(
         subject=subject,
@@ -159,15 +162,12 @@ def test_subject_version_event_context_and_subject_reject_raw_delete():
         actor=user,
         request_id=uuid.uuid4(),
     )
-    version = SubjectVersion.objects.create(
-        subject=subject,
-        version_no=1,
-        field_values=subject.draft_values,
-        schema_version=subject.schema_version,
-        schema_snapshot_format_version=1,
-        schema_snapshot=subject.schema_snapshot,
-        schema_digest=subject.schema_digest,
-        created_by=user,
+    subject, version = commit_subject_version(
+        user_id=user.pk,
+        subject_id=subject.pk,
+        expected_version=subject.version,
+        product_confirmations=[],
+        request_id=uuid.uuid4(),
     )
     for table, row_id in (
         ("subject_versions", version.pk),

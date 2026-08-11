@@ -24,6 +24,12 @@ CHOICE_TYPES = {
     SubjectFieldDefinition.FieldType.MULTI,
     SubjectFieldDefinition.FieldType.SELECT,
 }
+NAME_ROLE_FIELD_TYPES: dict[str, set[str]] = {
+    SubjectTypeFieldConfig.NameRole.OFFICIAL_NAME: {"text", "single", "select"},
+    SubjectTypeFieldConfig.NameRole.ALIAS: {"text", "single", "select", "multi"},
+    SubjectTypeFieldConfig.NameRole.ENGLISH_NAME: {"text", "single", "select", "multi"},
+    SubjectTypeFieldConfig.NameRole.PRODUCT: {"text", "single", "select", "multi"},
+}
 
 
 class SubjectDomainError(Exception):
@@ -151,6 +157,16 @@ def validate_default_value(config: SubjectTypeFieldConfig, value: Any) -> Any:
     raise SubjectFieldConfigInvalid("未知字段类型。")
 
 
+def validate_name_role_type(config: SubjectTypeFieldConfig) -> None:
+    role = config.name_role
+    if role == SubjectTypeFieldConfig.NameRole.NONE:
+        return
+    if config.field_definition.field_type not in NAME_ROLE_FIELD_TYPES.get(role, set()):
+        raise SubjectFieldConfigInvalid(
+            "\u5b57\u6bb5\u7c7b\u578b\u4e0d\u652f\u6301\u5f53\u524d\u540d\u79f0\u8bed\u4e49\u89d2\u8272\uff0c\u8bf7\u505c\u7528\u65e7\u5b57\u6bb5\u5e76\u521b\u5efa\u6b63\u786e\u7c7b\u578b\u7684\u65b0\u5b57\u6bb5\u3002"
+        )
+
+
 def ensure_schema_invariants(subject_type: SubjectType) -> None:
     configs = list(
         SubjectTypeFieldConfig.objects.filter(subject_type=subject_type)
@@ -180,6 +196,7 @@ def ensure_schema_invariants(subject_type: SubjectType) -> None:
         ):
             raise SubjectFieldConfigInvalid("启用的选择字段必须至少有一个启用选项。")
         validate_default_value(config, config.default_value)
+        validate_name_role_type(config)
         if config.enabled and config.name_role != SubjectTypeFieldConfig.NameRole.NONE:
             roles[config.name_role] = roles.get(config.name_role, 0) + 1
         if (
