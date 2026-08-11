@@ -205,6 +205,46 @@ def test_concurrent_first_commit_is_exactly_once_and_strictly_starts_at_one():
     assert subject.events.filter(event_type=SubjectEvent.EventType.VERSION_COMMITTED).count() == 1
 
 
+def test_draft_patch_and_commit_are_serialized_on_user_and_subject_locks():
+    user = make_user()
+    subject = make_subject(user, name="Original locked draft")
+    expected_version = subject.version
+
+    def patch_draft():
+        updated = update_subject_draft(
+            user_id=user.pk,
+            subject_id=subject.pk,
+            expected_version=expected_version,
+            values={"name": "Concurrent patched draft"},
+        )
+        return ("patched", updated.version)
+
+    def commit_draft():
+        _, version = commit_subject_version(
+            user_id=user.pk,
+            subject_id=subject.pk,
+            expected_version=expected_version,
+            product_confirmations=[],
+            request_id=uuid.uuid4(),
+        )
+        return ("committed", version.field_values["name"])
+
+    results = parallel(patch_draft, commit_draft)
+    successes = [item for item in results if isinstance(item, tuple)]
+    conflicts = [item for item in results if isinstance(item, SubjectVersionConflict)]
+    assert len(successes) == len(conflicts) == 1
+    subject.refresh_from_db()
+    if successes[0][0] == "patched":
+        assert subject.draft_values["name"] == "Concurrent patched draft"
+        assert subject.current_version_id is None
+        assert not subject.versions.exists()
+    else:
+        assert successes[0] == ("committed", "Original locked draft")
+        assert subject.current_version.field_values["name"] == "Original locked draft"
+        assert subject.draft_values["name"] == "Original locked draft"
+        assert list(subject.versions.values_list("version_no", flat=True)) == [1]
+
+
 def test_raw_sql_rejects_gap_schema_mismatch_and_non_max_current_pointer():
     user = make_user()
     subject = make_subject(user)
@@ -227,6 +267,16 @@ def test_raw_sql_rejects_gap_schema_mismatch_and_non_max_current_pointer():
             cursor.execute(
                 "UPDATE subjects SET current_version_id=%s, version=version+1 WHERE id=%s",
                 [str(first.pk), str(subject.pk)],
+            )
+            set_constraints_immediate()
+
+    other = make_subject(make_user(), name="Other subject")
+    other, other_version = commit(other)
+    with pytest.raises(DatabaseError), transaction.atomic():
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE subjects SET current_version_id=%s, version=version+1 WHERE id=%s",
+                [str(other_version.pk), str(subject.pk)],
             )
             set_constraints_immediate()
 
@@ -280,6 +330,18 @@ def test_version_name_product_and_event_evidence_is_immutable_by_raw_sql():
                 [str(product.pk)],
             )
     with pytest.raises(DatabaseError), transaction.atomic():
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE subject_versions SET official_name='tampered' WHERE id=%s",
+                [str(version.pk)],
+            )
+    with pytest.raises(DatabaseError), transaction.atomic():
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE subject_events SET safe_summary='{}'::jsonb WHERE id=%s",
+                [str(version.events.get().pk)],
+            )
+    with pytest.raises(DatabaseError), transaction.atomic():
         SubjectProduct.objects.create(
             subject_version=version,
             candidate_key="f" * 64,
@@ -316,8 +378,10 @@ def test_name_role_type_guard_rejects_invalid_machine_semantics():
 @pytest.mark.parametrize(
     "failure_target",
     [
+        "apps.subjects.version_services.SubjectVersion.objects.create",
         "apps.subjects.version_services.SubjectName.objects.bulk_create",
         "apps.subjects.version_services.SubjectProduct.objects.bulk_create",
+        "apps.subjects.version_services.Subject.save",
         "apps.subjects.version_services.SubjectEvent.objects.create",
     ],
 )
