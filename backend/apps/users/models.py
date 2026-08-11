@@ -222,6 +222,14 @@ class Notification(models.Model):
         SUBSCRIPTION_EXPIRED = "subscription_expired", "套餐已到期"
         SUBSCRIPTION_TERMINATED = "subscription_terminated", "套餐已终止"
         SUBSCRIPTION_RENEWED = "subscription_renewed", "Subscription renewed"
+        SUBJECT_REVIEW_APPROVED = (
+            "subject_review_approved",
+            "\u4e3b\u4f53\u8d44\u6599\u5ba1\u6838\u901a\u8fc7",
+        )
+        SUBJECT_REVIEW_REJECTED = (
+            "subject_review_rejected",
+            "\u4e3b\u4f53\u8d44\u6599\u5ba1\u6838\u62d2\u7edd",
+        )
 
     id: models.UUIDField = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     recipient: models.ForeignKey = models.ForeignKey(

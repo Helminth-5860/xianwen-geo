@@ -22,6 +22,7 @@ const MENU_ITEMS = [
   ["menu.admin.subscriptions", "/admin/subscription-changes", "套餐变更"],
   ["menu.admin.quotas", "/admin/quotas", "\u989d\u5ea6"],
   ["menu.admin.subject-types", "/admin/subject-types", "主体类型"],
+  ["menu.admin.subject-risk", "/admin/subject-reviews", "\u4e3b\u4f53\u98ce\u9669"],
   ["menu.admin.risk-policies", "/admin/risk-policies", "风险策略"],
   ["menu.admin.plans", "/admin/plans", "套餐"],
 ] as const;

@@ -4,7 +4,7 @@ CONFIRM = "confirm"
 PASSWORD = "password"
 TWO_PERSON = "two_person"
 MODE_STRENGTH = {CONFIRM: 1, PASSWORD: 2, TWO_PERSON: 3}
-CATALOG_VERSION = 6
+CATALOG_VERSION = 7
 
 
 @dataclass(frozen=True)
@@ -339,6 +339,16 @@ RISK_ACTION_CATALOG = (
         TWO_PERSON,
         TWO_PERSON,
         "quota.manual_deduct",
+    ),
+    RiskActionDefinition(
+        "subject_risk.catalog.publish",
+        "\u53d1\u5e03\u4e3b\u4f53\u98ce\u9669\u76ee\u5f55",
+        "subject_risk",
+        "subject_risk_catalog",
+        (TWO_PERSON,),
+        TWO_PERSON,
+        TWO_PERSON,
+        "subject_risk.catalog.publish",
     ),
 )
 RISK_ACTION_BY_KEY = {item.key: item for item in RISK_ACTION_CATALOG}

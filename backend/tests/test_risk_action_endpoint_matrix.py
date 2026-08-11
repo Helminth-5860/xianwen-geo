@@ -30,6 +30,7 @@ from apps.plans.subscription_services import grant_trial
 from apps.quotas.idempotency import derive_idempotency_digests
 from apps.quotas.models import QuotaAccount
 from apps.quotas.services import adjust_quota_account
+from apps.subjects.models import SubjectRiskCatalogRevision, SubjectRiskCatalogState
 from apps.users.models import User
 from tests.admin_session_helpers import authenticate_admin_client
 from tests.test_subscriptions import published_plan
@@ -338,6 +339,17 @@ def build_quota_case(action_key, actor):
 
 
 def build_case(action_key, actor):
+    if action_key == "subject_risk.catalog.publish":
+        state = SubjectRiskCatalogState.objects.get(pk=1)
+        return EndpointCase(
+            "/api/v1/admin/subject-risk-catalog/publish",
+            "post",
+            {"expected_catalog_version": state.version},
+            lambda: (
+                SubjectRiskCatalogRevision.objects.count(),
+                SubjectRiskCatalogState.objects.get(pk=1).published_revision_id,
+            ),
+        )
     if action_key.startswith("quota."):
         return build_quota_case(action_key, actor)
     if action_key.startswith("plan."):

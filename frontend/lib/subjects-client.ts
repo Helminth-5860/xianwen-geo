@@ -239,6 +239,19 @@ export type SubjectDetail = SubjectSummary &
       source_field_key: string;
     }>;
     has_uncommitted_changes: boolean;
+    risk: Readonly<{
+      status:
+        | "not_assessed"
+        | "unavailable"
+        | "clear"
+        | "restricted"
+        | "review_required"
+        | "pending"
+        | "approved"
+        | "rejected"
+        | "superseded";
+      review_id: string | null;
+    }>;
   }>;
 
 export type SubjectProductConfirmation = Readonly<{

@@ -256,6 +256,17 @@ export default function SubjectDetailPage() {
             {subject.retest_required && (
               <Tag color="orange">{"\u9700\u91cd\u65b0\u68c0\u6d4b"}</Tag>
             )}
+            <Tag
+              color={
+                subject.risk.status === "approved" || subject.risk.status === "clear"
+                  ? "green"
+                  : subject.risk.status === "rejected"
+                    ? "red"
+                    : "orange"
+              }
+            >
+              {`\u98ce\u9669\u72b6\u6001: ${subject.risk.status}`}
+            </Tag>
           </Space>
           <Typography.Paragraph>
             <Link href={`/subjects/${subject.id}/versions`}>

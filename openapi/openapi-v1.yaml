@@ -1896,6 +1896,87 @@ paths:
         '422': {$ref: '#/components/responses/ValidationError'}
         '429': {$ref: '#/components/responses/RateLimited'}
         '503': {$ref: '#/components/responses/ServiceUnavailable'}
+  /admin/subject-risk-types:
+    get:
+      tags: [Admin, Subjects]
+      summary: List draft subject risk types
+      responses: {'200': {description: Draft catalog types}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/PermissionDenied'}, '503': {$ref: '#/components/responses/ServiceUnavailable'}}
+    post:
+      tags: [Admin, Subjects]
+      summary: Create a draft subject risk type
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/SubjectRiskTypeCreateRequest'}}}}
+      responses: {'201': {description: Draft type created}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/CsrfFailed'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}, '503': {$ref: '#/components/responses/ServiceUnavailable'}}
+  /admin/subject-risk-types/{riskTypeId}:
+    parameters: [{name: riskTypeId, in: path, required: true, schema: {type: string, format: uuid}}]
+    patch:
+      tags: [Admin, Subjects]
+      summary: Update a draft subject risk type
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/SubjectRiskTypeUpdateRequest'}}}}
+      responses: {'200': {description: Draft type updated}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/CsrfFailed'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /admin/subject-risk-rules:
+    get:
+      tags: [Admin, Subjects]
+      summary: List draft subject risk rules
+      responses: {'200': {description: Draft catalog rules}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/PermissionDenied'}}
+    post:
+      tags: [Admin, Subjects]
+      summary: Create a draft equals-any or contains-any rule
+      description: Regex, scripts, SQL, URLs and dynamic expressions are forbidden.
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/SubjectRiskRuleCreateRequest'}}}}
+      responses: {'201': {description: Draft rule created}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/CsrfFailed'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /admin/subject-risk-rules/{riskRuleId}:
+    parameters: [{name: riskRuleId, in: path, required: true, schema: {type: string, format: uuid}}]
+    patch:
+      tags: [Admin, Subjects]
+      summary: Update a draft subject risk rule
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/SubjectRiskRuleUpdateRequest'}}}}
+      responses: {'200': {description: Draft rule updated}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/CsrfFailed'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /admin/subject-risk-catalog:
+    get:
+      tags: [Admin, Subjects]
+      summary: Read draft version and current immutable published revision
+      responses: {'200': {description: Catalog publication state, content: {application/json: {schema: {$ref: '#/components/schemas/SubjectRiskCatalogEnvelope'}}}}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/PermissionDenied'}}
+  /admin/subject-risk-catalog/publish:
+    post:
+      tags: [Admin, Subjects]
+      summary: Request fixed two-person publication of the draft catalog
+      description: This is the only operation that can create and activate an immutable SubjectRiskCatalogRevision.
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/SubjectRiskCatalogPublishRequest'}}}}
+      responses: {'202': {description: Two-person approval requested, content: {application/json: {schema: {$ref: '#/components/schemas/ApprovalCreatedEnvelope'}}}}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/PermissionDenied'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}, '503': {$ref: '#/components/responses/ServiceUnavailable'}}
+  /admin/subject-reviews:
+    get:
+      tags: [Admin, Subjects]
+      summary: List subject reviews within own role or all customer scope
+      parameters: [{$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}, {name: status, in: query, schema: {$ref: '#/components/schemas/SubjectReviewStatus'}}]
+      responses: {'200': {description: Scoped review page, content: {application/json: {schema: {$ref: '#/components/schemas/SubjectReviewPageEnvelope'}}}}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/PermissionDenied'}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /admin/subject-reviews/{reviewId}:
+    parameters: [{name: reviewId, in: path, required: true, schema: {type: string, format: uuid}}]
+    get:
+      tags: [Admin, Subjects]
+      summary: Read a scoped subject review with safe reason categories only
+      responses: {'200': {description: Review detail, content: {application/json: {schema: {$ref: '#/components/schemas/SubjectReviewEnvelope'}}}}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}}
+  /admin/subject-reviews/{reviewId}/approve:
+    parameters: [{name: reviewId, in: path, required: true, schema: {type: string, format: uuid}}]
+    post:
+      tags: [Admin, Subjects]
+      summary: Direct single-administrator subject review approval
+      description: Requires a secure administrator session, CSRF, permission, scoped object access and expected_version. It does not create an ApprovalRequest.
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/SubjectReviewDecisionRequest'}}}}
+      responses: {'200': {description: Review approved, content: {application/json: {schema: {$ref: '#/components/schemas/SubjectReviewEnvelope'}}}}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/CsrfFailed'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /admin/subject-reviews/{reviewId}/reject:
+    parameters: [{name: reviewId, in: path, required: true, schema: {type: string, format: uuid}}]
+    post:
+      tags: [Admin, Subjects]
+      summary: Direct single-administrator subject review rejection
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/SubjectReviewDecisionRequest'}}}}
+      responses: {'200': {description: Review rejected, content: {application/json: {schema: {$ref: '#/components/schemas/SubjectReviewEnvelope'}}}}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/CsrfFailed'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}}
   /subject-types:
     get:
       tags: [Subjects]
@@ -2393,6 +2474,15 @@ components:
         - SUBJECT_SEMANTICS_INVALID
         - SUBJECT_PRODUCT_CONFIRMATION_INVALID
         - SUBJECT_VERSION_NO_CHANGES
+        - SUBJECT_RISK_CONFIG_INTEGRITY_ERROR
+        - SUBJECT_RISK_CATALOG_VERSION_CONFLICT
+        - SUBJECT_RISK_TYPE_VERSION_CONFLICT
+        - SUBJECT_RISK_RULE_VERSION_CONFLICT
+        - SUBJECT_REVIEW_STATE_CONFLICT
+        - SUBJECT_REVIEW_VERSION_CONFLICT
+        - SUBJECT_REVIEW_REASON_REQUIRED
+        - SUBJECT_REVIEW_PENDING
+        - SUBJECT_REVIEW_REJECTED
         - PLAN_REQUIRED
     HealthEnvelope:
       allOf:
@@ -2802,6 +2892,128 @@ components:
         fields:
           type: array
           items: {$ref: '#/components/schemas/PersistedSubjectField'}
+    SubjectRiskOperator: {type: string, enum: [equals_any, contains_any]}
+    SubjectRiskReasonType: {type: string, enum: [suspected_violation, suspected_impersonation, data_conflict, high_risk_industry]}
+    SubjectReviewStatus: {type: string, enum: [pending, approved, rejected, superseded]}
+    SubjectRiskCatalogPublishRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_catalog_version]
+      properties:
+        expected_catalog_version: {type: integer, minimum: 1}
+        confirmed: {type: boolean, default: false}
+        current_password: {type: string, writeOnly: true, maxLength: 128}
+    SubjectRiskTypeCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_catalog_version, key, name, enabled, manual_review_required, allow_geo_detection, allow_article_generation, allow_image_generation, require_authoritative_citations, require_disclaimer, sort_order]
+      properties:
+        expected_catalog_version: {type: integer, minimum: 1}
+        key: {type: string, maxLength: 64, pattern: '^[a-z0-9]+(?:[._-][a-z0-9]+)*$'}
+        name: {type: string, minLength: 1, maxLength: 100}
+        description: {type: string, maxLength: 500}
+        enabled: {type: boolean}
+        manual_review_required: {type: boolean}
+        allow_geo_detection: {type: boolean}
+        allow_article_generation: {type: boolean}
+        allow_image_generation: {type: boolean}
+        require_authoritative_citations: {type: boolean}
+        require_disclaimer: {type: boolean}
+        sort_order: {type: integer, minimum: 0}
+    SubjectRiskTypeUpdateRequest:
+      allOf:
+        - type: object
+          additionalProperties: false
+          required: [expected_catalog_version, expected_version]
+          properties:
+            expected_catalog_version: {type: integer, minimum: 1}
+            expected_version: {type: integer, minimum: 1}
+            name: {type: string, minLength: 1, maxLength: 100}
+            description: {type: string, maxLength: 500}
+            enabled: {type: boolean}
+            manual_review_required: {type: boolean}
+            allow_geo_detection: {type: boolean}
+            allow_article_generation: {type: boolean}
+            allow_image_generation: {type: boolean}
+            require_authoritative_citations: {type: boolean}
+            require_disclaimer: {type: boolean}
+            sort_order: {type: integer, minimum: 0}
+    SubjectRiskRuleCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_catalog_version, key, risk_type, operator, patterns, reason_type, enabled, priority]
+      properties:
+        expected_catalog_version: {type: integer, minimum: 1}
+        key: {type: string, maxLength: 64}
+        risk_type: {type: string, format: uuid}
+        subject_type: {type: [string, 'null'], format: uuid}
+        field_key: {type: string, maxLength: 64}
+        operator: {$ref: '#/components/schemas/SubjectRiskOperator'}
+        patterns: {type: array, minItems: 1, maxItems: 100, uniqueItems: true, items: {type: string, minLength: 1, maxLength: 200}}
+        reason_type: {$ref: '#/components/schemas/SubjectRiskReasonType'}
+        enabled: {type: boolean}
+        priority: {type: integer, minimum: 0}
+    SubjectRiskRuleUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_catalog_version, expected_version]
+      properties:
+        expected_catalog_version: {type: integer, minimum: 1}
+        expected_version: {type: integer, minimum: 1}
+        risk_type: {type: string, format: uuid}
+        subject_type: {type: [string, 'null'], format: uuid}
+        field_key: {type: string, maxLength: 64}
+        operator: {$ref: '#/components/schemas/SubjectRiskOperator'}
+        patterns: {type: array, minItems: 1, maxItems: 100, uniqueItems: true, items: {type: string, minLength: 1, maxLength: 200}}
+        reason_type: {$ref: '#/components/schemas/SubjectRiskReasonType'}
+        enabled: {type: boolean}
+        priority: {type: integer, minimum: 0}
+    SubjectRiskCatalogRevisionSummary:
+      type: object
+      additionalProperties: false
+      required: [id, revision_no, format_version, snapshot_digest, created_at]
+      properties:
+        id: {type: string, format: uuid}
+        revision_no: {type: integer, minimum: 1}
+        format_version: {type: integer, const: 1}
+        snapshot_digest: {type: string, minLength: 64, maxLength: 64}
+        created_at: {type: string, format: date-time}
+    SubjectRiskCatalogEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, properties: {data: {type: object, additionalProperties: false, required: [version, published_revision], properties: {version: {type: integer, minimum: 1}, published_revision: {oneOf: [{$ref: '#/components/schemas/SubjectRiskCatalogRevisionSummary'}, {type: 'null'}]}}}}}]
+    SubjectReviewDecisionRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version, reason]
+      properties: {expected_version: {type: integer, minimum: 1}, reason: {type: string, maxLength: 500}}
+    SubjectReview:
+      type: object
+      additionalProperties: false
+      required: [id, user_id, subject_id, subject_version_id, version_no, official_name, status, reason_types, reason, version, reviewed_at, created_at, updated_at]
+      properties:
+        id: {type: string, format: uuid}
+        user_id: {type: string, format: uuid}
+        subject_id: {type: string, format: uuid}
+        subject_version_id: {type: string, format: uuid}
+        version_no: {type: integer, minimum: 1}
+        official_name: {type: string, maxLength: 500}
+        status: {$ref: '#/components/schemas/SubjectReviewStatus'}
+        reason_types: {type: array, items: {$ref: '#/components/schemas/SubjectRiskReasonType'}}
+        reason: {type: string, maxLength: 500}
+        version: {type: integer, minimum: 1}
+        reviewed_at: {type: [string, 'null'], format: date-time}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    SubjectReviewEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, properties: {data: {$ref: '#/components/schemas/SubjectReview'}}}]
+    SubjectReviewPageEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, properties: {data: {type: object, additionalProperties: false, required: [results, pagination], properties: {results: {type: array, items: {$ref: '#/components/schemas/SubjectReview'}}, pagination: {$ref: '#/components/schemas/Pagination'}}}}}]
+    SubjectRiskSummary:
+      type: object
+      additionalProperties: false
+      required: [status, review_id]
+      properties:
+        status: {type: string, enum: [not_assessed, unavailable, clear, restricted, review_required, pending, approved, rejected, superseded]}
+        review_id: {type: [string, 'null'], format: uuid}
     SubjectSummary:
       type: object
       additionalProperties: false
@@ -2821,7 +3033,7 @@ components:
       allOf:
         - $ref: '#/components/schemas/SubjectSummary'
         - type: object
-          required: [schema_version, draft_values, form_schema, product_candidates, has_uncommitted_changes]
+          required: [schema_version, draft_values, form_schema, product_candidates, has_uncommitted_changes, risk]
           properties:
             schema_version: {type: integer, minimum: 1}
             draft_values: {type: object, additionalProperties: true}
@@ -2830,6 +3042,7 @@ components:
               type: array
               items: {$ref: '#/components/schemas/SubjectProductCandidate'}
             has_uncommitted_changes: {type: boolean}
+            risk: {$ref: '#/components/schemas/SubjectRiskSummary'}
     SubjectVersionSummary:
       type: object
       additionalProperties: false

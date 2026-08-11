@@ -140,6 +140,7 @@ const detail: SubjectDetail = {
     { candidate_key: "a".repeat(64), display_value: "\u534e\u4e1c", source_field_key: "regions" },
   ],
   has_uncommitted_changes: true,
+  risk: { status: "not_assessed", review_id: null },
 };
 
 const list: SubjectList = {
