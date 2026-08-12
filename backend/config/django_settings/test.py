@@ -12,6 +12,7 @@ PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY = "test-only-plan-change-idempotency-key-never-
 FILE_IDEMPOTENCY_HMAC_KEY = "test-only-file-idempotency-key-never-use-in-deployment"
 FILE_STORAGE_PROVIDER = "mock"
 FILE_SCANNER_PROVIDER = "mock"
+DOCUMENT_OCR_PROVIDER = "mock"
 DEBUG = False
 ALLOWED_HOSTS = ["testserver", "localhost", "127.0.0.1"]
 CSRF_TRUSTED_ORIGINS = ["http://testserver"]

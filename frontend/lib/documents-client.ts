@@ -102,3 +102,57 @@ export async function openDocumentDownload(documentId: string) {
 export function newUploadIdempotencyKey() {
   return crypto.randomUUID();
 }
+
+export type DocumentParseJob = Readonly<{
+  id: string;
+  status: "queued" | "running" | "retry_wait" | "succeeded" | "failed";
+  stable_error_code: string;
+  created_at: string;
+  updated_at: string;
+}>;
+
+export type DocumentParseResult = Readonly<{
+  status: "not_started" | "queued" | "running" | "retry_wait" | "succeeded" | "failed";
+  stable_error_code: string;
+  state_version: number | null;
+  latest_version: Readonly<{ id: string; version_no: number }> | null;
+  current_confirmed_version: Readonly<{ id: string; version_no: number }> | null;
+  canonical_text: string;
+  tables: ReadonlyArray<ReadonlyArray<ReadonlyArray<string>>>;
+  warning_codes: readonly string[];
+  confirmed: boolean;
+  parser: Readonly<{ key: string; version: string; ocr_engine_version: string }> | null;
+}>;
+
+export const requestDocumentParse = (document: SubjectDocument, idempotencyKey: string) =>
+  post<DocumentParseJob>(
+    `/documents/${document.id}/parse`,
+    { document_version_id: document.document_version_id },
+    { "Idempotency-Key": idempotencyKey },
+  );
+
+export const getDocumentParseResult = (documentId: string) =>
+  get<DocumentParseResult>(`/documents/${documentId}/parse-result`);
+
+export const confirmDocumentParse = (
+  documentId: string,
+  result: DocumentParseResult,
+  confirmedText: string,
+) => {
+  if (result.state_version === null || result.latest_version === null) {
+    throw new Error("\u65e0\u6cd5\u8bfb\u53d6\u89e3\u6790\u7ed3\u679c");
+  }
+  return post<{
+    parse_state_version: number;
+    confirmed_version: { id: string; version_no: number };
+    created: boolean;
+  }>(`/documents/${documentId}/confirm`, {
+    expected_parse_state_version: result.state_version,
+    source_parsed_version_id: result.latest_version.id,
+    confirmed_text: confirmedText,
+  });
+};
+
+export function newParseIdempotencyKey() {
+  return crypto.randomUUID();
+}

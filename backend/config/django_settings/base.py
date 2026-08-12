@@ -195,6 +195,18 @@ FILE_ALLOWED_APP_ORIGINS = env_list("FILE_ALLOWED_APP_ORIGINS", "http://localhos
 S3_ENDPOINT_URL = os.getenv("S3_ENDPOINT_URL", "http://minio:9000").strip()
 S3_REGION = os.getenv("S3_REGION", "us-east-1").strip()
 S3_BUCKET = os.getenv("S3_BUCKET", "xianwen-files").strip()
+DOCUMENT_OCR_PROVIDER = os.getenv("DOCUMENT_OCR_PROVIDER", "mock").strip().lower()
+DOCUMENT_PARSE_MAX_CHARACTERS = positive_env_int("DOCUMENT_PARSE_MAX_CHARACTERS", 2_000_000)
+DOCUMENT_PARSE_MAX_UTF8_BYTES = positive_env_int("DOCUMENT_PARSE_MAX_UTF8_BYTES", 8 * 1024 * 1024)
+DOCUMENT_PARSE_MAX_TABLES = positive_env_int("DOCUMENT_PARSE_MAX_TABLES", 100)
+DOCUMENT_PARSE_MAX_TABLE_ROWS = positive_env_int("DOCUMENT_PARSE_MAX_TABLE_ROWS", 10_000)
+DOCUMENT_PARSE_MAX_TABLE_COLUMNS = positive_env_int("DOCUMENT_PARSE_MAX_TABLE_COLUMNS", 200)
+DOCUMENT_PARSE_MAX_CELL_CHARACTERS = positive_env_int("DOCUMENT_PARSE_MAX_CELL_CHARACTERS", 10_000)
+DOCUMENT_PARSE_MAX_TABLE_JSON_BYTES = positive_env_int(
+    "DOCUMENT_PARSE_MAX_TABLE_JSON_BYTES", 8 * 1024 * 1024
+)
+DOCUMENT_PARSE_RETRY_BASE_SECONDS = positive_env_int("DOCUMENT_PARSE_RETRY_BASE_SECONDS", 30)
+DOCUMENT_PARSE_RUNNING_STALE_SECONDS = positive_env_int("DOCUMENT_PARSE_RUNNING_STALE_SECONDS", 600)
 S3_ACCESS_KEY = os.getenv("S3_ACCESS_KEY", "xianwen-local").strip()
 S3_SECRET_KEY = os.getenv("S3_SECRET_KEY", "xianwen-local-secret").strip()
 SMS_VERIFICATION_HMAC_KEY = os.getenv(
@@ -255,4 +267,9 @@ CELERY_BEAT_SCHEDULE = {
         "task": "documents.scan_verification_retries",
         "schedule": timedelta(seconds=60),
     },
+    "scan-document-parse-retries": {
+        "task": "documents.scan_parse_retries",
+        "schedule": timedelta(seconds=60),
+    },
 }
+CELERY_TASK_ROUTES = {"documents.execute_parse_job": {"queue": "file_processing"}}

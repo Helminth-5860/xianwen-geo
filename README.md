@@ -401,3 +401,11 @@ and append-only audit evidence. See
 ## XW-0205 私有文件与对象存储
 
 文件上传使用受大小约束的 S3-compatible presigned POST、异步验证 Saga 和 PostgreSQL 不可变占用证据；本地集成使用 MinIO，不代表腾讯 COS 生产接入。完整边界、配置、收敛命令与回滚规则见 `docs/30-FILE-UPLOAD-COS-ABSTRACTION.md`。运行专属验收：`scripts/test-files.ps1`（Windows）或 `scripts/test-files.sh`（Linux/CI）。
+
+## XW-0206 file parsing and user confirmation
+
+Completed private files can be parsed asynchronously by the isolated `file_processing` worker.
+Machine output and user-confirmed canonical text form an immutable PostgreSQL version chain;
+tables/warnings remain machine facts, and downstream feature use must re-apply the current
+XW-0204 risk policy. Local/test OCR is a mock only and production fails closed for image OCR.
+See [docs/32-FILE-PARSING-USER-CONFIRMATION.md](docs/32-FILE-PARSING-USER-CONFIRMATION.md).

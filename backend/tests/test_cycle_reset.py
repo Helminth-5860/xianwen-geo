@@ -189,5 +189,6 @@ def test_celery_lifecycle_safety_configuration(settings):
         "scan-due-quota-cycles",
         "scan-expired-file-upload-intents",
         "scan-file-verification-retries",
+        "scan-document-parse-retries",
     }
     assert QuotaLedgerEntry.Action.CYCLE_FORFEIT == "cycle_forfeit"

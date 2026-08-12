@@ -70,6 +70,9 @@ if FILE_STORAGE_PROVIDER not in {"s3", "unavailable"}:
     raise ImproperlyConfigured("Unsupported production file storage provider.")
 if FILE_SCANNER_PROVIDER not in {"unavailable"}:
     raise ImproperlyConfigured("Unsupported production file scanner provider.")
+DOCUMENT_OCR_PROVIDER = os.getenv("DOCUMENT_OCR_PROVIDER", "unavailable").strip().lower()
+if DOCUMENT_OCR_PROVIDER != "unavailable":
+    raise ImproperlyConfigured("Mock or unknown OCR providers are forbidden in production.")
 if FILE_STORAGE_PROVIDER == "s3":
     required_s3 = {
         "S3_ENDPOINT_URL": S3_ENDPOINT_URL,
