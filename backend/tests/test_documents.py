@@ -85,6 +85,7 @@ def test_unavailable_production_file_dependency_returns_http_503(
     client = APIClient()
     client.force_authenticate(user)
     with override_settings(
+        ROOT_URLCONF="config.urls",
         APP_ENV="production",
         FILE_STORAGE_PROVIDER=storage_provider_name,
         FILE_SCANNER_PROVIDER=scanner_provider_name,
