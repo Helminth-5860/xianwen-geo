@@ -70,6 +70,7 @@ services:
       - tests/test_documents_validation_and_cleanup.py
       - tests/test_documents_postgres.py
       - tests/test_documents_saga_postgres.py
+      - tests/test_documents_storage_lifecycle_postgres.py
       - --ds=config.settings
       - -q
       - -p

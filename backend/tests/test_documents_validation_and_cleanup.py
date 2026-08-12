@@ -1,4 +1,5 @@
 import io
+import struct
 import zipfile
 from datetime import timedelta
 
@@ -117,3 +118,108 @@ def test_orphan_reconciliation_is_bounded_dry_run_then_apply_without_key_logging
 
         call_command("reconcile_file_objects", "--apply", "--batch-size=2", verbosity=0)
     assert len(provider.deleted) == 2
+
+
+@pytest.mark.parametrize(
+    ("filename", "content_type"),
+    [
+        ("legacy.doc", "application/msword"),
+        ("legacy.xls", "application/vnd.ms-excel"),
+        ("macro.docm", "application/vnd.ms-word.document.macroEnabled.12"),
+        ("macro.xlsm", "application/vnd.ms-excel.sheet.macroEnabled.12"),
+        ("vector.svg", "image/svg+xml"),
+        ("archive.zip", "application/zip"),
+        ("program.exe", "application/octet-stream"),
+        ("script.sh", "text/x-shellscript"),
+    ],
+)
+def test_declared_kind_rejects_legacy_macro_archive_vector_and_executable_types(
+    filename, content_type
+):
+    from apps.documents.validators import declared_kind
+
+    with pytest.raises(FileTypeNotAllowed):
+        declared_kind(filename, content_type)
+
+
+@pytest.mark.parametrize(
+    ("kind", "stream"),
+    [
+        ("pdf", io.BytesIO(b"MZ executable renamed as PDF")),
+        ("pdf", io.BytesIO(b"<svg xmlns='http://www.w3.org/2000/svg'></svg>")),
+        ("docx", io.BytesIO(b"not a zip office document")),
+        ("png", io.BytesIO(b"not a decoded image")),
+    ],
+)
+def test_structural_validator_rejects_fake_extension_and_magic(kind, stream):
+    with pytest.raises(FileContentInvalid):
+        validate_stream(stream, expected_kind=kind, maximum=1024 * 1024)
+
+
+@override_settings(FILE_VALIDATION_MAX_ARCHIVE_ENTRIES=2)
+def test_office_validator_rejects_entry_count_limit():
+    stream = _zip(
+        {
+            "[Content_Types].xml": b"safe",
+            "word/document.xml": b"safe",
+            "word/extra.xml": b"safe",
+        }
+    )
+    with pytest.raises(FileContentInvalid):
+        validate_stream(stream, expected_kind="docx", maximum=1024 * 1024)
+
+
+@override_settings(FILE_VALIDATION_MAX_ARCHIVE_ENTRY_BYTES=3)
+def test_office_validator_rejects_single_entry_size_limit():
+    stream = _zip({"[Content_Types].xml": b"safe", "word/document.xml": b"safe"})
+    with pytest.raises(FileContentInvalid):
+        validate_stream(stream, expected_kind="docx", maximum=1024 * 1024)
+
+
+@override_settings(FILE_VALIDATION_MAX_UNCOMPRESSED_BYTES=7)
+def test_office_validator_rejects_total_uncompressed_size_limit():
+    stream = _zip({"[Content_Types].xml": b"safe", "word/document.xml": b"safe"})
+    with pytest.raises(FileContentInvalid):
+        validate_stream(stream, expected_kind="docx", maximum=1024 * 1024)
+
+
+def _mark_first_zip_entry_encrypted(stream: io.BytesIO) -> io.BytesIO:
+    value = bytearray(stream.getvalue())
+    local = value.find(b"PK\x03\x04")
+    central = value.find(b"PK\x01\x02")
+    assert local >= 0 and central >= 0
+    struct.pack_into("<H", value, local + 6, struct.unpack_from("<H", value, local + 6)[0] | 1)
+    struct.pack_into("<H", value, central + 8, struct.unpack_from("<H", value, central + 8)[0] | 1)
+    return io.BytesIO(value)
+
+
+def test_office_validator_rejects_encrypted_entry_flag():
+    stream = _mark_first_zip_entry_encrypted(
+        _zip({"[Content_Types].xml": b"safe", "word/document.xml": b"safe"})
+    )
+    with pytest.raises(FileContentInvalid):
+        validate_stream(stream, expected_kind="docx", maximum=1024 * 1024)
+
+
+@override_settings(FILE_IMAGE_MAX_WIDTH=100, FILE_IMAGE_MAX_HEIGHT=100, FILE_IMAGE_MAX_PIXELS=4)
+def test_image_validator_rejects_decompression_bomb_warning_path():
+    output = io.BytesIO()
+    Image.new("RGB", (3, 3), color="white").save(output, format="PNG")
+    output.seek(0)
+    with pytest.raises(FileContentInvalid):
+        validate_stream(output, expected_kind="png", maximum=1024 * 1024)
+
+
+@pytest.mark.parametrize(
+    ("filename", "content_type", "expected"),
+    [
+        ("notes.txt", "text/plain", "txt"),
+        ("notes.txt", "application/octet-stream", "txt"),
+        ("notes.md", "text/plain", "markdown"),
+        ("notes.md", "application/octet-stream", "markdown"),
+    ],
+)
+def test_text_and_markdown_common_mime_declarations_are_accepted(filename, content_type, expected):
+    from apps.documents.validators import declared_kind
+
+    assert declared_kind(filename, content_type) == expected

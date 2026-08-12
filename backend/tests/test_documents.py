@@ -3,10 +3,12 @@ import zipfile
 
 import pytest
 from django.test import override_settings
+from rest_framework.test import APIClient
 
 from apps.documents.exceptions import FileContentInvalid, FileStorageUnavailable, FileTypeNotAllowed
 from apps.documents.storage import MockStorageProvider, storage_provider
 from apps.documents.validators import declared_kind, safe_filename, validate_stream
+from apps.users.models import User
 
 
 def test_file_kind_matrix_accepts_only_frozen_v1_types():
@@ -67,3 +69,37 @@ def test_unavailable_provider_fails_closed():
         storage_provider().create_upload_request(
             key="staging/opaque", content_type="application/pdf", max_bytes=10
         )
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("storage_provider_name", "scanner_provider_name"),
+    (("unavailable", "unavailable"), ("s3", "unavailable")),
+)
+def test_unavailable_production_file_dependency_returns_http_503(
+    storage_provider_name, scanner_provider_name
+):
+    user = User.objects.create_user(
+        phone="13800138991", nickname="File fail closed", password="test-password-not-a-secret"
+    )
+    client = APIClient()
+    client.force_authenticate(user)
+    with override_settings(
+        APP_ENV="production",
+        FILE_STORAGE_PROVIDER=storage_provider_name,
+        FILE_SCANNER_PROVIDER=scanner_provider_name,
+    ):
+        response = client.post(
+            "/api/v1/files/upload-intents",
+            {
+                "subject_id": "00000000-0000-0000-0000-000000000001",
+                "filename": "safe.txt",
+                "content_type": "text/plain",
+                "size_bytes": 4,
+                "purpose": "subject_library",
+            },
+            format="json",
+            HTTP_IDEMPOTENCY_KEY="production-unavailable-test-key",
+        )
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "FILE_STORAGE_UNAVAILABLE"
