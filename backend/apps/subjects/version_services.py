@@ -4,6 +4,11 @@ from typing import Any
 from django.db import transaction
 from rest_framework.exceptions import NotFound
 
+from apps.documents.exceptions import FileContentInvalid
+from apps.documents.services import (
+    create_subject_version_references,
+    validate_document_references,
+)
 from apps.users.models import User
 
 from .models import Subject, SubjectEvent, SubjectName, SubjectProduct, SubjectVersion
@@ -118,10 +123,18 @@ def commit_subject_version(
             subject.schema_snapshot,
             copy.deepcopy(subject.draft_values),
         )
+        document_references = validate_document_references(
+            user_id=user.pk,
+            subject_id=subject.pk,
+            schema_snapshot=subject.schema_snapshot,
+            field_values=field_values,
+        )
         names, candidates = derive_frozen_semantics(subject.schema_snapshot, field_values)
     except FrozenRequiredFieldsError as exc:
         raise SubjectRequiredFieldsIncomplete(exc.field_keys) from exc
     except FrozenSemanticError as exc:
+        raise SubjectSemanticsInvalid from exc
+    except FileContentInvalid as exc:
         raise SubjectSemanticsInvalid from exc
     except ValueError as exc:
         raise SubjectEntitlementIntegrityError from exc
@@ -172,6 +185,10 @@ def commit_subject_version(
             )
             for candidate in candidates
         ]
+    )
+    create_subject_version_references(
+        subject_version=version,
+        references=document_references,
     )
     subject.current_version = version
     subject.retest_required = current is not None

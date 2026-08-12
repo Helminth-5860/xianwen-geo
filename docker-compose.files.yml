@@ -1,0 +1,111 @@
+services:
+  api:
+    environment: &file-runtime-environment
+      FILE_IDEMPOTENCY_HMAC_KEY: ${FILE_IDEMPOTENCY_HMAC_KEY:?set file idempotency HMAC key}
+      FILE_STORAGE_PROVIDER: s3
+      FILE_SCANNER_PROVIDER: mock
+      FILE_ALLOWED_APP_ORIGINS: http://localhost:3000
+      S3_ENDPOINT_URL: http://minio:9000
+      S3_REGION: us-east-1
+      S3_BUCKET: ${S3_BUCKET:-xianwen-files-test}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:?set MinIO access key}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?set MinIO secret key}
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
+
+  celery:
+    environment: *file-runtime-environment
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
+
+  celery-beat:
+    environment: *file-runtime-environment
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
+  minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    command: server /data --console-address :9001
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:?set isolated MinIO access key}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:?set isolated MinIO secret key}
+      MINIO_API_CORS_ALLOW_ORIGIN: http://localhost:3000
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  minio-init:
+    image: minio/mc:RELEASE.2025-04-16T18-13-26Z
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        mc alias set local http://minio:9000 "$${S3_ACCESS_KEY}" "$${S3_SECRET_KEY}" &&
+        mc mb --ignore-existing local/$${S3_BUCKET} &&
+        mc anonymous set none local/$${S3_BUCKET}
+    environment:
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:?set isolated MinIO access key}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?set isolated MinIO secret key}
+      S3_BUCKET: ${S3_BUCKET:-xianwen-files-test}
+    depends_on:
+      minio:
+        condition: service_healthy
+
+  file-tests:
+    profiles: ["file-test"]
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: test
+    command:
+      - python
+      - -m
+      - pytest
+      - tests/test_documents.py
+      - tests/test_documents_validation_and_cleanup.py
+      - tests/test_documents_postgres.py
+      - tests/test_documents_saga_postgres.py
+      - --ds=config.settings
+      - -q
+      - -p
+      - no:cacheprovider
+    environment:
+      APP_ENV: local
+      DJANGO_SETTINGS_MODULE: config.settings
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?set isolated Django secret}
+      DJANGO_DEBUG: "false"
+      ALLOWED_HOSTS: localhost,127.0.0.1
+      CSRF_TRUSTED_ORIGINS: http://localhost:3000
+      CORS_ALLOWED_ORIGINS: http://localhost:3000
+      DATABASE_URL: ${DATABASE_URL:?set isolated test DATABASE_URL}
+      REDIS_URL: ${REDIS_URL:?set isolated test REDIS_URL}
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:?set isolated test broker URL}
+      SMS_PROVIDER: mock
+      SMS_VERIFICATION_HMAC_KEY: ${SMS_VERIFICATION_HMAC_KEY:?set isolated SMS HMAC key}
+      QUOTA_IDEMPOTENCY_HMAC_KEY: ${QUOTA_IDEMPOTENCY_HMAC_KEY:?set isolated quota HMAC key}
+      PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY: ${PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY:?set isolated plan-change HMAC key}
+      FILE_IDEMPOTENCY_HMAC_KEY: ${FILE_IDEMPOTENCY_HMAC_KEY:?set isolated file HMAC key}
+      FILE_STORAGE_PROVIDER: s3
+      FILE_SCANNER_PROVIDER: mock
+      FILE_ALLOWED_APP_ORIGINS: http://localhost:3000
+      S3_ENDPOINT_URL: http://minio:9000
+      S3_REGION: us-east-1
+      S3_BUCKET: ${S3_BUCKET:-xianwen-files-test}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:?set isolated MinIO access key}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?set isolated MinIO secret key}
+      RUN_MIGRATIONS: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+
+volumes:
+  minio_data:

@@ -248,14 +248,12 @@ describe("subject draft interactions", () => {
     );
   });
 
-  it("shows image fields as schema-only and never renders an upload control", async () => {
+  it("enables the private library and verified image-version selector", async () => {
     render(<SubjectDetailPage />);
-    expect(
-      await screen.findByText("\u4e0a\u4f20\u80fd\u529b\u5c1a\u672a\u542f\u7528"),
-    ).toBeTruthy();
-    expect(screen.queryByText(/\u9009\u62e9\u6587\u4ef6|\u4e0a\u4f20\u6587\u4ef6/)).toBeNull();
+    expect(await screen.findByText("主体资料库")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "上传资料" })).toBeTruthy();
+    expect(screen.getByLabelText("品牌图片")).toBeTruthy();
   });
-
   it("creates a draft with the selected type and current schema version", async () => {
     render(<SubjectsPage />);
     await screen.findByText("\u521b\u5efa\u65f6\u4f01\u4e1a");

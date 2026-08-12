@@ -9,7 +9,7 @@ def load_spec():
     return yaml.safe_load(SPEC_PATH.read_text(encoding="utf-8"))
 
 
-def test_subject_catalog_paths_are_complete_without_upload_or_delete_routes():
+def test_subject_catalog_paths_are_complete_without_delete_routes():
     paths = load_spec()["paths"]
     expected_methods = {
         "/subjects": {"get", "post"},
@@ -37,7 +37,11 @@ def test_subject_catalog_paths_are_complete_without_upload_or_delete_routes():
         assert path in paths
         assert methods <= paths[path].keys()
         assert "delete" not in paths[path]
-    assert not any("upload" in path or "presign" in path for path in paths)
+    assert not any(
+        ("upload" in path or "presign" in path)
+        for path in paths
+        if path.startswith("/admin/subject-")
+    )
 
 
 def test_subject_schema_writes_require_csrf_and_expected_versions():

@@ -16,6 +16,7 @@ from apps.users.models import Notification, User
 
 from .models import (
     Subject,
+    SubjectFieldDefinition,
     SubjectReview,
     SubjectReviewEvent,
     SubjectRiskAssessment,
@@ -79,6 +80,17 @@ class SubjectFeatureRestricted(SubjectRiskError):
     code = "SUBJECT_FEATURE_RESTRICTED"
 
 
+def _assert_rule_does_not_target_file(field_key: str) -> None:
+    if (
+        field_key
+        and SubjectFieldDefinition.objects.filter(
+            field_key__iexact=field_key,
+            field_type__in=("image", "file"),
+        ).exists()
+    ):
+        raise SubjectRiskError
+
+
 def _plain_text(value: str, *, limit: int) -> str:
     value = " ".join(value.split())
     if not value or len(value) > limit or not PLAIN_TEXT.fullmatch(value):
@@ -106,6 +118,8 @@ def lock_published_catalog_revision() -> SubjectRiskCatalogRevision:
     snapshot = copy.deepcopy(revision.snapshot)
     try:
         validate_catalog_snapshot(snapshot)
+        for rule in snapshot["rules"]:
+            _assert_rule_does_not_target_file(rule.get("field_key", ""))
     except RiskCatalogInvalid as exc:
         raise SubjectRiskError from exc
     if catalog_digest(snapshot) != revision.snapshot_digest:
@@ -251,6 +265,7 @@ def create_risk_rule(*, request, data: dict[str, Any]) -> SubjectRiskRule:
     if not MACHINE_KEY.fullmatch(key):
         raise SubjectRiskError
     data["key"] = key
+    _assert_rule_does_not_target_file(data.get("field_key", ""))
     try:
         data["patterns"] = normalize_patterns(data["patterns"])
         row = SubjectRiskRule.objects.create(
@@ -284,6 +299,7 @@ def update_risk_rule(*, request, risk_rule_id, data: dict[str, Any]) -> SubjectR
     if data.pop("expected_version") != row.version:
         raise SubjectRiskRuleVersionConflict
     before = {"version": row.version, "enabled": row.enabled}
+    _assert_rule_does_not_target_file(data.get("field_key", row.field_key))
     if "patterns" in data:
         try:
             data["patterns"] = normalize_patterns(data["patterns"])

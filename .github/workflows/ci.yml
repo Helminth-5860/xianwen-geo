@@ -117,3 +117,5 @@ jobs:
         run: bash scripts/test-cycle-reset.sh
       - name: Run PostgreSQL/Redis subject schema tests
         run: bash scripts/test-subject-schema.sh
+      - name: Run PostgreSQL/Redis/MinIO file Saga tests
+        run: bash scripts/test-files.sh

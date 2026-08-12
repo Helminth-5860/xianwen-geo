@@ -2,6 +2,7 @@ import copy
 import hashlib
 import json
 import math
+import uuid
 from datetime import date
 from typing import Any
 from urllib.parse import urlsplit
@@ -161,7 +162,13 @@ def _validate_value(field: dict[str, Any], value: Any) -> Any:
             raise SnapshotValueError(field_key)
         return list(value)
     if field_type in {"image", "file"}:
-        raise SnapshotValueError(field_key)
+        if not isinstance(value, dict) or set(value) != {"document_version_id"}:
+            raise SnapshotValueError(field_key)
+        try:
+            version_id = str(uuid.UUID(str(value["document_version_id"])))
+        except (TypeError, ValueError, AttributeError) as exc:
+            raise SnapshotValueError(field_key) from exc
+        return {"document_version_id": version_id}
     raise SnapshotValueError(field_key)
 
 
@@ -227,7 +234,11 @@ def _required_value_present(field: dict[str, Any], value: Any) -> bool:
     if field_type == "multi":
         return isinstance(value, list) and bool(value)
     if field_type in {"image", "file"}:
-        return False
+        return (
+            isinstance(value, dict)
+            and set(value) == {"document_version_id"}
+            and bool(value["document_version_id"])
+        )
     return True
 
 

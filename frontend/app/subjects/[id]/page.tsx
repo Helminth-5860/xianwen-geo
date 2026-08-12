@@ -19,7 +19,9 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { SubjectDocuments } from "@/components/subject-documents";
 import { userMessage } from "@/lib/auth-client";
+import type { SubjectDocument } from "@/lib/documents-client";
 import {
   commitSubject,
   getSubject,
@@ -45,21 +47,35 @@ function FieldInput({
   field,
   value,
   disabled,
+  documents,
   onChange,
 }: {
   field: PersistedSubjectField;
   value: unknown;
   disabled: boolean;
+  documents: SubjectDocument[];
   onChange: (value: unknown) => void;
 }) {
   if (field.field_type === "image" || field.field_type === "file") {
+    const choices = documents.filter(
+      (document) =>
+        field.field_type === "file" ||
+        ["jpeg", "png", "webp"].includes(document.detected_file_kind),
+    );
     return (
-      <Alert
-        type="info"
-        showIcon
-        title={"\u4e0a\u4f20\u80fd\u529b\u5c1a\u672a\u542f\u7528"}
-        description={
-          "\u5f53\u524d\u4efb\u52a1\u4ec5\u4fdd\u7559 Schema \u58f0\u660e\uff0c\u4e0d\u63a5\u6536\u6587\u4ef6\u503c\u3002"
+      <Select
+        aria-label={field.label}
+        value={(value as { document_version_id?: string } | null)?.document_version_id}
+        disabled={disabled}
+        allowClear={!field.required}
+        placeholder="选择资料库中已完成安全验证的文件"
+        style={{ width: "100%" }}
+        options={choices.map((document) => ({
+          value: document.document_version_id,
+          label: document.display_name,
+        }))}
+        onChange={(documentVersionId) =>
+          onChange(documentVersionId ? { document_version_id: documentVersionId } : null)
         }
       />
     );
@@ -154,6 +170,7 @@ export default function SubjectDetailPage() {
   const [productConfirmations, setProductConfirmations] = useState<
     Record<string, SubjectProductConfirmation>
   >({});
+  const [documents, setDocuments] = useState<SubjectDocument[]>([]);
 
   useEffect(() => {
     let current = true;
@@ -292,6 +309,11 @@ export default function SubjectDetailPage() {
               "\u7ba1\u7406\u5458\u540e\u7eed\u4fee\u6539\u5b57\u6bb5\u4e0d\u4f1a\u6539\u53d8\u8be5\u5386\u53f2\u8349\u7a3f\u7684\u8bed\u4e49\u3002"
             }
           />
+          <SubjectDocuments
+            subjectId={subject.id}
+            disabled={subject.status === "archived"}
+            onDocumentsChange={setDocuments}
+          />
           <Card style={{ marginTop: 20 }}>
             <Form layout="vertical" onFinish={() => void save()}>
               {subject.form_schema.fields.map((field) => (
@@ -305,6 +327,7 @@ export default function SubjectDetailPage() {
                     field={field}
                     value={values[field.field_key]}
                     disabled={subject.status === "archived"}
+                    documents={documents}
                     onChange={(value) =>
                       setValues((current) => ({ ...current, [field.field_key]: value }))
                     }

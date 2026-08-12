@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from django.db import IntegrityError, transaction
+from django.db.models import Sum
 from django.utils import timezone
 from rest_framework.exceptions import NotFound
 
@@ -255,6 +256,94 @@ def _snapshot_values(subscription: Subscription) -> dict[str, int]:
         raise QuotaSnapshotInvalid from exc
 
 
+def storage_usage_bytes(user_id) -> int:
+    from apps.documents.models import FileStorageAllocation
+
+    return int(
+        FileStorageAllocation.objects.filter(user_id=user_id).aggregate(total=Sum("size_bytes"))[
+            "total"
+        ]
+        or 0
+    )
+
+
+def _reconcile_storage_account_locked(*, account, request_id, actor=None):
+    if account.quota_type != "storage_bytes" or account.frozen != 0:
+        if account.quota_type == "storage_bytes" and account.frozen != 0:
+            raise QuotaHoldStateConflict
+        return None
+    usage = storage_usage_bytes(account.user_id)
+    target = max(account.entitlement_amount - usage, 0)
+    delta = target - account.available
+    if delta == 0:
+        return None
+    digests = system_idempotency_digests(
+        operation="storage_capacity_reconcile",
+        user_id=account.user_id,
+        account_id=account.pk,
+        business_type="storage_capacity",
+        business_id=account.subscription_id,
+        request_payload={"usage": usage, "target": target},
+    )
+    entry, _ = _append_ledger_locked(
+        account=account,
+        action=QuotaLedgerEntry.Action.STORAGE_CAPACITY_RECONCILE,
+        available_delta=delta,
+        frozen_delta=0,
+        digests=digests,
+        business_type="storage_capacity",
+        business_id=account.subscription_id,
+        safe_reason="Storage capacity reconciled against immutable allocation usage.",
+        actor=actor,
+        request_id=request_id,
+    )
+    return entry
+
+
+@transaction.atomic
+def reconcile_storage_capacity_for_user(*, user_id, request_id, apply: bool):
+    from apps.users.models import User
+
+    User.objects.select_for_update().get(pk=user_id)
+    now = timezone.now()
+    subscription = (
+        Subscription.objects.select_for_update()
+        .filter(
+            user_id=user_id, status=Subscription.Status.ACTIVE, starts_at__lte=now, ends_at__gt=now
+        )
+        .order_by("starts_at", "id")
+        .first()
+    )
+    if subscription is None:
+        return None
+    account = (
+        QuotaAccount.objects.select_for_update()
+        .filter(
+            subscription=subscription,
+            quota_type="storage_bytes",
+            batch_type=QuotaAccount.BatchType.PRIMARY,
+        )
+        .order_by("id")
+        .first()
+    )
+    if account is None:
+        raise QuotaStateConflict
+    usage = storage_usage_bytes(user_id)
+    target = max(account.entitlement_amount - usage, 0)
+    preview = {
+        "user_id": str(user_id),
+        "account_id": str(account.pk),
+        "usage": usage,
+        "target": target,
+        "current": account.available,
+    }
+    if apply:
+        _reconcile_storage_account_locked(account=account, request_id=request_id)
+    else:
+        transaction.set_rollback(True)
+    return preview
+
+
 def _create_initialized_account(
     *,
     subscription: Subscription,
@@ -308,6 +397,8 @@ def _create_initialized_account(
         actor=actor,
         request_id=request_id,
     )
+    if definition.accounting_mode == "capacity_absolute":
+        _reconcile_storage_account_locked(account=account, request_id=request_id, actor=actor)
     return account
 
 
@@ -539,6 +630,8 @@ def adjust_quota_account(
     request_id,
 ):
     subscription, account = lock_scoped_account(requester, admin_context, account_id)
+    if quota_definition(account.quota_type).accounting_mode == "capacity_absolute":
+        raise QuotaStateConflict
     if account.version != expected_version:
         raise QuotaVersionConflict
     if not _subscription_effective(subscription, account, timezone.now()):
@@ -812,6 +905,9 @@ def apply_subscription_change_quotas(
         .order_by("id")
     }
     source_accounts = [locked[account.pk] for account in source_accounts]
+    source_accounts = [
+        account for account in source_accounts if account.quota_type != "storage_bytes"
+    ]
     target_primary = {
         quota_type: locked[account.pk] for quota_type, account in target_primary.items()
     }
@@ -924,6 +1020,14 @@ def freeze_quota(
         .filter(subscription=subscription, quota_type=binding.quota_type)
         .order_by("id")
     )
+    if binding.quota_type == "storage_bytes":
+        accounts = [
+            account
+            for account in accounts
+            if account.pk == account_id
+            and account.batch_type == QuotaAccount.BatchType.PRIMARY
+            and account.cycle_started_at is None
+        ]
     accounts = sorted(
         [account for account in accounts if _subscription_effective(subscription, account, now)],
         key=_spend_order,

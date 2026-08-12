@@ -70,6 +70,7 @@ INSTALLED_APPS = [
     "apps.plans",
     "apps.quotas",
     "apps.subjects",
+    "apps.documents",
 ]
 
 MIDDLEWARE = [
@@ -165,6 +166,37 @@ if len(PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY) < 32:
     raise ImproperlyConfigured(
         "PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY is too weak; minimum length is 32."
     )
+FILE_IDEMPOTENCY_HMAC_KEY = os.getenv(
+    "FILE_IDEMPOTENCY_HMAC_KEY",
+    "local-test-file-idempotency-key-not-for-production",
+).strip()
+if len(FILE_IDEMPOTENCY_HMAC_KEY) < 32:
+    raise ImproperlyConfigured("FILE_IDEMPOTENCY_HMAC_KEY is too weak; minimum length is 32.")
+FILE_STORAGE_PROVIDER = os.getenv("FILE_STORAGE_PROVIDER", "s3").strip().lower()
+FILE_SCANNER_PROVIDER = os.getenv("FILE_SCANNER_PROVIDER", "mock").strip().lower()
+FILE_UPLOAD_MAX_BYTES = positive_env_int("FILE_UPLOAD_MAX_BYTES", 50 * 1024 * 1024)
+FILE_UPLOAD_URL_TTL = positive_env_int("FILE_UPLOAD_URL_TTL", 300)
+FILE_DOWNLOAD_URL_TTL = positive_env_int("FILE_DOWNLOAD_URL_TTL", 300)
+FILE_STAGING_RETENTION_SECONDS = positive_env_int("FILE_STAGING_RETENTION_SECONDS", 3600)
+FILE_VALIDATION_MAX_ARCHIVE_ENTRIES = positive_env_int("FILE_VALIDATION_MAX_ARCHIVE_ENTRIES", 2000)
+FILE_VALIDATION_MAX_UNCOMPRESSED_BYTES = positive_env_int(
+    "FILE_VALIDATION_MAX_UNCOMPRESSED_BYTES", 200 * 1024 * 1024
+)
+FILE_VALIDATION_MAX_ARCHIVE_ENTRY_BYTES = positive_env_int(
+    "FILE_VALIDATION_MAX_ARCHIVE_ENTRY_BYTES", 50 * 1024 * 1024
+)
+FILE_VALIDATION_MAX_COMPRESSION_RATIO = positive_env_int(
+    "FILE_VALIDATION_MAX_COMPRESSION_RATIO", 100
+)
+FILE_IMAGE_MAX_WIDTH = positive_env_int("FILE_IMAGE_MAX_WIDTH", 12000)
+FILE_IMAGE_MAX_HEIGHT = positive_env_int("FILE_IMAGE_MAX_HEIGHT", 12000)
+FILE_IMAGE_MAX_PIXELS = positive_env_int("FILE_IMAGE_MAX_PIXELS", 80_000_000)
+FILE_ALLOWED_APP_ORIGINS = env_list("FILE_ALLOWED_APP_ORIGINS", "http://localhost:3000")
+S3_ENDPOINT_URL = os.getenv("S3_ENDPOINT_URL", "http://minio:9000").strip()
+S3_REGION = os.getenv("S3_REGION", "us-east-1").strip()
+S3_BUCKET = os.getenv("S3_BUCKET", "xianwen-files").strip()
+S3_ACCESS_KEY = os.getenv("S3_ACCESS_KEY", "xianwen-local").strip()
+S3_SECRET_KEY = os.getenv("S3_SECRET_KEY", "xianwen-local-secret").strip()
 SMS_VERIFICATION_HMAC_KEY = os.getenv(
     "SMS_VERIFICATION_HMAC_KEY", "local-test-sms-hmac-key-not-for-production"
 ).strip()
@@ -213,6 +245,14 @@ CELERY_BEAT_SCHEDULE = {
     },
     "scan-due-quota-cycles": {
         "task": "quotas.scan_due_cycles",
+        "schedule": timedelta(seconds=60),
+    },
+    "scan-expired-file-upload-intents": {
+        "task": "documents.scan_expired_upload_intents",
+        "schedule": timedelta(seconds=60),
+    },
+    "scan-file-verification-retries": {
+        "task": "documents.scan_verification_retries",
         "schedule": timedelta(seconds=60),
     },
 }

@@ -14,7 +14,11 @@ REQUIRED_ENVIRONMENT = {
     "SMS_VERIFICATION_HMAC_KEY": "s" * 64,
     "QUOTA_IDEMPOTENCY_HMAC_KEY": "q" * 64,
     "PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY": "p" * 64,
+    "FILE_IDEMPOTENCY_HMAC_KEY": "f" * 64,
     "SMS_PROVIDER": "unconfigured",
+    "FILE_STORAGE_PROVIDER": "unavailable",
+    "FILE_SCANNER_PROVIDER": "unavailable",
+    "FILE_ALLOWED_APP_ORIGINS": "https://app.example.com",
     "DATABASE_URL": "postgresql://app:placeholder@database:5432/xianwen",
     "REDIS_URL": "redis://redis:6379/0",
     "ALLOWED_HOSTS": "api.example.com",
@@ -36,7 +40,11 @@ def import_settings(overrides: dict[str, str] | None = None, missing: str | None
             "SMS_VERIFICATION_HMAC_KEY",
             "QUOTA_IDEMPOTENCY_HMAC_KEY",
             "PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY",
+            "FILE_IDEMPOTENCY_HMAC_KEY",
             "SMS_PROVIDER",
+            "FILE_STORAGE_PROVIDER",
+            "FILE_SCANNER_PROVIDER",
+            "FILE_ALLOWED_APP_ORIGINS",
             "DATABASE_URL",
             "REDIS_URL",
             "ALLOWED_HOSTS",
@@ -67,6 +75,7 @@ def import_settings(overrides: dict[str, str] | None = None, missing: str | None
         "SMS_VERIFICATION_HMAC_KEY",
         "QUOTA_IDEMPOTENCY_HMAC_KEY",
         "PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY",
+        "FILE_IDEMPOTENCY_HMAC_KEY",
         "DATABASE_URL",
         "REDIS_URL",
         "ALLOWED_HOSTS",
@@ -100,10 +109,16 @@ def test_production_missing_required_environment_fails_fast(missing):
             "PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY is too weak",
         ),
         (
+            {"FILE_IDEMPOTENCY_HMAC_KEY": "weak"},
+            "FILE_IDEMPOTENCY_HMAC_KEY is too weak",
+        ),
+        (
             {"PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY": "x" * 64},
             "must not reuse another application secret",
         ),
         ({"SMS_PROVIDER": "mock"}, "Mock SMS provider is forbidden"),
+        ({"FILE_STORAGE_PROVIDER": "mock"}, "Mock file storage provider is forbidden"),
+        ({"FILE_SCANNER_PROVIDER": "mock"}, "Mock file scanner is forbidden"),
         (
             {"SMS_VERIFICATION_HMAC_KEY": "x" * 64},
             "must not reuse DJANGO_SECRET_KEY",
@@ -115,6 +130,14 @@ def test_production_missing_required_environment_fails_fast(missing):
         (
             {"QUOTA_IDEMPOTENCY_HMAC_KEY": "s" * 64},
             "must not reuse another application secret",
+        ),
+        (
+            {"FILE_IDEMPOTENCY_HMAC_KEY": "x" * 64},
+            "must not reuse another secret",
+        ),
+        (
+            {"FILE_IDEMPOTENCY_HMAC_KEY": "q" * 64},
+            "must not reuse another secret",
         ),
     ],
 )
