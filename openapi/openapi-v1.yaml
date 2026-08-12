@@ -371,6 +371,121 @@ paths:
           $ref: '#/components/responses/CsrfFailed'
         '404':
           $ref: '#/components/responses/ResourceNotFound'
+  /files/upload-intents:
+    post:
+      tags: [Documents]
+      summary: Create a private size-bound direct-upload intent
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/FileUploadIntentCreateRequest'}
+      responses:
+        '201':
+          description: Intent and short-lived constrained presigned POST credential
+          headers:
+            Cache-Control: {schema: {type: string, const: no-store}}
+            X-Request-ID: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/FileUploadIntentCreateEnvelope'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/CsrfFailed'}
+        '409': {$ref: '#/components/responses/BusinessConflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+  /files/upload-intents/{intentId}:
+    parameters:
+      - name: intentId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    get:
+      tags: [Documents]
+      summary: Poll an owner-scoped upload intent
+      responses:
+        '200':
+          description: Safe upload state; no object key, hash, scanner detail, or secret
+          headers:
+            Cache-Control: {schema: {type: string, const: no-store}}
+            X-Request-ID: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/FileUploadIntentEnvelope'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+  /files/upload-intents/{intentId}/complete:
+    parameters:
+      - name: intentId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    post:
+      tags: [Documents]
+      summary: Mark an uploaded object for asynchronous verification
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/FileUploadIntentCompleteRequest'}
+      responses:
+        '202':
+          description: Verification accepted; poll the intent resource
+          headers:
+            Cache-Control: {schema: {type: string, const: no-store}}
+            X-Request-ID: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/FileUploadIntentEnvelope'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/CsrfFailed'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+        '409': {$ref: '#/components/responses/BusinessConflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+  /subjects/{subjectId}/documents:
+    parameters:
+      - $ref: '#/components/parameters/SubjectId'
+    get:
+      tags: [Documents]
+      summary: List completed clean document versions for an owner-scoped subject
+      responses:
+        '200':
+          description: Private subject documents without storage internals
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SubjectDocumentListEnvelope'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+  /documents/{documentId}/download-intents:
+    parameters:
+      - name: documentId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    post:
+      tags: [Documents]
+      summary: Create a short-lived private attachment download credential
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      responses:
+        '200':
+          description: Short-lived download credential
+          headers:
+            Cache-Control: {schema: {type: string, const: no-store}}
+            X-Request-ID: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DocumentDownloadIntentEnvelope'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/CsrfFailed'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
   /subjects:
     get:
       tags: [Subjects]
@@ -2483,6 +2598,14 @@ components:
         - SUBJECT_REVIEW_REASON_REQUIRED
         - SUBJECT_REVIEW_PENDING
         - SUBJECT_REVIEW_REJECTED
+        - FILE_IDEMPOTENCY_KEY_REQUIRED
+        - FILE_STATE_CONFLICT
+        - FILE_VERSION_CONFLICT
+        - FILE_TYPE_NOT_ALLOWED
+        - FILE_SIZE_INVALID
+        - FILE_CONTENT_INVALID
+        - FILE_SECURITY_REJECTED
+        - FILE_STORAGE_UNAVAILABLE
         - PLAN_REQUIRED
     HealthEnvelope:
       allOf:
@@ -4180,13 +4303,89 @@ components:
         description: {type: string, maxLength: 500}
         required: {type: boolean}
         default_value:
-          description: 按 field_type 校验；image/file 只能为 null；choice 引用 enabled option_key。
+          description: 按 field_type 校验；image/file 默认只能为 null，用户值引用 DocumentVersionReferenceValue；choice 引用 enabled option_key。
         sort_order: {type: integer, minimum: 0}
         used_for_ai: {type: boolean}
         name_role: {$ref: '#/components/schemas/SubjectFieldNameRole'}
         options:
           type: array
           items: {$ref: '#/components/schemas/PublicSubjectFieldOption'}
+    DocumentVersionReferenceValue:
+      type: object
+      additionalProperties: false
+      required: [document_version_id]
+      properties:
+        document_version_id: {type: string, format: uuid}
+    FileUploadIntentCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [subject_id, filename, content_type, size_bytes, purpose]
+      properties:
+        subject_id: {type: string, format: uuid}
+        filename: {type: string, minLength: 1, maxLength: 255}
+        content_type: {type: string, minLength: 1, maxLength: 127}
+        size_bytes: {type: integer, format: int64, minimum: 1}
+        purpose: {type: string, const: subject_library}
+    FileUploadIntentCompleteRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version]
+      properties:
+        expected_version: {type: integer, format: int64, minimum: 1}
+    FileUploadIntent:
+      type: object
+      additionalProperties: false
+      required: [id, status, version, declared_filename, declared_file_kind, declared_size, expires_at, stable_error_code, document_id, document_version_id, created_at, updated_at]
+      properties:
+        id: {type: string, format: uuid}
+        status: {type: string, enum: [pending_upload, verifying, completed, rejected, expired]}
+        version: {type: integer, format: int64, minimum: 1}
+        declared_filename: {type: string}
+        declared_file_kind: {type: string, enum: [pdf, docx, xlsx, txt, markdown, jpeg, png, webp]}
+        declared_size: {type: integer, format: int64, minimum: 1}
+        expires_at: {type: string, format: date-time}
+        stable_error_code: {type: string, description: Stable safe error code only}
+        document_id: {type: [string, 'null'], format: uuid}
+        document_version_id: {type: [string, 'null'], format: uuid}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    PresignedPostCredential:
+      type: object
+      additionalProperties: false
+      required: [method, url, fields, expires_in]
+      properties:
+        method: {type: string, const: POST}
+        url: {type: string, format: uri, writeOnly: true}
+        fields: {type: object, additionalProperties: {type: string}, writeOnly: true}
+        expires_in: {type: integer, minimum: 1}
+    FileUploadIntentCreateData:
+      type: object
+      required: [intent, upload]
+      properties:
+        intent: {$ref: '#/components/schemas/FileUploadIntent'}
+        upload: {oneOf: [{$ref: '#/components/schemas/PresignedPostCredential'}, {type: 'null'}]}
+    UserDocument:
+      type: object
+      additionalProperties: false
+      required: [id, document_version_id, display_name, purpose, detected_file_kind, size_bytes, safe_status, download_available, created_at]
+      properties:
+        id: {type: string, format: uuid}
+        document_version_id: {type: string, format: uuid}
+        display_name: {type: string}
+        purpose: {type: string, const: subject_library}
+        detected_file_kind: {type: string, enum: [pdf, docx, xlsx, txt, markdown, jpeg, png, webp]}
+        size_bytes: {type: integer, format: int64, minimum: 1}
+        safe_status: {type: string, const: clean}
+        download_available: {type: boolean}
+        created_at: {type: string, format: date-time}
+    FileUploadIntentCreateEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, properties: {data: {$ref: '#/components/schemas/FileUploadIntentCreateData'}}}]
+    FileUploadIntentEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, properties: {data: {$ref: '#/components/schemas/FileUploadIntent'}}}]
+    SubjectDocumentListEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, properties: {data: {type: object, required: [documents], properties: {documents: {type: array, items: {$ref: '#/components/schemas/UserDocument'}}}}}}]
+    DocumentDownloadIntentEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, properties: {data: {type: object, required: [url, expires_in], properties: {url: {type: string, format: uri, writeOnly: true}, expires_in: {type: integer, minimum: 1}}}}}]
     SubjectTypeSummary:
       type: object
       required: [id, key, name, description, icon_key, status, sort_order, is_builtin, schema_version, version]

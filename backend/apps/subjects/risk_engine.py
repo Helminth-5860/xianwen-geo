@@ -109,6 +109,8 @@ def _field_values(
 ) -> dict[str, list[str]]:
     output: dict[str, list[str]] = {}
     for field in schema_snapshot.get("fields", []):
+        if field.get("field_type") in {"image", "file"}:
+            continue
         key = field.get("field_key")
         if not key or key not in field_values:
             continue

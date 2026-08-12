@@ -11,6 +11,7 @@ class QuotaDefinition:
     scope: str
     reset_type: str
     subject_level: bool
+    accounting_mode: str = "consumable"
     minimum: int = 0
     maximum: int = MAX_QUOTA_AMOUNT
 
@@ -19,7 +20,15 @@ QUOTA_CATALOG = (
     QuotaDefinition("detection_points", "detection_points", "point", "subscription", "none", False),
     QuotaDefinition("article_credits", "article_credits", "article", "subscription", "none", False),
     QuotaDefinition("image_credits", "image_credits", "image", "subscription", "none", False),
-    QuotaDefinition("storage_bytes", "storage_bytes", "byte", "account", "none", False),
+    QuotaDefinition(
+        "storage_bytes",
+        "storage_bytes",
+        "byte",
+        "account",
+        "none",
+        False,
+        accounting_mode="capacity_absolute",
+    ),
     QuotaDefinition(
         "assistant_messages",
         "assistant_messages_per_cycle",

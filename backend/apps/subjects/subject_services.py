@@ -238,6 +238,18 @@ def create_subject(
         schema_snapshot=snapshot,
         schema_digest=digest,
     )
+    from apps.documents.exceptions import FileContentInvalid
+    from apps.documents.services import validate_document_references
+
+    try:
+        validate_document_references(
+            user_id=user.pk,
+            subject_id=subject.pk,
+            schema_snapshot=snapshot,
+            field_values=values,
+        )
+    except FileContentInvalid as exc:
+        raise SubjectValuesInvalid("document_version_id") from exc
     _subject_event(
         subject=subject,
         event_type=SubjectEvent.EventType.CREATED,
@@ -282,8 +294,19 @@ def update_subject_draft(
             current=subject.draft_values,
             updates=values,
         )
+        from apps.documents.exceptions import FileContentInvalid
+        from apps.documents.services import validate_document_references
+
+        validate_document_references(
+            user_id=user.pk,
+            subject_id=subject.pk,
+            schema_snapshot=subject.schema_snapshot,
+            field_values=merged,
+        )
     except SnapshotValueError as exc:
         raise SubjectValuesInvalid(exc.field_key) from exc
+    except FileContentInvalid as exc:
+        raise SubjectValuesInvalid("document_version_id") from exc
     except ValueError as exc:
         raise SubjectEntitlementIntegrityError from exc
     subject.draft_values = merged

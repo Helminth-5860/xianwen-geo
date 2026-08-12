@@ -14,6 +14,7 @@ SECRET_KEY = require_env("DJANGO_SECRET_KEY")
 SMS_VERIFICATION_HMAC_KEY = require_env("SMS_VERIFICATION_HMAC_KEY")
 QUOTA_IDEMPOTENCY_HMAC_KEY = require_env("QUOTA_IDEMPOTENCY_HMAC_KEY")
 PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY = require_env("PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY")
+FILE_IDEMPOTENCY_HMAC_KEY = require_env("FILE_IDEMPOTENCY_HMAC_KEY")
 weak_secret_markers = {
     "changeme",
     "change-me",
@@ -50,6 +51,48 @@ if PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY in {
     raise ImproperlyConfigured(
         "PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY must not reuse another application secret."
     )
+if len(FILE_IDEMPOTENCY_HMAC_KEY) < 50 or FILE_IDEMPOTENCY_HMAC_KEY.lower() in weak_secret_markers:
+    raise ImproperlyConfigured("FILE_IDEMPOTENCY_HMAC_KEY is too weak for production.")
+if FILE_IDEMPOTENCY_HMAC_KEY in {
+    SECRET_KEY,
+    SMS_VERIFICATION_HMAC_KEY,
+    QUOTA_IDEMPOTENCY_HMAC_KEY,
+    PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY,
+}:
+    raise ImproperlyConfigured("FILE_IDEMPOTENCY_HMAC_KEY must not reuse another secret.")
+FILE_STORAGE_PROVIDER = os.getenv("FILE_STORAGE_PROVIDER", "unavailable").strip().lower()
+FILE_SCANNER_PROVIDER = os.getenv("FILE_SCANNER_PROVIDER", "unavailable").strip().lower()
+if FILE_STORAGE_PROVIDER == "mock":
+    raise ImproperlyConfigured("Mock file storage provider is forbidden in production.")
+if FILE_SCANNER_PROVIDER in {"mock", "always_clean"}:
+    raise ImproperlyConfigured("Mock file scanner is forbidden in production.")
+if FILE_STORAGE_PROVIDER not in {"s3", "unavailable"}:
+    raise ImproperlyConfigured("Unsupported production file storage provider.")
+if FILE_SCANNER_PROVIDER not in {"unavailable"}:
+    raise ImproperlyConfigured("Unsupported production file scanner provider.")
+if FILE_STORAGE_PROVIDER == "s3":
+    required_s3 = {
+        "S3_ENDPOINT_URL": S3_ENDPOINT_URL,
+        "S3_REGION": S3_REGION,
+        "S3_BUCKET": S3_BUCKET,
+        "S3_ACCESS_KEY": S3_ACCESS_KEY,
+        "S3_SECRET_KEY": S3_SECRET_KEY,
+    }
+    missing_s3 = [name for name, value in required_s3.items() if not value]
+    if missing_s3:
+        raise ImproperlyConfigured(
+            "Missing S3-compatible storage settings: " + ", ".join(missing_s3)
+        )
+    if FILE_IDEMPOTENCY_HMAC_KEY == S3_SECRET_KEY:
+        raise ImproperlyConfigured("FILE_IDEMPOTENCY_HMAC_KEY must not reuse S3_SECRET_KEY.")
+configured_file_origins = os.getenv("FILE_ALLOWED_APP_ORIGINS", "")
+if not configured_file_origins.strip():
+    raise ImproperlyConfigured("FILE_ALLOWED_APP_ORIGINS is required.")
+FILE_ALLOWED_APP_ORIGINS = env_list("FILE_ALLOWED_APP_ORIGINS")
+if any(origin == "*" for origin in FILE_ALLOWED_APP_ORIGINS):
+    raise ImproperlyConfigured("Wildcard file application origins are forbidden.")
+if any(urlsplit(origin).scheme not in {"http", "https"} for origin in FILE_ALLOWED_APP_ORIGINS):
+    raise ImproperlyConfigured("FILE_ALLOWED_APP_ORIGINS must contain HTTP(S) origins.")
 
 for forbidden_variable in ("DATABASE_URL", "REDIS_URL"):
     configured_url = os.getenv(forbidden_variable, "")
@@ -67,6 +110,10 @@ for forbidden_variable in ("DATABASE_URL", "REDIS_URL"):
             f"PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY must not reuse {forbidden_variable} credentials."
         )
 
+    if FILE_IDEMPOTENCY_HMAC_KEY in {configured_url, configured_password}:
+        raise ImproperlyConfigured(
+            f"FILE_IDEMPOTENCY_HMAC_KEY must not reuse {forbidden_variable} credentials."
+        )
 SMS_PROVIDER = os.getenv("SMS_PROVIDER", "unconfigured").strip().lower()
 if SMS_PROVIDER == "mock":
     raise ImproperlyConfigured("Mock SMS provider is forbidden in production.")

@@ -398,3 +398,6 @@ Scoped manual review is a direct single-administrator decision protected by a
 secure admin Session, CSRF, RBAC, own/role/all customer scope, expected versions,
 and append-only audit evidence. See
 [docs/31-SUBJECT-RISK-RULES-REVIEW.md](docs/31-SUBJECT-RISK-RULES-REVIEW.md).
+## XW-0205 私有文件与对象存储
+
+文件上传使用受大小约束的 S3-compatible presigned POST、异步验证 Saga 和 PostgreSQL 不可变占用证据；本地集成使用 MinIO，不代表腾讯 COS 生产接入。完整边界、配置、收敛命令与回滚规则见 `docs/30-FILE-UPLOAD-COS-ABSTRACTION.md`。运行专属验收：`scripts/test-files.ps1`（Windows）或 `scripts/test-files.sh`（Linux/CI）。

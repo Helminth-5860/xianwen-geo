@@ -306,6 +306,10 @@ class QuotaHold(models.Model):  # noqa: DJ008
 class QuotaLedgerEntry(models.Model):  # noqa: DJ008
     class Action(models.TextChoices):
         INITIALIZE = "initialize", "初始化"
+        STORAGE_CAPACITY_RECONCILE = (
+            "storage_capacity_reconcile",
+            "\u5b58\u50a8\u5bb9\u91cf\u6536\u655b",
+        )
         FREEZE = "freeze", "冻结"
         CONSUME = "consume", "扣除"
         RELEASE = "release", "返还"
@@ -398,6 +402,7 @@ class QuotaLedgerEntry(models.Model):  # noqa: DJ008
                         Q(
                             action__in=(
                                 "initialize",
+                                "storage_capacity_reconcile",
                                 "grant",
                                 "compensate",
                                 "manual_deduct",
