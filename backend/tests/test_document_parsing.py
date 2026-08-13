@@ -1,19 +1,24 @@
+import hashlib
 import io
 import uuid
 from datetime import time, timedelta
 from unittest.mock import patch
 
 import pytest
+from celery.exceptions import Retry
 from django.test import override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
 
+from apps.documents.exceptions import FileStorageUnavailable
 from apps.documents.models import DocumentVersion, UserDocument
 from apps.documents.ocr import MockOcrProvider
 from apps.documents.parse_exceptions import (
+    DocumentOcrUnavailable,
     DocumentParseContentInvalid,
     DocumentParseSecurityRejected,
     DocumentParseStateConflict,
+    DocumentParseUnexpectedError,
     DocumentParseVersionConflict,
 )
 from apps.documents.parse_models import (
@@ -25,11 +30,13 @@ from apps.documents.parse_models import (
 from apps.documents.parse_services import (
     confirm_parsed_text,
     create_parse_job,
+    due_parse_job_ids,
     execute_parse,
     get_confirmed_document_content,
 )
 from apps.documents.parsers import canonicalize_text, parse_stream
-from apps.documents.storage import MockStorageProvider
+from apps.documents.storage import MockStorageProvider, ObjectMetadata
+from apps.documents.tasks import execute_parse_job
 from apps.plans.models import Plan, PlanVersion, Subscription
 from apps.subjects.models import Subject, SubjectType
 from apps.users.models import Notification, User
@@ -37,7 +44,13 @@ from apps.users.models import Notification, User
 pytestmark = pytest.mark.django_db
 
 
-def _facts(*, kind="txt", with_subscription=True, account_status=User.AccountStatus.ACTIVE):
+def _facts(
+    *,
+    kind="txt",
+    data=b"data",
+    with_subscription=True,
+    account_status=User.AccountStatus.ACTIVE,
+):
     suffix = uuid.uuid4().hex[:10]
     user = User.objects.create_user(
         phone=f"138{uuid.uuid4().int % 100000000:08d}",
@@ -106,10 +119,14 @@ def _facts(*, kind="txt", with_subscription=True, account_status=User.AccountSta
         document=document,
         version_no=1,
         object_key=f"objects/{uuid.uuid4().hex}/{uuid.uuid4().hex}",
-        size_bytes=4,
-        sha256="d" * 64,
+        size_bytes=len(data),
+        sha256=hashlib.sha256(data).hexdigest(),
         detected_file_kind=kind,
-        detected_mime="text/plain" if kind in {"txt", "markdown"} else "image/png",
+        detected_mime={
+            "txt": "text/plain",
+            "markdown": "text/plain",
+            "pdf": "application/pdf",
+        }.get(kind, "image/png"),
         scanner_engine_version="mock-v1",
     )
     UserDocument.objects.filter(pk=document.pk).update(current_version=version)
@@ -194,8 +211,9 @@ def test_parse_payload_is_strict_and_requires_subscription():
 def test_parse_confirmation_replay_and_second_edit_form_continuous_chain(
     django_capture_on_commit_callbacks,
 ):
-    user, subject, document, version = _facts()
-    MockStorageProvider.put_for_test(version.object_key, b"machine\r\ntext", "text/plain")
+    data = b"machine\r\ntext"
+    user, subject, document, version = _facts(data=data)
+    MockStorageProvider.put_for_test(version.object_key, data, "text/plain")
     with (
         patch("apps.documents.parse_views.execute_parse_job.apply_async") as enqueue,
         django_capture_on_commit_callbacks(execute=True),
@@ -301,7 +319,7 @@ def test_transient_storage_failure_persists_retry_wait_not_failed():
         request_id=uuid.uuid4(),
     )
     with patch("apps.documents.parse_services.storage_provider") as factory:
-        factory.return_value.open_object.side_effect = RuntimeError("private storage unavailable")
+        factory.return_value.head_object.side_effect = FileStorageUnavailable
         result = execute_parse(job_id=job.pk)
     job.refresh_from_db()
     assert result["status"] == "retry_wait"
@@ -311,7 +329,8 @@ def test_transient_storage_failure_persists_retry_wait_not_failed():
 
 
 def test_finalize_notification_failure_rolls_back_all_machine_facts():
-    user, _, document, version = _facts()
+    data = b"safe text"
+    user, _, document, version = _facts(data=data)
     job, _ = create_parse_job(
         user_id=user.pk,
         document_id=document.pk,
@@ -319,9 +338,9 @@ def test_finalize_notification_failure_rolls_back_all_machine_facts():
         idempotency_key="finalize-rollback-test-0001",
         request_id=uuid.uuid4(),
     )
-    MockStorageProvider.put_for_test(version.object_key, b"safe text", "text/plain")
+    MockStorageProvider.put_for_test(version.object_key, data, "text/plain")
     with patch.object(Notification.objects, "create", side_effect=RuntimeError("injected")):
-        with pytest.raises(RuntimeError):
+        with pytest.raises(DocumentParseUnexpectedError):
             execute_parse(job_id=job.pk)
     job.refresh_from_db()
     state = DocumentParseState.objects.get(document_version=version)
@@ -378,3 +397,196 @@ def test_models_do_not_add_parse_quota_web_import_or_subject_storage():
     assert "quota_account" not in fields
     assert "subject_quota" not in fields
     assert not any("url" in field for field in fields)
+
+
+def _parse_job_with_object(*, data=b"expected parser bytes", kind="txt"):
+    user, _, document, version = _facts(kind=kind, data=data)
+    job, created = create_parse_job(
+        user_id=user.pk,
+        document_id=document.pk,
+        document_version_id=version.pk,
+        idempotency_key=f"parse-integrity-{uuid.uuid4()}",
+        request_id=uuid.uuid4(),
+    )
+    assert created
+    MockStorageProvider.put_for_test(
+        version.object_key,
+        data,
+        version.detected_mime,
+    )
+    return document, version, job
+
+
+def _assert_integrity_failure(*, version, job):
+    job.refresh_from_db()
+    state = DocumentParseState.objects.get(document_version=version)
+    assert job.status == DocumentParseJob.Status.FAILED
+    assert job.stable_error_code == "DOCUMENT_PARSE_SOURCE_INTEGRITY_FAILED"
+    assert state.latest_parsed_version_id is None
+    assert state.current_confirmed_version_id is None
+    assert not DocumentParsedVersion.objects.filter(document_version=version).exists()
+    assert not DocumentParseEvent.objects.filter(
+        document_version=version,
+        event_type=DocumentParseEvent.EventType.SUCCEEDED,
+    ).exists()
+    assert not Notification.objects.filter(notification_type="document_parse_succeeded").exists()
+
+
+@pytest.mark.parametrize(
+    ("fault", "actual"),
+    (
+        ("head_size", b"expected parser bytes"),
+        ("metadata_sha", b"expected parser bytes"),
+        ("metadata_mime", b"expected parser bytes"),
+        ("truncated_stream", b"short"),
+        ("same_size_sha", b"EXPECTED PARSER BYTES"),
+    ),
+)
+def test_parse_source_integrity_mismatch_fails_closed(fault, actual):
+    expected = b"expected parser bytes"
+    _, version, job = _parse_job_with_object(data=expected)
+    expected_sha = hashlib.sha256(expected).hexdigest()
+    metadata = ObjectMetadata(
+        len(expected),
+        "safe-etag",
+        version.detected_mime,
+        {"sha256": expected_sha},
+    )
+    if fault == "head_size":
+        metadata = ObjectMetadata(
+            len(expected) + 1,
+            "safe-etag",
+            version.detected_mime,
+            {"sha256": expected_sha},
+        )
+    elif fault == "metadata_sha":
+        metadata = ObjectMetadata(
+            len(expected),
+            "safe-etag",
+            version.detected_mime,
+            {"sha256": "0" * 64},
+        )
+    elif fault == "metadata_mime":
+        metadata = ObjectMetadata(
+            len(expected),
+            "safe-etag",
+            "application/octet-stream",
+            {"sha256": expected_sha},
+        )
+
+    with patch("apps.documents.parse_services.storage_provider") as factory:
+        factory.return_value.head_object.return_value = metadata
+        factory.return_value.open_object.return_value = io.BytesIO(actual)
+        result = execute_parse(job_id=job.pk)
+
+    assert result == {
+        "status": "failed",
+        "code": "DOCUMENT_PARSE_SOURCE_INTEGRITY_FAILED",
+    }
+    _assert_integrity_failure(version=version, job=job)
+
+
+def test_verified_pdf_input_is_same_seekable_bounded_spool():
+    from apps.documents.parsers import ParseResult
+
+    data = b"x" * 128
+    _, version, job = _parse_job_with_object(data=data, kind="pdf")
+
+    def assert_spool(file_kind, stream, ocr):
+        assert file_kind == "pdf"
+        assert stream.seekable()
+        assert stream.tell() == 0
+        assert stream.read() == data
+        stream.seek(0)
+        assert stream._rolled is True
+        return ParseResult("bounded pdf", [], [], "pdf", "1")
+
+    with (
+        patch("apps.documents.parse_services.PARSE_SPOOL_MEMORY_BYTES", 16),
+        patch("apps.documents.parse_services.parse_stream", side_effect=assert_spool),
+    ):
+        assert execute_parse(job_id=job.pk)["status"] == "succeeded"
+
+
+def test_known_ocr_transient_persists_retry_wait():
+    _, version, job = _parse_job_with_object(data=b"image bytes", kind="png")
+    ocr = MockOcrProvider()
+    with (
+        patch("apps.documents.parse_services.get_ocr_provider", return_value=ocr),
+        patch.object(ocr, "recognize", side_effect=DocumentOcrUnavailable),
+    ):
+        result = execute_parse(job_id=job.pk)
+    job.refresh_from_db()
+    assert result["status"] == "retry_wait"
+    assert job.status == DocumentParseJob.Status.RETRY_WAIT
+    assert job.stable_error_code == "DOCUMENT_OCR_UNAVAILABLE"
+
+
+def test_permanent_parser_error_is_terminal_and_not_due():
+    _, version, job = _parse_job_with_object(data=b"bad\x00text")
+    result = execute_parse(job_id=job.pk)
+    job.refresh_from_db()
+    assert result["status"] == "failed"
+    assert result["code"] == "DOCUMENT_PARSE_CONTENT_INVALID"
+    assert job.status == DocumentParseJob.Status.FAILED
+    assert job.pk not in due_parse_job_ids()
+    assert not DocumentParsedVersion.objects.filter(document_version=version).exists()
+
+
+@override_settings(DOCUMENT_PARSE_INTERNAL_MAX_RETRIES=1)
+def test_unknown_exception_uses_bounded_task_retry_then_terminal(caplog):
+    _, version, job = _parse_job_with_object()
+    raw_exception = "private parser implementation detail"
+    execute_parse_job.push_request(retries=0, headers={})
+    try:
+        with (
+            patch(
+                "apps.documents.parse_services.parse_stream",
+                side_effect=RuntimeError(raw_exception),
+            ),
+            pytest.raises(Retry),
+        ):
+            execute_parse_job.run(str(job.pk))
+    finally:
+        execute_parse_job.pop_request()
+
+    job.refresh_from_db()
+    generation = job.generation
+    assert job.status == DocumentParseJob.Status.RUNNING
+    assert job.pk not in due_parse_job_ids()
+
+    execute_parse_job.push_request(retries=1, headers={})
+    try:
+        with patch(
+            "apps.documents.parse_services.parse_stream",
+            side_effect=RuntimeError(raw_exception),
+        ):
+            result = execute_parse_job.run(str(job.pk), str(generation))
+    finally:
+        execute_parse_job.pop_request()
+
+    job.refresh_from_db()
+    assert result == {"status": "failed", "code": "DOCUMENT_PARSE_INTERNAL_ERROR"}
+    assert job.status == DocumentParseJob.Status.FAILED
+    assert job.stable_error_code == "DOCUMENT_PARSE_INTERNAL_ERROR"
+    assert job.pk not in due_parse_job_ids()
+    assert not DocumentParsedVersion.objects.filter(document_version=version).exists()
+    assert (
+        DocumentParseEvent.objects.filter(
+            job=job,
+            event_type=DocumentParseEvent.EventType.STARTED,
+        ).count()
+        == 1
+    )
+    persisted = str(
+        list(DocumentParseEvent.objects.filter(job=job).values("stable_error_code", "safe_summary"))
+    ) + str(
+        list(
+            Notification.objects.filter(recipient=job.user).values(
+                "notification_type", "safe_summary"
+            )
+        )
+    )
+    assert raw_exception not in persisted
+    assert raw_exception in caplog.text
+    assert not getattr(execute_parse_job, "autoretry_for", ())

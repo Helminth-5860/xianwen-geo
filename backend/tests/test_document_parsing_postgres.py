@@ -10,7 +10,10 @@ from django.db import DatabaseError, connection, transaction
 from django.utils import timezone
 from django_redis import get_redis_connection
 
-from apps.documents.parse_exceptions import DocumentParseStateConflict
+from apps.documents.parse_exceptions import (
+    DocumentParseStateConflict,
+    DocumentParseUnexpectedError,
+)
 from apps.documents.parse_models import (
     DocumentParsedVersion,
     DocumentParseEvent,
@@ -201,7 +204,7 @@ def test_event_notification_or_state_failure_rolls_back_machine_finalization():
         return create_event(**kwargs)
 
     with patch.object(DocumentParseEvent.objects, "create", side_effect=fail_succeeded_event):
-        with pytest.raises(RuntimeError):
+        with pytest.raises(DocumentParseUnexpectedError):
             execute_parse(job_id=job.pk)
     job.refresh_from_db()
     state = DocumentParseState.objects.get(document_version=version)
@@ -243,3 +246,192 @@ def test_stale_running_job_is_reclaimed_with_new_generation():
     assert job.status == DocumentParseJob.Status.RUNNING
     assert job.attempts == 2
     assert job.generation != first_generation
+
+
+def _confirmation(*, state, text, digest):
+    source = state.latest_parsed_version
+    machine_base = (
+        source
+        if source.source == DocumentParsedVersion.Source.PARSER
+        else source.machine_base_version
+    )
+    return DocumentParsedVersion.objects.create(
+        user_id=state.user_id,
+        subject_id=state.subject_id,
+        document_id=state.document_id,
+        document_version_id=state.document_version_id,
+        version_no=source.version_no + 1,
+        source=DocumentParsedVersion.Source.USER_CONFIRMATION,
+        parent_version=source,
+        machine_base_version=machine_base,
+        extracted_text=text,
+        parser_key=source.parser_key,
+        parser_version=source.parser_version,
+        ocr_provider_key=source.ocr_provider_key,
+        ocr_engine_version=source.ocr_engine_version,
+        content_digest=digest,
+        confirmed_by_id=state.user_id,
+        confirmed_at=timezone.now(),
+    )
+
+
+def test_real_minio_same_size_object_replacement_fails_source_integrity():
+    _, _, _, version, job = _job()
+    replacement = b"X" * version.size_bytes
+    provider = S3CompatibleStorageProvider()
+    provider.client.put_object(
+        Bucket=provider.bucket,
+        Key=version.object_key,
+        Body=replacement,
+        ContentType=version.detected_mime,
+        Metadata={"sha256": version.sha256},
+    )
+
+    result = execute_parse(job_id=job.pk)
+
+    job.refresh_from_db()
+    state = DocumentParseState.objects.get(document_version=version)
+    assert result == {
+        "status": "failed",
+        "code": "DOCUMENT_PARSE_SOURCE_INTEGRITY_FAILED",
+    }
+    assert job.status == DocumentParseJob.Status.FAILED
+    assert state.latest_parsed_version_id is None
+    assert not DocumentParsedVersion.objects.filter(document_version=version).exists()
+    assert not DocumentParseEvent.objects.filter(
+        document_version=version,
+        event_type=DocumentParseEvent.EventType.SUCCEEDED,
+    ).exists()
+
+
+def test_parsed_version_insert_requires_latest_pointer_at_commit():
+    _, _, _, version, job = _job()
+    assert execute_parse(job_id=job.pk)["status"] == "succeeded"
+    state = DocumentParseState.objects.get(document_version=version)
+
+    with pytest.raises(DatabaseError), transaction.atomic():
+        _confirmation(state=state, text="unpointed v2", digest="1" * 64)
+
+    state.refresh_from_db()
+    assert state.latest_parsed_version.version_no == 1
+    assert not DocumentParsedVersion.objects.filter(
+        document_version=version,
+        version_no=2,
+    ).exists()
+
+
+def test_parsed_version_and_both_state_pointers_advance_in_same_transaction():
+    _, _, _, version, job = _job()
+    assert execute_parse(job_id=job.pk)["status"] == "succeeded"
+    state = DocumentParseState.objects.get(document_version=version)
+
+    with transaction.atomic():
+        confirmed = _confirmation(state=state, text="valid v2", digest="2" * 64)
+        state.latest_parsed_version = confirmed
+        state.current_confirmed_version = confirmed
+        state.version += 1
+        state.save(
+            update_fields=(
+                "latest_parsed_version",
+                "current_confirmed_version",
+                "version",
+                "updated_at",
+            )
+        )
+
+    state.refresh_from_db()
+    assert state.latest_parsed_version_id == confirmed.pk
+    assert state.current_confirmed_version_id == confirmed.pk
+
+
+def test_confirmation_insert_requires_current_confirmed_max_at_commit():
+    user, _, document, version, job = _job()
+    assert execute_parse(job_id=job.pk)["status"] == "succeeded"
+    state = DocumentParseState.objects.get(document_version=version)
+
+    with pytest.raises(DatabaseError), transaction.atomic():
+        confirmed = _confirmation(state=state, text="v2 without current", digest="3" * 64)
+        state.latest_parsed_version = confirmed
+        state.version += 1
+        state.save(update_fields=("latest_parsed_version", "version", "updated_at"))
+
+    state.refresh_from_db()
+    _, confirmed, _ = confirm_parsed_text(
+        user_id=user.pk,
+        document_id=document.pk,
+        expected_parse_state_version=state.version,
+        source_parsed_version_id=state.latest_parsed_version_id,
+        confirmed_text="valid v2",
+        request_id=uuid.uuid4(),
+    )
+    state.refresh_from_db()
+    assert state.current_confirmed_version_id == confirmed.pk
+
+    with pytest.raises(DatabaseError), transaction.atomic():
+        stale = _confirmation(state=state, text="v3 stale current", digest="4" * 64)
+        state.latest_parsed_version = stale
+        state.version += 1
+        state.save(update_fields=("latest_parsed_version", "version", "updated_at"))
+
+    state.refresh_from_db()
+    assert state.latest_parsed_version_id == confirmed.pk
+    assert state.current_confirmed_version_id == confirmed.pk
+    with transaction.atomic():
+        newest = _confirmation(state=state, text="valid v3", digest="5" * 64)
+        state.latest_parsed_version = newest
+        state.current_confirmed_version = newest
+        state.version += 1
+        state.save(
+            update_fields=(
+                "latest_parsed_version",
+                "current_confirmed_version",
+                "version",
+                "updated_at",
+            )
+        )
+    state.refresh_from_db()
+    assert state.latest_parsed_version_id == newest.pk
+    assert state.current_confirmed_version_id == newest.pk
+
+
+def test_parse_state_rejects_cross_document_version_pointer():
+    _, _, _, version_one, job_one = _job(b"first document")
+    _, _, _, version_two, job_two = _job(b"second document")
+    assert execute_parse(job_id=job_one.pk)["status"] == "succeeded"
+    assert execute_parse(job_id=job_two.pk)["status"] == "succeeded"
+    state_one = DocumentParseState.objects.get(document_version=version_one)
+    state_two = DocumentParseState.objects.get(document_version=version_two)
+
+    with pytest.raises(DatabaseError), transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute(
+            """
+            UPDATE document_parse_states
+               SET latest_parsed_version_id = %s
+             WHERE id = %s
+            """,
+            [state_two.latest_parsed_version_id, state_one.pk],
+        )
+
+    state_one.refresh_from_db()
+    assert state_one.latest_parsed_version.document_version_id == version_one.pk
+
+
+def test_parsed_version_insert_requires_parse_state_at_commit():
+    user, subject, document, version = _completed_document()
+
+    with pytest.raises(DatabaseError), transaction.atomic():
+        DocumentParsedVersion.objects.create(
+            user=user,
+            subject=subject,
+            document=document,
+            document_version=version,
+            version_no=1,
+            source=DocumentParsedVersion.Source.PARSER,
+            extracted_text="orphan parser fact",
+            parser_key="txt",
+            parser_version="1",
+            content_digest="6" * 64,
+        )
+
+    assert not DocumentParsedVersion.objects.filter(document_version=version).exists()
+    assert not DocumentParseState.objects.filter(document_version=version).exists()

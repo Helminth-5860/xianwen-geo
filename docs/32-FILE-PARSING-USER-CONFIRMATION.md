@@ -46,11 +46,25 @@ as the non-root application user with a read-only root filesystem, bounded no-ex
 dropped capabilities, low prefetch/resource limits and an internal-only network to PostgreSQL,
 Redis and private MinIO. The API does not parse file bytes.
 
+Every claim carries the immutable expected size, SHA-256 and parser metadata. Before parsing,
+the worker verifies private-object HEAD size, SHA metadata and content type, then reads the
+object once in bounded chunks while recomputing byte count and SHA-256 into a seekable
+`SpooledTemporaryFile`. The in-memory spool threshold is 4 MiB and the total bytes remain
+bounded by both the immutable expected size and the upload maximum. Any mismatch fails closed
+with `DOCUMENT_PARSE_SOURCE_INTEGRITY_FAILED` and creates no parsed version or success fact.
+
 The worker claims in a short transaction, streams private storage and parses outside a database
 transaction, then finalizes in a short transaction. PostgreSQL terminal facts make redelivery
 exactly-once. Beat only scans durable `retry_wait` rows and queues IDs.
 It also requeues `running` jobs only after the configured durable lease expires; a new generation
 invalidates late results from a lost worker without using Redis or task IDs as business truth.
+
+Known temporary storage/OCR/infrastructure failures alone enter durable `retry_wait`. Known
+content, security and source-integrity failures are terminal. Unexpected implementation
+exceptions are logged server-side and use a generation-bound Celery retry capped by
+`DOCUMENT_PARSE_INTERNAL_MAX_RETRIES` (default 3, hard maximum 10); exhaustion writes the safe
+`DOCUMENT_PARSE_INTERNAL_ERROR` terminal fact. It never enters `retry_wait`, so Beat cannot
+turn an unknown bug into an infinite persistent retry loop.
 
 ## Migrations and rollback
 
@@ -58,6 +72,11 @@ Migrations create no parse or confirmation history for existing files. PostgreSQ
 ownership mismatch, invalid state transitions, sequence gaps, pointer rollback and UPDATE/DELETE
 of immutable versions/events. Reversing the guard migration with parsed evidence deliberately
 fails; production recovery requires reviewed forward repair or backup restoration.
+
+Migration `documents.0005_parse_state_pointer_consistency` adds a shared assertion used by both
+the ParseState deferred trigger and an INSERT-side
+`document_parsed_version_state_consistency` deferred constraint trigger. Commit therefore
+requires latest/current-confirmed pointers to equal the maximum applicable immutable versions.
 
 ## Explicit non-goals
 

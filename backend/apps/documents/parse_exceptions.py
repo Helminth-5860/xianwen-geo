@@ -35,3 +35,20 @@ class DocumentOcrUnavailable(DocumentParseError):
 class DocumentParseInfrastructureUnavailable(DocumentParseError):
     code = "DOCUMENT_PARSE_TEMPORARILY_UNAVAILABLE"
     permanent = False
+
+
+class DocumentParseSourceIntegrityFailed(DocumentParseError):
+    code = "DOCUMENT_PARSE_SOURCE_INTEGRITY_FAILED"
+
+
+class DocumentParseInternalError(DocumentParseError):
+    code = "DOCUMENT_PARSE_INTERNAL_ERROR"
+
+
+class DocumentParseUnexpectedError(Exception):
+    """Carries only safe task coordination facts for bounded system retry."""
+
+    def __init__(self, *, job_id, generation):
+        super().__init__("Unexpected document parsing failure.")
+        self.job_id = job_id
+        self.generation = generation

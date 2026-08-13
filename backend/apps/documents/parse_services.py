@@ -1,7 +1,10 @@
 import hashlib
 import hmac
 import json
+import logging
+import tempfile
 import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import timedelta
 
@@ -16,6 +19,7 @@ from apps.subjects.models import Subject
 from apps.subjects.risk_services import ensure_subject_feature_allowed
 from apps.users.models import Notification, User
 
+from .exceptions import FileStorageUnavailable
 from .models import DocumentVersion, UserDocument
 from .ocr import get_ocr_provider
 from .parse_exceptions import (
@@ -24,7 +28,10 @@ from .parse_exceptions import (
     DocumentParseIdempotencyConflict,
     DocumentParseIdempotencyRequired,
     DocumentParseInfrastructureUnavailable,
+    DocumentParseInternalError,
+    DocumentParseSourceIntegrityFailed,
     DocumentParseStateConflict,
+    DocumentParseUnexpectedError,
     DocumentParseVersionConflict,
 )
 from .parse_models import (
@@ -45,6 +52,10 @@ from .storage import storage_provider
 
 PARSE_KEY_VERSION = 1
 
+PARSE_STREAM_CHUNK_BYTES = 64 * 1024
+PARSE_SPOOL_MEMORY_BYTES = 4 * 1024 * 1024
+logger = logging.getLogger(__name__)
+
 
 @dataclass(frozen=True)
 class ClaimedParse:
@@ -53,6 +64,75 @@ class ClaimedParse:
     document_version_id: uuid.UUID
     object_key: str
     file_kind: str
+    expected_size_bytes: int
+    expected_sha256: str
+    expected_mime: str
+
+
+def _claimed_parse(job) -> ClaimedParse:
+    version = job.document_version
+    return ClaimedParse(
+        job.pk,
+        job.generation,
+        job.document_version_id,
+        version.object_key,
+        version.detected_file_kind,
+        version.size_bytes,
+        version.sha256,
+        version.detected_mime,
+    )
+
+
+def _source_integrity_failed() -> DocumentParseSourceIntegrityFailed:
+    return DocumentParseSourceIntegrityFailed()
+
+
+@contextmanager
+def _verified_parse_input(*, provider, claim: ClaimedParse):
+    metadata = provider.head_object(claim.object_key)
+    expected_sha = claim.expected_sha256.casefold()
+    metadata_sha = metadata.metadata.get("sha256", "").strip().casefold()
+    metadata_mime = metadata.content_type.split(";", 1)[0].strip().casefold()
+    expected_mime = claim.expected_mime.split(";", 1)[0].strip().casefold()
+    if (
+        claim.expected_size_bytes <= 0
+        or claim.expected_size_bytes > settings.FILE_UPLOAD_MAX_BYTES
+        or len(expected_sha) != 64
+        or any(character not in "0123456789abcdef" for character in expected_sha)
+        or metadata.size != claim.expected_size_bytes
+        or metadata_sha != expected_sha
+        or metadata_mime != expected_mime
+    ):
+        raise _source_integrity_failed()
+
+    spool = tempfile.SpooledTemporaryFile(max_size=PARSE_SPOOL_MEMORY_BYTES, mode="w+b")
+    digest = hashlib.sha256()
+    actual_size = 0
+    try:
+        try:
+            with provider.open_object(claim.object_key) as source:
+                while True:
+                    chunk = source.read(PARSE_STREAM_CHUNK_BYTES)
+                    if not chunk:
+                        break
+                    if not isinstance(chunk, bytes):
+                        raise _source_integrity_failed()
+                    actual_size += len(chunk)
+                    if (
+                        actual_size > claim.expected_size_bytes
+                        or actual_size > settings.FILE_UPLOAD_MAX_BYTES
+                    ):
+                        raise _source_integrity_failed()
+                    digest.update(chunk)
+                    spool.write(chunk)
+        except (DocumentParseSourceIntegrityFailed, FileStorageUnavailable):
+            raise
+        if actual_size != claim.expected_size_bytes or digest.hexdigest() != expected_sha:
+            raise _source_integrity_failed()
+        spool.seek(0)
+        yield spool
+    finally:
+        spool.close()
 
 
 def _canonical_digest(payload: dict) -> str:
@@ -185,13 +265,21 @@ def create_parse_job(
     return job, True
 
 
-def claim_parse_job(*, job_id, request_id=None, correlation_id=None) -> ClaimedParse | None:
+def claim_parse_job(
+    *, job_id, request_id=None, correlation_id=None, expected_generation=None
+) -> ClaimedParse | None:
     with transaction.atomic():
         job = (
             DocumentParseJob.objects.select_for_update()
             .select_related("document_version")
             .get(pk=job_id)
         )
+        if expected_generation is not None:
+            if job.status != DocumentParseJob.Status.RUNNING or str(job.generation) != str(
+                expected_generation
+            ):
+                return None
+            return _claimed_parse(job)
         if job.status in {DocumentParseJob.Status.SUCCEEDED, DocumentParseJob.Status.FAILED}:
             return None
         stale_before = timezone.now() - timedelta(
@@ -237,13 +325,7 @@ def claim_parse_job(*, job_id, request_id=None, correlation_id=None) -> ClaimedP
             safe_summary={"attempt": job.attempts},
             request_id=job.request_id,
         )
-        return ClaimedParse(
-            job.pk,
-            generation,
-            job.document_version_id,
-            job.document_version.object_key,
-            job.document_version.detected_file_kind,
-        )
+        return _claimed_parse(job)
 
 
 def _schedule_retry(*, job_id, generation, code):
@@ -285,7 +367,7 @@ def _permanent_failure(*, job_id, generation, code):
     with transaction.atomic():
         job = DocumentParseJob.objects.select_for_update().get(pk=job_id)
         if job.status != DocumentParseJob.Status.RUNNING or job.generation != generation:
-            return
+            return False
         job.status = DocumentParseJob.Status.FAILED
         job.finished_at = timezone.now()
         job.stable_error_code = code
@@ -307,6 +389,15 @@ def _permanent_failure(*, job_id, generation, code):
             title="\u6587\u4ef6\u89e3\u6790\u5931\u8d25",
             safe_summary="\u6587\u4ef6\u5185\u5bb9\u65e0\u6cd5\u5b89\u5168\u89e3\u6790\uff0c\u8bf7\u68c0\u67e5\u6587\u4ef6\u540e\u91cd\u8bd5\u3002",
         )
+        return True
+
+
+def fail_internal_parse_job(*, job_id, generation):
+    return _permanent_failure(
+        job_id=job_id,
+        generation=generation,
+        code=DocumentParseInternalError.code,
+    )
 
 
 def finalize_parse_job(*, job_id, generation, result):
@@ -368,32 +459,57 @@ def finalize_parse_job(*, job_id, generation, result):
         return job
 
 
-def execute_parse(*, job_id, request_id=None, correlation_id=None):
+def execute_parse(*, job_id, request_id=None, correlation_id=None, expected_generation=None):
     claim = claim_parse_job(
         job_id=job_id,
         request_id=request_id,
         correlation_id=correlation_id,
+        expected_generation=expected_generation,
     )
     if claim is None:
         return {"status": "not_due_or_terminal"}
     try:
         provider = storage_provider()
         ocr = get_ocr_provider()
-        with provider.open_object(claim.object_key) as stream:
+        with _verified_parse_input(provider=provider, claim=claim) as stream:
             result = parse_stream(claim.file_kind, stream, ocr)
-    except DocumentParseError as exc:
-        if exc.permanent:
-            _permanent_failure(job_id=claim.job_id, generation=claim.generation, code=exc.code)
-        else:
-            _schedule_retry(job_id=claim.job_id, generation=claim.generation, code=exc.code)
-        return {"status": "failed" if exc.permanent else "retry_wait", "code": exc.code}
-    except Exception:
+    except FileStorageUnavailable:
         _schedule_retry(
             job_id=claim.job_id,
             generation=claim.generation,
             code=DocumentParseInfrastructureUnavailable.code,
         )
-        return {"status": "retry_wait", "code": DocumentParseInfrastructureUnavailable.code}
+        return {
+            "status": "retry_wait",
+            "code": DocumentParseInfrastructureUnavailable.code,
+        }
+    except DocumentParseError as exc:
+        if exc.permanent:
+            _permanent_failure(
+                job_id=claim.job_id,
+                generation=claim.generation,
+                code=exc.code,
+            )
+        else:
+            _schedule_retry(
+                job_id=claim.job_id,
+                generation=claim.generation,
+                code=exc.code,
+            )
+        return {"status": "failed" if exc.permanent else "retry_wait", "code": exc.code}
+    except Exception as exc:
+        logger.exception(
+            "Unexpected document parser execution failure.",
+            extra={
+                "job_id": str(claim.job_id),
+                "document_version_id": str(claim.document_version_id),
+                "generation": str(claim.generation),
+            },
+        )
+        raise DocumentParseUnexpectedError(
+            job_id=claim.job_id,
+            generation=claim.generation,
+        ) from exc
     try:
         finalize_parse_job(job_id=claim.job_id, generation=claim.generation, result=result)
     except (OperationalError, InterfaceError):
@@ -406,6 +522,19 @@ def execute_parse(*, job_id, request_id=None, correlation_id=None):
         except (OperationalError, InterfaceError):
             pass
         raise
+    except Exception as exc:
+        logger.exception(
+            "Unexpected document parser finalization failure.",
+            extra={
+                "job_id": str(claim.job_id),
+                "document_version_id": str(claim.document_version_id),
+                "generation": str(claim.generation),
+            },
+        )
+        raise DocumentParseUnexpectedError(
+            job_id=claim.job_id,
+            generation=claim.generation,
+        ) from exc
     return {"status": "succeeded"}
 
 
