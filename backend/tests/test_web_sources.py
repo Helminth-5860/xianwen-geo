@@ -1,3 +1,5 @@
+import socket
+import ssl
 import time as time_module
 import uuid
 from datetime import time, timedelta
@@ -15,11 +17,12 @@ from apps.web_sources.exceptions import (
     WebSourceContentTooLarge,
     WebSourceContentUnsupported,
     WebSourceStateConflict,
+    WebSourceTransientError,
     WebSourceUnexpectedError,
     WebSourceUrlInvalid,
     WebSourceUrlNotAllowed,
 )
-from apps.web_sources.http_transport import FetchResult, _request_once, fetch_url
+from apps.web_sources.http_transport import FetchResult, _connect, _request_once, fetch_url
 from apps.web_sources.models import WebSourceImport, WebSourceParsedVersion, WebSourceSnapshot
 from apps.web_sources.parser import parse_response
 from apps.web_sources.services import confirmed_content, execute_import
@@ -324,6 +327,12 @@ class _FakeSocket:
     def settimeout(self, _timeout):
         return None
 
+    def __init__(self, peer="93.184.216.34"):
+        self.peer = peer
+
+    def getpeername(self):
+        return (self.peer, 443)
+
     def sendall(self, _payload):
         return None
 
@@ -381,4 +390,66 @@ def test_response_bounds_and_encoding_fail_closed(headers, body, error):
         ),
     ):
         with pytest.raises(error):
+            _request_once(canonicalize_url("https://example.com/"), time_module.monotonic() + 5)
+
+
+class _FakeTlsContext:
+    minimum_version = None
+
+    def __init__(self):
+        self.server_hostname = None
+
+    def wrap_socket(self, raw, *, server_hostname):
+        self.server_hostname = server_hostname
+        return raw
+
+
+def test_https_transport_pins_ip_and_preserves_hostname_for_sni(monkeypatch):
+    monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:9")
+    monkeypatch.setenv("HTTPS_PROXY", "http://127.0.0.1:9")
+    monkeypatch.setenv("ALL_PROXY", "http://127.0.0.1:9")
+    raw = _FakeSocket()
+    context = _FakeTlsContext()
+    with (
+        patch(
+            "apps.web_sources.http_transport.socket.create_connection", return_value=raw
+        ) as connect,
+        patch("apps.web_sources.http_transport.ssl.create_default_context", return_value=context),
+    ):
+        connected = _connect(
+            canonicalize_url("https://example.com/"),
+            "93.184.216.34",
+            time_module.monotonic() + 5,
+        )
+    assert connected is raw
+    connect.assert_called_once_with(("93.184.216.34", 443), timeout=3)
+    assert context.server_hostname == "example.com"
+    assert context.minimum_version is ssl.TLSVersion.TLSv1_2
+
+
+def test_transport_rejects_actual_peer_outside_pinned_address():
+    with patch(
+        "apps.web_sources.http_transport.socket.create_connection",
+        return_value=_FakeSocket(peer="127.0.0.1"),
+    ):
+        with pytest.raises(WebSourceUrlNotAllowed):
+            _connect(
+                canonicalize_url("http://example.com/"),
+                "93.184.216.34",
+                time_module.monotonic() + 5,
+            )
+
+
+def test_socket_timeout_is_classified_as_transient():
+    with (
+        patch(
+            "apps.web_sources.http_transport.resolve_and_validate", return_value=("93.184.216.34",)
+        ),
+        patch("apps.web_sources.http_transport._connect", return_value=_FakeSocket()),
+        patch(
+            "apps.web_sources.http_transport.http.client.HTTPResponse",
+            side_effect=socket.timeout,
+        ),
+    ):
+        with pytest.raises(WebSourceTransientError):
             _request_once(canonicalize_url("https://example.com/"), time_module.monotonic() + 5)
