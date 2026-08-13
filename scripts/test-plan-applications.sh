@@ -2,6 +2,7 @@
 set -euo pipefail
 export QUOTA_IDEMPOTENCY_HMAC_KEY="${QUOTA_IDEMPOTENCY_HMAC_KEY:-$(openssl rand -hex 32)}"
 export PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY="${PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY:-$(openssl rand -hex 32)}"
+export WEB_IMPORT_IDEMPOTENCY_HMAC_KEY="${WEB_IMPORT_IDEMPOTENCY_HMAC_KEY:-$(openssl rand -hex 32)}"
 random_secret() { openssl rand -hex 32; }
 export POSTGRES_DB="${POSTGRES_DB:-plan_application_test_db}"
 export POSTGRES_USER="${POSTGRES_USER:-plan_application_test_user}"

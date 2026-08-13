@@ -15,6 +15,7 @@ REQUIRED_ENVIRONMENT = {
     "QUOTA_IDEMPOTENCY_HMAC_KEY": "q" * 64,
     "PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY": "p" * 64,
     "FILE_IDEMPOTENCY_HMAC_KEY": "f" * 64,
+    "WEB_IMPORT_IDEMPOTENCY_HMAC_KEY": "w" * 64,
     "SMS_PROVIDER": "unconfigured",
     "FILE_STORAGE_PROVIDER": "unavailable",
     "FILE_SCANNER_PROVIDER": "unavailable",
@@ -42,6 +43,7 @@ def import_settings(overrides: dict[str, str] | None = None, missing: str | None
             "QUOTA_IDEMPOTENCY_HMAC_KEY",
             "PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY",
             "FILE_IDEMPOTENCY_HMAC_KEY",
+            "WEB_IMPORT_IDEMPOTENCY_HMAC_KEY",
             "SMS_PROVIDER",
             "FILE_STORAGE_PROVIDER",
             "FILE_SCANNER_PROVIDER",
@@ -78,6 +80,7 @@ def import_settings(overrides: dict[str, str] | None = None, missing: str | None
         "QUOTA_IDEMPOTENCY_HMAC_KEY",
         "PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY",
         "FILE_IDEMPOTENCY_HMAC_KEY",
+        "WEB_IMPORT_IDEMPOTENCY_HMAC_KEY",
         "DATABASE_URL",
         "REDIS_URL",
         "ALLOWED_HOSTS",
@@ -115,6 +118,10 @@ def test_production_missing_required_environment_fails_fast(missing):
             "FILE_IDEMPOTENCY_HMAC_KEY is too weak",
         ),
         (
+            {"WEB_IMPORT_IDEMPOTENCY_HMAC_KEY": "weak"},
+            "WEB_IMPORT_IDEMPOTENCY_HMAC_KEY is too weak",
+        ),
+        (
             {"PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY": "x" * 64},
             "must not reuse another application secret",
         ),
@@ -143,6 +150,10 @@ def test_production_missing_required_environment_fails_fast(missing):
         ),
         (
             {"FILE_IDEMPOTENCY_HMAC_KEY": "q" * 64},
+            "must not reuse another secret",
+        ),
+        (
+            {"WEB_IMPORT_IDEMPOTENCY_HMAC_KEY": "x" * 64},
             "must not reuse another secret",
         ),
     ],

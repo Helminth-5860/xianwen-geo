@@ -1,0 +1,78 @@
+services:
+  postgres:
+    networks: [default, web_import_test]
+  redis:
+    networks: [default, web_import_test]
+
+  web-lab:
+    profiles: [web-import-test]
+    image: python:3.12.12-alpine3.21
+    command: ["python", "-m", "http.server", "80", "--directory", "/site"]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    volumes:
+      - ./backend/tests/web_lab:/site:ro
+    networks: [web_import_test]
+
+  web-import-migrate:
+    profiles: [web-import-test]
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: test
+    command: ["python", "manage.py", "migrate", "--noinput"]
+    environment: &web-import-env
+      DJANGO_SETTINGS_MODULE: config.django_settings.web_import_test
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?set isolated web import secret}
+      DATABASE_URL: ${DATABASE_URL:?set isolated web import database URL}
+      REDIS_URL: ${REDIS_URL:?set isolated web import Redis URL}
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:?set isolated web import broker URL}
+      WEB_IMPORT_IDEMPOTENCY_HMAC_KEY: ${WEB_IMPORT_IDEMPOTENCY_HMAC_KEY:?set independent web import HMAC key}
+      RUN_MIGRATIONS: "false"
+    networks: [web_import_test]
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+
+  web-fetch-test-worker:
+    profiles: [web-import-test]
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: test
+    command:
+      ["celery", "-A", "config", "worker", "--loglevel=INFO", "--queues=web_fetch", "--concurrency=1", "--prefetch-multiplier=1", "--time-limit=45", "--soft-time-limit=40"]
+    environment: *web-import-env
+    privileged: false
+    read_only: true
+    tmpfs: ["/tmp:rw,noexec,nosuid,nodev,size=64m"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 128
+    mem_limit: 512m
+    cpus: 1.0
+    networks: [web_import_test]
+    depends_on:
+      web-import-migrate: {condition: service_completed_successfully}
+      web-lab: {condition: service_started}
+
+  web-import-tests:
+    profiles: [web-import-test]
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: test
+    command:
+      ["python", "-m", "pytest", "tests/test_web_sources_postgres.py", "-q", "-x", "--reuse-db", "-p", "no:cacheprovider"]
+    environment: *web-import-env
+    networks: [web_import_test]
+    depends_on:
+      web-fetch-test-worker: {condition: service_started}
+
+networks:
+  web_import_test:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.31.207.0/24

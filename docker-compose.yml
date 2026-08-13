@@ -49,6 +49,9 @@ services:
       SMS_VERIFICATION_HMAC_KEY: ${SMS_VERIFICATION_HMAC_KEY:?请配置随机本地短信 HMAC 密钥}
       QUOTA_IDEMPOTENCY_HMAC_KEY: ${QUOTA_IDEMPOTENCY_HMAC_KEY:?set a random local quota HMAC key}
       PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY: ${PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY:?set a random local plan-change HMAC key}
+      WEB_IMPORT_ENABLED: ${WEB_IMPORT_ENABLED:-true}
+      WEB_IMPORT_NETWORK_POLICY_ENFORCED: ${WEB_IMPORT_NETWORK_POLICY_ENFORCED:-true}
+      WEB_IMPORT_IDEMPOTENCY_HMAC_KEY: ${WEB_IMPORT_IDEMPOTENCY_HMAC_KEY:?set an independent web import HMAC key}
       SMS_CODE_TTL_SECONDS: ${SMS_CODE_TTL_SECONDS:-300}
       SMS_RESEND_COOLDOWN_SECONDS: ${SMS_RESEND_COOLDOWN_SECONDS:-60}
       SMS_MAX_ATTEMPTS: ${SMS_MAX_ATTEMPTS:-5}
@@ -115,6 +118,9 @@ services:
       SMS_VERIFICATION_HMAC_KEY: ${SMS_VERIFICATION_HMAC_KEY:?请配置随机本地短信 HMAC 密钥}
       QUOTA_IDEMPOTENCY_HMAC_KEY: ${QUOTA_IDEMPOTENCY_HMAC_KEY:?set a random local quota HMAC key}
       PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY: ${PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY:?set a random local plan-change HMAC key}
+      WEB_IMPORT_ENABLED: ${WEB_IMPORT_ENABLED:-true}
+      WEB_IMPORT_NETWORK_POLICY_ENFORCED: ${WEB_IMPORT_NETWORK_POLICY_ENFORCED:-true}
+      WEB_IMPORT_IDEMPOTENCY_HMAC_KEY: ${WEB_IMPORT_IDEMPOTENCY_HMAC_KEY:?set an independent web import HMAC key}
       SMS_CODE_TTL_SECONDS: ${SMS_CODE_TTL_SECONDS:-300}
       SMS_RESEND_COOLDOWN_SECONDS: ${SMS_RESEND_COOLDOWN_SECONDS:-60}
       SMS_MAX_ATTEMPTS: ${SMS_MAX_ATTEMPTS:-5}
@@ -126,6 +132,38 @@ services:
       SMS_LIMIT_IP_WINDOW_SECONDS: ${SMS_LIMIT_IP_WINDOW_SECONDS:-3600}
       TRUSTED_PROXY_HOPS: ${TRUSTED_PROXY_HOPS:-0}
       TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:-}
+    depends_on:
+      api:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  web-fetch-worker:
+    extends:
+      service: celery
+    command:
+      [
+        "celery",
+        "-A",
+        "config",
+        "worker",
+        "--loglevel=INFO",
+        "--queues=web_fetch",
+        "--concurrency=1",
+        "--prefetch-multiplier=1",
+        "--time-limit=45",
+        "--soft-time-limit=40",
+      ]
+    privileged: false
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 128
+    mem_limit: 512m
+    cpus: 1.0
     depends_on:
       api:
         condition: service_healthy

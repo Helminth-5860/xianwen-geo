@@ -71,6 +71,7 @@ INSTALLED_APPS = [
     "apps.quotas",
     "apps.subjects",
     "apps.documents",
+    "apps.web_sources",
 ]
 
 MIDDLEWARE = [
@@ -210,6 +211,40 @@ DOCUMENT_PARSE_RUNNING_STALE_SECONDS = positive_env_int("DOCUMENT_PARSE_RUNNING_
 DOCUMENT_PARSE_INTERNAL_MAX_RETRIES = positive_env_int("DOCUMENT_PARSE_INTERNAL_MAX_RETRIES", 3)
 if DOCUMENT_PARSE_INTERNAL_MAX_RETRIES > 10:
     raise ImproperlyConfigured("DOCUMENT_PARSE_INTERNAL_MAX_RETRIES must not exceed 10.")
+WEB_IMPORT_ENABLED = env_bool("WEB_IMPORT_ENABLED", True)
+WEB_IMPORT_NETWORK_POLICY_ENFORCED = env_bool("WEB_IMPORT_NETWORK_POLICY_ENFORCED", True)
+WEB_IMPORT_IDEMPOTENCY_HMAC_KEY = os.getenv(
+    "WEB_IMPORT_IDEMPOTENCY_HMAC_KEY",
+    "local-test-web-import-idempotency-key-not-for-production",
+).strip()
+if len(WEB_IMPORT_IDEMPOTENCY_HMAC_KEY) < 32:
+    raise ImproperlyConfigured("WEB_IMPORT_IDEMPOTENCY_HMAC_KEY is too weak; minimum length is 32.")
+WEB_IMPORT_MAX_URL_BYTES = positive_env_int("WEB_IMPORT_MAX_URL_BYTES", 4096)
+WEB_IMPORT_MAX_REDIRECTS = int(os.getenv("WEB_IMPORT_MAX_REDIRECTS", "5"))
+if WEB_IMPORT_MAX_REDIRECTS < 0 or WEB_IMPORT_MAX_REDIRECTS > 10:
+    raise ImproperlyConfigured("WEB_IMPORT_MAX_REDIRECTS must be between 0 and 10.")
+WEB_IMPORT_CONNECT_TIMEOUT_SECONDS = positive_env_int("WEB_IMPORT_CONNECT_TIMEOUT_SECONDS", 3)
+WEB_IMPORT_READ_TIMEOUT_SECONDS = positive_env_int("WEB_IMPORT_READ_TIMEOUT_SECONDS", 10)
+WEB_IMPORT_TOTAL_TIMEOUT_SECONDS = positive_env_int("WEB_IMPORT_TOTAL_TIMEOUT_SECONDS", 20)
+WEB_IMPORT_MAX_RESPONSE_BYTES = positive_env_int("WEB_IMPORT_MAX_RESPONSE_BYTES", 2 * 1024 * 1024)
+WEB_IMPORT_MAX_TEXT_CHARACTERS = positive_env_int("WEB_IMPORT_MAX_TEXT_CHARACTERS", 500_000)
+WEB_IMPORT_MAX_HEADER_COUNT = positive_env_int("WEB_IMPORT_MAX_HEADER_COUNT", 100)
+WEB_IMPORT_MAX_HEADER_LINE_BYTES = positive_env_int("WEB_IMPORT_MAX_HEADER_LINE_BYTES", 8192)
+WEB_IMPORT_MAX_HEADER_BYTES = positive_env_int("WEB_IMPORT_MAX_HEADER_BYTES", 65_536)
+WEB_IMPORT_RUNNING_STALE_SECONDS = positive_env_int("WEB_IMPORT_RUNNING_STALE_SECONDS", 120)
+WEB_IMPORT_RETRY_BASE_SECONDS = positive_env_int("WEB_IMPORT_RETRY_BASE_SECONDS", 30)
+WEB_IMPORT_INTERNAL_MAX_RETRIES = positive_env_int("WEB_IMPORT_INTERNAL_MAX_RETRIES", 3)
+if WEB_IMPORT_INTERNAL_MAX_RETRIES > 10:
+    raise ImproperlyConfigured("WEB_IMPORT_INTERNAL_MAX_RETRIES must not exceed 10.")
+WEB_IMPORT_RATE_LIMIT_WINDOW_SECONDS = positive_env_int(
+    "WEB_IMPORT_RATE_LIMIT_WINDOW_SECONDS", 3600
+)
+WEB_IMPORT_RATE_LIMIT_USER = positive_env_int("WEB_IMPORT_RATE_LIMIT_USER", 30)
+WEB_IMPORT_RATE_LIMIT_IP = positive_env_int("WEB_IMPORT_RATE_LIMIT_IP", 60)
+WEB_IMPORT_RATE_LIMIT_SUBJECT = positive_env_int("WEB_IMPORT_RATE_LIMIT_SUBJECT", 30)
+WEB_IMPORT_RATE_LIMIT_HOST = positive_env_int("WEB_IMPORT_RATE_LIMIT_HOST", 20)
+WEB_IMPORT_USER_AGENT = os.getenv("WEB_IMPORT_USER_AGENT", "XianwenWebImporter/1.0").strip()
+WEB_IMPORT_TEST_ALLOWED_CIDRS: tuple = ()
 S3_ACCESS_KEY = os.getenv("S3_ACCESS_KEY", "xianwen-local").strip()
 S3_SECRET_KEY = os.getenv("S3_SECRET_KEY", "xianwen-local-secret").strip()
 SMS_VERIFICATION_HMAC_KEY = os.getenv(
@@ -274,5 +309,16 @@ CELERY_BEAT_SCHEDULE = {
         "task": "documents.scan_parse_retries",
         "schedule": timedelta(seconds=60),
     },
+    "dispatch-queued-web-imports": {
+        "task": "web_sources.dispatch_queued_imports",
+        "schedule": timedelta(seconds=60),
+    },
+    "scan-web-import-retries": {
+        "task": "web_sources.scan_import_retries",
+        "schedule": timedelta(seconds=60),
+    },
 }
-CELERY_TASK_ROUTES = {"documents.execute_parse_job": {"queue": "file_processing"}}
+CELERY_TASK_ROUTES = {
+    "documents.execute_parse_job": {"queue": "file_processing"},
+    "web_sources.execute_import": {"queue": "web_fetch"},
+}

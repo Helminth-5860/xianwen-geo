@@ -233,6 +233,8 @@ class Notification(models.Model):
 
         DOCUMENT_PARSE_SUCCEEDED = "document_parse_succeeded", "??????"
         DOCUMENT_PARSE_FAILED = "document_parse_failed", "??????"
+        WEB_SOURCE_IMPORT_SUCCEEDED = "web_import_succeeded", "网页导入完成"
+        WEB_SOURCE_IMPORT_FAILED = "web_import_failed", "网页导入失败"
 
     id: models.UUIDField = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     recipient: models.ForeignKey = models.ForeignKey(

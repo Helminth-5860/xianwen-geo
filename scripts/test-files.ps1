@@ -3,7 +3,7 @@ function New-RandomSecret { ([guid]::NewGuid().ToString("N") + [guid]::NewGuid()
 $env:APP_ENV = "local"
 if ([string]::IsNullOrWhiteSpace($env:POSTGRES_DB)) { $env:POSTGRES_DB = "file_test_db" }
 if ([string]::IsNullOrWhiteSpace($env:POSTGRES_USER)) { $env:POSTGRES_USER = "file_test_user" }
-foreach ($name in @("POSTGRES_PASSWORD", "DJANGO_SECRET_KEY", "SMS_VERIFICATION_HMAC_KEY", "QUOTA_IDEMPOTENCY_HMAC_KEY", "PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY", "FILE_IDEMPOTENCY_HMAC_KEY", "S3_SECRET_KEY")) {
+foreach ($name in @("POSTGRES_PASSWORD", "DJANGO_SECRET_KEY", "SMS_VERIFICATION_HMAC_KEY", "QUOTA_IDEMPOTENCY_HMAC_KEY", "PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY", "FILE_IDEMPOTENCY_HMAC_KEY", "WEB_IMPORT_IDEMPOTENCY_HMAC_KEY", "S3_SECRET_KEY")) {
     if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
         [Environment]::SetEnvironmentVariable($name, (New-RandomSecret))
     }

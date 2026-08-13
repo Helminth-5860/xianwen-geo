@@ -10,6 +10,7 @@ export SMS_VERIFICATION_HMAC_KEY="${SMS_VERIFICATION_HMAC_KEY:-$(random_secret)}
 export QUOTA_IDEMPOTENCY_HMAC_KEY="${QUOTA_IDEMPOTENCY_HMAC_KEY:-$(random_secret)}"
 export PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY="${PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY:-$(random_secret)}"
 export FILE_IDEMPOTENCY_HMAC_KEY="${FILE_IDEMPOTENCY_HMAC_KEY:-$(random_secret)}"
+export WEB_IMPORT_IDEMPOTENCY_HMAC_KEY="${WEB_IMPORT_IDEMPOTENCY_HMAC_KEY:-$(random_secret)}"
 export S3_ACCESS_KEY="${S3_ACCESS_KEY:-minio$(openssl rand -hex 8)}"
 export S3_SECRET_KEY="${S3_SECRET_KEY:-$(random_secret)}"
 export S3_BUCKET="${S3_BUCKET:-xianwen-files-test}"
