@@ -12,6 +12,9 @@ const completeUploadIntent = vi.fn();
 const getUploadIntent = vi.fn();
 const getSubjectDocuments = vi.fn();
 const openDocumentDownload = vi.fn();
+const requestDocumentParse = vi.fn();
+const getDocumentParseResult = vi.fn();
+const confirmDocumentParse = vi.fn();
 
 vi.mock("../lib/documents-client", () => ({
   createUploadIntent: (...args: unknown[]) => createUploadIntent(...args),
@@ -21,6 +24,10 @@ vi.mock("../lib/documents-client", () => ({
   getSubjectDocuments: (...args: unknown[]) => getSubjectDocuments(...args),
   openDocumentDownload: (...args: unknown[]) => openDocumentDownload(...args),
   newUploadIdempotencyKey: () => "browser-random-key",
+  requestDocumentParse: (...args: unknown[]) => requestDocumentParse(...args),
+  getDocumentParseResult: (...args: unknown[]) => getDocumentParseResult(...args),
+  confirmDocumentParse: (...args: unknown[]) => confirmDocumentParse(...args),
+  newParseIdempotencyKey: () => "browser-parse-random-key",
 }));
 
 const document = {
@@ -46,9 +53,20 @@ beforeEach(() => {
       dispatchEvent: vi.fn(),
     })),
   });
+  Object.defineProperty(globalThis, "ResizeObserver", {
+    writable: true,
+    value: class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  });
+
   vi.clearAllMocks();
   getSubjectDocuments.mockResolvedValue({ documents: [] });
   openDocumentDownload.mockResolvedValue(undefined);
+  getDocumentParseResult.mockReset();
+  confirmDocumentParse.mockResolvedValue(undefined);
 });
 
 afterEach(cleanup);
@@ -86,6 +104,46 @@ describe("private Subject document interactions", () => {
     render(<SubjectDocuments subjectId="subject-1" />);
     await userEvent.click(await screen.findByRole("button", { name: "私密下载" }));
     expect(openDocumentDownload).toHaveBeenCalledWith("document-1");
+  });
+
+  it("parses, shows machine-only warnings, and confirms only canonical text", async () => {
+    const result = {
+      status: "succeeded",
+      stable_error_code: "",
+      state_version: 2,
+      latest_version: { id: "parsed-1", version_no: 1 },
+      current_confirmed_version: null,
+      canonical_text: "machine text",
+      tables: [[["cell"]]],
+      warning_codes: ["NO_TEXT_EXTRACTED"],
+      confirmed: false,
+      parser: { key: "pdf", version: "1", ocr_engine_version: "" },
+    };
+    getSubjectDocuments.mockResolvedValue({ documents: [document] });
+    requestDocumentParse.mockResolvedValue({ id: "job-1", status: "queued" });
+    getDocumentParseResult.mockResolvedValue(result);
+    confirmDocumentParse.mockResolvedValue({
+      parse_state_version: 3,
+      confirmed_version: { id: "parsed-2", version_no: 2 },
+      created: true,
+    });
+    render(<SubjectDocuments subjectId="subject-1" />);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "\u89e3\u6790\u4e0e\u786e\u8ba4" }),
+    );
+    const editor = await screen.findByRole("textbox", {
+      name: "\u786e\u8ba4\u89e3\u6790\u6587\u672c",
+    });
+    expect(screen.getByText(/NO_TEXT_EXTRACTED/)).toBeTruthy();
+    await userEvent.clear(editor);
+    await userEvent.type(editor, "confirmed text");
+    await userEvent.click(
+      screen.getByRole("button", { name: "\u786e\u8ba4\u89e3\u6790\u6587\u672c" }),
+    );
+    expect(requestDocumentParse).toHaveBeenCalledWith(document, "browser-parse-random-key");
+    expect(confirmDocumentParse).toHaveBeenCalledWith("document-1", result, "confirmed text");
+    expect(localStorage.length).toBe(0);
+    expect(sessionStorage.length).toBe(0);
   });
 });
 

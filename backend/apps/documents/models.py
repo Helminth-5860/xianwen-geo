@@ -212,3 +212,12 @@ class SubjectVersionDocumentReference(models.Model):  # noqa: DJ008
 
     def delete(self, *args, **kwargs):
         raise RuntimeError("Subject document references are immutable.")
+
+
+# Imported after upload models so Django registers the parse evidence models.
+from .parse_models import (  # noqa: E402, F401
+    DocumentParsedVersion,
+    DocumentParseEvent,
+    DocumentParseJob,
+    DocumentParseState,
+)

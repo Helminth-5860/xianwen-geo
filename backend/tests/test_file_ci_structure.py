@@ -19,12 +19,23 @@ def test_file_postgres_redis_minio_suite_is_required_by_docker_job():
     for content in (shell_script, powershell_script):
         assert "xianwen-file-test" in content
         assert "down --volumes --remove-orphans" in content
+        assert 'APP_ENV="local"' in content or '$env:APP_ENV = "local"' in content
+        assert "FILE_PROCESSING_DATABASE_URL" in content
     assert "tests/test_documents_postgres.py" in compose
     assert "tests/test_documents_saga_postgres.py" in compose
     assert "MINIO_API_CORS_ALLOW_ORIGIN: http://localhost:3000" in compose
     assert "minio-init" in compose
     assert "service_completed_successfully" in compose
     assert "FILE_STORAGE_PROVIDER: s3" in compose
+    assert "tests/test_document_parsing_postgres.py" in compose
+    assert "--queues=file_processing" in compose
+    assert "read_only: true" in compose
+    assert "no-new-privileges:true" in compose
+    assert "cap_drop: [ALL]" in compose
+    assert "file_processing_internal: {internal: true}" in compose
+    assert "DOCUMENT_OCR_PROVIDER: mock" in compose
+    assert "file-processing-worker" in compose
+    assert "DATABASE_URL: ${FILE_PROCESSING_DATABASE_URL:-${DATABASE_URL}}" in compose
 
 
 def test_file_suite_uses_no_production_credentials_or_cloud_endpoints():

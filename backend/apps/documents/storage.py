@@ -188,9 +188,20 @@ class MockStorageProvider:
     _lock = threading.Lock()
 
     @classmethod
-    def put_for_test(cls, key: str, data: bytes, content_type: str) -> None:
+    def put_for_test(
+        cls,
+        key: str,
+        data: bytes,
+        content_type: str,
+        *,
+        metadata: dict[str, str] | None = None,
+    ) -> None:
         with cls._lock:
-            cls._objects[key] = (data, content_type, {})
+            cls._objects[key] = (
+                data,
+                content_type,
+                {"sha256": hashlib_sha256(data)} if metadata is None else dict(metadata),
+            )
 
     @classmethod
     def clear(cls) -> None:

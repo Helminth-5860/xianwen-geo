@@ -1,9 +1,15 @@
 services:
+  postgres:
+    networks: [default, file_processing_internal]
+
+  redis:
+    networks: [default, file_processing_internal]
   api:
     environment: &file-runtime-environment
       FILE_IDEMPOTENCY_HMAC_KEY: ${FILE_IDEMPOTENCY_HMAC_KEY:?set file idempotency HMAC key}
       FILE_STORAGE_PROVIDER: s3
       FILE_SCANNER_PROVIDER: mock
+      DOCUMENT_OCR_PROVIDER: mock
       FILE_ALLOWED_APP_ORIGINS: http://localhost:3000
       S3_ENDPOINT_URL: http://minio:9000
       S3_REGION: us-east-1
@@ -39,6 +45,7 @@ services:
       interval: 3s
       timeout: 3s
       retries: 20
+    networks: [default, file_processing_internal]
 
   minio-init:
     image: minio/mc:RELEASE.2025-04-16T18-13-26Z
@@ -55,6 +62,7 @@ services:
     depends_on:
       minio:
         condition: service_healthy
+    networks: [default, file_processing_internal]
 
   file-tests:
     profiles: ["file-test"]
@@ -70,6 +78,7 @@ services:
       - tests/test_documents_validation_and_cleanup.py
       - tests/test_documents_postgres.py
       - tests/test_documents_saga_postgres.py
+      - tests/test_document_parsing_postgres.py
       - tests/test_documents_storage_lifecycle_postgres.py
       - --ds=config.settings
       - -q
@@ -92,6 +101,7 @@ services:
       PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY: ${PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY:?set isolated plan-change HMAC key}
       FILE_IDEMPOTENCY_HMAC_KEY: ${FILE_IDEMPOTENCY_HMAC_KEY:?set isolated file HMAC key}
       FILE_STORAGE_PROVIDER: s3
+      DOCUMENT_OCR_PROVIDER: mock
       FILE_SCANNER_PROVIDER: mock
       FILE_ALLOWED_APP_ORIGINS: http://localhost:3000
       S3_ENDPOINT_URL: http://minio:9000
@@ -107,6 +117,51 @@ services:
         condition: service_healthy
       minio-init:
         condition: service_completed_successfully
+      file-processing-worker:
+        condition: service_started
+
+  file-processing-worker:
+    extends:
+      file: docker-compose.yml
+      service: celery
+    command:
+      [
+        "celery",
+        "-A",
+        "config",
+        "worker",
+        "--loglevel=INFO",
+        "--queues=file_processing",
+        "--concurrency=1",
+        "--prefetch-multiplier=1",
+      ]
+    environment:
+      <<: *file-runtime-environment
+      # Pytest creates test_<POSTGRES_DB>. The dedicated worker must use that
+      # same database so the acceptance suite proves real Celery consumption.
+      DATABASE_URL: ${FILE_PROCESSING_DATABASE_URL:-${DATABASE_URL}}
+    user: app
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid,nodev
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 768m
+    cpus: 1.0
+    networks: [file_processing_internal]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
 
 volumes:
   minio_data:
+
+networks:
+  default: {}
+  file_processing_internal: {internal: true}

@@ -231,6 +231,9 @@ class Notification(models.Model):
             "\u4e3b\u4f53\u8d44\u6599\u5ba1\u6838\u62d2\u7edd",
         )
 
+        DOCUMENT_PARSE_SUCCEEDED = "document_parse_succeeded", "??????"
+        DOCUMENT_PARSE_FAILED = "document_parse_failed", "??????"
+
     id: models.UUIDField = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     recipient: models.ForeignKey = models.ForeignKey(
         User,

@@ -486,6 +486,89 @@ paths:
         '403': {$ref: '#/components/responses/CsrfFailed'}
         '404': {$ref: '#/components/responses/ResourceNotFound'}
         '503': {$ref: '#/components/responses/ServiceUnavailable'}
+  /documents/{documentId}/parse:
+    parameters:
+      - name: documentId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    post:
+      tags: [Documents]
+      summary: Queue owner-scoped parsing of a completed clean document version
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/DocumentParseRequest'}
+      responses:
+        '202':
+          description: Parse job accepted; unconfirmed output is not usable by downstream features
+          headers:
+            Cache-Control: {schema: {type: string, const: no-store}}
+            X-Request-ID: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DocumentParseJobEnvelope'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/CsrfFailed'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+        '409': {$ref: '#/components/responses/BusinessConflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+  /documents/{documentId}/parse-result:
+    parameters:
+      - name: documentId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    get:
+      tags: [Documents]
+      summary: Read the owner-scoped parse state and bounded result
+      responses:
+        '200':
+          description: Safe parse projection without object keys, hashes, digests, leases or raw errors
+          headers:
+            Cache-Control: {schema: {type: string, const: no-store}}
+            X-Request-ID: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DocumentParseResultEnvelope'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+  /documents/{documentId}/confirm:
+    parameters:
+      - name: documentId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    post:
+      tags: [Documents]
+      summary: Create an immutable user-confirmed canonical-text version
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/DocumentParseConfirmRequest'}
+      responses:
+        '200':
+          description: Existing identical confirmation replay or newly created confirmation
+          headers:
+            Cache-Control: {schema: {type: string, const: no-store}}
+            X-Request-ID: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DocumentParseConfirmEnvelope'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/CsrfFailed'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+        '409': {$ref: '#/components/responses/BusinessConflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+
   /subjects:
     get:
       tags: [Subjects]
@@ -4386,6 +4469,82 @@ components:
       allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, properties: {data: {type: object, required: [documents], properties: {documents: {type: array, items: {$ref: '#/components/schemas/UserDocument'}}}}}}]
     DocumentDownloadIntentEnvelope:
       allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, properties: {data: {type: object, required: [url, expires_in], properties: {url: {type: string, format: uri, writeOnly: true}, expires_in: {type: integer, minimum: 1}}}}}]
+    DocumentParseRequest:
+      type: object
+      additionalProperties: false
+      required: [document_version_id]
+      properties:
+        document_version_id: {type: string, format: uuid}
+    DocumentParseConfirmRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_parse_state_version, source_parsed_version_id, confirmed_text]
+      properties:
+        expected_parse_state_version: {type: integer, format: int64, minimum: 1}
+        source_parsed_version_id: {type: string, format: uuid}
+        confirmed_text: {type: string}
+    DocumentParseJob:
+      type: object
+      additionalProperties: false
+      required: [id, status, stable_error_code, created_at, updated_at]
+      properties:
+        id: {type: string, format: uuid}
+        status: {type: string, enum: [queued, running, retry_wait, succeeded, failed]}
+        stable_error_code: {type: string}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    DocumentParsedVersionPointer:
+      type: object
+      additionalProperties: false
+      required: [id, version_no]
+      properties:
+        id: {type: string, format: uuid}
+        version_no: {type: integer, minimum: 1}
+    DocumentParseResult:
+      type: object
+      additionalProperties: false
+      required: [status, stable_error_code, state_version, latest_version, current_confirmed_version, canonical_text, tables, warning_codes, confirmed, parser]
+      properties:
+        status: {type: string, enum: [not_started, queued, running, retry_wait, succeeded, failed]}
+        stable_error_code: {type: string}
+        state_version: {type: [integer, 'null'], minimum: 1}
+        latest_version: {oneOf: [{$ref: '#/components/schemas/DocumentParsedVersionPointer'}, {type: 'null'}]}
+        current_confirmed_version: {oneOf: [{$ref: '#/components/schemas/DocumentParsedVersionPointer'}, {type: 'null'}]}
+        canonical_text: {type: string}
+        tables:
+          type: array
+          items:
+            type: array
+            items:
+              type: array
+              items: {type: string}
+        warning_codes: {type: array, items: {type: string}}
+        confirmed: {type: boolean}
+        parser:
+          oneOf:
+            - type: object
+              additionalProperties: false
+              required: [key, version, ocr_engine_version]
+              properties:
+                key: {type: string}
+                version: {type: string}
+                ocr_engine_version: {type: string}
+            - {type: 'null'}
+    DocumentParseConfirmResult:
+      type: object
+      additionalProperties: false
+      required: [parse_state_version, confirmed_version, created]
+      properties:
+        parse_state_version: {type: integer, minimum: 1}
+        confirmed_version: {$ref: '#/components/schemas/DocumentParsedVersionPointer'}
+        created: {type: boolean}
+    DocumentParseJobEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, properties: {data: {$ref: '#/components/schemas/DocumentParseJob'}}}]
+    DocumentParseResultEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, properties: {data: {$ref: '#/components/schemas/DocumentParseResult'}}}]
+    DocumentParseConfirmEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, properties: {data: {$ref: '#/components/schemas/DocumentParseConfirmResult'}}}]
+
     SubjectTypeSummary:
       type: object
       required: [id, key, name, description, icon_key, status, sort_order, is_builtin, schema_version, version]
