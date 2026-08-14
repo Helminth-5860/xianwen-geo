@@ -15,6 +15,7 @@ SMS_VERIFICATION_HMAC_KEY = require_env("SMS_VERIFICATION_HMAC_KEY")
 QUOTA_IDEMPOTENCY_HMAC_KEY = require_env("QUOTA_IDEMPOTENCY_HMAC_KEY")
 PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY = require_env("PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY")
 FILE_IDEMPOTENCY_HMAC_KEY = require_env("FILE_IDEMPOTENCY_HMAC_KEY")
+WEB_IMPORT_IDEMPOTENCY_HMAC_KEY = require_env("WEB_IMPORT_IDEMPOTENCY_HMAC_KEY")
 weak_secret_markers = {
     "changeme",
     "change-me",
@@ -60,6 +61,24 @@ if FILE_IDEMPOTENCY_HMAC_KEY in {
     PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY,
 }:
     raise ImproperlyConfigured("FILE_IDEMPOTENCY_HMAC_KEY must not reuse another secret.")
+if (
+    len(WEB_IMPORT_IDEMPOTENCY_HMAC_KEY) < 50
+    or WEB_IMPORT_IDEMPOTENCY_HMAC_KEY.lower() in weak_secret_markers
+):
+    raise ImproperlyConfigured("WEB_IMPORT_IDEMPOTENCY_HMAC_KEY is too weak for production.")
+if WEB_IMPORT_IDEMPOTENCY_HMAC_KEY in {
+    SECRET_KEY,
+    SMS_VERIFICATION_HMAC_KEY,
+    QUOTA_IDEMPOTENCY_HMAC_KEY,
+    PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY,
+    FILE_IDEMPOTENCY_HMAC_KEY,
+}:
+    raise ImproperlyConfigured("WEB_IMPORT_IDEMPOTENCY_HMAC_KEY must not reuse another secret.")
+WEB_IMPORT_ENABLED = env_bool("WEB_IMPORT_ENABLED", False)
+WEB_IMPORT_NETWORK_POLICY_ENFORCED = env_bool("WEB_IMPORT_NETWORK_POLICY_ENFORCED", False)
+if WEB_IMPORT_ENABLED and not WEB_IMPORT_NETWORK_POLICY_ENFORCED:
+    raise ImproperlyConfigured("Enabled web import requires enforced production network policy.")
+WEB_IMPORT_TEST_ALLOWED_CIDRS = ()
 FILE_STORAGE_PROVIDER = os.getenv("FILE_STORAGE_PROVIDER", "unavailable").strip().lower()
 FILE_SCANNER_PROVIDER = os.getenv("FILE_SCANNER_PROVIDER", "unavailable").strip().lower()
 if FILE_STORAGE_PROVIDER == "mock":
@@ -116,6 +135,10 @@ for forbidden_variable in ("DATABASE_URL", "REDIS_URL"):
     if FILE_IDEMPOTENCY_HMAC_KEY in {configured_url, configured_password}:
         raise ImproperlyConfigured(
             f"FILE_IDEMPOTENCY_HMAC_KEY must not reuse {forbidden_variable} credentials."
+        )
+    if WEB_IMPORT_IDEMPOTENCY_HMAC_KEY in {configured_url, configured_password}:
+        raise ImproperlyConfigured(
+            f"WEB_IMPORT_IDEMPOTENCY_HMAC_KEY must not reuse {forbidden_variable} credentials."
         )
 SMS_PROVIDER = os.getenv("SMS_PROVIDER", "unconfigured").strip().lower()
 if SMS_PROVIDER == "mock":

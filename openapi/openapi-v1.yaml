@@ -569,6 +569,108 @@ paths:
         '409': {$ref: '#/components/responses/BusinessConflict'}
         '422': {$ref: '#/components/responses/ValidationError'}
 
+  /web-sources/import:
+    post:
+      tags: [Web Sources]
+      summary: Queue an owner-scoped public web import through the isolated fetch worker
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: {type: string, minLength: 8, maxLength: 200, writeOnly: true}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/WebSourceImportRequest'}
+      responses:
+        '202':
+          description: Import queued; no network credential, resolved address or query value is exposed
+          headers:
+            Cache-Control: {schema: {type: string, const: no-store}}
+            X-Request-ID: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/WebSourceImportEnvelope'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/CsrfFailed'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+        '409': {$ref: '#/components/responses/BusinessConflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+  /web-sources/{webSourceId}:
+    parameters:
+      - name: webSourceId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    get:
+      tags: [Web Sources]
+      summary: Read an owner-scoped web import and its bounded text projection
+      responses:
+        '200':
+          description: Safe projection without query values, DNS answers, peer addresses, headers or digests
+          headers:
+            Cache-Control: {schema: {type: string, const: no-store}}
+            X-Request-ID: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/WebSourceImportEnvelope'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+  /subjects/{subjectId}/web-sources:
+    parameters:
+      - name: subjectId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    get:
+      tags: [Web Sources]
+      summary: List historical web imports owned by the subject owner
+      responses:
+        '200':
+          description: Owner-scoped web source history
+          headers:
+            Cache-Control: {schema: {type: string, const: no-store}}
+            X-Request-ID: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/WebSourceListEnvelope'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+  /web-sources/{webSourceId}/confirm:
+    parameters:
+      - name: webSourceId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    post:
+      tags: [Web Sources]
+      summary: Create an immutable user-confirmed web text version
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/WebSourceConfirmRequest'}
+      responses:
+        '200':
+          description: Existing identical confirmation replay or newly created confirmation
+          headers:
+            Cache-Control: {schema: {type: string, const: no-store}}
+            X-Request-ID: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/WebSourceConfirmEnvelope'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/CsrfFailed'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+        '409': {$ref: '#/components/responses/BusinessConflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+
   /subjects:
     get:
       tags: [Subjects]
@@ -4544,6 +4646,76 @@ components:
       allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, properties: {data: {$ref: '#/components/schemas/DocumentParseResult'}}}]
     DocumentParseConfirmEnvelope:
       allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, properties: {data: {$ref: '#/components/schemas/DocumentParseConfirmResult'}}}]
+
+    WebSourceImportRequest:
+      type: object
+      additionalProperties: false
+      required: [subject_id, url]
+      properties:
+        subject_id: {type: string, format: uuid}
+        url: {type: string, format: uri, maxLength: 4096, writeOnly: true}
+    WebSourceConfirmRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version, source_parsed_version_id, confirmed_text]
+      properties:
+        expected_version: {type: integer, minimum: 1}
+        source_parsed_version_id: {type: string, format: uuid}
+        confirmed_text: {type: string, maxLength: 500000}
+    WebSourceParsedVersionProjection:
+      type: object
+      additionalProperties: false
+      required: [id, version_no, canonical_text]
+      properties:
+        id: {type: string, format: uuid}
+        version_no: {type: integer, minimum: 1}
+        canonical_text: {type: string, maxLength: 500000}
+    WebSourceImport:
+      type: object
+      additionalProperties: false
+      required: [id, subject_id, display_url, has_query, status, stable_error_code, version, latest_version, current_confirmed_version, created_at, updated_at]
+      properties:
+        id: {type: string, format: uuid}
+        subject_id: {type: string, format: uuid}
+        display_url: {type: string, format: uri, description: Query and fragment are omitted}
+        has_query: {type: boolean}
+        status: {type: string, enum: [queued, fetching, retry_wait, succeeded, failed]}
+        stable_error_code: {type: string}
+        version: {type: integer, minimum: 1}
+        latest_version:
+          oneOf:
+            - {$ref: '#/components/schemas/WebSourceParsedVersionProjection'}
+            - {type: 'null'}
+        current_confirmed_version:
+          oneOf:
+            - type: object
+              additionalProperties: false
+              required: [id, version_no]
+              properties:
+                id: {type: string, format: uuid}
+                version_no: {type: integer, minimum: 1}
+            - {type: 'null'}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    WebSourceConfirmResult:
+      type: object
+      additionalProperties: false
+      required: [version, confirmed_version, created]
+      properties:
+        version: {type: integer, minimum: 1}
+        confirmed_version:
+          type: object
+          required: [id, version_no]
+          properties:
+            id: {type: string, format: uuid}
+            version_no: {type: integer, minimum: 1}
+        created: {type: boolean}
+    WebSourceImportEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, properties: {data: {$ref: '#/components/schemas/WebSourceImport'}}}]
+    WebSourceListEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, properties: {data: {type: object, properties: {results: {type: array, items: {$ref: '#/components/schemas/WebSourceImport'}}}}}}]
+    WebSourceConfirmEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, properties: {data: {$ref: '#/components/schemas/WebSourceConfirmResult'}}}]
 
     SubjectTypeSummary:
       type: object

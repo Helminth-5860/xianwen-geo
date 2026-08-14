@@ -8,7 +8,8 @@ foreach ($name in @(
     "DJANGO_SECRET_KEY",
     "SMS_VERIFICATION_HMAC_KEY",
     "QUOTA_IDEMPOTENCY_HMAC_KEY",
-    "PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY"
+    "PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY",
+    "WEB_IMPORT_IDEMPOTENCY_HMAC_KEY"
 )) {
     if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
         [Environment]::SetEnvironmentVariable(

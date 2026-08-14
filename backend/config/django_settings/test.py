@@ -13,6 +13,12 @@ FILE_IDEMPOTENCY_HMAC_KEY = "test-only-file-idempotency-key-never-use-in-deploym
 FILE_STORAGE_PROVIDER = "mock"
 FILE_SCANNER_PROVIDER = "mock"
 DOCUMENT_OCR_PROVIDER = "mock"
+WEB_IMPORT_IDEMPOTENCY_HMAC_KEY = "test-only-web-import-idempotency-key-never-use-in-deployment"
+WEB_IMPORT_ENABLED = True
+WEB_IMPORT_TEST_ALLOWED_CIDRS = (
+    ip_network("127.0.0.0/8"),
+    ip_network("::1/128"),
+)
 DEBUG = False
 ALLOWED_HOSTS = ["testserver", "localhost", "127.0.0.1"]
 CSRF_TRUSTED_ORIGINS = ["http://testserver"]

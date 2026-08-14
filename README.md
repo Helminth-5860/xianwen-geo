@@ -409,3 +409,24 @@ Machine output and user-confirmed canonical text form an immutable PostgreSQL ve
 tables/warnings remain machine facts, and downstream feature use must re-apply the current
 XW-0204 risk policy. Local/test OCR is a mock only and production fails closed for image OCR.
 See [docs/32-FILE-PARSING-USER-CONFIRMATION.md](docs/32-FILE-PARSING-USER-CONFIRMATION.md).
+
+## XW-0207 public web import and SSRF protection
+
+Public pages are fetched only by the isolated `web_fetch` Celery worker. The API process persists a
+queued Saga but performs no outbound fetch. URL validation, all-answer DNS filtering, fixed-IP
+connections, peer verification, manual redirect validation, TLS hostname verification and strict
+response limits fail closed. The parser is static and does not execute JavaScript or load any
+subresource.
+
+Production keeps `WEB_IMPORT_ENABLED=false` unless deployment explicitly supplies both an independent
+`WEB_IMPORT_IDEMPOTENCY_HMAC_KEY` and `WEB_IMPORT_NETWORK_POLICY_ENFORCED=true`. Production has no
+allow-private switch or mock transport. Environment proxies and caller headers are never used.
+
+The user APIs are owner-scoped, `no-store`, Session/CSRF protected, and expose only a query-free display
+URL. Imported content remains unavailable to internal feature selectors until the owner creates an
+immutable confirmation version. This task creates no storage allocation, quota, billing or AI fact.
+
+Run the real isolated suite with `.\scripts\test-web-import.ps1` on Windows or
+`bash scripts/test-web-import.sh` on Linux/CI. See
+[docs/33-WEB-IMPORT-SSRF-PROTECTION.md](docs/33-WEB-IMPORT-SSRF-PROTECTION.md) for the network and
+evidence boundaries.

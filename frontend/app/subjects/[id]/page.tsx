@@ -20,6 +20,7 @@ import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { SubjectDocuments } from "@/components/subject-documents";
+import { SubjectWebSources } from "@/components/subject-web-sources";
 import { userMessage } from "@/lib/auth-client";
 import type { SubjectDocument } from "@/lib/documents-client";
 import {
@@ -314,6 +315,7 @@ export default function SubjectDetailPage() {
             disabled={subject.status === "archived"}
             onDocumentsChange={setDocuments}
           />
+          <SubjectWebSources subjectId={subject.id} disabled={subject.status === "archived"} />
           <Card style={{ marginTop: 20 }}>
             <Form layout="vertical" onFinish={() => void save()}>
               {subject.form_schema.fields.map((field) => (

@@ -5,6 +5,9 @@ if ([string]::IsNullOrWhiteSpace($env:QUOTA_IDEMPOTENCY_HMAC_KEY)) {
 if ([string]::IsNullOrWhiteSpace($env:PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY)) {
     $env:PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY = ([guid]::NewGuid().ToString("N") + [guid]::NewGuid().ToString("N"))
 }
+if ([string]::IsNullOrWhiteSpace($env:WEB_IMPORT_IDEMPOTENCY_HMAC_KEY)) {
+    $env:WEB_IMPORT_IDEMPOTENCY_HMAC_KEY = ([guid]::NewGuid().ToString("N") + [guid]::NewGuid().ToString("N"))
+}
 
 $defaults = @{
     POSTGRES_DB = "risk_approval_test_db"
