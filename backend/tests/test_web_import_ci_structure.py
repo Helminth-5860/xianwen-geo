@@ -16,10 +16,28 @@ def test_docker_job_runs_isolated_web_import_worker_suite():
         assert "xianwen-web-import-test" in content
         assert "--volumes" in content
         assert "--remove-orphans" in content
+        assert "--abort-on-container-exit" not in content
+        assert "--exit-code-from" not in content
+        assert "web-import-migrate" in content
+        assert "web-import-tests" in content
+        assert content.index("web-import-migrate") < content.rindex("web-import-tests")
+    assert "up -d --wait --wait-timeout 60 postgres redis web-lab" in shell
+    assert "up -d --wait --wait-timeout 60 postgres redis web-lab" in powershell
+    assert "run --rm web-import-migrate" in shell
+    assert "run --rm --no-deps web-import-tests" in shell
+    assert "run --rm web-import-migrate" in powershell
+    assert "run --rm --no-deps web-import-tests" in powershell
+    assert "trap cleanup EXIT" in shell
+    assert "finally {" in powershell
+    assert 'Assert-LastExitCode "Web import migrations failed."' in powershell
+    assert 'Assert-LastExitCode "PostgreSQL/Redis/web_fetch worker tests failed."' in powershell
     assert "internal: true" in compose
     assert "--queues=web_fetch" in compose
     assert "--reuse-db" in compose
     assert "tests/test_web_sources_postgres.py" in compose
+    assert '"-q"' not in compose.split("web-import-tests:", 1)[1]
+    assert 'command: ["python", "/site/server.py"]' in compose
+    assert 'WEB_IMPORT_TOTAL_TIMEOUT_SECONDS: "2"' in compose
 
 
 def test_web_fetch_has_no_production_mock_or_public_proxy_escape():
@@ -34,6 +52,9 @@ def test_web_fetch_has_no_production_mock_or_public_proxy_escape():
     assert "urllib.request" not in transport
     assert "requests" not in transport
     assert "proxy" not in transport.lower()
+    assert "class _DeadlineRawIO" in transport
+    assert "recv_into" in transport
+    assert "_remaining_timeout" in transport
 
 
 def test_all_compose_test_scripts_supply_web_import_hmac_key():

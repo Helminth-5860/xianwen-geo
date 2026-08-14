@@ -2,17 +2,19 @@ import time
 import uuid
 
 import pytest
+from django.conf import settings
 from django.db import DatabaseError, connection, transaction
 from django_redis import get_redis_connection
 
-from apps.web_sources.exceptions import WebSourceUnexpectedError
+from apps.web_sources.exceptions import WebSourceTransientError, WebSourceUnexpectedError
+from apps.web_sources.http_transport import fetch_url
 from apps.web_sources.models import (
     WebSourceEvent,
     WebSourceImport,
     WebSourceParsedVersion,
     WebSourceSnapshot,
 )
-from apps.web_sources.services import confirm_import
+from apps.web_sources.services import confirm_import, execute_import
 from apps.web_sources.tasks import execute_import_task
 from tests.test_web_sources import _facts
 
@@ -161,3 +163,32 @@ def test_guard_catalog_is_installed():
             [list(expected)],
         )
         assert {row[0] for row in cursor.fetchall()} == expected
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/slow-headers",
+        "/slow-fixed",
+        "/slow-chunked",
+        "/slow-redirect/1",
+    ],
+)
+def test_real_slow_lab_enforces_absolute_total_deadline(path):
+    started = time.monotonic()
+    with pytest.raises(WebSourceTransientError):
+        fetch_url(f"http://web-lab{path}")
+    elapsed = time.monotonic() - started
+    assert elapsed < settings.WEB_IMPORT_TOTAL_TIMEOUT_SECONDS + 0.6
+
+
+def test_total_deadline_failure_does_not_finalize_import_facts():
+    _, _, row = _row("http://web-lab/slow-fixed")
+    result = execute_import(import_id=row.pk)
+    row.refresh_from_db()
+    assert result["status"] == "retry_wait"
+    assert row.status == "retry_wait"
+    assert row.stable_error_code == "WEB_SOURCE_FETCH_TEMPORARILY_UNAVAILABLE"
+    assert not WebSourceSnapshot.objects.filter(import_record=row).exists()
+    assert not WebSourceParsedVersion.objects.filter(import_record=row).exists()
+    assert not WebSourceEvent.objects.filter(import_record=row, event_type="succeeded").exists()

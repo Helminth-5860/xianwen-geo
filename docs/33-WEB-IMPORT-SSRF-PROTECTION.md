@@ -56,3 +56,9 @@ Run `scripts/test-web-import.ps1` or `scripts/test-web-import.sh`. The Compose o
 network with a fixed test-only CIDR, a static local HTTP lab, real PostgreSQL and Redis, and a real
 Celery worker consuming only `web_fetch`. It has no route to the public Internet. The script removes
 its isolated containers, network and volume on completion.
+
+## Absolute deadline and CI execution hardening
+
+The fetch transport uses one monotonic absolute deadline for the complete fetch, including all redirects. HTTP response parsing reads through a deadline-aware raw socket adapter that recalculates remaining time before every `recv_into`; each receive uses the smaller of the configured read timeout and the remaining total budget. Connect/TLS setup likewise cannot start once the shared budget is exhausted. Controlled lab tests exercise slow response headers, fixed-length body drip, chunked body drip, and cumulative redirect delay.
+
+The isolated web-import acceptance scripts run long-lived dependencies first, execute migrations as a separate one-shot phase, then run `web-import-tests` as a distinct phase whose exit code gates the job. Cleanup remains unconditional. This prevents a successful migration container exit from stopping the actual web-import test container before pytest runs.

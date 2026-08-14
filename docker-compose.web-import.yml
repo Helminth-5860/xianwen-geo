@@ -7,12 +7,17 @@ services:
   web-lab:
     profiles: [web-import-test]
     image: python:3.12.12-alpine3.21
-    command: ["python", "-m", "http.server", "80", "--directory", "/site"]
+    command: ["python", "/site/server.py"]
     read_only: true
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     volumes:
       - ./backend/tests/web_lab:/site:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s=socket.create_connection(('127.0.0.1',80),1); s.close()"]
+      interval: 1s
+      timeout: 1s
+      retries: 20
     networks: [web_import_test]
 
   web-import-migrate:
@@ -30,6 +35,9 @@ services:
       CELERY_BROKER_URL: ${CELERY_BROKER_URL:?set isolated web import broker URL}
       WEB_IMPORT_IDEMPOTENCY_HMAC_KEY: ${WEB_IMPORT_IDEMPOTENCY_HMAC_KEY:?set independent web import HMAC key}
       RUN_MIGRATIONS: "false"
+      WEB_IMPORT_CONNECT_TIMEOUT_SECONDS: "1"
+      WEB_IMPORT_READ_TIMEOUT_SECONDS: "1"
+      WEB_IMPORT_TOTAL_TIMEOUT_SECONDS: "2"
     networks: [web_import_test]
     depends_on:
       postgres: {condition: service_healthy}
@@ -54,7 +62,8 @@ services:
     cpus: 1.0
     networks: [web_import_test]
     depends_on:
-      web-import-migrate: {condition: service_completed_successfully}
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
       web-lab: {condition: service_started}
 
   web-import-tests:
@@ -64,7 +73,7 @@ services:
       dockerfile: backend/Dockerfile
       target: test
     command:
-      ["python", "-m", "pytest", "tests/test_web_sources_postgres.py", "-q", "-x", "--reuse-db", "-p", "no:cacheprovider"]
+      ["python", "-m", "pytest", "tests/test_web_sources_postgres.py", "-x", "--reuse-db", "-p", "no:cacheprovider"]
     environment: *web-import-env
     networks: [web_import_test]
     depends_on:

@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import hashlib
 import http.client
+import io
 import socket
 import ssl
 import time
 from dataclasses import dataclass
+from typing import cast
 
 from django.conf import settings
 
@@ -31,15 +33,59 @@ class FetchResult:
     peer_ip: str
 
 
-def _connect(target: CanonicalUrl, address: str, deadline: float):
+def _remaining_timeout(deadline: float, configured_timeout: float) -> float:
     remaining = deadline - time.monotonic()
     if remaining <= 0:
         raise WebSourceTransientError
+    return min(configured_timeout, remaining)
+
+
+class _DeadlineRawIO(io.RawIOBase):
+    """Raw socket reader that reapplies the absolute fetch deadline per receive."""
+
+    def __init__(self, sock: socket.socket, deadline: float):
+        super().__init__()
+        self._sock = sock
+        self._deadline = deadline
+
+    def readable(self) -> bool:
+        return True
+
+    def readinto(self, buffer) -> int | None:
+        if self.closed:
+            return 0
+        timeout = _remaining_timeout(self._deadline, settings.WEB_IMPORT_READ_TIMEOUT_SECONDS)
+        self._sock.settimeout(timeout)
+        return self._sock.recv_into(buffer)
+
+
+class _DeadlineSocket:
+    """HTTPResponse socket facade whose file reads share one absolute deadline."""
+
+    def __init__(self, sock: socket.socket, deadline: float):
+        self._sock = sock
+        self._deadline = deadline
+
+    def makefile(self, mode: str, buffering: int | None = None) -> io.RawIOBase | io.BufferedReader:
+        if mode != "rb":
+            raise ValueError("web import transport only supports binary reads")
+        raw = _DeadlineRawIO(self._sock, self._deadline)
+        if buffering is None or buffering == -1:
+            size = io.DEFAULT_BUFFER_SIZE
+        else:
+            size = buffering
+        if size == 0:
+            return raw
+        return io.BufferedReader(raw, buffer_size=size)
+
+
+def _connect(target: CanonicalUrl, address: str, deadline: float):
+    connect_timeout = _remaining_timeout(deadline, settings.WEB_IMPORT_CONNECT_TIMEOUT_SECONDS)
     raw = socket.create_connection(
         (address, target.port),
-        timeout=min(settings.WEB_IMPORT_CONNECT_TIMEOUT_SECONDS, remaining),
+        timeout=connect_timeout,
     )
-    raw.settimeout(min(settings.WEB_IMPORT_READ_TIMEOUT_SECONDS, remaining))
+    raw.settimeout(_remaining_timeout(deadline, settings.WEB_IMPORT_READ_TIMEOUT_SECONDS))
     peer = raw.getpeername()[0]
     if peer != address:
         raw.close()
@@ -50,6 +96,9 @@ def _connect(target: CanonicalUrl, address: str, deadline: float):
         )
         context.minimum_version = ssl.TLSVersion.TLSv1_2
         try:
+            raw.settimeout(
+                _remaining_timeout(deadline, settings.WEB_IMPORT_CONNECT_TIMEOUT_SECONDS)
+            )
             raw = context.wrap_socket(raw, server_hostname=target.host)
         except Exception:
             raw.close()
@@ -64,6 +113,7 @@ def _request_once(target: CanonicalUrl, deadline: float):
     last_error = None
     for address in resolve_and_validate(target.host, target.port):
         sock = None
+        response = None
         try:
             sock = _connect(target, address, deadline)
             host = f"[{target.host}]" if ":" in target.host else target.host
@@ -75,8 +125,11 @@ def _request_once(target: CanonicalUrl, deadline: float):
                 "Accept-Encoding: identity\r\n"
                 "Connection: close\r\n\r\n"
             ).encode("ascii")
+            sock.settimeout(_remaining_timeout(deadline, settings.WEB_IMPORT_READ_TIMEOUT_SECONDS))
             sock.sendall(request)
-            response = http.client.HTTPResponse(sock)
+            response = http.client.HTTPResponse(
+                cast(socket.socket, _DeadlineSocket(sock, deadline))
+            )
             response.begin()
             headers = response.getheaders()
             status_line_size = 16 + len((response.reason or "").encode("latin1"))
@@ -113,10 +166,8 @@ def _request_once(target: CanonicalUrl, deadline: float):
             chunks: list[bytes] = []
             total = 0
             while True:
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
+                if deadline - time.monotonic() <= 0:
                     raise WebSourceTransientError
-                sock.settimeout(min(settings.WEB_IMPORT_READ_TIMEOUT_SECONDS, remaining))
                 chunk = response.read(
                     min(64 * 1024, settings.WEB_IMPORT_MAX_RESPONSE_BYTES + 1 - total)
                 )
@@ -131,9 +182,15 @@ def _request_once(target: CanonicalUrl, deadline: float):
             return response.status, headers, b"".join(chunks), address
         except (WebSourceContentTooLarge, WebSourceContentUnsupported, WebSourceUrlNotAllowed):
             raise
+        except WebSourceTransientError:
+            raise
         except (OSError, ssl.SSLError, http.client.HTTPException) as exc:
             last_error = exc
         finally:
+            if response is not None:
+                close_response = getattr(response, "close", None)
+                if callable(close_response):
+                    close_response()
             if sock is not None:
                 sock.close()
     raise WebSourceTransientError from last_error
@@ -145,6 +202,8 @@ def fetch_url(raw_url: str) -> FetchResult:
     deadline = time.monotonic() + settings.WEB_IMPORT_TOTAL_TIMEOUT_SECONDS
     redirect_count = 0
     while True:
+        if deadline - time.monotonic() <= 0:
+            raise WebSourceTransientError
         status, headers, body, peer = _request_once(current, deadline)
         header_map: dict[str, list[str]] = {}
         for name, value in headers:
