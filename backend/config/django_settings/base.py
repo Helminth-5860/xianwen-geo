@@ -245,6 +245,55 @@ WEB_IMPORT_RATE_LIMIT_SUBJECT = positive_env_int("WEB_IMPORT_RATE_LIMIT_SUBJECT"
 WEB_IMPORT_RATE_LIMIT_HOST = positive_env_int("WEB_IMPORT_RATE_LIMIT_HOST", 20)
 WEB_IMPORT_USER_AGENT = os.getenv("WEB_IMPORT_USER_AGENT", "XianwenWebImporter/1.0").strip()
 WEB_IMPORT_TEST_ALLOWED_CIDRS: tuple = ()
+SUBJECT_ENRICHMENT_PROVIDER = (
+    os.getenv("SUBJECT_ENRICHMENT_PROVIDER", "unavailable").strip().lower()
+)
+SUBJECT_ENRICHMENT_IDEMPOTENCY_HMAC_KEY = os.getenv(
+    "SUBJECT_ENRICHMENT_IDEMPOTENCY_HMAC_KEY",
+    "local-test-subject-enrichment-idempotency-key-not-for-production",
+).strip()
+if len(SUBJECT_ENRICHMENT_IDEMPOTENCY_HMAC_KEY) < 32:
+    raise ImproperlyConfigured(
+        "SUBJECT_ENRICHMENT_IDEMPOTENCY_HMAC_KEY is too weak; minimum length is 32."
+    )
+SUBJECT_ENRICHMENT_MAX_SOURCES = positive_env_int("SUBJECT_ENRICHMENT_MAX_SOURCES", 8)
+SUBJECT_ENRICHMENT_MAX_SOURCE_CHARACTERS = positive_env_int(
+    "SUBJECT_ENRICHMENT_MAX_SOURCE_CHARACTERS", 20_000
+)
+SUBJECT_ENRICHMENT_MAX_TOTAL_SOURCE_CHARACTERS = positive_env_int(
+    "SUBJECT_ENRICHMENT_MAX_TOTAL_SOURCE_CHARACTERS", 80_000
+)
+SUBJECT_ENRICHMENT_MAX_TARGET_FIELDS = positive_env_int("SUBJECT_ENRICHMENT_MAX_TARGET_FIELDS", 20)
+SUBJECT_ENRICHMENT_PROVIDER_TIMEOUT_SECONDS = positive_env_int(
+    "SUBJECT_ENRICHMENT_PROVIDER_TIMEOUT_SECONDS", 30
+)
+SUBJECT_ENRICHMENT_MAX_PROVIDER_ATTEMPTS = positive_env_int(
+    "SUBJECT_ENRICHMENT_MAX_PROVIDER_ATTEMPTS", 3
+)
+if SUBJECT_ENRICHMENT_MAX_PROVIDER_ATTEMPTS > 10:
+    raise ImproperlyConfigured("SUBJECT_ENRICHMENT_MAX_PROVIDER_ATTEMPTS must not exceed 10.")
+SUBJECT_ENRICHMENT_RETRY_BASE_SECONDS = positive_env_int(
+    "SUBJECT_ENRICHMENT_RETRY_BASE_SECONDS", 30
+)
+SUBJECT_ENRICHMENT_RUNNING_STALE_SECONDS = positive_env_int(
+    "SUBJECT_ENRICHMENT_RUNNING_STALE_SECONDS", 120
+)
+SUBJECT_ENRICHMENT_INTERNAL_MAX_RETRIES = positive_env_int(
+    "SUBJECT_ENRICHMENT_INTERNAL_MAX_RETRIES", 3
+)
+if SUBJECT_ENRICHMENT_INTERNAL_MAX_RETRIES > 10:
+    raise ImproperlyConfigured("SUBJECT_ENRICHMENT_INTERNAL_MAX_RETRIES must not exceed 10.")
+SUBJECT_ENRICHMENT_RATE_LIMIT_WINDOW_SECONDS = positive_env_int(
+    "SUBJECT_ENRICHMENT_RATE_LIMIT_WINDOW_SECONDS", 3600
+)
+SUBJECT_ENRICHMENT_RATE_LIMIT_USER = positive_env_int("SUBJECT_ENRICHMENT_RATE_LIMIT_USER", 30)
+SUBJECT_ENRICHMENT_RATE_LIMIT_IP = positive_env_int("SUBJECT_ENRICHMENT_RATE_LIMIT_IP", 60)
+SUBJECT_ENRICHMENT_RATE_LIMIT_SUBJECT = positive_env_int(
+    "SUBJECT_ENRICHMENT_RATE_LIMIT_SUBJECT", 30
+)
+SUBJECT_ENRICHMENT_MOCK_SCENARIO = (
+    os.getenv("SUBJECT_ENRICHMENT_MOCK_SCENARIO", "success").strip().lower()
+)
 S3_ACCESS_KEY = os.getenv("S3_ACCESS_KEY", "xianwen-local").strip()
 S3_SECRET_KEY = os.getenv("S3_SECRET_KEY", "xianwen-local-secret").strip()
 SMS_VERIFICATION_HMAC_KEY = os.getenv(
@@ -309,6 +358,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "documents.scan_parse_retries",
         "schedule": timedelta(seconds=60),
     },
+    "dispatch-subject-enrichment-jobs": {
+        "task": "subjects.dispatch_enrichment_jobs",
+        "schedule": timedelta(seconds=60),
+    },
     "dispatch-queued-web-imports": {
         "task": "web_sources.dispatch_queued_imports",
         "schedule": timedelta(seconds=60),
@@ -319,6 +372,7 @@ CELERY_BEAT_SCHEDULE = {
     },
 }
 CELERY_TASK_ROUTES = {
+    "subjects.execute_enrichment": {"queue": "ai_content"},
     "documents.execute_parse_job": {"queue": "file_processing"},
     "web_sources.execute_import": {"queue": "web_fetch"},
 }

@@ -1,5 +1,11 @@
 from django.urls import path
 
+from .enrichment_views import (
+    SubjectEnrichmentConfirmView,
+    SubjectEnrichmentCreateView,
+    SubjectEnrichmentDetailView,
+    SubjectEnrichmentSourcesView,
+)
 from .risk_views import (
     AdminRiskCatalogPublishView,
     AdminRiskCatalogView,
@@ -45,6 +51,26 @@ urlpatterns = [
         "subjects/<uuid:subject_id>",
         SubjectDetailView.as_view(),
         name="subject-detail",
+    ),
+    path(
+        "subjects/<uuid:subject_id>/ai-enrichment/sources",
+        SubjectEnrichmentSourcesView.as_view(),
+        name="subject-enrichment-sources",
+    ),
+    path(
+        "subjects/<uuid:subject_id>/ai-enrichment",
+        SubjectEnrichmentCreateView.as_view(),
+        name="subject-enrichment-create",
+    ),
+    path(
+        "subjects/<uuid:subject_id>/ai-enrichment/<uuid:job_id>",
+        SubjectEnrichmentDetailView.as_view(),
+        name="subject-enrichment-detail",
+    ),
+    path(
+        "subjects/<uuid:subject_id>/ai-enrichment/<uuid:job_id>/confirm",
+        SubjectEnrichmentConfirmView.as_view(),
+        name="subject-enrichment-confirm",
     ),
     path(
         "subjects/<uuid:subject_id>/draft",
