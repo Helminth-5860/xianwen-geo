@@ -121,3 +121,5 @@ jobs:
         run: bash scripts/test-files.sh
       - name: Run isolated PostgreSQL/Redis web_fetch SSRF tests
         run: bash scripts/test-web-import.sh
+      - name: Run PostgreSQL/Redis subject enrichment Mock flow tests
+        run: bash scripts/test-subject-enrichment.sh

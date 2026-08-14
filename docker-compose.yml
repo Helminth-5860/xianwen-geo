@@ -52,6 +52,8 @@ services:
       WEB_IMPORT_ENABLED: ${WEB_IMPORT_ENABLED:-true}
       WEB_IMPORT_NETWORK_POLICY_ENFORCED: ${WEB_IMPORT_NETWORK_POLICY_ENFORCED:-true}
       WEB_IMPORT_IDEMPOTENCY_HMAC_KEY: ${WEB_IMPORT_IDEMPOTENCY_HMAC_KEY:?set an independent web import HMAC key}
+      SUBJECT_ENRICHMENT_PROVIDER: ${SUBJECT_ENRICHMENT_PROVIDER:-mock}
+      SUBJECT_ENRICHMENT_IDEMPOTENCY_HMAC_KEY: ${SUBJECT_ENRICHMENT_IDEMPOTENCY_HMAC_KEY:-local-test-subject-enrichment-idempotency-key-not-for-production}
       SMS_CODE_TTL_SECONDS: ${SMS_CODE_TTL_SECONDS:-300}
       SMS_RESEND_COOLDOWN_SECONDS: ${SMS_RESEND_COOLDOWN_SECONDS:-60}
       SMS_MAX_ATTEMPTS: ${SMS_MAX_ATTEMPTS:-5}
@@ -99,7 +101,7 @@ services:
         "config",
         "worker",
         "--loglevel=INFO",
-        "--queues=system_tasks",
+        "--queues=system_tasks,ai_content",
         "--concurrency=2",
       ]
     environment:
@@ -121,6 +123,8 @@ services:
       WEB_IMPORT_ENABLED: ${WEB_IMPORT_ENABLED:-true}
       WEB_IMPORT_NETWORK_POLICY_ENFORCED: ${WEB_IMPORT_NETWORK_POLICY_ENFORCED:-true}
       WEB_IMPORT_IDEMPOTENCY_HMAC_KEY: ${WEB_IMPORT_IDEMPOTENCY_HMAC_KEY:?set an independent web import HMAC key}
+      SUBJECT_ENRICHMENT_PROVIDER: ${SUBJECT_ENRICHMENT_PROVIDER:-mock}
+      SUBJECT_ENRICHMENT_IDEMPOTENCY_HMAC_KEY: ${SUBJECT_ENRICHMENT_IDEMPOTENCY_HMAC_KEY:-local-test-subject-enrichment-idempotency-key-not-for-production}
       SMS_CODE_TTL_SECONDS: ${SMS_CODE_TTL_SECONDS:-300}
       SMS_RESEND_COOLDOWN_SECONDS: ${SMS_RESEND_COOLDOWN_SECONDS:-60}
       SMS_MAX_ATTEMPTS: ${SMS_MAX_ATTEMPTS:-5}

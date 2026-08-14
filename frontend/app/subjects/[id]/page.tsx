@@ -19,6 +19,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { SubjectAiEnrichment } from "@/components/subject-ai-enrichment";
 import { SubjectDocuments } from "@/components/subject-documents";
 import { SubjectWebSources } from "@/components/subject-web-sources";
 import { userMessage } from "@/lib/auth-client";
@@ -316,6 +317,16 @@ export default function SubjectDetailPage() {
             onDocumentsChange={setDocuments}
           />
           <SubjectWebSources subjectId={subject.id} disabled={subject.status === "archived"} />
+          <SubjectAiEnrichment
+            subject={subject}
+            localValues={values}
+            disabled={subject.status === "archived"}
+            onApplied={(updated) => {
+              setSubject(updated);
+              setValues(updated.draft_values);
+              setProductConfirmations(defaultProductConfirmations(updated));
+            }}
+          />
           <Card style={{ marginTop: 20 }}>
             <Form layout="vertical" onFinish={() => void save()}>
               {subject.form_schema.fields.map((field) => (

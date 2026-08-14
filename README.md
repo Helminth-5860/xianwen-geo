@@ -430,3 +430,5 @@ Run the real isolated suite with `.\scripts\test-web-import.ps1` on Windows or
 `bash scripts/test-web-import.sh` on Linux/CI. See
 [docs/33-WEB-IMPORT-SSRF-PROTECTION.md](docs/33-WEB-IMPORT-SSRF-PROTECTION.md) for the network and
 evidence boundaries.
+
+- [XW-0208 主体 AI 补充 Mock 和流程](docs/34-SUBJECT-AI-ENRICHMENT-MOCK-FLOW.md)

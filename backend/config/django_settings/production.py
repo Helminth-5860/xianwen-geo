@@ -16,6 +16,7 @@ QUOTA_IDEMPOTENCY_HMAC_KEY = require_env("QUOTA_IDEMPOTENCY_HMAC_KEY")
 PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY = require_env("PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY")
 FILE_IDEMPOTENCY_HMAC_KEY = require_env("FILE_IDEMPOTENCY_HMAC_KEY")
 WEB_IMPORT_IDEMPOTENCY_HMAC_KEY = require_env("WEB_IMPORT_IDEMPOTENCY_HMAC_KEY")
+SUBJECT_ENRICHMENT_IDEMPOTENCY_HMAC_KEY = require_env("SUBJECT_ENRICHMENT_IDEMPOTENCY_HMAC_KEY")
 weak_secret_markers = {
     "changeme",
     "change-me",
@@ -74,6 +75,28 @@ if WEB_IMPORT_IDEMPOTENCY_HMAC_KEY in {
     FILE_IDEMPOTENCY_HMAC_KEY,
 }:
     raise ImproperlyConfigured("WEB_IMPORT_IDEMPOTENCY_HMAC_KEY must not reuse another secret.")
+
+if SUBJECT_ENRICHMENT_PROVIDER == "mock":
+    raise ImproperlyConfigured("Mock subject enrichment provider is forbidden in production.")
+if SUBJECT_ENRICHMENT_PROVIDER != "unavailable":
+    raise ImproperlyConfigured(
+        "Only unavailable subject enrichment provider is supported in production."
+    )
+if len(SUBJECT_ENRICHMENT_IDEMPOTENCY_HMAC_KEY) < 50:
+    raise ImproperlyConfigured(
+        "SUBJECT_ENRICHMENT_IDEMPOTENCY_HMAC_KEY is too weak for production."
+    )
+for reused in (
+    SECRET_KEY,
+    SMS_VERIFICATION_HMAC_KEY,
+    QUOTA_IDEMPOTENCY_HMAC_KEY,
+    PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY,
+    FILE_IDEMPOTENCY_HMAC_KEY,
+    WEB_IMPORT_IDEMPOTENCY_HMAC_KEY,
+):
+    if SUBJECT_ENRICHMENT_IDEMPOTENCY_HMAC_KEY == reused:
+        raise ImproperlyConfigured("SUBJECT_ENRICHMENT_IDEMPOTENCY_HMAC_KEY must be independent.")
+
 WEB_IMPORT_ENABLED = env_bool("WEB_IMPORT_ENABLED", False)
 WEB_IMPORT_NETWORK_POLICY_ENFORCED = env_bool("WEB_IMPORT_NETWORK_POLICY_ENFORCED", False)
 if WEB_IMPORT_ENABLED and not WEB_IMPORT_NETWORK_POLICY_ENFORCED:
@@ -139,6 +162,11 @@ for forbidden_variable in ("DATABASE_URL", "REDIS_URL"):
     if WEB_IMPORT_IDEMPOTENCY_HMAC_KEY in {configured_url, configured_password}:
         raise ImproperlyConfigured(
             f"WEB_IMPORT_IDEMPOTENCY_HMAC_KEY must not reuse {forbidden_variable} credentials."
+        )
+    if SUBJECT_ENRICHMENT_IDEMPOTENCY_HMAC_KEY in {configured_url, configured_password}:
+        raise ImproperlyConfigured(
+            "SUBJECT_ENRICHMENT_IDEMPOTENCY_HMAC_KEY must not reuse "
+            f"{forbidden_variable} credentials."
         )
 SMS_PROVIDER = os.getenv("SMS_PROVIDER", "unconfigured").strip().lower()
 if SMS_PROVIDER == "mock":

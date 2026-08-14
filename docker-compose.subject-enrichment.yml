@@ -1,0 +1,55 @@
+services:
+  subject-enrichment-migrate:
+    profiles: [subject-enrichment-test]
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: test
+    command: ["python", "manage.py", "migrate", "--noinput"]
+    environment: &subject-enrichment-env
+      DJANGO_SETTINGS_MODULE: config.django_settings.subject_enrichment_test
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?set isolated subject enrichment secret}
+      DATABASE_URL: ${DATABASE_URL:?set isolated subject enrichment database URL}
+      REDIS_URL: ${REDIS_URL:?set isolated subject enrichment Redis URL}
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:?set isolated subject enrichment broker URL}
+      SMS_VERIFICATION_HMAC_KEY: ${SMS_VERIFICATION_HMAC_KEY:?set independent SMS HMAC key}
+      QUOTA_IDEMPOTENCY_HMAC_KEY: ${QUOTA_IDEMPOTENCY_HMAC_KEY:?set independent quota HMAC key}
+      PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY: ${PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY:?set independent plan change HMAC key}
+      FILE_IDEMPOTENCY_HMAC_KEY: ${FILE_IDEMPOTENCY_HMAC_KEY:?set independent file HMAC key}
+      WEB_IMPORT_IDEMPOTENCY_HMAC_KEY: ${WEB_IMPORT_IDEMPOTENCY_HMAC_KEY:?set independent web import HMAC key}
+      SUBJECT_ENRICHMENT_IDEMPOTENCY_HMAC_KEY: ${SUBJECT_ENRICHMENT_IDEMPOTENCY_HMAC_KEY:?set independent subject enrichment HMAC key}
+      RUN_MIGRATIONS: "false"
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+
+  subject-enrichment-worker:
+    profiles: [subject-enrichment-test]
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: test
+    command: ["celery", "-A", "config", "worker", "--loglevel=INFO", "--queues=ai_content", "--concurrency=1", "--prefetch-multiplier=1"]
+    environment: *subject-enrichment-env
+    privileged: false
+    read_only: true
+    tmpfs: ["/tmp:rw,noexec,nosuid,nodev,size=64m"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 128
+    mem_limit: 512m
+    cpus: 1.0
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+
+  subject-enrichment-tests:
+    profiles: [subject-enrichment-test]
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: test
+    command: ["python", "-m", "pytest", "tests/test_subject_enrichment_postgres.py", "-x", "--reuse-db", "-p", "no:cacheprovider"]
+    environment: *subject-enrichment-env
+    depends_on:
+      subject-enrichment-worker: {condition: service_started}

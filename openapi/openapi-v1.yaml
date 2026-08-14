@@ -671,6 +671,118 @@ paths:
         '409': {$ref: '#/components/responses/BusinessConflict'}
         '422': {$ref: '#/components/responses/ValidationError'}
 
+  /subjects/{subjectId}/ai-enrichment/sources:
+    parameters:
+      - name: subjectId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    get:
+      tags: [Subjects]
+      summary: List owner-scoped confirmed sources and AI enrichment targets
+      responses:
+        '200':
+          description: Confirmed sources, target fields and latest unapplied enrichment job
+          headers:
+            Cache-Control: {schema: {type: string, const: no-store}}
+            X-Request-ID: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SubjectEnrichmentSourcesEnvelope'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+  /subjects/{subjectId}/ai-enrichment:
+    parameters:
+      - name: subjectId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    post:
+      tags: [Subjects]
+      summary: Queue subject AI enrichment from explicitly selected confirmed sources
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SubjectEnrichmentCreateRequest'}
+      responses:
+        '202':
+          description: Durable enrichment job queued or idempotently replayed
+          headers:
+            Cache-Control: {schema: {type: string, const: no-store}}
+            X-Request-ID: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SubjectEnrichmentJobEnvelope'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/CsrfFailed'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+        '409': {$ref: '#/components/responses/BusinessConflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+  /subjects/{subjectId}/ai-enrichment/{jobId}:
+    parameters:
+      - name: subjectId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+      - name: jobId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    get:
+      tags: [Subjects]
+      summary: Read an owner-scoped subject enrichment job
+      responses:
+        '200':
+          description: Safe job projection without prompts, input text, digests or provider raw response
+          headers:
+            Cache-Control: {schema: {type: string, const: no-store}}
+            X-Request-ID: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SubjectEnrichmentJobEnvelope'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+  /subjects/{subjectId}/ai-enrichment/{jobId}/confirm:
+    parameters:
+      - name: subjectId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+      - name: jobId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    post:
+      tags: [Subjects]
+      summary: Atomically apply accepted immutable suggestions to the editable subject draft
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SubjectEnrichmentConfirmRequest'}
+      responses:
+        '200':
+          description: Confirmation replay or newly applied batch
+          headers:
+            Cache-Control: {schema: {type: string, const: no-store}}
+            X-Request-ID: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SubjectEnrichmentConfirmEnvelope'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/CsrfFailed'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+        '409': {$ref: '#/components/responses/BusinessConflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+
   /subjects:
     get:
       tags: [Subjects]
@@ -2774,6 +2886,16 @@ components:
         - SUBJECT_SEMANTICS_INVALID
         - SUBJECT_PRODUCT_CONFIRMATION_INVALID
         - SUBJECT_VERSION_NO_CHANGES
+        - SUBJECT_ENRICHMENT_IDEMPOTENCY_KEY_REQUIRED
+        - SUBJECT_ENRICHMENT_STATE_CONFLICT
+        - SUBJECT_ENRICHMENT_VERSION_CONFLICT
+        - SUBJECT_ENRICHMENT_SOURCE_INVALID
+        - SUBJECT_ENRICHMENT_TARGET_INVALID
+        - SUBJECT_ENRICHMENT_INPUT_TOO_LARGE
+        - SUBJECT_ENRICHMENT_INVALID_RESPONSE
+        - SUBJECT_ENRICHMENT_PROVIDER_UNAVAILABLE
+        - SUBJECT_ENRICHMENT_TEMPORARILY_UNAVAILABLE
+        - SUBJECT_ENRICHMENT_INTERNAL_ERROR
         - SUBJECT_RISK_CONFIG_INTEGRITY_ERROR
         - SUBJECT_RISK_CATALOG_VERSION_CONFLICT
         - SUBJECT_RISK_TYPE_VERSION_CONFLICT
@@ -4812,3 +4934,95 @@ components:
       allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/SubjectFieldConfig'}}}]
     SubjectFieldOptionEnvelope:
       allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/SubjectFieldOption'}}}]
+
+    SubjectEnrichmentSourceRef:
+      type: object
+      additionalProperties: false
+      required: [source_type, parsed_version_id]
+      properties:
+        source_type: {type: string, enum: [document, web]}
+        parsed_version_id: {type: string, format: uuid}
+    SubjectEnrichmentCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_subject_version, sources, target_field_keys]
+      properties:
+        expected_subject_version: {type: integer, minimum: 1}
+        sources: {type: array, minItems: 1, maxItems: 8, uniqueItems: true, items: {$ref: '#/components/schemas/SubjectEnrichmentSourceRef'}}
+        target_field_keys: {type: array, minItems: 1, maxItems: 20, uniqueItems: true, items: {type: string, maxLength: 64}}
+    SubjectEnrichmentDecision:
+      type: object
+      additionalProperties: false
+      required: [suggestion_id, accepted]
+      properties:
+        suggestion_id: {type: string, format: uuid}
+        accepted: {type: boolean}
+    SubjectEnrichmentConfirmRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_subject_version, expected_job_version, decisions]
+      properties:
+        expected_subject_version: {type: integer, minimum: 1}
+        expected_job_version: {type: integer, minimum: 1}
+        decisions: {type: array, minItems: 1, maxItems: 20, uniqueItems: true, items: {$ref: '#/components/schemas/SubjectEnrichmentDecision'}}
+    SubjectEnrichmentSourceProjection:
+      type: object
+      additionalProperties: false
+      required: [source_type, parsed_version_id, label, version_no, character_count]
+      properties:
+        source_type: {type: string, enum: [document, web]}
+        parsed_version_id: {type: string, format: uuid}
+        label: {type: string}
+        version_no: {type: integer, minimum: 1}
+        character_count: {type: integer, minimum: 0}
+    SubjectEnrichmentTargetProjection:
+      type: object
+      additionalProperties: false
+      required: [field_key, label, field_type, current_value]
+      properties:
+        field_key: {type: string}
+        label: {type: string}
+        field_type: {type: string}
+        current_value: {}
+    SubjectEnrichmentSuggestionProjection:
+      type: object
+      additionalProperties: false
+      required: [id, field_key, suggested_value, confidence, conflict, conflict_code, sources]
+      properties:
+        id: {type: string, format: uuid}
+        field_key: {type: string}
+        suggested_value: {}
+        confidence: {type: string, enum: [high, medium, low]}
+        conflict: {type: boolean}
+        conflict_code: {type: string}
+        sources: {type: array, items: {type: object, additionalProperties: false, required: [source_id, source_type], properties: {source_id: {type: string, format: uuid}, source_type: {type: string, enum: [document, web]}}}}
+    SubjectEnrichmentJob:
+      type: object
+      additionalProperties: false
+      required: [id, subject_id, status, version, stable_error_code, provider_key, model_key, suggestions, applied, created_at, updated_at]
+      properties:
+        id: {type: string, format: uuid}
+        subject_id: {type: string, format: uuid}
+        status: {type: string, enum: [queued, running, retry_wait, succeeded, failed]}
+        version: {type: integer, minimum: 1}
+        stable_error_code: {type: string}
+        provider_key: {type: string, enum: [mock, unavailable]}
+        model_key: {type: string}
+        suggestions: {type: array, maxItems: 20, items: {$ref: '#/components/schemas/SubjectEnrichmentSuggestionProjection'}}
+        applied: {type: boolean}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    SubjectEnrichmentSources:
+      type: object
+      additionalProperties: false
+      required: [sources, target_fields, latest_job]
+      properties:
+        sources: {type: array, items: {$ref: '#/components/schemas/SubjectEnrichmentSourceProjection'}}
+        target_fields: {type: array, maxItems: 20, items: {$ref: '#/components/schemas/SubjectEnrichmentTargetProjection'}}
+        latest_job: {oneOf: [{$ref: '#/components/schemas/SubjectEnrichmentJob'}, {type: 'null'}]}
+    SubjectEnrichmentSourcesEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/SubjectEnrichmentSources'}}}]
+    SubjectEnrichmentJobEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/SubjectEnrichmentJob'}}}]
+    SubjectEnrichmentConfirmEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: object, additionalProperties: false, required: [created, confirmation_id, subject], properties: {created: {type: boolean}, confirmation_id: {type: string, format: uuid}, subject: {$ref: '#/components/schemas/SubjectDetail'}}}}}]

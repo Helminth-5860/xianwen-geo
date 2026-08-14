@@ -857,3 +857,394 @@ class SubjectReviewEvent(models.Model):  # noqa: DJ008
 
     class Meta:
         db_table = "subject_review_events"
+
+
+class SubjectEnrichmentJobQuerySet(models.QuerySet):
+    def delete(self):
+        raise TypeError("Subject enrichment jobs cannot be deleted.")
+
+
+class SubjectEnrichmentImmutableQuerySet(SubjectEnrichmentJobQuerySet):
+    def update(self, **kwargs):
+        raise TypeError("Subject enrichment evidence is append-only.")
+
+
+class SubjectEnrichmentJob(models.Model):  # noqa: DJ008
+    class Status(models.TextChoices):
+        QUEUED = "queued", "Queued"
+        RUNNING = "running", "Running"
+        RETRY_WAIT = "retry_wait", "Retry wait"
+        SUCCEEDED = "succeeded", "Succeeded"
+        FAILED = "failed", "Failed"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="subject_enrichment_jobs",
+    )
+    subject = models.ForeignKey(
+        Subject,
+        on_delete=models.PROTECT,
+        related_name="enrichment_jobs",
+    )
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.QUEUED)
+    version = models.PositiveBigIntegerField(default=1)
+    subject_object_version_at_create = models.PositiveBigIntegerField()
+    current_formal_subject_version_id_at_create = models.UUIDField(null=True, blank=True)
+    schema_digest = models.CharField(max_length=64)
+    schema_snapshot_format_version = models.PositiveSmallIntegerField(default=1)
+    target_manifest = models.JSONField(default=list)
+    input_subject_values = models.JSONField(default=dict)
+    provider_key = models.CharField(max_length=32)
+    model_key = models.CharField(max_length=64)
+    adapter_version = models.CharField(max_length=32)
+    prompt_version = models.CharField(max_length=32)
+    input_digest = models.CharField(max_length=64)
+    output_digest = models.CharField(max_length=64, blank=True)
+    idempotency_key_version = models.PositiveSmallIntegerField(default=1)
+    idempotency_key_digest = models.CharField(max_length=64, unique=True)
+    request_digest = models.CharField(max_length=64)
+    generation = models.UUIDField(null=True, blank=True)
+    attempts = models.PositiveIntegerField(default=0)
+    retry_count = models.PositiveIntegerField(default=0)
+    next_attempt_at = models.DateTimeField(null=True, blank=True)
+    stable_error_code = models.CharField(max_length=64, blank=True)
+    provider_metrics = models.JSONField(default=dict)
+    request_id = models.UUIDField(null=True, blank=True)
+    correlation_id = models.UUIDField(null=True, blank=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    objects = SubjectEnrichmentJobQuerySet.as_manager()
+
+    class Meta:
+        db_table = "subject_enrichment_jobs"
+        ordering = ("-created_at", "-id")
+        indexes = [
+            models.Index(fields=("subject", "status", "created_at"), name="subj_enrich_status_idx"),
+            models.Index(fields=("status", "next_attempt_at"), name="subj_enrich_retry_idx"),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=("subject",),
+                condition=models.Q(status__in=("queued", "running", "retry_wait")),
+                name="subject_enrichment_one_open",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(
+                    status__in=("queued", "running", "retry_wait", "succeeded", "failed")
+                ),
+                name="subject_enrichment_valid_status",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(version__gte=1), name="subject_enrichment_version_gte_1"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(subject_object_version_at_create__gte=1),
+                name="subject_enrichment_subject_ver_gte_1",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(attempts__gte=0) & models.Q(retry_count__gte=0),
+                name="subject_enrichment_retry_counts",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(
+                        status="queued",
+                        generation__isnull=True,
+                        started_at__isnull=True,
+                        finished_at__isnull=True,
+                    )
+                    | models.Q(
+                        status="running",
+                        generation__isnull=False,
+                        started_at__isnull=False,
+                        finished_at__isnull=True,
+                    )
+                    | models.Q(
+                        status="retry_wait",
+                        generation__isnull=False,
+                        next_attempt_at__isnull=False,
+                        finished_at__isnull=True,
+                    )
+                    | models.Q(
+                        status__in=("succeeded", "failed"),
+                        generation__isnull=False,
+                        finished_at__isnull=False,
+                    )
+                ),
+                name="subject_enrichment_status_fields",
+            ),
+        ]
+
+    def delete(self, *args, **kwargs):
+        raise TypeError("Subject enrichment jobs cannot be deleted.")
+
+
+class SubjectEnrichmentSource(models.Model):  # noqa: DJ008
+    class SourceType(models.TextChoices):
+        DOCUMENT = "document", "Document"
+        WEB = "web", "Web"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    job = models.ForeignKey(SubjectEnrichmentJob, on_delete=models.PROTECT, related_name="sources")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    subject = models.ForeignKey(Subject, on_delete=models.PROTECT)
+    source_type = models.CharField(max_length=16, choices=SourceType.choices)
+    document_parsed_version = models.ForeignKey(
+        "documents.DocumentParsedVersion",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="subject_enrichment_sources",
+    )
+    web_parsed_version = models.ForeignKey(
+        "web_sources.WebSourceParsedVersion",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="subject_enrichment_sources",
+    )
+    content_digest = models.CharField(max_length=64)
+    input_characters = models.PositiveIntegerField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = SubjectEnrichmentImmutableQuerySet.as_manager()
+
+    class Meta:
+        db_table = "subject_enrichment_sources"
+        ordering = ("job_id", "source_type", "id")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("job", "document_parsed_version"),
+                condition=models.Q(source_type="document"),
+                name="subj_enrich_doc_source_unique",
+            ),
+            models.UniqueConstraint(
+                fields=("job", "web_parsed_version"),
+                condition=models.Q(source_type="web"),
+                name="subj_enrich_web_source_unique",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(
+                        source_type="document",
+                        document_parsed_version__isnull=False,
+                        web_parsed_version__isnull=True,
+                    )
+                    | models.Q(
+                        source_type="web",
+                        document_parsed_version__isnull=True,
+                        web_parsed_version__isnull=False,
+                    )
+                ),
+                name="subject_enrichment_source_binding",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(input_characters__gte=1), name="subject_enrichment_source_chars"
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise TypeError("Subject enrichment sources are immutable.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise TypeError("Subject enrichment sources are immutable.")
+
+
+class SubjectEnrichmentSuggestion(models.Model):  # noqa: DJ008
+    class Confidence(models.TextChoices):
+        HIGH = "high", "High"
+        MEDIUM = "medium", "Medium"
+        LOW = "low", "Low"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    job = models.ForeignKey(
+        SubjectEnrichmentJob, on_delete=models.PROTECT, related_name="suggestions"
+    )
+    field_key = models.CharField(max_length=64)
+    suggested_value = models.JSONField(null=True, blank=True)
+    value_digest = models.CharField(max_length=64)
+    confidence = models.CharField(max_length=16, choices=Confidence.choices)
+    conflict = models.BooleanField(default=False)
+    conflict_code = models.CharField(max_length=64, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = SubjectEnrichmentImmutableQuerySet.as_manager()
+
+    class Meta:
+        db_table = "subject_enrichment_suggestions"
+        ordering = ("job_id", "field_key", "id")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("job", "field_key"), name="subject_enrichment_job_field_unique"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(confidence__in=("high", "medium", "low")),
+                name="subject_enrichment_confidence_valid",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise TypeError("Subject enrichment suggestions are immutable.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise TypeError("Subject enrichment suggestions are immutable.")
+
+
+class SubjectEnrichmentSuggestionSource(models.Model):  # noqa: DJ008
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    suggestion = models.ForeignKey(
+        SubjectEnrichmentSuggestion, on_delete=models.PROTECT, related_name="source_links"
+    )
+    source = models.ForeignKey(
+        SubjectEnrichmentSource, on_delete=models.PROTECT, related_name="suggestion_links"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = SubjectEnrichmentImmutableQuerySet.as_manager()
+
+    class Meta:
+        db_table = "subject_enrichment_suggestion_sources"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("suggestion", "source"), name="subject_enrichment_citation_unique"
+            )
+        ]
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise TypeError("Subject enrichment citations are immutable.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise TypeError("Subject enrichment citations are immutable.")
+
+
+class SubjectEnrichmentConfirmation(models.Model):  # noqa: DJ008
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    job = models.OneToOneField(
+        SubjectEnrichmentJob, on_delete=models.PROTECT, related_name="confirmation"
+    )
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    subject = models.ForeignKey(Subject, on_delete=models.PROTECT)
+    subject_version_before = models.PositiveBigIntegerField()
+    subject_version_after = models.PositiveBigIntegerField()
+    request_digest = models.CharField(max_length=64)
+    confirmed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="confirmed_subject_enrichments",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = SubjectEnrichmentImmutableQuerySet.as_manager()
+
+    class Meta:
+        db_table = "subject_enrichment_confirmations"
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(subject_version_before__gte=1),
+                name="subject_enrichment_confirm_before_gte_1",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(subject_version_after=models.F("subject_version_before"))
+                    | models.Q(subject_version_after=models.F("subject_version_before") + 1)
+                ),
+                name="subject_enrichment_confirm_version_step",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise TypeError("Subject enrichment confirmations are immutable.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise TypeError("Subject enrichment confirmations are immutable.")
+
+
+class SubjectEnrichmentDecision(models.Model):  # noqa: DJ008
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    confirmation = models.ForeignKey(
+        SubjectEnrichmentConfirmation, on_delete=models.PROTECT, related_name="decisions"
+    )
+    suggestion = models.OneToOneField(
+        SubjectEnrichmentSuggestion, on_delete=models.PROTECT, related_name="decision"
+    )
+    accepted = models.BooleanField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = SubjectEnrichmentImmutableQuerySet.as_manager()
+
+    class Meta:
+        db_table = "subject_enrichment_decisions"
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise TypeError("Subject enrichment decisions are immutable.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise TypeError("Subject enrichment decisions are immutable.")
+
+
+class SubjectEnrichmentEvent(models.Model):  # noqa: DJ008
+    class EventType(models.TextChoices):
+        STARTED = "started", "Started"
+        RETRY_SCHEDULED = "retry_scheduled", "Retry scheduled"
+        SUCCEEDED = "succeeded", "Succeeded"
+        FAILED = "failed", "Failed"
+        APPLIED = "applied", "Applied"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    job = models.ForeignKey(SubjectEnrichmentJob, on_delete=models.PROTECT, related_name="events")
+    event_type = models.CharField(max_length=24, choices=EventType.choices)
+    stable_error_code = models.CharField(max_length=64, blank=True)
+    safe_summary = models.JSONField(default=dict)
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="subject_enrichment_events",
+    )
+    request_id = models.UUIDField(null=True, blank=True)
+    correlation_id = models.UUIDField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = SubjectEnrichmentImmutableQuerySet.as_manager()
+
+    class Meta:
+        db_table = "subject_enrichment_events"
+        ordering = ("job_id", "created_at", "id")
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(
+                    event_type__in=(
+                        "started",
+                        "retry_scheduled",
+                        "succeeded",
+                        "failed",
+                        "applied",
+                    )
+                ),
+                name="subject_enrichment_event_type_valid",
+            )
+        ]
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise TypeError("Subject enrichment events are immutable.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise TypeError("Subject enrichment events are immutable.")

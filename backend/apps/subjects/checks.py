@@ -30,3 +30,19 @@ def subject_catalog_check(app_configs, **kwargs):
             )
         ]
     return []
+
+
+@register(Tags.security)
+def subject_enrichment_configuration_check(app_configs, **kwargs):
+    from django.conf import settings
+
+    provider = settings.SUBJECT_ENRICHMENT_PROVIDER
+    if provider not in {"mock", "unavailable"}:
+        return [Error("Unsupported subject enrichment provider.", id="subjects.E020")]
+    if getattr(settings, "APP_ENV", "local") == "production" and provider == "mock":
+        return [
+            Error(
+                "Mock subject enrichment provider is forbidden in production.", id="subjects.E021"
+            )
+        ]
+    return []

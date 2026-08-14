@@ -16,6 +16,7 @@ REQUIRED_ENVIRONMENT = {
     "PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY": "p" * 64,
     "FILE_IDEMPOTENCY_HMAC_KEY": "f" * 64,
     "WEB_IMPORT_IDEMPOTENCY_HMAC_KEY": "w" * 64,
+    "SUBJECT_ENRICHMENT_IDEMPOTENCY_HMAC_KEY": "e" * 64,
     "SMS_PROVIDER": "unconfigured",
     "FILE_STORAGE_PROVIDER": "unavailable",
     "FILE_SCANNER_PROVIDER": "unavailable",
@@ -44,6 +45,8 @@ def import_settings(overrides: dict[str, str] | None = None, missing: str | None
             "PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY",
             "FILE_IDEMPOTENCY_HMAC_KEY",
             "WEB_IMPORT_IDEMPOTENCY_HMAC_KEY",
+            "SUBJECT_ENRICHMENT_IDEMPOTENCY_HMAC_KEY",
+            "SUBJECT_ENRICHMENT_PROVIDER",
             "SMS_PROVIDER",
             "FILE_STORAGE_PROVIDER",
             "FILE_SCANNER_PROVIDER",
@@ -81,6 +84,7 @@ def import_settings(overrides: dict[str, str] | None = None, missing: str | None
         "PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY",
         "FILE_IDEMPOTENCY_HMAC_KEY",
         "WEB_IMPORT_IDEMPOTENCY_HMAC_KEY",
+        "SUBJECT_ENRICHMENT_IDEMPOTENCY_HMAC_KEY",
         "DATABASE_URL",
         "REDIS_URL",
         "ALLOWED_HOSTS",
@@ -156,6 +160,22 @@ def test_production_missing_required_environment_fails_fast(missing):
             {"WEB_IMPORT_IDEMPOTENCY_HMAC_KEY": "x" * 64},
             "must not reuse another secret",
         ),
+        (
+            {"SUBJECT_ENRICHMENT_IDEMPOTENCY_HMAC_KEY": "weak"},
+            "SUBJECT_ENRICHMENT_IDEMPOTENCY_HMAC_KEY is too weak",
+        ),
+        (
+            {"SUBJECT_ENRICHMENT_IDEMPOTENCY_HMAC_KEY": "x" * 64},
+            "SUBJECT_ENRICHMENT_IDEMPOTENCY_HMAC_KEY must be independent",
+        ),
+        (
+            {"SUBJECT_ENRICHMENT_PROVIDER": "mock"},
+            "Mock subject enrichment provider is forbidden",
+        ),
+        (
+            {"SUBJECT_ENRICHMENT_PROVIDER": "deepseek"},
+            "Only unavailable subject enrichment provider is supported",
+        ),
     ],
 )
 def test_production_rejects_unsafe_configuration(overrides, expected_error):
@@ -193,6 +213,38 @@ def test_production_rejects_sms_hmac_reusing_redis_password():
 
     assert result.returncode != 0
     assert "must not reuse REDIS_URL credentials" in result.stderr
+
+
+def test_production_rejects_subject_enrichment_hmac_reusing_database_password():
+    reused = "database-password-that-is-more-than-fifty-characters-long-333333"
+    result = import_settings(
+        overrides={
+            "SUBJECT_ENRICHMENT_IDEMPOTENCY_HMAC_KEY": reused,
+            "DATABASE_URL": f"postgresql://app:{reused}@database:5432/xianwen",
+        }
+    )
+
+    assert result.returncode != 0
+    assert (
+        "SUBJECT_ENRICHMENT_IDEMPOTENCY_HMAC_KEY must not reuse DATABASE_URL credentials"
+        in result.stderr
+    )
+
+
+def test_production_rejects_subject_enrichment_hmac_reusing_redis_password():
+    reused = "redis-password-that-is-more-than-fifty-characters-long-33333333"
+    result = import_settings(
+        overrides={
+            "SUBJECT_ENRICHMENT_IDEMPOTENCY_HMAC_KEY": reused,
+            "REDIS_URL": f"redis://default:{reused}@redis:6379/0",
+        }
+    )
+
+    assert result.returncode != 0
+    assert (
+        "SUBJECT_ENRICHMENT_IDEMPOTENCY_HMAC_KEY must not reuse REDIS_URL credentials"
+        in result.stderr
+    )
 
 
 def test_production_requires_proxy_networks_when_proxy_hops_enabled():

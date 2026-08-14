@@ -272,20 +272,15 @@ def create_subject(
     return subject
 
 
-@transaction.atomic
-def update_subject_draft(
+def merge_subject_draft_values_locked(
     *,
-    user_id,
-    subject_id,
-    expected_version: int,
+    user: User,
+    subject: Subject,
     values: dict[str, Any],
 ) -> Subject:
-    user = User.objects.select_for_update().get(pk=user_id)
+    """Apply a validated draft patch to an already locked owner/subject pair."""
     _ensure_subject_write_allowed(user)
-    subject = subject_for_user_or_404(user=user, subject_id=subject_id, lock=True)
-    if subject.version != expected_version:
-        raise SubjectVersionConflict
-    if subject.status == Subject.Status.ARCHIVED:
+    if subject.user_id != user.pk or subject.status == Subject.Status.ARCHIVED:
         raise SubjectStateConflict
     try:
         assert_snapshot_integrity(subject.schema_snapshot, subject.schema_digest)
@@ -313,6 +308,21 @@ def update_subject_draft(
     subject.version += 1
     subject.save(update_fields=["draft_values", "version", "updated_at"])
     return subject
+
+
+@transaction.atomic
+def update_subject_draft(
+    *,
+    user_id,
+    subject_id,
+    expected_version: int,
+    values: dict[str, Any],
+) -> Subject:
+    user = User.objects.select_for_update().get(pk=user_id)
+    subject = subject_for_user_or_404(user=user, subject_id=subject_id, lock=True)
+    if subject.version != expected_version:
+        raise SubjectVersionConflict
+    return merge_subject_draft_values_locked(user=user, subject=subject, values=values)
 
 
 @transaction.atomic
