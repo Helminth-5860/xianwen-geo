@@ -171,22 +171,55 @@ function Invoke-Gitleaks {
         "."
     )
 
-    $scanInput = [Text.StringBuilder]::new()
+    $scanRoot = Join-Path $repoRoot ".tmp-gitleaks-working-tree"
+    if (Test-Path -LiteralPath $scanRoot) {
+        Remove-Item -LiteralPath $scanRoot -Recurse -Force
+    }
+
     $scanFiles = & git -C $repoRoot ls-files --cached --others --exclude-standard
     if ($LASTEXITCODE -ne 0) {
         throw "git ls-files failed before Gitleaks working-tree scan."
     }
-    foreach ($scanFile in $scanFiles) {
-        $scanPath = Join-Path $repoRoot $scanFile
-        if (Test-Path -LiteralPath $scanPath -PathType Leaf) {
-            [void]$scanInput.AppendLine("FILE:$scanFile")
-            [void]$scanInput.AppendLine([IO.File]::ReadAllText($scanPath))
+
+    New-Item -ItemType Directory -Path $scanRoot | Out-Null
+    try {
+        foreach ($scanFile in $scanFiles) {
+            $scanPath = Join-Path $repoRoot $scanFile
+            if (Test-Path -LiteralPath $scanPath -PathType Leaf) {
+                $destination = Join-Path $scanRoot $scanFile
+                $destinationParent = Split-Path -Parent $destination
+                if (-not (Test-Path -LiteralPath $destinationParent)) {
+                    New-Item -ItemType Directory -Path $destinationParent -Force | Out-Null
+                }
+                Copy-Item -LiteralPath $scanPath -Destination $destination -Force
+            }
         }
+
+        $gitleaksConfig = Join-Path $scanRoot ".gitleaks.toml"
+        if (-not (Test-Path -LiteralPath $gitleaksConfig -PathType Leaf)) {
+            throw "Missing .gitleaks.toml in Gitleaks working-tree scan root."
+        }
+
+        Invoke-External "docker" @(
+            "run",
+            "--rm",
+            "--volume",
+            "${scanRoot}:/scan:ro",
+            "--workdir",
+            "/scan",
+            $gitleaksImage,
+            "dir",
+            "--config",
+            "/scan/.gitleaks.toml",
+            "--no-banner",
+            "--redact",
+            "."
+        )
     }
-    $scanInput.ToString() | & docker run --rm --interactive $gitleaksImage `
-        stdin --no-banner --redact
-    if ($LASTEXITCODE -ne 0) {
-        throw "Gitleaks found a secret in tracked or untracked source content."
+    finally {
+        if (Test-Path -LiteralPath $scanRoot) {
+            Remove-Item -LiteralPath $scanRoot -Recurse -Force
+        }
     }
 }
 

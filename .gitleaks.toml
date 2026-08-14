@@ -1,0 +1,11 @@
+title = "xianwen-geo Gitleaks configuration"
+minVersion = "v8.25.0"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Allow only the cross-line generic-api-key false positive after an empty DEEPSEEK_API_KEY placeholder"
+targetRules = ["generic-api-key"]
+regexTarget = "match"
+regexes = ['(?m)^DEEPSEEK_API_KEY=[ \t]*\r?\n']
