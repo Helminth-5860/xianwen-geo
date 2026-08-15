@@ -386,13 +386,12 @@ def test_no_public_reset_route():
             resolve(path)
 
 
-def test_models_have_no_subject_or_account_status_fields():
+def test_models_support_subject_cycle_without_mutable_status_fields():
     names = {field.name for field in QuotaAccount._meta.fields}
-    assert "subject_id" not in names
-    assert "subject" not in names
+    assert "subject" in names
     assert "status" not in names
     assert "expires_at" not in names
-    assert "subject_cycle" not in {value for value, _ in QuotaAccount.Scope.choices}
+    assert "subject_cycle" in {value for value, _ in QuotaAccount.Scope.choices}
 
 
 @override_settings(QUOTA_IDEMPOTENCY_HMAC_KEY="isolated-test-" + "quota-key-0123456789abcdef")

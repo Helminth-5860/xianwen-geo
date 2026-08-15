@@ -11,11 +11,16 @@ from apps.keywords.exceptions import (
     KeywordPlanRequired,
     KeywordStateConflict,
     KeywordSubjectVersionConflict,
+    KeywordValuesInvalid,
     KeywordVersionConflict,
     KeywordVersionNoChanges,
 )
 from apps.keywords.models import Keyword, KeywordSet, KeywordSetVersion
-from apps.keywords.normalization import KeywordNormalizationError, normalize_keyword_items
+from apps.keywords.normalization import (
+    KeywordNormalizationError,
+    normalize_keyword_items,
+    resolve_base_keyword_indexes,
+)
 from apps.keywords.services import commit_keyword_version, save_keyword_draft
 from apps.plans.models import Plan, PlanVersion, Subscription
 from apps.subjects.models import Subject, SubjectName, SubjectType, SubjectVersion
@@ -160,6 +165,67 @@ def test_duplicate_semantics_ignore_structure_type():
     ]
     with pytest.raises(KeywordNormalizationError):
         normalize_keyword_items(items)
+
+
+@pytest.mark.parametrize(
+    "items",
+    [
+        [
+            {
+                "text": "derived",
+                "structure_type": "general",
+                "is_regional": False,
+                "base_keyword_text": "missing",
+            }
+        ],
+        [
+            {
+                "text": "self",
+                "structure_type": "general",
+                "is_regional": False,
+                "base_keyword_text": "SELF",
+            }
+        ],
+        [
+            {
+                "text": "one",
+                "structure_type": "general",
+                "is_regional": False,
+                "base_keyword_text": "two",
+            },
+            {
+                "text": "two",
+                "structure_type": "general",
+                "is_regional": False,
+                "base_keyword_text": "one",
+            },
+        ],
+        [
+            {
+                "text": "base",
+                "structure_type": "general",
+                "is_regional": False,
+            },
+            {
+                "text": "BASE",
+                "structure_type": "general",
+                "is_regional": True,
+                "region_level": "city",
+                "region_text": "上海",
+            },
+            {
+                "text": "derived",
+                "structure_type": "general",
+                "is_regional": False,
+                "base_keyword_text": "base",
+            },
+        ],
+    ],
+)
+def test_base_keyword_rejects_missing_self_cycle_and_ambiguous_targets(items):
+    normalized = normalize_keyword_items(items)
+    with pytest.raises(KeywordNormalizationError):
+        resolve_base_keyword_indexes(normalized)
 
 
 def test_region_shape_requires_text_and_rejects_nonregional_region_fields():
@@ -449,6 +515,32 @@ def test_keyword_draft_write_requires_real_csrf():
     )
     assert blocked.status_code == 403
     assert blocked.json()["error"]["code"] == "CSRF_FAILED"
+
+
+def test_invalid_base_relation_rolls_back_formal_version_atomically():
+    user, subject, version = make_facts()
+    keyword_set, _ = save_keyword_draft(
+        user_id=user.pk,
+        subject_id=subject.pk,
+        expected_version=0,
+        expected_subject_version_id=version.pk,
+        items=[
+            {
+                "text": "derived",
+                "structure_type": "general",
+                "is_regional": False,
+                "base_keyword_text": "missing",
+            }
+        ],
+    )
+    with pytest.raises(KeywordValuesInvalid):
+        commit_keyword_version(
+            user_id=user.pk,
+            subject_id=subject.pk,
+            expected_version=keyword_set.version,
+            expected_subject_version_id=version.pk,
+        )
+    assert KeywordSetVersion.objects.filter(keyword_set=keyword_set).count() == 0
 
 
 def test_formal_models_are_append_only_at_orm_layer():

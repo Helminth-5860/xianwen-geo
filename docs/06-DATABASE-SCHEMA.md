@@ -349,7 +349,27 @@ V1 只做系统成本，不与用户收费金额关联。
 
 ### 12.3 `keyword_generation_jobs`
 
-生成配置、目标数量、实际数量、选中的可选类型、任务和次数结算。
+保存不可变业务绑定与可推进执行状态：
+
+- user、subject、冻结的 current SubjectVersion、创建时 KeywordSet expected_version。
+- subscription、free_initial/regeneration 计费模式，以及 regeneration 对应的 QuotaHoldGroup。
+- 目标数量、类型／地域配置、已确认历史排除词和冻结主体输入快照。
+- provider/model/adapter/prompt 版本、输入摘要、请求摘要和 HMAC 幂等摘要。
+- queued/running/retry_wait/succeeded/failed/conflict/superseded、lease generation、尝试次数、下次尝试时间和安全错误码。
+
+PostgreSQL 条件唯一约束保证每个主体至多一个 active job。触发器限制合法状态迁移、冻结事实不可变、主体／版本／额度绑定一致，并要求终态与 exactly-once 额度结算相符。
+
+### 12.4 `keyword_generation_results`
+
+每个成功任务至多一条不可变结果，保存经过结构校验和规范化后的输出快照、输出摘要、条目数、实际写入的草稿版本和白名单 provider metrics。不得保存 provider raw response。
+
+### 12.5 `keyword_generation_events`
+
+追加式安全事件，仅记录 started/retry_scheduled/succeeded/failed/conflict/superseded、稳定错误码、request/correlation id 与无敏感正文的 safe_summary。禁止更新或删除。
+
+正式 KeywordSetVersion 与 Keyword 均保持不可变；正式 base_keyword 必须指向同一版本内其他关键词且不得形成环。AI 成功只替换 KeywordDraftItem 草稿，不创建正式版本。
+
+`keyword_regenerations` 使用带 subject_id 的订阅周期 QuotaAccount。账户绑定不可变；跨周期晚到结算仍操作原 hold 绑定账户。
 
 ## 13. 关键词蒸馏
 

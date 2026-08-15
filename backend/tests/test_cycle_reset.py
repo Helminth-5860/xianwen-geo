@@ -191,6 +191,7 @@ def test_celery_lifecycle_safety_configuration(settings):
         "scan-file-verification-retries",
         "scan-document-parse-retries",
         "dispatch-subject-enrichment-jobs",
+        "dispatch-keyword-generation-jobs",
         "dispatch-queued-web-imports",
         "scan-web-import-retries",
     }

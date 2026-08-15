@@ -24,5 +24,10 @@ FILE_STORAGE_PROVIDER = "mock"
 FILE_SCANNER_PROVIDER = "mock"
 DOCUMENT_OCR_PROVIDER = "mock"
 SUBJECT_ENRICHMENT_PROVIDER = "mock"
+KEYWORD_GENERATION_PROVIDER = "mock"
+KEYWORD_GENERATION_MOCK_SCENARIO = "success"
+KEYWORD_GENERATION_IDEMPOTENCY_HMAC_KEY = (
+    "test-only-keyword-generation-hmac-key-never-use-in-deployment"
+)
 ROOT_URLCONF = "tests.api_urls"
 LOGGING = build_logging_config("test")
