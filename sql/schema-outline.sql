@@ -287,6 +287,72 @@ CREATE TABLE keywords (
     CHECK (structure_type IN ('short','long_tail','general'))
 );
 
+CREATE TABLE keyword_generation_jobs (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id uuid NOT NULL REFERENCES users(id),
+    subject_id uuid NOT NULL REFERENCES subjects(id),
+    subject_version_id uuid NOT NULL REFERENCES subject_versions(id),
+    keyword_set_id uuid REFERENCES keyword_sets(id),
+    subscription_id uuid NOT NULL REFERENCES user_subscriptions(id),
+    quota_hold_id uuid REFERENCES quota_hold_groups(id),
+    status varchar(16) NOT NULL,
+    billing_mode varchar(16) NOT NULL,
+    version bigint NOT NULL DEFAULT 1,
+    expected_keyword_set_version bigint NOT NULL,
+    target_count integer NOT NULL,
+    include_short boolean NOT NULL DEFAULT false,
+    include_long_tail boolean NOT NULL DEFAULT false,
+    include_regional boolean NOT NULL DEFAULT false,
+    regions jsonb NOT NULL DEFAULT '[]'::jsonb,
+    input_subject_values jsonb NOT NULL,
+    historical_exclusions jsonb NOT NULL DEFAULT '[]'::jsonb,
+    provider_key varchar(32) NOT NULL,
+    model_key varchar(64) NOT NULL,
+    adapter_version varchar(32) NOT NULL,
+    prompt_version varchar(32) NOT NULL,
+    input_digest varchar(64) NOT NULL,
+    idempotency_key_digest varchar(64) NOT NULL UNIQUE,
+    request_digest varchar(64) NOT NULL,
+    generation uuid,
+    attempts integer NOT NULL DEFAULT 0,
+    retry_count integer NOT NULL DEFAULT 0,
+    next_attempt_at timestamptz,
+    stable_error_code varchar(64) NOT NULL DEFAULT '',
+    started_at timestamptz,
+    finished_at timestamptz,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    CHECK (status IN ('queued','running','retry_wait','succeeded','failed','conflict','superseded')),
+    CHECK ((billing_mode = 'free_initial' AND quota_hold_id IS NULL)
+        OR (billing_mode = 'regeneration' AND quota_hold_id IS NOT NULL))
+);
+CREATE UNIQUE INDEX keyword_generation_one_open
+ON keyword_generation_jobs(subject_id)
+WHERE status IN ('queued','running','retry_wait');
+
+CREATE TABLE keyword_generation_results (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    job_id uuid NOT NULL UNIQUE REFERENCES keyword_generation_jobs(id),
+    output_snapshot jsonb NOT NULL,
+    output_digest varchar(64) NOT NULL,
+    item_count integer NOT NULL,
+    applied_keyword_set_version bigint NOT NULL,
+    provider_metrics jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE keyword_generation_events (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    job_id uuid NOT NULL REFERENCES keyword_generation_jobs(id),
+    event_type varchar(24) NOT NULL,
+    stable_error_code varchar(64) NOT NULL DEFAULT '',
+    safe_summary jsonb NOT NULL DEFAULT '{}'::jsonb,
+    request_id uuid,
+    correlation_id uuid,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    CHECK (event_type IN ('started','retry_scheduled','succeeded','failed','conflict','superseded'))
+);
+
 CREATE TABLE distillation_sets (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     subject_id uuid NOT NULL REFERENCES subjects(id),
@@ -609,7 +675,7 @@ CREATE TABLE admin_audit_logs (
 -- subscription_changes, customer_profiles, customer_statuses, customer_tags,
 -- customer_contact_logs, customer_followups, risk_types, risk_rules, subject_reviews,
 -- user_documents, document_versions, document_parse_jobs, document_parsed_versions,
--- web_source_imports, keyword_generation_jobs, distillation_jobs, question_tags,
+-- web_source_imports, distillation_jobs, question_tags,
 -- question_keyword_links, ai_model_runtime_configs, api_credential_audit,
 -- prompt_templates, prompt_template_versions, prompt_test_cases, prompt_test_runs,
 -- model_call_attempts, api_cost_records, geo_detection_model_runs, model_scores,

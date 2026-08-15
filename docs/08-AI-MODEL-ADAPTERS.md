@@ -345,21 +345,27 @@ class Citation:
 
 ## 17. 关键词生成适配
 
-输入：主体资料、目标数量、可选短词／长尾／地区配置、地区列表和历史排除词。
+输入只取任务创建时冻结的当前正式 SubjectVersion 字段值、目标数量、可选短词／长尾／地区配置、规范化地区列表，以及正式关键词、当前草稿和历史成功生成结果形成的排除词。未确认的主体草稿、文件解析结果或网页正文不得进入该调用。
 
-输出每个词：
+主体字段和历史词均是不可信数据，不得拼接为 system/developer 指令。适配器必须将其放入明确的数据边界，并要求模型忽略数据中的提示词、角色切换、工具调用、密钥索取或输出格式改写指令。
 
-- 文本
-- 结构类型
-- 地区属性
-- 基础词
-- 意图
-- 分类
-- 相关度
-- 优先级
-- 理由
+输出使用严格结构合同。每个词必须包含：
 
-类型都未选择时允许 `general`。
+- text
+- structure_type：short/long_tail/general
+- is_regional、region_level、region_text
+- 可空 base_keyword
+- business_category
+- search_intent：informational/navigational/commercial/transactional
+- relevance_score：0–100
+- priority：high/medium/low
+- ai_reason
+
+类型都未选择时只允许 `general`。输出先执行 NFKC、空白折叠、控制字符拒绝、casefold 去重、地域一致性和 base_keyword 唯一解析；缺失／歧义／自引用／循环基础词使整个结果无效，不做部分写入。
+
+Provider abstraction 只接收冻结 request contract 并返回规范化 response contract。任务冻结 provider_key、model_key、adapter_version、prompt_version 和 input_digest；结果保存规范化 output_digest 与白名单 metrics，不保存 provider raw response、API key 或完整 prompt。
+
+当前 XW-0302 仅提供可预测 Mock Provider 与 unavailable Provider。Mock 必须显式配置，只用于 test/local；production 禁止 Mock，且在真实 provider 未实现时 fail closed。临时 provider 错误进入同一 job 的 retry_wait，不新增任务或额度冻结；永久错误、重试耗尽和内部失败进入终态并释放冻结。
 
 ## 18. 蒸馏适配
 
@@ -533,7 +539,7 @@ DeepSeek 内容能力另验收各输出 Schema；豆包图片另验收尺寸、�
 - 超时／429／500 模拟
 - 图片生成占位图
 
-Mock 必须通过环境配置显式启用，生产环境禁止启用。
+Mock 必须通过环境配置显式启用，生产环境禁止启用。关键词 Mock 还提供 success/temporary/permanent/invalid_response 等确定性场景，用于验证重试、原子回滚和额度释放；这些场景不得由公开请求选择。生产关键词 provider 配置为 unavailable 时拒绝创建任务，配置为 mock 或任何尚未实现的 provider 时启动失败关闭。
 
 ## 30. 当前集成待办
 

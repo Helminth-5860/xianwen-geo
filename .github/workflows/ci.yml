@@ -123,5 +123,5 @@ jobs:
         run: bash scripts/test-web-import.sh
       - name: Run PostgreSQL/Redis subject enrichment Mock flow tests
         run: bash scripts/test-subject-enrichment.sh
-      - name: Run PostgreSQL keyword model and editor tests
+      - name: Run PostgreSQL keyword model, editor, and AI generation tests
         run: bash scripts/test-keywords.sh

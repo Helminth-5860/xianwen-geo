@@ -1077,22 +1077,49 @@ paths:
       - $ref: '#/components/parameters/IdempotencyKey'
     post:
       tags: [Keywords]
-      summary: 生成关键词
+      summary: Queue idempotent AI keyword generation against frozen subject and draft versions
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/KeywordGenerationRequest'
+            schema: {$ref: '#/components/schemas/KeywordGenerationRequest'}
       responses:
         '202':
-          description: 关键词生成任务已创建
+          description: Durable job queued or idempotently replayed; generation never commits a formal keyword version
+          headers:
+            Cache-Control: {schema: {type: string, const: no-store}}
+            X-Request-ID: {$ref: '#/components/headers/RequestId'}
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/TaskEnvelope'
-        '409':
-          $ref: '#/components/responses/BusinessConflict'
+              schema: {$ref: '#/components/schemas/KeywordGenerationJobEnvelope'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/CsrfFailed'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+        '409': {$ref: '#/components/responses/BusinessConflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+  /keyword-jobs/{jobId}:
+    parameters:
+      - name: jobId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    get:
+      tags: [Keywords]
+      summary: Poll an owner-scoped AI keyword generation job
+      responses:
+        '200':
+          description: Safe job projection without prompts, subject input snapshots, digests, or provider raw response
+          headers:
+            Cache-Control: {schema: {type: string, const: no-store}}
+            X-Request-ID: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/KeywordGenerationJobEnvelope'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
   /subjects/{subjectId}/distillations:
     parameters:
       - $ref: '#/components/parameters/SubjectId'
@@ -2982,6 +3009,14 @@ components:
         - KEYWORD_SUBJECT_VERSION_CONFLICT
         - KEYWORD_VALUES_INVALID
         - KEYWORD_VERSION_NO_CHANGES
+        - KEYWORD_GENERATION_STATE_CONFLICT
+        - KEYWORD_GENERATION_IN_PROGRESS
+        - KEYWORD_REGENERATION_CONFIRMATION_REQUIRED
+        - KEYWORD_GENERATION_LIMIT_EXCEEDED
+        - KEYWORD_GENERATION_CONFIG_INVALID
+        - KEYWORD_GENERATION_IDEMPOTENCY_KEY_REQUIRED
+        - KEYWORD_GENERATION_PROVIDER_UNAVAILABLE
+        - KEYWORD_GENERATION_INVALID_RESPONSE
         - SUBJECT_RISK_CONFIG_INTEGRITY_ERROR
         - SUBJECT_RISK_CATALOG_VERSION_CONFLICT
         - SUBJECT_RISK_TYPE_VERSION_CONFLICT
@@ -3671,6 +3706,12 @@ components:
         is_regional: {type: boolean}
         region_level: {type: string, enum: ['', country, province, city, district, custom], default: ''}
         region_text: {type: string, maxLength: 200, default: ''}
+        base_keyword_text: {type: [string, 'null'], maxLength: 500, default: null}
+        business_category: {type: [string, 'null'], maxLength: 128, default: null}
+        search_intent: {type: [string, 'null'], enum: [informational, navigational, commercial, transactional, null], default: null}
+        relevance_score: {type: [integer, 'null'], minimum: 0, maximum: 100, default: null}
+        priority: {type: [string, 'null'], enum: [high, medium, low, null], default: null}
+        ai_reason: {type: [string, 'null'], maxLength: 1000, default: null}
     KeywordDraftSaveRequest:
       type: object
       additionalProperties: false
@@ -3699,6 +3740,12 @@ components:
         is_regional: {type: boolean}
         region_level: {type: [string, 'null']}
         region_text: {type: [string, 'null']}
+        base_keyword_text: {type: [string, 'null']}
+        business_category: {type: [string, 'null']}
+        search_intent: {type: [string, 'null'], enum: [informational, navigational, commercial, transactional, null]}
+        relevance_score: {type: [integer, 'null'], minimum: 0, maximum: 100}
+        priority: {type: [string, 'null'], enum: [high, medium, low, null]}
+        ai_reason: {type: [string, 'null']}
         sort_order: {type: integer, minimum: 0}
     KeywordSubjectVersion:
       type: object
@@ -3773,16 +3820,79 @@ components:
       allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, properties: {data: {$ref: '#/components/schemas/KeywordVersionDetail'}}}]
     KeywordGenerationRequest:
       type: object
-      required: [target_count]
+      additionalProperties: false
+      required: [expected_subject_version_id, expected_keyword_set_version, target_count]
       properties:
-        target_count: {type: integer, minimum: 1}
+        expected_subject_version_id: {type: string, format: uuid}
+        expected_keyword_set_version: {type: integer, minimum: 0}
+        target_count: {type: integer, minimum: 1, maximum: 200}
         include_short: {type: boolean, default: false}
         include_long_tail: {type: boolean, default: false}
         include_regional: {type: boolean, default: false}
         regions:
           type: array
-          items: {type: string}
-        regenerate: {type: boolean, default: false}
+          maxItems: 20
+          items: {type: string, maxLength: 200}
+          default: []
+        regenerate:
+          type: boolean
+          default: false
+          description: Client confirmation intent only; the server derives whether this is billable regeneration.
+    KeywordGenerationBilling:
+      type: object
+      additionalProperties: false
+      required: [billing_mode, held, remaining]
+      properties:
+        billing_mode: {type: string, enum: [free_initial, regeneration]}
+        held: {type: boolean}
+        remaining: {type: [integer, 'null'], minimum: 0}
+    KeywordGenerationConfiguration:
+      type: object
+      additionalProperties: false
+      required: [target_count, include_short, include_long_tail, include_regional, regions]
+      properties:
+        target_count: {type: integer, minimum: 1}
+        include_short: {type: boolean}
+        include_long_tail: {type: boolean}
+        include_regional: {type: boolean}
+        regions: {type: array, items: {type: string}}
+    KeywordGenerationProvenance:
+      type: object
+      additionalProperties: false
+      required: [provider_key, model_key, adapter_version, prompt_version]
+      properties:
+        provider_key: {type: string}
+        model_key: {type: string}
+        adapter_version: {type: string}
+        prompt_version: {type: string}
+    KeywordGenerationResultSummary:
+      type: object
+      additionalProperties: false
+      required: [item_count, applied_keyword_set_version]
+      properties:
+        item_count: {type: integer, minimum: 1}
+        applied_keyword_set_version: {type: integer, minimum: 1}
+    KeywordGenerationJob:
+      type: object
+      additionalProperties: false
+      required: [id, subject_id, subject_version_id, status, version, stable_error_code, billing, configuration, provenance, result, attempts, created_at, updated_at, finished_at]
+      properties:
+        id: {type: string, format: uuid}
+        subject_id: {type: string, format: uuid}
+        subject_version_id: {type: string, format: uuid}
+        status: {type: string, enum: [queued, running, retry_wait, succeeded, failed, conflict, superseded]}
+        version: {type: integer, minimum: 1}
+        stable_error_code: {type: string}
+        billing: {$ref: '#/components/schemas/KeywordGenerationBilling'}
+        configuration: {$ref: '#/components/schemas/KeywordGenerationConfiguration'}
+        provenance: {$ref: '#/components/schemas/KeywordGenerationProvenance'}
+        result: {oneOf: [{$ref: '#/components/schemas/KeywordGenerationResultSummary'}, {type: 'null'}]}
+        attempts: {type: integer, minimum: 0}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        finished_at: {type: [string, 'null'], format: date-time}
+    KeywordGenerationJobEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, properties: {data: {$ref: '#/components/schemas/KeywordGenerationJob'}}}]
     GeoDetectionSelection:
       type: object
       required: [question_ids, model_ids]

@@ -295,6 +295,41 @@ SUBJECT_ENRICHMENT_RATE_LIMIT_SUBJECT = positive_env_int(
 SUBJECT_ENRICHMENT_MOCK_SCENARIO = (
     os.getenv("SUBJECT_ENRICHMENT_MOCK_SCENARIO", "success").strip().lower()
 )
+KEYWORD_GENERATION_PROVIDER = (
+    os.getenv("KEYWORD_GENERATION_PROVIDER", "unavailable").strip().lower()
+)
+KEYWORD_GENERATION_IDEMPOTENCY_HMAC_KEY = os.getenv(
+    "KEYWORD_GENERATION_IDEMPOTENCY_HMAC_KEY",
+    "local-test-keyword-generation-idempotency-key-not-for-production",
+).strip()
+if len(KEYWORD_GENERATION_IDEMPOTENCY_HMAC_KEY) < 32:
+    raise ImproperlyConfigured(
+        "KEYWORD_GENERATION_IDEMPOTENCY_HMAC_KEY is too weak; minimum length is 32."
+    )
+KEYWORD_GENERATION_MAX_COUNT = positive_env_int("KEYWORD_GENERATION_MAX_COUNT", 200)
+KEYWORD_GENERATION_MAX_REGIONS = positive_env_int("KEYWORD_GENERATION_MAX_REGIONS", 20)
+KEYWORD_GENERATION_PROVIDER_TIMEOUT_SECONDS = positive_env_int(
+    "KEYWORD_GENERATION_PROVIDER_TIMEOUT_SECONDS", 30
+)
+KEYWORD_GENERATION_MAX_PROVIDER_ATTEMPTS = positive_env_int(
+    "KEYWORD_GENERATION_MAX_PROVIDER_ATTEMPTS", 3
+)
+if KEYWORD_GENERATION_MAX_PROVIDER_ATTEMPTS > 10:
+    raise ImproperlyConfigured("KEYWORD_GENERATION_MAX_PROVIDER_ATTEMPTS must not exceed 10.")
+KEYWORD_GENERATION_RETRY_BASE_SECONDS = positive_env_int(
+    "KEYWORD_GENERATION_RETRY_BASE_SECONDS", 30
+)
+KEYWORD_GENERATION_RUNNING_STALE_SECONDS = positive_env_int(
+    "KEYWORD_GENERATION_RUNNING_STALE_SECONDS", 120
+)
+KEYWORD_GENERATION_INTERNAL_MAX_RETRIES = positive_env_int(
+    "KEYWORD_GENERATION_INTERNAL_MAX_RETRIES", 3
+)
+if KEYWORD_GENERATION_INTERNAL_MAX_RETRIES > 10:
+    raise ImproperlyConfigured("KEYWORD_GENERATION_INTERNAL_MAX_RETRIES must not exceed 10.")
+KEYWORD_GENERATION_MOCK_SCENARIO = (
+    os.getenv("KEYWORD_GENERATION_MOCK_SCENARIO", "success").strip().lower()
+)
 S3_ACCESS_KEY = os.getenv("S3_ACCESS_KEY", "xianwen-local").strip()
 S3_SECRET_KEY = os.getenv("S3_SECRET_KEY", "xianwen-local-secret").strip()
 SMS_VERIFICATION_HMAC_KEY = os.getenv(
@@ -363,6 +398,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "subjects.dispatch_enrichment_jobs",
         "schedule": timedelta(seconds=60),
     },
+    "dispatch-keyword-generation-jobs": {
+        "task": "keywords.dispatch_generation_jobs",
+        "schedule": timedelta(seconds=60),
+    },
     "dispatch-queued-web-imports": {
         "task": "web_sources.dispatch_queued_imports",
         "schedule": timedelta(seconds=60),
@@ -374,6 +413,7 @@ CELERY_BEAT_SCHEDULE = {
 }
 CELERY_TASK_ROUTES = {
     "subjects.execute_enrichment": {"queue": "ai_content"},
+    "keywords.execute_generation": {"queue": "ai_content"},
     "documents.execute_parse_job": {"queue": "file_processing"},
     "web_sources.execute_import": {"queue": "web_fetch"},
 }

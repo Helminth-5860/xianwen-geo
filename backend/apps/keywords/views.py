@@ -45,6 +45,9 @@ def _error(exc: KeywordError, request):
 
 
 def _item_payload(item) -> dict:
+    base_keyword_text = getattr(item, "base_keyword_text", None)
+    if base_keyword_text is None and getattr(item, "base_keyword_id", None):
+        base_keyword_text = item.base_keyword.text
     return {
         "id": str(item.pk),
         "text": item.text,
@@ -52,6 +55,12 @@ def _item_payload(item) -> dict:
         "is_regional": item.is_regional,
         "region_level": item.region_level or None,
         "region_text": item.region_text or None,
+        "base_keyword_text": base_keyword_text,
+        "business_category": item.business_category,
+        "search_intent": item.search_intent,
+        "relevance_score": item.relevance_score,
+        "priority": item.priority,
+        "ai_reason": item.ai_reason,
         "sort_order": item.sort_order,
     }
 

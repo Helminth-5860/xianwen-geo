@@ -17,6 +17,7 @@ PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY = require_env("PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY
 FILE_IDEMPOTENCY_HMAC_KEY = require_env("FILE_IDEMPOTENCY_HMAC_KEY")
 WEB_IMPORT_IDEMPOTENCY_HMAC_KEY = require_env("WEB_IMPORT_IDEMPOTENCY_HMAC_KEY")
 SUBJECT_ENRICHMENT_IDEMPOTENCY_HMAC_KEY = require_env("SUBJECT_ENRICHMENT_IDEMPOTENCY_HMAC_KEY")
+KEYWORD_GENERATION_IDEMPOTENCY_HMAC_KEY = require_env("KEYWORD_GENERATION_IDEMPOTENCY_HMAC_KEY")
 weak_secret_markers = {
     "changeme",
     "change-me",
@@ -97,6 +98,27 @@ for reused in (
     if SUBJECT_ENRICHMENT_IDEMPOTENCY_HMAC_KEY == reused:
         raise ImproperlyConfigured("SUBJECT_ENRICHMENT_IDEMPOTENCY_HMAC_KEY must be independent.")
 
+if KEYWORD_GENERATION_PROVIDER == "mock":
+    raise ImproperlyConfigured("Mock keyword generation provider is forbidden in production.")
+if KEYWORD_GENERATION_PROVIDER != "unavailable":
+    raise ImproperlyConfigured(
+        "Only unavailable keyword generation provider is supported in production."
+    )
+if len(KEYWORD_GENERATION_IDEMPOTENCY_HMAC_KEY) < 50:
+    raise ImproperlyConfigured(
+        "KEYWORD_GENERATION_IDEMPOTENCY_HMAC_KEY is too weak for production."
+    )
+if KEYWORD_GENERATION_IDEMPOTENCY_HMAC_KEY in {
+    SECRET_KEY,
+    SMS_VERIFICATION_HMAC_KEY,
+    QUOTA_IDEMPOTENCY_HMAC_KEY,
+    PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY,
+    FILE_IDEMPOTENCY_HMAC_KEY,
+    WEB_IMPORT_IDEMPOTENCY_HMAC_KEY,
+    SUBJECT_ENRICHMENT_IDEMPOTENCY_HMAC_KEY,
+}:
+    raise ImproperlyConfigured("KEYWORD_GENERATION_IDEMPOTENCY_HMAC_KEY must be independent.")
+
 WEB_IMPORT_ENABLED = env_bool("WEB_IMPORT_ENABLED", False)
 WEB_IMPORT_NETWORK_POLICY_ENFORCED = env_bool("WEB_IMPORT_NETWORK_POLICY_ENFORCED", False)
 if WEB_IMPORT_ENABLED and not WEB_IMPORT_NETWORK_POLICY_ENFORCED:
@@ -166,6 +188,11 @@ for forbidden_variable in ("DATABASE_URL", "REDIS_URL"):
     if SUBJECT_ENRICHMENT_IDEMPOTENCY_HMAC_KEY in {configured_url, configured_password}:
         raise ImproperlyConfigured(
             "SUBJECT_ENRICHMENT_IDEMPOTENCY_HMAC_KEY must not reuse "
+            f"{forbidden_variable} credentials."
+        )
+    if KEYWORD_GENERATION_IDEMPOTENCY_HMAC_KEY in {configured_url, configured_password}:
+        raise ImproperlyConfigured(
+            "KEYWORD_GENERATION_IDEMPOTENCY_HMAC_KEY must not reuse "
             f"{forbidden_variable} credentials."
         )
 SMS_PROVIDER = os.getenv("SMS_PROVIDER", "unconfigured").strip().lower()

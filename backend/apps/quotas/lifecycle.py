@@ -105,7 +105,6 @@ def advance_cycle_account(*, account_id, request_id, now=None):
     definition = quota_definition(previous.quota_type)
     if (
         previous.batch_type != QuotaAccount.BatchType.PRIMARY
-        or definition.subject_level
         or definition.reset_type != "monthly"
         or previous.cycle_ends_at is None
     ):
@@ -143,12 +142,14 @@ def advance_cycle_account(*, account_id, request_id, now=None):
         cycle_ends_at=next_end,
         request_id=request_id,
         actor=None,
+        subject=previous.subject,
     )
     next_account.refresh_from_db(fields=("last_ledger_entry",))
     assert next_account.last_ledger_entry is not None
     return QuotaCycleReset.objects.create(
         subscription=subscription,
         quota_type=previous.quota_type,
+        subject=previous.subject,
         boundary=boundary,
         previous_account=previous,
         next_account=next_account,

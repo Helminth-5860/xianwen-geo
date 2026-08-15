@@ -17,6 +17,7 @@ REQUIRED_ENVIRONMENT = {
     "FILE_IDEMPOTENCY_HMAC_KEY": "f" * 64,
     "WEB_IMPORT_IDEMPOTENCY_HMAC_KEY": "w" * 64,
     "SUBJECT_ENRICHMENT_IDEMPOTENCY_HMAC_KEY": "e" * 64,
+    "KEYWORD_GENERATION_IDEMPOTENCY_HMAC_KEY": "k" * 64,
     "SMS_PROVIDER": "unconfigured",
     "FILE_STORAGE_PROVIDER": "unavailable",
     "FILE_SCANNER_PROVIDER": "unavailable",
@@ -47,6 +48,8 @@ def import_settings(overrides: dict[str, str] | None = None, missing: str | None
             "WEB_IMPORT_IDEMPOTENCY_HMAC_KEY",
             "SUBJECT_ENRICHMENT_IDEMPOTENCY_HMAC_KEY",
             "SUBJECT_ENRICHMENT_PROVIDER",
+            "KEYWORD_GENERATION_IDEMPOTENCY_HMAC_KEY",
+            "KEYWORD_GENERATION_PROVIDER",
             "SMS_PROVIDER",
             "FILE_STORAGE_PROVIDER",
             "FILE_SCANNER_PROVIDER",
@@ -85,6 +88,7 @@ def import_settings(overrides: dict[str, str] | None = None, missing: str | None
         "FILE_IDEMPOTENCY_HMAC_KEY",
         "WEB_IMPORT_IDEMPOTENCY_HMAC_KEY",
         "SUBJECT_ENRICHMENT_IDEMPOTENCY_HMAC_KEY",
+        "KEYWORD_GENERATION_IDEMPOTENCY_HMAC_KEY",
         "DATABASE_URL",
         "REDIS_URL",
         "ALLOWED_HOSTS",
@@ -175,6 +179,22 @@ def test_production_missing_required_environment_fails_fast(missing):
         (
             {"SUBJECT_ENRICHMENT_PROVIDER": "deepseek"},
             "Only unavailable subject enrichment provider is supported",
+        ),
+        (
+            {"KEYWORD_GENERATION_IDEMPOTENCY_HMAC_KEY": "weak"},
+            "KEYWORD_GENERATION_IDEMPOTENCY_HMAC_KEY is too weak",
+        ),
+        (
+            {"KEYWORD_GENERATION_IDEMPOTENCY_HMAC_KEY": "x" * 64},
+            "KEYWORD_GENERATION_IDEMPOTENCY_HMAC_KEY must be independent",
+        ),
+        (
+            {"KEYWORD_GENERATION_PROVIDER": "mock"},
+            "Mock keyword generation provider is forbidden",
+        ),
+        (
+            {"KEYWORD_GENERATION_PROVIDER": "deepseek"},
+            "Only unavailable keyword generation provider is supported",
         ),
     ],
 )

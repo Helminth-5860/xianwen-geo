@@ -213,17 +213,23 @@
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/subjects/{id}/keyword-sets` | 版本列表 |
-| GET | `/subjects/{id}/keywords/current` | 当前版本 |
-| POST | `/subjects/{id}/keywords/generate` | 首次或重新生成 |
-| GET | `/keyword-jobs/{job_id}` | 进度 |
-| PATCH | `/subjects/{id}/keywords/draft` | 批量自动保存编辑草稿 |
-| POST | `/subjects/{id}/keywords/commit` | 保存并生成新版本 |
+| GET | `/subjects/{id}/keywords/draft` | 草稿、绑定主体版本和写权限 |
+| PATCH | `/subjects/{id}/keywords/draft` | expected_version 原子保存完整有序草稿 |
+| GET | `/subjects/{id}/keywords/current` | 当前正式版本 |
+| POST | `/subjects/{id}/keywords/commit` | 显式提交不可变正式版本 |
+| GET | `/subjects/{id}/keywords/versions` | 正式版本列表 |
+| GET | `/subjects/{id}/keywords/versions/{version_id}` | 正式版本详情 |
+| POST | `/subjects/{id}/keywords/generate` | 创建或幂等返回 AI 生成任务 |
+| GET | `/keyword-jobs/{job_id}` | 所有者范围内轮询安全任务投影 |
 
 ### 10.1 生成请求
 
+必须同时携带 `Idempotency-Key` 和 CSRF header：
+
 ```json
 {
+  "expected_subject_version_id": "uuid",
+  "expected_keyword_set_version": 3,
   "target_count": 80,
   "include_short": true,
   "include_long_tail": true,
@@ -233,7 +239,17 @@
 }
 ```
 
-所有类型可为 false；此时生成通用关键词。
+所有类型可为 false；此时生成通用关键词。选择地区词时必须提供规范化后唯一的地区列表。请求为 strict schema，未知字段返回 422。
+
+`regenerate` 只是用户确认意图；服务端根据该主体是否已有成功写入草稿的生成任务决定 free_initial 或 regeneration。需要消费但未确认时返回 `409 KEYWORD_REGENERATION_CONFIRMATION_REQUIRED`。
+
+### 10.2 任务响应与并发
+
+创建接口返回 202；相同幂等键和相同 canonical 请求返回同一任务且不重复冻结。任务投影包含 status/version、计费摘要、生成配置、provider/model/adapter/prompt provenance、尝试次数和成功结果摘要，不返回主体输入快照、正文、prompt、摘要、幂等摘要或 provider raw response。
+
+状态：`queued/running/retry_wait/succeeded/failed/conflict/superseded`。一个主体只允许一个 active job。主体正式版本或关键词草稿 expected_version 变化时以 conflict 结束并释放冻结，不覆盖现有草稿。
+
+成功只原子替换完整关键词草稿并推进草稿 version；用户仍需调用 commit 创建正式版本。所有响应使用 `Cache-Control: no-store`。
 
 ## 11. 蒸馏 API
 

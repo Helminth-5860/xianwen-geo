@@ -12,6 +12,7 @@ def test_keyword_compose_is_postgresql_only_and_runs_real_pytest():
     assert "redis" not in service["depends_on"]
     command = service["command"]
     assert "tests/test_keywords_postgres.py" in command
+    assert "tests/test_keyword_generation_postgres.py" in command
     assert "-q" not in command
 
 
@@ -23,7 +24,7 @@ def test_keyword_scripts_cleanup_and_ci_step_exist():
     assert "finally" in powershell
     assert "down --volumes --remove-orphans" in shell
     assert "down --volumes --remove-orphans" in powershell
-    assert "Run PostgreSQL keyword model and editor tests" in workflow
+    assert "Run PostgreSQL keyword model, editor, and AI generation tests" in workflow
     assert "bash scripts/test-keywords.sh" in workflow
 
 
@@ -36,9 +37,22 @@ def test_keyword_guard_migration_is_vendor_gated_and_avoids_dynamic_percent_iden
     assert "%I" not in migration
 
 
-def test_xw0302_routes_and_runtime_are_not_implemented_by_xw0301():
+def test_xw0302_routes_runtime_and_guards_are_wired():
     urls = (ROOT / "backend/apps/keywords/urls.py").read_text(encoding="utf-8")
-    services = (ROOT / "backend/apps/keywords/services.py").read_text(encoding="utf-8")
-    assert "keywords/generate" not in urls
-    assert "Celery" not in services
-    assert "apps.quotas" not in services
+    generation_services = (ROOT / "backend/apps/keywords/generation_services.py").read_text(
+        encoding="utf-8"
+    )
+    generation_tasks = (ROOT / "backend/apps/keywords/generation_tasks.py").read_text(
+        encoding="utf-8"
+    )
+    keyword_guards = (
+        ROOT / "backend/apps/keywords/migrations/0005_keyword_generation_postgresql_guards.py"
+    ).read_text(encoding="utf-8")
+    quota_guards = (
+        ROOT / "backend/apps/quotas/migrations/0012_subject_cycle_postgresql_guards.py"
+    ).read_text(encoding="utf-8")
+    assert "keywords/generate" in urls
+    assert "create_keyword_generation_job" in generation_services
+    assert "keywords.execute_generation" in generation_tasks
+    assert "keywords_generation_job_guard" in keyword_guards
+    assert "previous_row.subject_id" in quota_guards

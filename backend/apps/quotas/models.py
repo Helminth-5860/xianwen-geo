@@ -23,6 +23,7 @@ class QuotaAccount(models.Model):  # noqa: DJ008
         SUBSCRIPTION = "subscription", "订阅"
         ACCOUNT = "account", "账号"
         ACCOUNT_CYCLE = "account_cycle", "账号周期"
+        SUBJECT_CYCLE = "subject_cycle", "主体周期"
 
     class BatchType(models.TextChoices):
         PRIMARY = "primary", "套餐基础批次"
@@ -34,6 +35,13 @@ class QuotaAccount(models.Model):  # noqa: DJ008
     )
     subscription = models.ForeignKey(
         "plans.Subscription", on_delete=models.PROTECT, related_name="quota_accounts"
+    )
+    subject = models.ForeignKey(
+        "subjects.Subject",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="quota_accounts",
     )
     quota_type = models.CharField(max_length=100)
     scope = models.CharField(max_length=24, choices=Scope.choices)
@@ -76,18 +84,36 @@ class QuotaAccount(models.Model):  # noqa: DJ008
         ordering = ("quota_type", "cycle_started_at", "id")
         constraints = [
             models.UniqueConstraint(
-                fields=("subscription", "quota_type", "batch_key"),
+                fields=("subscription", "quota_type", "subject", "batch_key"),
                 name="quota_account_unique_batch",
+                nulls_distinct=False,
             ),
             models.UniqueConstraint(
                 fields=("subscription", "quota_type"),
-                condition=Q(batch_type="primary", cycle_started_at__isnull=True),
+                condition=Q(
+                    batch_type="primary",
+                    cycle_started_at__isnull=True,
+                    subject__isnull=True,
+                ),
                 name="quota_account_unique_noncycle",
             ),
             models.UniqueConstraint(
                 fields=("subscription", "quota_type", "cycle_started_at"),
-                condition=Q(batch_type="primary", cycle_started_at__isnull=False),
+                condition=Q(
+                    batch_type="primary",
+                    cycle_started_at__isnull=False,
+                    subject__isnull=True,
+                ),
                 name="quota_account_unique_cycle",
+            ),
+            models.UniqueConstraint(
+                fields=("subscription", "quota_type", "subject", "cycle_started_at"),
+                condition=Q(
+                    batch_type="primary",
+                    cycle_started_at__isnull=False,
+                    subject__isnull=False,
+                ),
+                name="quota_account_unique_subject_cycle",
             ),
             models.CheckConstraint(
                 condition=Q(entitlement_amount__gte=0), name="quota_entitlement_gte_0"
@@ -108,9 +134,19 @@ class QuotaAccount(models.Model):  # noqa: DJ008
                 name="quota_account_cycle_window",
             ),
             models.CheckConstraint(
-                condition=Q(scope="account_cycle", cycle_started_at__isnull=False)
-                | (~Q(scope="account_cycle") & Q(cycle_started_at__isnull=True)),
+                condition=Q(
+                    scope__in=("account_cycle", "subject_cycle"), cycle_started_at__isnull=False
+                )
+                | (
+                    ~Q(scope__in=("account_cycle", "subject_cycle"))
+                    & Q(cycle_started_at__isnull=True)
+                ),
                 name="quota_account_scope_cycle",
+            ),
+            models.CheckConstraint(
+                condition=Q(scope="subject_cycle", subject__isnull=False)
+                | (~Q(scope="subject_cycle") & Q(subject__isnull=True)),
+                name="quota_account_subject_scope",
             ),
             models.CheckConstraint(
                 condition=Q(batch_type__in=("primary", "carryover")),
@@ -502,6 +538,13 @@ class QuotaCycleReset(models.Model):  # noqa: DJ008
         "plans.Subscription", on_delete=models.PROTECT, related_name="quota_cycle_resets"
     )
     quota_type = models.CharField(max_length=100)
+    subject = models.ForeignKey(
+        "subjects.Subject",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="quota_cycle_resets",
+    )
     boundary = models.DateTimeField()
     previous_account = models.OneToOneField(
         QuotaAccount, on_delete=models.PROTECT, related_name="outgoing_cycle_reset"
@@ -529,8 +572,9 @@ class QuotaCycleReset(models.Model):  # noqa: DJ008
         ordering = ("boundary", "id")
         constraints = [
             models.UniqueConstraint(
-                fields=("subscription", "quota_type", "boundary"),
+                fields=("subscription", "quota_type", "subject", "boundary"),
                 name="quota_cycle_reset_unique_boundary",
+                nulls_distinct=False,
             )
         ]
 

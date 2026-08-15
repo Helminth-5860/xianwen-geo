@@ -16,7 +16,7 @@ def current_accounts(user, *, now=None):
     subscription = current_subscription(user, now=moment)
     if subscription is None:
         return QuotaAccount.objects.none()
-    return QuotaAccount.objects.filter(subscription=subscription).filter(
+    return QuotaAccount.objects.filter(subscription=subscription, subject__isnull=True).filter(
         Q(cycle_started_at__isnull=True, cycle_ends_at__isnull=True)
         | Q(cycle_started_at__lte=moment, cycle_ends_at__gt=moment)
     )

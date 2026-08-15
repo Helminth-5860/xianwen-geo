@@ -19,6 +19,13 @@ class NormalizedKeyword:
     region_level: str
     region_text: str
     region_matching_key: str
+    base_keyword_text: str | None
+    base_keyword_matching: str | None
+    business_category: str | None
+    search_intent: str | None
+    relevance_score: int | None
+    priority: str | None
+    ai_reason: str | None
     sort_order: int
 
     def semantic_payload(self) -> dict[str, object]:
@@ -30,6 +37,12 @@ class NormalizedKeyword:
             "region_level": self.region_level,
             "region_text": self.region_text,
             "region_matching_key": self.region_matching_key,
+            "base_keyword_text": self.base_keyword_text,
+            "business_category": self.business_category,
+            "search_intent": self.search_intent,
+            "relevance_score": self.relevance_score,
+            "priority": self.priority,
+            "ai_reason": self.ai_reason,
             "sort_order": self.sort_order,
         }
 
@@ -47,11 +60,24 @@ def normalize_plain_text(value: str, *, max_length: int = 500) -> tuple[str, str
     return normalized, matching
 
 
+def _optional_plain_text(
+    item: dict[str, object], key: str, *, max_length: int
+) -> tuple[str | None, str | None]:
+    raw = item.get(key)
+    if raw is None or raw == "":
+        return None, None
+    if not isinstance(raw, str):
+        raise KeywordNormalizationError("shape")
+    return normalize_plain_text(raw, max_length=max_length)
+
+
 def normalize_keyword_items(items: list[dict[str, object]]) -> list[NormalizedKeyword]:
     result: list[NormalizedKeyword] = []
     seen: set[tuple[str, str]] = set()
     valid_structure = set(KeywordItemFields.StructureType.values)
     valid_region_levels = set(KeywordItemFields.RegionLevel.values)
+    valid_intents = set(KeywordItemFields.SearchIntent.values)
+    valid_priorities = set(KeywordItemFields.Priority.values)
     for index, item in enumerate(items):
         raw_text = item.get("text")
         structure_type = item.get("structure_type")
@@ -77,6 +103,26 @@ def normalize_keyword_items(items: list[dict[str, object]]) -> list[NormalizedKe
             region_level = ""
             region_text = ""
             region_matching_key = ""
+        base_keyword_text, base_keyword_matching = _optional_plain_text(
+            item, "base_keyword_text", max_length=500
+        )
+        business_category, _ = _optional_plain_text(item, "business_category", max_length=128)
+        search_intent = item.get("search_intent")
+        if search_intent == "":
+            search_intent = None
+        if search_intent is not None and search_intent not in valid_intents:
+            raise KeywordNormalizationError("search_intent")
+        relevance_score = item.get("relevance_score")
+        if relevance_score is not None and (
+            type(relevance_score) is not int or not 0 <= relevance_score <= 100
+        ):
+            raise KeywordNormalizationError("relevance_score")
+        priority = item.get("priority")
+        if priority == "":
+            priority = None
+        if priority is not None and priority not in valid_priorities:
+            raise KeywordNormalizationError("priority")
+        ai_reason, _ = _optional_plain_text(item, "ai_reason", max_length=1000)
         duplicate_key = (matching_text, region_matching_key)
         if duplicate_key in seen:
             raise KeywordNormalizationError("duplicate")
@@ -90,6 +136,13 @@ def normalize_keyword_items(items: list[dict[str, object]]) -> list[NormalizedKe
                 region_level=region_level,
                 region_text=region_text,
                 region_matching_key=region_matching_key,
+                base_keyword_text=base_keyword_text,
+                base_keyword_matching=base_keyword_matching,
+                business_category=business_category,
+                search_intent=str(search_intent) if search_intent is not None else None,
+                relevance_score=relevance_score,
+                priority=str(priority) if priority is not None else None,
+                ai_reason=ai_reason,
                 sort_order=index,
             )
         )
@@ -103,3 +156,61 @@ def keyword_content_digest(*, subject_version_id, items: list[NormalizedKeyword]
     }
     encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def resolve_base_keyword_indexes(items: list[NormalizedKeyword]) -> dict[int, int]:
+    resolved: dict[int, int] = {}
+    for index, item in enumerate(items):
+        if item.base_keyword_matching is None:
+            continue
+        candidates = [
+            candidate_index
+            for candidate_index, candidate in enumerate(items)
+            if candidate.matching_text == item.base_keyword_matching
+        ]
+        if len(candidates) != 1:
+            raise KeywordNormalizationError(
+                "base_keyword_missing" if not candidates else "base_keyword_ambiguous"
+            )
+        target = candidates[0]
+        if target == index:
+            raise KeywordNormalizationError("base_keyword_self")
+        resolved[index] = target
+
+    visiting: set[int] = set()
+    visited: set[int] = set()
+
+    def visit(index: int) -> None:
+        if index in visited:
+            return
+        if index in visiting:
+            raise KeywordNormalizationError("base_keyword_cycle")
+        visiting.add(index)
+        target = resolved.get(index)
+        if target is not None:
+            visit(target)
+        visiting.remove(index)
+        visited.add(index)
+
+    for index in resolved:
+        visit(index)
+    return resolved
+
+
+def normalize_generated_keyword_items(
+    items: list[dict[str, object]], *, target_count: int
+) -> list[NormalizedKeyword]:
+    normalized = normalize_keyword_items(items)
+    if not normalized or len(normalized) > target_count:
+        raise KeywordNormalizationError("generated_count")
+    for item in normalized:
+        if (
+            item.business_category is None
+            or item.search_intent is None
+            or item.relevance_score is None
+            or item.priority is None
+            or item.ai_reason is None
+        ):
+            raise KeywordNormalizationError("generated_metadata")
+    resolve_base_keyword_indexes(normalized)
+    return normalized

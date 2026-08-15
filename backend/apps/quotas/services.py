@@ -107,9 +107,11 @@ def _first_cycle_window(subscription: Subscription):
     return subscription.starts_at, min(boundary, subscription.ends_at)
 
 
-def _batch_key(subscription_id, quota_type: str, cycle_started_at) -> uuid.UUID:
+def _batch_key(subscription_id, quota_type: str, cycle_started_at, subject_id=None) -> uuid.UUID:
     cycle = cycle_started_at.isoformat() if cycle_started_at else "subscription"
-    return uuid.uuid5(BATCH_NAMESPACE, f"{subscription_id}|{quota_type}|{cycle}")
+    if subject_id is None:
+        return uuid.uuid5(BATCH_NAMESPACE, f"{subscription_id}|{quota_type}|{cycle}")
+    return uuid.uuid5(BATCH_NAMESPACE, f"{subscription_id}|{quota_type}|{subject_id}|{cycle}")
 
 
 def _subscription_effective(subscription: Subscription, account: QuotaAccount, moment) -> bool:
@@ -353,17 +355,26 @@ def _create_initialized_account(
     cycle_ends_at,
     request_id,
     actor,
+    subject=None,
 ) -> QuotaAccount:
     definition = quota_definition(quota_type)
-    batch_key = _batch_key(subscription.pk, quota_type, cycle_started_at)
+    if definition.subject_level != (subject is not None):
+        raise QuotaStateConflict
+    batch_key = _batch_key(
+        subscription.pk, quota_type, cycle_started_at, getattr(subject, "pk", None)
+    )
     existing = QuotaAccount.objects.filter(
-        subscription=subscription, quota_type=quota_type, batch_key=batch_key
+        subscription=subscription,
+        quota_type=quota_type,
+        subject=subject,
+        batch_key=batch_key,
     ).first()
     if existing is not None:
         return existing
     account = QuotaAccount.objects.create(
         user_id=subscription.user_id,
         subscription=subscription,
+        subject=subject,
         quota_type=quota_type,
         scope=definition.scope,
         unit=definition.unit,
@@ -380,6 +391,7 @@ def _create_initialized_account(
         business_id=subscription.pk,
         request_payload={
             "quota_type": quota_type,
+            "subject_id": str(subject.pk) if subject is not None else None,
             "amount": amount,
             "cycle_started_at": cycle_started_at.isoformat() if cycle_started_at else None,
             "cycle_ends_at": cycle_ends_at.isoformat() if cycle_ends_at else None,
@@ -423,6 +435,62 @@ def initialize_subscription_accounts(*, subscription: Subscription, request_id, 
             )
         )
     return accounts
+
+
+@transaction.atomic
+def get_or_create_subject_cycle_account(
+    *, subscription: Subscription, subject, quota_type: str, request_id
+):
+    locked = Subscription.objects.select_for_update().get(pk=subscription.pk)
+    definition = quota_definition(quota_type)
+    if not definition.subject_level or definition.reset_type != "monthly":
+        raise QuotaStateConflict
+    now = timezone.now()
+    if (
+        locked.user_id != subject.user_id
+        or locked.status != Subscription.Status.ACTIVE
+        or not locked.starts_at <= now < locked.ends_at
+    ):
+        raise QuotaSubscriptionUnavailable
+    current_cycle = (
+        QuotaAccount.objects.select_for_update()
+        .filter(
+            subscription=locked,
+            subject__isnull=True,
+            scope=QuotaAccount.Scope.ACCOUNT_CYCLE,
+            batch_type=QuotaAccount.BatchType.PRIMARY,
+            cycle_started_at__lte=now,
+            cycle_ends_at__gt=now,
+        )
+        .order_by("cycle_started_at", "id")
+        .first()
+    )
+    if current_cycle is None:
+        raise QuotaStateConflict
+    existing = (
+        QuotaAccount.objects.select_for_update()
+        .filter(
+            subscription=locked,
+            subject=subject,
+            quota_type=quota_type,
+            cycle_started_at=current_cycle.cycle_started_at,
+            cycle_ends_at=current_cycle.cycle_ends_at,
+        )
+        .first()
+    )
+    if existing is not None:
+        return existing
+    values = _snapshot_values(locked)
+    return _create_initialized_account(
+        subscription=locked,
+        subject=subject,
+        quota_type=quota_type,
+        amount=values[quota_type],
+        cycle_started_at=current_cycle.cycle_started_at,
+        cycle_ends_at=current_cycle.cycle_ends_at,
+        request_id=request_id,
+        actor=None,
+    )
 
 
 @transaction.atomic
@@ -884,7 +952,9 @@ def apply_subscription_change_quotas(
     now,
 ):
     source_accounts = list(
-        QuotaAccount.objects.filter(subscription=source_subscription).order_by("id")
+        QuotaAccount.objects.filter(
+            subscription=source_subscription, subject__isnull=True
+        ).order_by("id")
     )
     target_primary = {
         account.quota_type: account
@@ -1003,9 +1073,9 @@ def freeze_quota(
     request_id,
 ):
     try:
-        binding = QuotaAccount.objects.only("subscription_id", "quota_type", "user_id").get(
-            pk=account_id
-        )
+        binding = QuotaAccount.objects.only(
+            "subscription_id", "quota_type", "user_id", "subject_id"
+        ).get(pk=account_id)
     except QuotaAccount.DoesNotExist as exc:
         raise NotFound from exc
     subscription = Subscription.objects.select_for_update().get(pk=binding.subscription_id)
@@ -1015,11 +1085,15 @@ def freeze_quota(
         or not subscription.starts_at <= now < subscription.ends_at
     ):
         raise QuotaSubscriptionUnavailable
-    accounts = list(
-        QuotaAccount.objects.select_for_update()
-        .filter(subscription=subscription, quota_type=binding.quota_type)
-        .order_by("id")
+    account_query = QuotaAccount.objects.select_for_update().filter(
+        subscription=subscription,
+        quota_type=binding.quota_type,
     )
+    if binding.subject_id is None:
+        account_query = account_query.filter(subject__isnull=True)
+    else:
+        account_query = account_query.filter(subject_id=binding.subject_id)
+    accounts = list(account_query.order_by("id"))
     if binding.quota_type == "storage_bytes":
         accounts = [
             account

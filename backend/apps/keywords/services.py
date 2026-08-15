@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass
 
 from django.db import IntegrityError, transaction
@@ -26,6 +27,8 @@ from .normalization import (
     NormalizedKeyword,
     keyword_content_digest,
     normalize_keyword_items,
+    normalize_plain_text,
+    resolve_base_keyword_indexes,
 )
 
 
@@ -124,6 +127,15 @@ def _normalized_from_draft(row: KeywordDraftItem) -> NormalizedKeyword:
         region_level=row.region_level,
         region_text=row.region_text,
         region_matching_key=row.region_matching_key,
+        base_keyword_text=row.base_keyword_text,
+        base_keyword_matching=(
+            normalize_plain_text(row.base_keyword_text)[1] if row.base_keyword_text else None
+        ),
+        business_category=row.business_category,
+        search_intent=row.search_intent,
+        relevance_score=row.relevance_score,
+        priority=row.priority,
+        ai_reason=row.ai_reason,
         sort_order=row.sort_order,
     )
 
@@ -152,6 +164,12 @@ def _replace_draft_rows(keyword_set: KeywordSet, items: list[NormalizedKeyword])
                 region_level=item.region_level,
                 region_text=item.region_text,
                 region_matching_key=item.region_matching_key,
+                base_keyword_text=item.base_keyword_text,
+                business_category=item.business_category,
+                search_intent=item.search_intent,
+                relevance_score=item.relevance_score,
+                priority=item.priority,
+                ai_reason=item.ai_reason,
                 sort_order=item.sort_order,
             )
             for item in items
@@ -222,13 +240,15 @@ def replace_keyword_draft_from_generation(
     expected_subject_version_id,
     items: list[dict[str, object]],
 ) -> KeywordSet:
-    keyword_set, _ = save_keyword_draft(
+    keyword_set, changed = save_keyword_draft(
         user_id=user_id,
         subject_id=subject_id,
         expected_version=expected_version,
         expected_subject_version_id=expected_subject_version_id,
         items=items,
     )
+    if not changed:
+        raise KeywordVersionNoChanges
     return keyword_set
 
 
@@ -279,9 +299,15 @@ def commit_keyword_version(
         item_count=len(normalized),
         created_by=user,
     )
+    try:
+        base_indexes = resolve_base_keyword_indexes(normalized)
+    except KeywordNormalizationError as exc:
+        raise KeywordValuesInvalid from exc
+    keyword_ids = [uuid.uuid4() for _ in normalized]
     Keyword.objects.bulk_create(
         [
             Keyword(
+                id=keyword_ids[index],
                 keyword_set_version=version,
                 text=item.text,
                 matching_text=item.matching_text,
@@ -290,9 +316,17 @@ def commit_keyword_version(
                 region_level=item.region_level,
                 region_text=item.region_text,
                 region_matching_key=item.region_matching_key,
+                base_keyword_id=(
+                    keyword_ids[base_indexes[index]] if index in base_indexes else None
+                ),
+                business_category=item.business_category,
+                search_intent=item.search_intent,
+                relevance_score=item.relevance_score,
+                priority=item.priority,
+                ai_reason=item.ai_reason,
                 sort_order=item.sort_order,
             )
-            for item in normalized
+            for index, item in enumerate(normalized)
         ]
     )
     keyword_set.current_version = version
