@@ -109,8 +109,9 @@ def _first_cycle_window(subscription: Subscription):
 
 def _batch_key(subscription_id, quota_type: str, cycle_started_at, subject_id=None) -> uuid.UUID:
     cycle = cycle_started_at.isoformat() if cycle_started_at else "subscription"
-    subject = str(subject_id) if subject_id else "account"
-    return uuid.uuid5(BATCH_NAMESPACE, f"{subscription_id}|{quota_type}|{subject}|{cycle}")
+    if subject_id is None:
+        return uuid.uuid5(BATCH_NAMESPACE, f"{subscription_id}|{quota_type}|{cycle}")
+    return uuid.uuid5(BATCH_NAMESPACE, f"{subscription_id}|{quota_type}|{subject_id}|{cycle}")
 
 
 def _subscription_effective(subscription: Subscription, account: QuotaAccount, moment) -> bool:
