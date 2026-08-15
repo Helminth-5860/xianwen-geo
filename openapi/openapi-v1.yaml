@@ -990,6 +990,87 @@ paths:
         '403': {$ref: '#/components/responses/CsrfFailed'}
         '404': {$ref: '#/components/responses/ResourceNotFound'}
         '409': {$ref: '#/components/responses/BusinessConflict'}
+  /subjects/{subjectId}/keywords/draft:
+    parameters:
+      - $ref: '#/components/parameters/SubjectId'
+    get:
+      tags: [Keywords]
+      summary: 获取关键词草稿和当前版本状态，不产生写入
+      responses:
+        '200': {description: 关键词草稿, content: {application/json: {schema: {$ref: '#/components/schemas/KeywordDraftEnvelope'}}}}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+    patch:
+      tags: [Keywords]
+      summary: 原子保存完整有序关键词草稿
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/KeywordDraftSaveRequest'}
+      responses:
+        '200': {description: 草稿已保存或内容无变化, content: {application/json: {schema: {$ref: '#/components/schemas/KeywordDraftEnvelope'}}}}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/CsrfFailed'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+        '409': {$ref: '#/components/responses/BusinessConflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /subjects/{subjectId}/keywords/current:
+    parameters:
+      - $ref: '#/components/parameters/SubjectId'
+    get:
+      tags: [Keywords]
+      summary: 获取当前正式关键词版本
+      responses:
+        '200': {description: 当前正式关键词版本, content: {application/json: {schema: {$ref: '#/components/schemas/KeywordCurrentEnvelope'}}}}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+  /subjects/{subjectId}/keywords/commit:
+    parameters:
+      - $ref: '#/components/parameters/SubjectId'
+    post:
+      tags: [Keywords]
+      summary: 从服务器草稿创建不可变关键词正式版本
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/KeywordCommitRequest'}
+      responses:
+        '201': {description: 正式版本已创建, content: {application/json: {schema: {$ref: '#/components/schemas/KeywordCommitEnvelope'}}}}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/CsrfFailed'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+        '409': {$ref: '#/components/responses/BusinessConflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /subjects/{subjectId}/keywords/versions:
+    parameters:
+      - $ref: '#/components/parameters/SubjectId'
+    get:
+      tags: [Keywords]
+      summary: 获取关键词正式版本列表
+      responses:
+        '200': {description: 版本列表, content: {application/json: {schema: {$ref: '#/components/schemas/KeywordVersionListEnvelope'}}}}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+  /subjects/{subjectId}/keywords/versions/{versionId}:
+    parameters:
+      - $ref: '#/components/parameters/SubjectId'
+      - name: versionId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    get:
+      tags: [Keywords]
+      summary: 获取关键词历史正式版本详情
+      responses:
+        '200': {description: 历史版本详情, content: {application/json: {schema: {$ref: '#/components/schemas/KeywordVersionEnvelope'}}}}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
   /subjects/{subjectId}/keywords/generate:
     parameters:
       - $ref: '#/components/parameters/SubjectId'
@@ -2896,6 +2977,11 @@ components:
         - SUBJECT_ENRICHMENT_PROVIDER_UNAVAILABLE
         - SUBJECT_ENRICHMENT_TEMPORARILY_UNAVAILABLE
         - SUBJECT_ENRICHMENT_INTERNAL_ERROR
+        - KEYWORD_STATE_CONFLICT
+        - KEYWORD_VERSION_CONFLICT
+        - KEYWORD_SUBJECT_VERSION_CONFLICT
+        - KEYWORD_VALUES_INVALID
+        - KEYWORD_VERSION_NO_CHANGES
         - SUBJECT_RISK_CONFIG_INTEGRITY_ERROR
         - SUBJECT_RISK_CATALOG_VERSION_CONFLICT
         - SUBJECT_RISK_TYPE_VERSION_CONFLICT
@@ -3575,6 +3661,116 @@ components:
                   type: array
                   items: {$ref: '#/components/schemas/SubjectSummary'}
                 context: {$ref: '#/components/schemas/SubjectContext'}
+    KeywordItemInput:
+      type: object
+      additionalProperties: false
+      required: [text, structure_type, is_regional]
+      properties:
+        text: {type: string, maxLength: 500}
+        structure_type: {type: string, enum: [short, long_tail, general]}
+        is_regional: {type: boolean}
+        region_level: {type: string, enum: ['', country, province, city, district, custom], default: ''}
+        region_text: {type: string, maxLength: 200, default: ''}
+    KeywordDraftSaveRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version, expected_subject_version_id, items]
+      properties:
+        expected_version: {type: integer, minimum: 0}
+        expected_subject_version_id: {type: string, format: uuid}
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/KeywordItemInput'}
+    KeywordCommitRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version, expected_subject_version_id]
+      properties:
+        expected_version: {type: integer, minimum: 1}
+        expected_subject_version_id: {type: string, format: uuid}
+    KeywordItem:
+      type: object
+      additionalProperties: false
+      required: [id, text, structure_type, is_regional, sort_order]
+      properties:
+        id: {type: string, format: uuid}
+        text: {type: string}
+        structure_type: {type: string, enum: [short, long_tail, general]}
+        is_regional: {type: boolean}
+        region_level: {type: [string, 'null']}
+        region_text: {type: [string, 'null']}
+        sort_order: {type: integer, minimum: 0}
+    KeywordSubjectVersion:
+      type: object
+      additionalProperties: false
+      required: [id, version_no, official_name]
+      properties:
+        id: {type: string, format: uuid}
+        version_no: {type: integer, minimum: 1}
+        official_name: {type: string}
+    KeywordDraftState:
+      type: object
+      additionalProperties: false
+      required: [version, items, can_write]
+      properties:
+        version: {type: integer, minimum: 0}
+        subject_version: {oneOf: [{$ref: '#/components/schemas/KeywordSubjectVersion'}, {type: 'null'}]}
+        draft_subject_version: {oneOf: [{$ref: '#/components/schemas/KeywordSubjectVersion'}, {type: 'null'}]}
+        current_keyword_version_no: {type: [integer, 'null'], minimum: 1}
+        can_write: {type: boolean}
+        read_only_reason: {type: [string, 'null']}
+        items: {type: array, items: {$ref: '#/components/schemas/KeywordItem'}}
+    KeywordVersionSummary:
+      type: object
+      additionalProperties: false
+      required: [id, version_no, subject_version, item_count, created_at]
+      properties:
+        id: {type: string, format: uuid}
+        version_no: {type: integer, minimum: 1}
+        subject_version: {$ref: '#/components/schemas/KeywordSubjectVersion'}
+        item_count: {type: integer, minimum: 1}
+        created_at: {type: string, format: date-time}
+    KeywordVersionDetail:
+      allOf:
+        - $ref: '#/components/schemas/KeywordVersionSummary'
+        - type: object
+          required: [items]
+          properties:
+            items: {type: array, items: {$ref: '#/components/schemas/KeywordItem'}}
+    KeywordDraftEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, properties: {data: {$ref: '#/components/schemas/KeywordDraftState'}}}]
+    KeywordCurrentEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          properties:
+            data:
+              type: object
+              required: [version]
+              properties:
+                version: {oneOf: [{$ref: '#/components/schemas/KeywordVersionDetail'}, {type: 'null'}]}
+    KeywordCommitEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          properties:
+            data:
+              type: object
+              required: [version]
+              properties:
+                version: {$ref: '#/components/schemas/KeywordVersionDetail'}
+    KeywordVersionListEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          properties:
+            data:
+              type: object
+              required: [versions]
+              properties:
+                versions: {type: array, items: {$ref: '#/components/schemas/KeywordVersionSummary'}}
+    KeywordVersionEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, properties: {data: {$ref: '#/components/schemas/KeywordVersionDetail'}}}]
     KeywordGenerationRequest:
       type: object
       required: [target_count]

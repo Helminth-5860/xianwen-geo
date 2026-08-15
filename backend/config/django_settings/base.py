@@ -70,6 +70,7 @@ INSTALLED_APPS = [
     "apps.plans",
     "apps.quotas",
     "apps.subjects",
+    "apps.keywords",
     "apps.documents",
     "apps.web_sources",
 ]

@@ -94,13 +94,35 @@ check_gitleaks() {
     --volume "$REPO_ROOT:/repo:ro" \
     --workdir /repo \
     "$GITLEAKS_IMAGE" git --no-banner --redact .
-  git -C "$REPO_ROOT" ls-files --cached --others --exclude-standard -z |
-    while IFS= read -r -d '' tracked_file; do
-      if [[ -f "$REPO_ROOT/$tracked_file" ]]; then
-        printf '\nFILE:%s\n' "$tracked_file"
-        cat "$REPO_ROOT/$tracked_file"
-      fi
-    done | docker run --rm --interactive "$GITLEAKS_IMAGE" stdin --no-banner --redact
+  local scan_root="$REPO_ROOT/.tmp-gitleaks-working-tree"
+  local scan_list
+  local -a scan_files=()
+  local tracked_file
+
+  rm -rf "$scan_root"
+  scan_list="$(mktemp)"
+  trap 'rm -f "$scan_list"; rm -rf "$scan_root"' RETURN
+
+  git -C "$REPO_ROOT" ls-files --cached --others --exclude-standard -z >"$scan_list"
+  mapfile -d '' -t scan_files <"$scan_list"
+
+  mkdir -p "$scan_root"
+  for tracked_file in "${scan_files[@]}"; do
+    if [[ -f "$REPO_ROOT/$tracked_file" ]]; then
+      mkdir -p "$scan_root/$(dirname "$tracked_file")"
+      cp -- "$REPO_ROOT/$tracked_file" "$scan_root/$tracked_file"
+    fi
+  done
+
+  if [[ ! -f "$scan_root/.gitleaks.toml" ]]; then
+    echo "Missing .gitleaks.toml in Gitleaks working-tree scan root." >&2
+    return 1
+  fi
+
+  docker run --rm \
+    --volume "$scan_root:/scan:ro" \
+    --workdir /scan \
+    "$GITLEAKS_IMAGE" dir --config /scan/.gitleaks.toml --no-banner --redact .
 }
 
 check_docker() {

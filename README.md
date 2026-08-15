@@ -432,3 +432,9 @@ Run the real isolated suite with `.\scripts\test-web-import.ps1` on Windows or
 evidence boundaries.
 
 - [XW-0208 主体 AI 补充 Mock 和流程](docs/34-SUBJECT-AI-ENRICHMENT-MOCK-FLOW.md)
+
+### XW-0301 关键词数据模型和编辑器
+
+关键词领域位于 `apps.keywords`：人工草稿使用乐观并发，正式 `KeywordSetVersion/Keyword` 为不可变历史，并绑定提交时的正式 `SubjectVersion`。XW-0301 不实现 AI 生成、蒸馏或关键词额度扣减。
+
+专属 PostgreSQL 验证：`scripts/test-keywords.ps1` / `scripts/test-keywords.sh`。

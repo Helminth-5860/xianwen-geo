@@ -300,6 +300,9 @@ export default function SubjectDetailPage() {
               {"\u67e5\u770b\u6b63\u5f0f\u7248\u672c\u5386\u53f2"}
             </Link>
           </Typography.Paragraph>
+          <Typography.Paragraph>
+            <Link href={`/subjects/${subject.id}/keywords`}>管理关键词</Link>
+          </Typography.Paragraph>
           <Typography.Paragraph type="secondary">
             {subject.form_schema.description}
           </Typography.Paragraph>

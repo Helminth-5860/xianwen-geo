@@ -1,0 +1,34 @@
+services:
+  keyword-migrate:
+    profiles: [keywords-test]
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: test
+    command: ["python", "manage.py", "migrate", "--noinput"]
+    environment: &keyword-env
+      DJANGO_SETTINGS_MODULE: config.django_settings.keywords_test
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?set isolated keyword test secret}
+      DATABASE_URL: ${DATABASE_URL:?set isolated keyword test database URL}
+      RUN_MIGRATIONS: "false"
+    depends_on:
+      postgres: {condition: service_healthy}
+
+  keyword-tests:
+    profiles: [keywords-test]
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: test
+    command:
+      - python
+      - -m
+      - pytest
+      - tests/test_keywords_postgres.py
+      - -x
+      - --reuse-db
+      - -p
+      - no:cacheprovider
+    environment: *keyword-env
+    depends_on:
+      postgres: {condition: service_healthy}
