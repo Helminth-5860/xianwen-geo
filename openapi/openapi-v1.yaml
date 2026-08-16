@@ -1254,6 +1254,116 @@ paths:
         '404': {$ref: '#/components/responses/ResourceNotFound'}
         '409': {$ref: '#/components/responses/BusinessConflict'}
         '422': {$ref: '#/components/responses/ValidationError'}
+  /question-categories:
+    get:
+      tags: [Questions]
+      summary: 获取当前启用的问题分类与辅助标签目录
+      description: 可按启用的主体类型过滤；适用主体为空的目录项适用于全部主体。
+      parameters:
+        - {name: subject_type_id, in: query, schema: {type: string, format: uuid}}
+      responses:
+        '200': {description: 问题目录, headers: {Cache-Control: {schema: {type: string, const: no-store}}}, content: {application/json: {schema: {$ref: '#/components/schemas/PublicQuestionCatalogEnvelope'}}}}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/PermissionDenied'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /admin/question-categories:
+    get:
+      tags: [Admin, Questions]
+      summary: 查询问题分类目录
+      parameters:
+        - {name: status, in: query, schema: {$ref: '#/components/schemas/QuestionCatalogStatus'}}
+        - {name: keyword, in: query, schema: {type: string, maxLength: 150}}
+        - {name: subject_type_id, in: query, schema: {type: string, format: uuid}}
+      responses:
+        '200': {description: 问题分类列表, headers: {Cache-Control: {schema: {type: string, const: no-store}}}, content: {application/json: {schema: {$ref: '#/components/schemas/AdminQuestionCategoryListEnvelope'}}}}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/PermissionDenied'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+    post:
+      tags: [Admin, Questions]
+      summary: 创建问题分类
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/QuestionCategoryCreateRequest'}}}}
+      responses:
+        '201': {description: 已创建, headers: {Cache-Control: {schema: {type: string, const: no-store}}}, content: {application/json: {schema: {$ref: '#/components/schemas/AdminQuestionCategoryEnvelope'}}}}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/CsrfFailed'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /admin/question-categories/{categoryId}:
+    parameters: [{name: categoryId, in: path, required: true, schema: {type: string, format: uuid}}]
+    get:
+      tags: [Admin, Questions]
+      summary: 获取问题分类详情
+      responses: {'200': {description: 问题分类, content: {application/json: {schema: {$ref: '#/components/schemas/AdminQuestionCategoryEnvelope'}}}}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}}
+    patch:
+      tags: [Admin, Questions]
+      summary: 修改问题分类展示、生成说明、适用主体或排序
+      description: 必须提交 expected_version；key 与 is_builtin 不可修改。不提供 DELETE。
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/QuestionCategoryUpdateRequest'}}}}
+      responses: {'200': {description: 已更新, content: {application/json: {schema: {$ref: '#/components/schemas/AdminQuestionCategoryEnvelope'}}}}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/CsrfFailed'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /admin/question-categories/{categoryId}/enable:
+    parameters: [{name: categoryId, in: path, required: true, schema: {type: string, format: uuid}}]
+    post:
+      tags: [Admin, Questions]
+      summary: 启用问题分类
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ExpectedQuestionCatalogVersion'}}}}
+      responses: {'200': {description: 已启用, content: {application/json: {schema: {$ref: '#/components/schemas/AdminQuestionCategoryEnvelope'}}}}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/CsrfFailed'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /admin/question-categories/{categoryId}/disable:
+    parameters: [{name: categoryId, in: path, required: true, schema: {type: string, format: uuid}}]
+    post:
+      tags: [Admin, Questions]
+      summary: 停用问题分类
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ExpectedQuestionCatalogVersion'}}}}
+      responses: {'200': {description: 已停用, content: {application/json: {schema: {$ref: '#/components/schemas/AdminQuestionCategoryEnvelope'}}}}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/CsrfFailed'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /admin/question-tags:
+    get:
+      tags: [Admin, Questions]
+      summary: 查询辅助标签目录
+      parameters:
+        - {name: status, in: query, schema: {$ref: '#/components/schemas/QuestionCatalogStatus'}}
+        - {name: keyword, in: query, schema: {type: string, maxLength: 150}}
+        - {name: subject_type_id, in: query, schema: {type: string, format: uuid}}
+      responses: {'200': {description: 辅助标签列表, content: {application/json: {schema: {$ref: '#/components/schemas/AdminQuestionTagListEnvelope'}}}}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/PermissionDenied'}, '422': {$ref: '#/components/responses/ValidationError'}}
+    post:
+      tags: [Admin, Questions]
+      summary: 创建辅助标签
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/QuestionTagCreateRequest'}}}}
+      responses: {'201': {description: 已创建, content: {application/json: {schema: {$ref: '#/components/schemas/AdminQuestionTagEnvelope'}}}}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/CsrfFailed'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /admin/question-tags/{tagId}:
+    parameters: [{name: tagId, in: path, required: true, schema: {type: string, format: uuid}}]
+    get:
+      tags: [Admin, Questions]
+      summary: 获取辅助标签详情
+      responses: {'200': {description: 辅助标签, content: {application/json: {schema: {$ref: '#/components/schemas/AdminQuestionTagEnvelope'}}}}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}}
+    patch:
+      tags: [Admin, Questions]
+      summary: 修改辅助标签展示、适用主体或排序
+      description: 必须提交 expected_version；key 与 is_builtin 不可修改。不提供 DELETE。
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/QuestionTagUpdateRequest'}}}}
+      responses: {'200': {description: 已更新, content: {application/json: {schema: {$ref: '#/components/schemas/AdminQuestionTagEnvelope'}}}}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/CsrfFailed'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /admin/question-tags/{tagId}/enable:
+    parameters: [{name: tagId, in: path, required: true, schema: {type: string, format: uuid}}]
+    post:
+      tags: [Admin, Questions]
+      summary: 启用辅助标签
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ExpectedQuestionCatalogVersion'}}}}
+      responses: {'200': {description: 已启用, content: {application/json: {schema: {$ref: '#/components/schemas/AdminQuestionTagEnvelope'}}}}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/CsrfFailed'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /admin/question-tags/{tagId}/disable:
+    parameters: [{name: tagId, in: path, required: true, schema: {type: string, format: uuid}}]
+    post:
+      tags: [Admin, Questions]
+      summary: 停用辅助标签
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ExpectedQuestionCatalogVersion'}}}}
+      responses: {'200': {description: 已停用, content: {application/json: {schema: {$ref: '#/components/schemas/AdminQuestionTagEnvelope'}}}}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/CsrfFailed'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}}
   /subjects/{subjectId}/question-banks/generate:
     parameters:
       - $ref: '#/components/parameters/SubjectId'
@@ -5360,6 +5470,130 @@ components:
       allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/SubjectFieldConfig'}}}]
     SubjectFieldOptionEnvelope:
       allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/SubjectFieldOption'}}}]
+
+    QuestionCatalogStatus:
+      type: string
+      enum: [active, inactive]
+    QuestionCatalogApplicability:
+      type: array
+      maxItems: 100
+      uniqueItems: true
+      items: {type: string, format: uuid}
+    AdminQuestionCategory:
+      type: object
+      additionalProperties: false
+      required: [id, key, name, description, generation_guidance, status, sort_order, is_builtin, version, applicable_subject_type_ids, can_delete, created_at, updated_at]
+      properties:
+        id: {type: string, format: uuid}
+        key: {type: string, pattern: '^[a-z][a-z0-9_]{0,99}$', readOnly: true}
+        name: {type: string, maxLength: 150}
+        description: {type: string, maxLength: 500}
+        generation_guidance: {type: string, maxLength: 2000}
+        status: {$ref: '#/components/schemas/QuestionCatalogStatus'}
+        sort_order: {type: integer, minimum: 0}
+        is_builtin: {type: boolean, readOnly: true}
+        version: {type: integer, minimum: 1, readOnly: true}
+        applicable_subject_type_ids: {$ref: '#/components/schemas/QuestionCatalogApplicability'}
+        can_delete: {type: boolean, const: false, readOnly: true}
+        created_at: {type: string, format: date-time, readOnly: true}
+        updated_at: {type: string, format: date-time, readOnly: true}
+    AdminQuestionTag:
+      type: object
+      additionalProperties: false
+      required: [id, key, name, description, status, sort_order, is_builtin, version, applicable_subject_type_ids, can_delete, created_at, updated_at]
+      properties:
+        id: {type: string, format: uuid}
+        key: {type: string, pattern: '^[a-z][a-z0-9_]{0,99}$', readOnly: true}
+        name: {type: string, maxLength: 150}
+        description: {type: string, maxLength: 500}
+        status: {$ref: '#/components/schemas/QuestionCatalogStatus'}
+        sort_order: {type: integer, minimum: 0}
+        is_builtin: {type: boolean, readOnly: true}
+        version: {type: integer, minimum: 1, readOnly: true}
+        applicable_subject_type_ids: {$ref: '#/components/schemas/QuestionCatalogApplicability'}
+        can_delete: {type: boolean, const: false, readOnly: true}
+        created_at: {type: string, format: date-time, readOnly: true}
+        updated_at: {type: string, format: date-time, readOnly: true}
+    PublicQuestionCategory:
+      type: object
+      additionalProperties: false
+      required: [id, key, name, description, generation_guidance, sort_order, applicable_subject_type_ids]
+      properties:
+        id: {type: string, format: uuid}
+        key: {type: string}
+        name: {type: string}
+        description: {type: string}
+        generation_guidance: {type: string}
+        sort_order: {type: integer, minimum: 0}
+        applicable_subject_type_ids: {$ref: '#/components/schemas/QuestionCatalogApplicability'}
+    PublicQuestionTag:
+      type: object
+      additionalProperties: false
+      required: [id, key, name, description, sort_order, applicable_subject_type_ids]
+      properties:
+        id: {type: string, format: uuid}
+        key: {type: string}
+        name: {type: string}
+        description: {type: string}
+        sort_order: {type: integer, minimum: 0}
+        applicable_subject_type_ids: {$ref: '#/components/schemas/QuestionCatalogApplicability'}
+    QuestionCategoryCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [key, name]
+      properties:
+        key: {type: string, pattern: '^[a-z][a-z0-9_]{0,99}$', maxLength: 100}
+        name: {type: string, minLength: 1, maxLength: 150}
+        description: {type: string, maxLength: 500, default: ''}
+        generation_guidance: {type: string, maxLength: 2000, default: ''}
+        sort_order: {type: integer, minimum: 0, default: 0}
+        applicable_subject_type_ids: {$ref: '#/components/schemas/QuestionCatalogApplicability'}
+    QuestionCategoryUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version]
+      properties:
+        expected_version: {type: integer, minimum: 1}
+        name: {type: string, minLength: 1, maxLength: 150}
+        description: {type: string, maxLength: 500}
+        generation_guidance: {type: string, maxLength: 2000}
+        sort_order: {type: integer, minimum: 0}
+        applicable_subject_type_ids: {$ref: '#/components/schemas/QuestionCatalogApplicability'}
+    QuestionTagCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [key, name]
+      properties:
+        key: {type: string, pattern: '^[a-z][a-z0-9_]{0,99}$', maxLength: 100}
+        name: {type: string, minLength: 1, maxLength: 150}
+        description: {type: string, maxLength: 500, default: ''}
+        sort_order: {type: integer, minimum: 0, default: 0}
+        applicable_subject_type_ids: {$ref: '#/components/schemas/QuestionCatalogApplicability'}
+    QuestionTagUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version]
+      properties:
+        expected_version: {type: integer, minimum: 1}
+        name: {type: string, minLength: 1, maxLength: 150}
+        description: {type: string, maxLength: 500}
+        sort_order: {type: integer, minimum: 0}
+        applicable_subject_type_ids: {$ref: '#/components/schemas/QuestionCatalogApplicability'}
+    ExpectedQuestionCatalogVersion:
+      type: object
+      additionalProperties: false
+      required: [expected_version]
+      properties: {expected_version: {type: integer, minimum: 1}}
+    PublicQuestionCatalogEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: object, additionalProperties: false, required: [categories, tags], properties: {categories: {type: array, items: {$ref: '#/components/schemas/PublicQuestionCategory'}}, tags: {type: array, items: {$ref: '#/components/schemas/PublicQuestionTag'}}}}}}]
+    AdminQuestionCategoryListEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: array, items: {$ref: '#/components/schemas/AdminQuestionCategory'}}}}]
+    AdminQuestionCategoryEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/AdminQuestionCategory'}}}]
+    AdminQuestionTagListEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: array, items: {$ref: '#/components/schemas/AdminQuestionTag'}}}}]
+    AdminQuestionTagEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/AdminQuestionTag'}}}]
 
     DistillationAction:
       type: string

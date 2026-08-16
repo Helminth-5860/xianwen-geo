@@ -397,7 +397,9 @@ PostgreSQL 条件唯一约束保证每个主体至多一个 active job。触发�
 
 ### 14.1 `question_categories`
 
-名称、说明、适用主体类型、排序、状态、是否系统内置。
+全局问题分类目录：稳定 key、名称、NFKC/casefold 规范化名称、说明、纯文本生成提示说明、排序、active/inactive 状态、系统内置标志、乐观并发 version、创建／修改人和时间。内置 key 与标志不可修改，内置项不可删除；应用 API 对全部目录项均不提供 DELETE。
+
+`question_category_subject_types` 将分类映射到主体类型并保证同一组合唯一；没有映射表示适用于全部主体，有映射表示只适用于所列主体类型。主体类型删除受保护。
 
 ### 14.2 `question_bank_versions`
 
@@ -418,7 +420,7 @@ PostgreSQL 条件唯一约束保证每个主体至多一个 active job。触发�
 
 ### 14.4 `question_tags` 与 `question_tag_links`
 
-辅助标签。
+`question_tags` 是管理员维护的辅助标签目录，采用与分类相同的稳定 key、规范化名称、启停、排序、version 和不可删除 API 边界，但没有生成提示字段。`question_tag_subject_types` 表达适用主体；需求未定义内置标签，因此 XW-0304 不预置标签。未来 `question_tag_links` 属于问题库实现，不在 XW-0304 创建。
 
 ### 14.5 `question_keyword_links`
 

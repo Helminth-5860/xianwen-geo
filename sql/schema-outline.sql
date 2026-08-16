@@ -486,12 +486,53 @@ CREATE TABLE distillation_items (
 
 CREATE TABLE question_categories (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    category_key varchar(100) NOT NULL UNIQUE,
+    key varchar(100) NOT NULL UNIQUE,
     name varchar(150) NOT NULL,
-    description text NOT NULL DEFAULT '',
-    enabled boolean NOT NULL DEFAULT true,
+    normalized_name varchar(150) NOT NULL UNIQUE,
+    description varchar(500) NOT NULL DEFAULT '',
+    generation_guidance varchar(2000) NOT NULL DEFAULT '',
+    status varchar(16) NOT NULL DEFAULT 'active',
     sort_order integer NOT NULL DEFAULT 0,
-    is_system boolean NOT NULL DEFAULT false
+    is_builtin boolean NOT NULL DEFAULT false,
+    version bigint NOT NULL DEFAULT 1,
+    created_by_id uuid REFERENCES users(id) ON DELETE SET NULL,
+    updated_by_id uuid REFERENCES users(id) ON DELETE SET NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    CHECK (status IN ('active','inactive')),
+    CHECK (version >= 1)
+);
+
+CREATE TABLE question_category_subject_types (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    category_id uuid NOT NULL REFERENCES question_categories(id) ON DELETE CASCADE,
+    subject_type_id uuid NOT NULL REFERENCES subject_types(id) ON DELETE RESTRICT,
+    UNIQUE (category_id, subject_type_id)
+);
+
+CREATE TABLE question_tags (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    key varchar(100) NOT NULL UNIQUE,
+    name varchar(150) NOT NULL,
+    normalized_name varchar(150) NOT NULL UNIQUE,
+    description varchar(500) NOT NULL DEFAULT '',
+    status varchar(16) NOT NULL DEFAULT 'active',
+    sort_order integer NOT NULL DEFAULT 0,
+    is_builtin boolean NOT NULL DEFAULT false,
+    version bigint NOT NULL DEFAULT 1,
+    created_by_id uuid REFERENCES users(id) ON DELETE SET NULL,
+    updated_by_id uuid REFERENCES users(id) ON DELETE SET NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    CHECK (status IN ('active','inactive')),
+    CHECK (version >= 1)
+);
+
+CREATE TABLE question_tag_subject_types (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    tag_id uuid NOT NULL REFERENCES question_tags(id) ON DELETE CASCADE,
+    subject_type_id uuid NOT NULL REFERENCES subject_types(id) ON DELETE RESTRICT,
+    UNIQUE (tag_id, subject_type_id)
 );
 
 CREATE TABLE question_bank_versions (
@@ -783,7 +824,7 @@ CREATE TABLE admin_audit_logs (
 -- subscription_changes, customer_profiles, customer_statuses, customer_tags,
 -- customer_contact_logs, customer_followups, risk_types, risk_rules, subject_reviews,
 -- user_documents, document_versions, document_parse_jobs, document_parsed_versions,
--- web_source_imports, distillation_jobs, question_tags,
+-- web_source_imports, distillation_jobs,
 -- question_keyword_links, ai_model_runtime_configs, api_credential_audit,
 -- prompt_templates, prompt_template_versions, prompt_test_cases, prompt_test_runs,
 -- model_call_attempts, api_cost_records, geo_detection_model_runs, model_scores,

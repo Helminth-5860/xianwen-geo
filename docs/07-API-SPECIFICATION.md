@@ -272,13 +272,21 @@ PATCH 只接受 source_keyword_id、互斥 action、可选 canonical_keyword_id/
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/question-categories` | 分类和标签配置 |
-| POST | `/subjects/{id}/question-banks/generate` | 生成问题库 |
+| GET | `/question-categories` | 启用的分类和标签，可按 subject_type_id 过滤 |
+| GET/POST | `/admin/question-categories` | 管理员查询／创建分类 |
+| GET/PATCH | `/admin/question-categories/{id}` | 分类详情／expected_version 修改 |
+| POST | `/admin/question-categories/{id}/enable`、`disable` | 分类启停 |
+| GET/POST | `/admin/question-tags` | 管理员查询／创建辅助标签 |
+| GET/PATCH | `/admin/question-tags/{id}` | 标签详情／expected_version 修改 |
+| POST | `/admin/question-tags/{id}/enable`、`disable` | 标签启停 |
+| POST | `/subjects/{id}/question-banks/generate` | 生成问题库（XW-0305，尚未实现） |
 | GET | `/question-bank-jobs/{job_id}` | 进度 |
 | GET | `/subjects/{id}/question-banks/current` | 当前版本 |
 | PATCH | `/subjects/{id}/question-banks/draft` | 编辑草稿 |
 | POST | `/subjects/{id}/question-banks/confirm` | 确认版本 |
 | GET | `/subjects/{id}/question-banks/versions` | 版本列表 |
+
+XW-0304 仅实现上述目录读取与管理端点；问题库生成、草稿、确认和版本端点属于 XW-0305，当前仍未实现。
 
 ## 13. 模型列表与检测配置
 
