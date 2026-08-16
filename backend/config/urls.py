@@ -10,6 +10,7 @@ urlpatterns = [
     path("api/v1/", include("apps.quotas.urls")),
     path("api/v1/", include("apps.subjects.urls")),
     path("api/v1/", include("apps.keywords.urls")),
+    path("api/v1/", include("apps.questions.urls")),
     path("api/v1/", include("apps.documents.urls")),
     path("api/v1/", include("apps.web_sources.urls")),
 ]

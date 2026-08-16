@@ -155,6 +155,35 @@ PERMISSION_CATALOG = (
         "action",
         1020,
     ),
+    CatalogPermission(
+        "menu.admin.question-categories",
+        "问题分类管理菜单",
+        "question_catalog",
+        "menu",
+        90,
+    ),
+    CatalogPermission(
+        "question_categories.list", "问题分类列表", "question_catalog", "action", 1030
+    ),
+    CatalogPermission(
+        "question_categories.create", "创建问题分类", "question_catalog", "action", 1040
+    ),
+    CatalogPermission(
+        "question_categories.update", "修改问题分类", "question_catalog", "action", 1050
+    ),
+    CatalogPermission(
+        "question_categories.disable", "启停问题分类", "question_catalog", "action", 1060
+    ),
+    CatalogPermission("question_tags.list", "问题辅助标签列表", "question_catalog", "action", 1070),
+    CatalogPermission(
+        "question_tags.create", "创建问题辅助标签", "question_catalog", "action", 1080
+    ),
+    CatalogPermission(
+        "question_tags.update", "修改问题辅助标签", "question_catalog", "action", 1090
+    ),
+    CatalogPermission(
+        "question_tags.disable", "启停问题辅助标签", "question_catalog", "action", 1100
+    ),
 )
 
 CATALOG_BY_KEY = {item.key: item for item in PERMISSION_CATALOG}

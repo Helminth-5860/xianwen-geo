@@ -71,6 +71,7 @@ INSTALLED_APPS = [
     "apps.quotas",
     "apps.subjects",
     "apps.keywords",
+    "apps.questions",
     "apps.documents",
     "apps.web_sources",
 ]
