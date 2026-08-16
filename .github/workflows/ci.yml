@@ -125,5 +125,5 @@ jobs:
         run: bash scripts/test-subject-enrichment.sh
       - name: Run PostgreSQL keyword model, editor, AI generation, and distillation tests
         run: bash scripts/test-keywords.sh
-      - name: Run PostgreSQL question catalog and guard tests
+      - name: Run PostgreSQL question catalog, generation, editor, quota, and guard tests
         run: bash scripts/test-questions.sh

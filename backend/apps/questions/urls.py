@@ -1,5 +1,14 @@
 from django.urls import path
 
+from .generation_views import (
+    QuestionBankConfirmView,
+    QuestionBankCurrentView,
+    QuestionBankDraftView,
+    QuestionBankVersionDetailView,
+    QuestionBankVersionListView,
+    QuestionGenerationCreateView,
+    QuestionGenerationJobDetailView,
+)
 from .views import (
     AdminQuestionCategoryDetailView,
     AdminQuestionCategoryDisableView,
@@ -13,6 +22,20 @@ from .views import (
 )
 
 urlpatterns = [
+    path(
+        "subjects/<uuid:subject_id>/question-banks/generate", QuestionGenerationCreateView.as_view()
+    ),
+    path("question-bank-jobs/<uuid:job_id>", QuestionGenerationJobDetailView.as_view()),
+    path("subjects/<uuid:subject_id>/question-banks/draft", QuestionBankDraftView.as_view()),
+    path("subjects/<uuid:subject_id>/question-banks/confirm", QuestionBankConfirmView.as_view()),
+    path("subjects/<uuid:subject_id>/question-banks/current", QuestionBankCurrentView.as_view()),
+    path(
+        "subjects/<uuid:subject_id>/question-banks/versions", QuestionBankVersionListView.as_view()
+    ),
+    path(
+        "subjects/<uuid:subject_id>/question-banks/versions/<uuid:version_id>",
+        QuestionBankVersionDetailView.as_view(),
+    ),
     path(
         "question-categories", PublicQuestionCatalogView.as_view(), name="question-catalog-public"
     ),

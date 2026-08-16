@@ -535,32 +535,166 @@ CREATE TABLE question_tag_subject_types (
     UNIQUE (tag_id, subject_type_id)
 );
 
-CREATE TABLE question_bank_versions (
+CREATE TABLE question_generation_jobs (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id uuid NOT NULL REFERENCES users(id),
     subject_id uuid NOT NULL REFERENCES subjects(id),
     subject_version_id uuid NOT NULL REFERENCES subject_versions(id),
-    distillation_set_id uuid NOT NULL REFERENCES distillation_sets(id),
-    version_no integer NOT NULL,
-    status varchar(32) NOT NULL DEFAULT 'draft',
-    is_current boolean NOT NULL DEFAULT false,
-    confirmed_at timestamptz,
+    input_distillation_set_id uuid NOT NULL REFERENCES distillation_sets(id),
+    subscription_id uuid NOT NULL REFERENCES user_subscriptions(id),
+    quota_hold_id uuid REFERENCES quota_holds(id),
+    status varchar(16) NOT NULL DEFAULT 'queued',
+    billing_mode varchar(16) NOT NULL,
+    version bigint NOT NULL DEFAULT 1,
+    expected_workspace_version bigint NOT NULL,
+    question_limit integer NOT NULL,
+    input_subject_values jsonb NOT NULL,
+    input_keywords jsonb NOT NULL,
+    input_categories jsonb NOT NULL,
+    input_tags jsonb NOT NULL,
+    provider_key varchar(32) NOT NULL,
+    model_key varchar(64) NOT NULL,
+    adapter_version varchar(32) NOT NULL,
+    prompt_version varchar(32) NOT NULL,
+    input_digest char(64) NOT NULL,
+    idempotency_key_version smallint NOT NULL DEFAULT 1,
+    idempotency_key_digest char(64) NOT NULL UNIQUE,
+    request_digest char(64) NOT NULL,
+    generation uuid,
+    attempts integer NOT NULL DEFAULT 0,
+    retry_count integer NOT NULL DEFAULT 0,
+    next_attempt_at timestamptz,
+    stable_error_code varchar(64) NOT NULL DEFAULT '',
+    request_id uuid,
+    correlation_id uuid,
+    started_at timestamptz,
+    finished_at timestamptz,
     created_at timestamptz NOT NULL DEFAULT now(),
-    UNIQUE (subject_id, version_no)
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    CHECK (status IN ('queued','running','retry_wait','succeeded','failed','conflict','superseded')),
+    CHECK (billing_mode IN ('free_initial','regeneration'))
+);
+CREATE UNIQUE INDEX question_generation_one_active_subject
+    ON question_generation_jobs(subject_id)
+    WHERE status IN ('queued','running','retry_wait');
+
+CREATE TABLE question_generation_results (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    job_id uuid NOT NULL UNIQUE REFERENCES question_generation_jobs(id),
+    output_snapshot jsonb NOT NULL,
+    output_digest char(64) NOT NULL,
+    item_count integer NOT NULL,
+    applied_workspace_version bigint NOT NULL,
+    provider_metrics jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE TABLE questions (
+CREATE TABLE question_bank_workspaces (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    question_bank_version_id uuid NOT NULL REFERENCES question_bank_versions(id) ON DELETE CASCADE,
-    question_text text NOT NULL,
+    user_id uuid NOT NULL REFERENCES users(id),
+    subject_id uuid NOT NULL UNIQUE REFERENCES subjects(id),
+    draft_subject_version_id uuid NOT NULL REFERENCES subject_versions(id),
+    draft_distillation_set_id uuid NOT NULL REFERENCES distillation_sets(id),
+    draft_source_result_id uuid REFERENCES question_generation_results(id),
+    current_version_id uuid,
+    version bigint NOT NULL DEFAULT 1,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE question_draft_items (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    workspace_id uuid NOT NULL REFERENCES question_bank_workspaces(id),
+    text varchar(1000) NOT NULL,
+    matching_text varchar(1000) NOT NULL,
     primary_category_id uuid NOT NULL REFERENCES question_categories(id),
     priority varchar(16) NOT NULL,
-    question_type varchar(32) NOT NULL,
+    question_type varchar(24) NOT NULL,
     participates_in_scoring boolean NOT NULL DEFAULT true,
-    ai_reason text,
-    enabled boolean NOT NULL DEFAULT true,
+    ai_reason varchar(1000) NOT NULL DEFAULT '',
+    tag_ids jsonb NOT NULL DEFAULT '[]'::jsonb,
+    keyword_ids jsonb NOT NULL DEFAULT '[]'::jsonb,
+    sort_order integer NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (workspace_id, matching_text),
+    UNIQUE (workspace_id, sort_order),
     CHECK (priority IN ('high','medium','low')),
     CHECK (question_type IN ('natural','brand_directed'))
 );
+
+CREATE TABLE question_bank_versions (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    workspace_id uuid NOT NULL REFERENCES question_bank_workspaces(id),
+    user_id uuid NOT NULL REFERENCES users(id),
+    subject_id uuid NOT NULL REFERENCES subjects(id),
+    subject_version_id uuid NOT NULL REFERENCES subject_versions(id),
+    distillation_set_id uuid NOT NULL REFERENCES distillation_sets(id),
+    source_result_id uuid REFERENCES question_generation_results(id),
+    version_no bigint NOT NULL,
+    content_digest char(64) NOT NULL,
+    item_count integer NOT NULL,
+    confirmed_by_id uuid NOT NULL REFERENCES users(id),
+    confirmed_at timestamptz NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (subject_id, version_no)
+);
+ALTER TABLE question_bank_workspaces
+    ADD CONSTRAINT question_bank_workspace_current_version_fk
+    FOREIGN KEY (current_version_id) REFERENCES question_bank_versions(id);
+
+CREATE TABLE questions (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    question_bank_version_id uuid NOT NULL REFERENCES question_bank_versions(id),
+    text varchar(1000) NOT NULL,
+    matching_text varchar(1000) NOT NULL,
+    primary_category_id uuid NOT NULL REFERENCES question_categories(id),
+    primary_category_key varchar(100) NOT NULL,
+    primary_category_name varchar(150) NOT NULL,
+    primary_category_version bigint NOT NULL,
+    priority varchar(16) NOT NULL,
+    question_type varchar(24) NOT NULL,
+    participates_in_scoring boolean NOT NULL DEFAULT true,
+    ai_reason varchar(1000) NOT NULL DEFAULT '',
+    sort_order integer NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (question_bank_version_id, matching_text),
+    UNIQUE (question_bank_version_id, sort_order),
+    CHECK (priority IN ('high','medium','low')),
+    CHECK (question_type IN ('natural','brand_directed'))
+);
+
+CREATE TABLE question_tag_links (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    question_id uuid NOT NULL REFERENCES questions(id),
+    tag_id uuid NOT NULL REFERENCES question_tags(id),
+    tag_key varchar(100) NOT NULL,
+    tag_name varchar(150) NOT NULL,
+    tag_version bigint NOT NULL,
+    UNIQUE (question_id, tag_id)
+);
+
+CREATE TABLE question_keyword_links (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    question_id uuid NOT NULL REFERENCES questions(id),
+    keyword_id uuid NOT NULL REFERENCES keywords(id),
+    keyword_text varchar(500) NOT NULL,
+    UNIQUE (question_id, keyword_id)
+);
+
+CREATE TABLE question_generation_events (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    job_id uuid NOT NULL REFERENCES question_generation_jobs(id),
+    event_type varchar(24) NOT NULL,
+    stable_error_code varchar(64) NOT NULL DEFAULT '',
+    safe_summary jsonb NOT NULL DEFAULT '{}'::jsonb,
+    request_id uuid,
+    correlation_id uuid,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+-- XW-0305 migration guards make generation input/result/event facts and formal
+-- question-bank history append-only, enforce job transitions, and validate
+-- workspace/current-version ownership and continuous formal version numbers.
 
 CREATE TABLE ai_providers (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

@@ -23,5 +23,7 @@ SMS_PROVIDER = "mock"
 FILE_STORAGE_PROVIDER = "mock"
 FILE_SCANNER_PROVIDER = "mock"
 DOCUMENT_OCR_PROVIDER = "mock"
+DISTILLATION_PROVIDER = "mock"
+QUESTION_GENERATION_PROVIDER = "mock"
 ROOT_URLCONF = "tests.api_urls"
 LOGGING = build_logging_config("test")

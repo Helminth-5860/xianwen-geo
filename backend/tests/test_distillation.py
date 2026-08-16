@@ -58,14 +58,26 @@ def seed_subject_catalog():
     call_command("sync_subject_catalog", "--apply", verbosity=0)
 
 
-def _limits(*, distillation_regenerations=2):
+def _limits(
+    *,
+    distillation_regenerations=2,
+    question_limit=0,
+    question_regenerations=0,
+):
     values = {definition.source_limit_key: 0 for definition in QUOTA_CATALOG}
     values["distillation_regenerations_per_cycle"] = distillation_regenerations
     values["keyword_generation_limit"] = 10
+    values["question_bank_limit"] = question_limit
+    values["question_bank_regenerations_per_cycle"] = question_regenerations
     return values
 
 
-def _facts(*, distillation_regenerations=2):
+def _facts(
+    *,
+    distillation_regenerations=2,
+    question_limit=0,
+    question_regenerations=0,
+):
     suffix = uuid.uuid4().hex[:10]
     user = User.objects.create_user(
         phone=f"139{uuid.uuid4().int % 100000000:08d}",
@@ -115,7 +127,11 @@ def _facts(*, distillation_regenerations=2):
         subject.save(update_fields=["current_version", "status", "version", "updated_at"])
 
     now = timezone.now()
-    limits = _limits(distillation_regenerations=distillation_regenerations)
+    limits = _limits(
+        distillation_regenerations=distillation_regenerations,
+        question_limit=question_limit,
+        question_regenerations=question_regenerations,
+    )
     plan = Plan.objects.create(
         code=f"distillation-{suffix}",
         name="Distillation plan",

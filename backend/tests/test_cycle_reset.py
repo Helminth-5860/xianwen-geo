@@ -193,6 +193,7 @@ def test_celery_lifecycle_safety_configuration(settings):
         "dispatch-subject-enrichment-jobs",
         "dispatch-keyword-generation-jobs",
         "dispatch-distillation-jobs",
+        "dispatch-question-generation-jobs",
         "dispatch-queued-web-imports",
         "scan-web-import-retries",
     }

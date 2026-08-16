@@ -10,6 +10,7 @@ services:
       DJANGO_SETTINGS_MODULE: config.django_settings.questions_test
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?set isolated question test secret}
       DATABASE_URL: ${DATABASE_URL:?set isolated question test database URL}
+      QUESTION_GENERATION_IDEMPOTENCY_HMAC_KEY: ${QUESTION_GENERATION_IDEMPOTENCY_HMAC_KEY:?set isolated question generation HMAC key}
       RUN_MIGRATIONS: "false"
     depends_on:
       postgres: {condition: service_healthy}
@@ -26,6 +27,8 @@ services:
       - pytest
       - tests/test_question_catalog.py
       - tests/test_question_catalog_postgres.py
+      - tests/test_question_bank.py
+      - tests/test_question_bank_postgres.py
       - -x
       - --reuse-db
       - -p

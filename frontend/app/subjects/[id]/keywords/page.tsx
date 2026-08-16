@@ -21,6 +21,7 @@ import { useCallback, useEffect, useState } from "react";
 import { AuthApiError, userMessage } from "@/lib/auth-client";
 
 import DistillationPanel from "./distillation-panel";
+import QuestionBankPanel from "./question-bank-panel";
 import {
   commitKeywords,
   createKeywordGeneration,
@@ -95,6 +96,7 @@ export default function KeywordEditorPage() {
   const [versions, setVersions] = useState<KeywordVersion[]>([]);
   const [selectedVersion, setSelectedVersion] = useState<KeywordVersion>();
   const [dirty, setDirty] = useState(false);
+  const [distillationDirty, setDistillationDirty] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -577,7 +579,12 @@ export default function KeywordEditorPage() {
         </Space>
       </Card>
 
-      <DistillationPanel subjectId={params.id} keywordDirty={dirty} />
+      <DistillationPanel
+        subjectId={params.id}
+        keywordDirty={dirty}
+        onDirtyChange={setDistillationDirty}
+      />
+      <QuestionBankPanel subjectId={params.id} upstreamDirty={dirty || distillationDirty} />
 
       <Card title="关键词版本历史" style={{ marginTop: 20 }}>
         <Space direction="vertical" style={{ width: "100%" }}>
