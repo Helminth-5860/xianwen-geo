@@ -373,17 +373,25 @@ PostgreSQL 条件唯一约束保证每个主体至多一个 active job。触发�
 
 ## 13. 关键词蒸馏
 
-### 13.1 `distillation_sets`
+### 13.1 `distillation_jobs`
 
-主体、输入关键词版本、版本号、状态、是否当前。
+异步任务保存不可变 user/subject/SubjectVersion/KeywordSetVersion/subscription 绑定、冻结的主体与关键词输入快照、provider/model/adapter/prompt provenance、input/request/HMAC digest，以及可推进的 status/generation/attempt/retry/lease 字段。每主体至多一个 queued/running/retry_wait 任务。
 
-### 13.2 `distillation_items`
+第一次成功应用 workspace 草稿为 `free_initial`；后续成功历史要求显式 regeneration，并绑定 `distillation_regenerations` 的 `QuotaHoldGroup`。PostgreSQL guard 要求终态和原 hold 的 exactly-once consume/release 一致。
 
-原关键词、处理状态（keep/merge/delete/low_value）、主关键词、合并组、理由、用户调整。
+### 13.2 `distillation_results` 与 `distillation_events`
 
-### 13.3 `distillation_jobs`
+每个成功任务至多一个不可变 Result，只保存通过完整覆盖、动作、canonical、merge group 和地域约束校验的结构化输出、output digest、条目数、应用的 workspace version 及白名单 metrics。Event 仅追加安全状态摘要。两者均不得保存 prompt、API key、主体正文或 provider raw response。
 
-AI 任务和次数结算。
+### 13.3 `distillation_workspaces` 与 `distillation_draft_items`
+
+每主体一个可变调整 workspace，绑定当前草稿所用的不可变 KeywordSetVersion 和原始 DistillationResult，并用 version 做乐观并发。DraftItem 为每个输入 Keyword 保存最终 action/canonical/merge group、不可变 AI action/reason 副本和独立 user_reason/user_overridden。重新蒸馏成功时原子替换完整草稿；普通人工保存不改机器 Result。
+
+### 13.4 `distillation_sets` 与 `distillation_items`
+
+用户明确确认后创建连续、不可变 DistillationSet。每个 Set 严格绑定一个 SubjectVersion、一个 KeywordSetVersion 和一个原始 Result，并保存 content digest、item_count、confirmed_by/at。Item 完整保存机器建议和人工调整事实。
+
+`keep/merge/delete/low_value` 互斥。delete 仅是排除建议，不删除 Keyword；low_value 是单独的低价值分类；merge 只建立 UUID 分组并选择同组输入 Keyword 为 canonical，不创建新关键词。每组至少两个成员、canonical 必须为组内成员，且地域签名一致。任何蒸馏流程都不得更新历史 KeywordSetVersion 或 Keyword。
 
 ## 14. 问题库
 

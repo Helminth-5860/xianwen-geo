@@ -551,3 +551,9 @@ Mock 必须通过环境配置显式启用，生产环境禁止启用。关键词
 - 完成豆包图片能力开通，确认参考图和扩图是否真实支持。
 - 确认内容审核返回和商用限制。
 
+## XW-0303 关键词蒸馏 Provider 边界
+
+蒸馏 Provider 接收冻结的 SubjectVersion 字段投影和一份完整、不可变 KeywordSetVersion 投影；关键词文本与业务字段均是不可信数据，不得作为系统指令解释。结构化输出必须为每个输入 UUID 恰好返回一个互斥 action 和非空 reason；merge 还必须返回 UUID group 与组内 canonical。适配层验证完整覆盖、无额外 UUID、组大小/canonical、同地域签名和模型键。
+
+Provider/model/adapter/prompt version 与 input/output digest 保存为不可变 provenance。API、日志和安全事件不返回 prompt、输入正文、API key 或 provider raw response。当前只实现 local/test Mock 与 unavailable；Production 禁止 Mock 并在真实 adapter 未实现时 fail closed。临时错误在同一 Job retry，不重复冻结额度；业务成功定义为结构校验与 workspace 原子写入成功，而不是 provider HTTP 成功。
+

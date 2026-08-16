@@ -19,6 +19,8 @@ import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import { AuthApiError, userMessage } from "@/lib/auth-client";
+
+import DistillationPanel from "./distillation-panel";
 import {
   commitKeywords,
   createKeywordGeneration,
@@ -125,6 +127,13 @@ export default function KeywordEditorPage() {
     );
     return () => window.clearTimeout(timer);
   }, [reload]);
+
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (event: BeforeUnloadEvent) => event.preventDefault();
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
 
   useEffect(() => {
     if (!generationActive || !generation) return;
@@ -567,6 +576,8 @@ export default function KeywordEditorPage() {
           </Space>
         </Space>
       </Card>
+
+      <DistillationPanel subjectId={params.id} keywordDirty={dirty} />
 
       <Card title="关键词版本历史" style={{ marginTop: 20 }}>
         <Space direction="vertical" style={{ width: "100%" }}>

@@ -79,3 +79,52 @@ def test_generation_contract_is_strict_versioned_async_and_privacy_safe():
         "202"
     ]["content"]["application/json"]["schema"]["$ref"]
     assert response_schema.endswith("/KeywordGenerationJobEnvelope")
+
+
+def test_distillation_contract_is_versioned_strict_and_privacy_safe():
+    paths = SPEC["paths"]
+    expected = {
+        "/subjects/{subjectId}/distillations",
+        "/distillation-jobs/{jobId}",
+        "/subjects/{subjectId}/distillations/draft",
+        "/subjects/{subjectId}/distillations/current",
+        "/subjects/{subjectId}/distillations/confirm",
+    }
+    assert expected <= set(paths)
+    assert {"get", "patch"} <= set(paths["/subjects/{subjectId}/distillations/draft"])
+
+    schemas = SPEC["components"]["schemas"]
+    create = schemas["DistillationCreateRequest"]
+    draft = schemas["DistillationDraftSaveRequest"]
+    assert create["additionalProperties"] is False
+    assert draft["additionalProperties"] is False
+    assert {"keyword_set_version_id", "expected_workspace_version"} <= set(create["required"])
+    assert {"expected_version", "items"} <= set(draft["required"])
+    assert schemas["DistillationAction"]["enum"] == ["keep", "merge", "delete", "low_value"]
+
+    job = schemas["DistillationJob"]
+    assert job["properties"]["status"]["enum"] == [
+        "queued",
+        "running",
+        "retry_wait",
+        "succeeded",
+        "failed",
+        "conflict",
+        "superseded",
+    ]
+    forbidden = {
+        "input_digest",
+        "request_digest",
+        "idempotency_key_digest",
+        "input_subject_values",
+        "input_keywords",
+        "output_snapshot",
+        "provider_raw_response",
+        "api_key",
+        "prompt",
+    }
+    assert forbidden.isdisjoint(job["properties"])
+    response_ref = paths["/subjects/{subjectId}/distillations"]["post"]["responses"]["202"][
+        "content"
+    ]["application/json"]["schema"]["$ref"]
+    assert response_ref.endswith("/DistillationJobEnvelope")

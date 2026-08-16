@@ -23,6 +23,9 @@ vi.mock("@/lib/keywords-client", async () => {
   return { ...actual, ...api };
 });
 vi.mock("next/navigation", () => ({ useParams: () => ({ id: "subject-1" }) }));
+vi.mock("@/app/subjects/[id]/keywords/distillation-panel", () => ({
+  default: () => null,
+}));
 
 const draft = {
   version: 1,

@@ -330,6 +330,27 @@ if KEYWORD_GENERATION_INTERNAL_MAX_RETRIES > 10:
 KEYWORD_GENERATION_MOCK_SCENARIO = (
     os.getenv("KEYWORD_GENERATION_MOCK_SCENARIO", "success").strip().lower()
 )
+DISTILLATION_PROVIDER = os.getenv("DISTILLATION_PROVIDER", "unavailable").strip().lower()
+DISTILLATION_IDEMPOTENCY_HMAC_KEY = os.getenv(
+    "DISTILLATION_IDEMPOTENCY_HMAC_KEY",
+    "local-test-distillation-idempotency-key-not-for-production",
+).strip()
+if len(DISTILLATION_IDEMPOTENCY_HMAC_KEY) < 32:
+    raise ImproperlyConfigured(
+        "DISTILLATION_IDEMPOTENCY_HMAC_KEY is too weak; minimum length is 32."
+    )
+DISTILLATION_PROVIDER_TIMEOUT_SECONDS = positive_env_int(
+    "DISTILLATION_PROVIDER_TIMEOUT_SECONDS", 30
+)
+DISTILLATION_MAX_PROVIDER_ATTEMPTS = positive_env_int("DISTILLATION_MAX_PROVIDER_ATTEMPTS", 3)
+if DISTILLATION_MAX_PROVIDER_ATTEMPTS > 10:
+    raise ImproperlyConfigured("DISTILLATION_MAX_PROVIDER_ATTEMPTS must not exceed 10.")
+DISTILLATION_RETRY_BASE_SECONDS = positive_env_int("DISTILLATION_RETRY_BASE_SECONDS", 30)
+DISTILLATION_RUNNING_STALE_SECONDS = positive_env_int("DISTILLATION_RUNNING_STALE_SECONDS", 120)
+DISTILLATION_INTERNAL_MAX_RETRIES = positive_env_int("DISTILLATION_INTERNAL_MAX_RETRIES", 3)
+if DISTILLATION_INTERNAL_MAX_RETRIES > 10:
+    raise ImproperlyConfigured("DISTILLATION_INTERNAL_MAX_RETRIES must not exceed 10.")
+DISTILLATION_MOCK_SCENARIO = os.getenv("DISTILLATION_MOCK_SCENARIO", "success").strip().lower()
 S3_ACCESS_KEY = os.getenv("S3_ACCESS_KEY", "xianwen-local").strip()
 S3_SECRET_KEY = os.getenv("S3_SECRET_KEY", "xianwen-local-secret").strip()
 SMS_VERIFICATION_HMAC_KEY = os.getenv(
@@ -402,6 +423,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "keywords.dispatch_generation_jobs",
         "schedule": timedelta(seconds=60),
     },
+    "dispatch-distillation-jobs": {
+        "task": "keywords.dispatch_distillation_jobs",
+        "schedule": timedelta(seconds=60),
+    },
     "dispatch-queued-web-imports": {
         "task": "web_sources.dispatch_queued_imports",
         "schedule": timedelta(seconds=60),
@@ -414,6 +439,7 @@ CELERY_BEAT_SCHEDULE = {
 CELERY_TASK_ROUTES = {
     "subjects.execute_enrichment": {"queue": "ai_content"},
     "keywords.execute_generation": {"queue": "ai_content"},
+    "keywords.execute_distillation": {"queue": "ai_content"},
     "documents.execute_parse_job": {"queue": "file_processing"},
     "web_sources.execute_import": {"queue": "web_fetch"},
 }
