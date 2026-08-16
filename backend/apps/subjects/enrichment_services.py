@@ -13,6 +13,7 @@ from django.db import IntegrityError, models, transaction
 from django.utils import timezone
 from rest_framework.exceptions import NotFound
 
+from apps.ai.sanitization import sanitize_provider_metrics
 from apps.documents.parse_models import DocumentParsedVersion, DocumentParseState
 from apps.plans.models import Subscription
 from apps.users.models import User
@@ -634,7 +635,7 @@ def _finalize_success(job_id, generation, response):
                 }
             )
         job.output_digest = canonical_digest(output_projection)
-        job.provider_metrics = copy.deepcopy(response.provider_metrics)
+        job.provider_metrics = sanitize_provider_metrics(response.provider_metrics)
         job.status = "succeeded"
         job.finished_at = timezone.now()
         job.stable_error_code = ""

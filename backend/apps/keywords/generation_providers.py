@@ -1,6 +1,19 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 from django.conf import settings
+
+from apps.ai.contracts import (
+    AIAdapterDescriptor,
+    AIAdapterRequest,
+    AIAdapterResponse,
+    AIModelCapability,
+    AIModelIdentity,
+)
+from apps.ai.errors import AIAdapterError, AIAdapterErrorCategory, domain_provider_error_code
+from apps.ai.mock import DeterministicMockAIAdapter
+from apps.ai.registry import model_registry
 
 from .generation_contracts import (
     GeneratedKeyword,
@@ -13,31 +26,29 @@ from .generation_exceptions import (
 )
 
 
-class MockKeywordGenerationProvider:
-    key = "mock"
-    model_key = "mock-keyword-generation-v1"
-    adapter_version = "1"
-    prompt_version = "keyword-generation-v1"
+class MockKeywordGenerationProvider(
+    DeterministicMockAIAdapter[KeywordGenerationRequest, KeywordGenerationResponse]
+):
+    descriptor = AIAdapterDescriptor(
+        identity=AIModelIdentity(provider_key="mock", model_key="mock-keyword-generation-v1"),
+        capabilities=frozenset({AIModelCapability.KEYWORD_GENERATION}),
+        adapter_version="1",
+        prompt_version="keyword-generation-v1",
+        is_mock=True,
+    )
+    key = descriptor.identity.provider_key
+    model_key = descriptor.identity.model_key
+    adapter_version = descriptor.adapter_version
+    prompt_version = descriptor.prompt_version
 
-    def generate(self, request: KeywordGenerationRequest) -> KeywordGenerationResponse:
-        scenario = getattr(settings, "KEYWORD_GENERATION_MOCK_SCENARIO", "success")
-        if scenario == "timeout":
-            raise KeywordGenerationProviderError(
-                "KEYWORD_GENERATION_PROVIDER_TIMEOUT", permanent=False
-            )
-        if scenario == "rate_limit":
-            raise KeywordGenerationProviderError(
-                "KEYWORD_GENERATION_PROVIDER_RATE_LIMITED", permanent=False
-            )
-        if scenario == "temporary":
-            raise KeywordGenerationProviderError(
-                "KEYWORD_GENERATION_PROVIDER_TEMPORARY", permanent=False
-            )
-        if scenario == "permanent":
-            raise KeywordGenerationProviderError(
-                "KEYWORD_GENERATION_PROVIDER_REJECTED", permanent=True
-            )
+    def _scenario(self) -> str:
+        return getattr(settings, "KEYWORD_GENERATION_MOCK_SCENARIO", "success")
 
+    def _build_output(
+        self,
+        request: KeywordGenerationRequest,
+        scenario: str,
+    ) -> KeywordGenerationResponse:
         official_name = str(request.subject_values.get("official_name") or "主体")
         structures = []
         if request.include_short:
@@ -98,28 +109,68 @@ class MockKeywordGenerationProvider:
             provider_metrics={"mock": True, "item_count": len(items)},
         )
 
+    def generate(self, request: KeywordGenerationRequest) -> KeywordGenerationResponse:
+        normalized = self.normalized_request(
+            request,
+            request_id=request.job_id,
+            timeout_seconds=settings.KEYWORD_GENERATION_PROVIDER_TIMEOUT_SECONDS,
+        )
+        try:
+            response = self.invoke(normalized)
+        except AIAdapterError as exc:
+            raise KeywordGenerationProviderError(
+                domain_provider_error_code(exc, "KEYWORD_GENERATION_PROVIDER"),
+                permanent=not exc.retryable,
+            ) from None
+        return replace(
+            response.output,
+            provider_metrics=dict(response.sanitized_provider_metadata),
+        )
+
 
 class UnavailableKeywordGenerationProvider:
-    key = "unavailable"
-    model_key = "unavailable"
-    adapter_version = "1"
-    prompt_version = "keyword-generation-v1"
+    descriptor = AIAdapterDescriptor(
+        identity=AIModelIdentity(provider_key="unavailable", model_key="unavailable"),
+        capabilities=frozenset({AIModelCapability.KEYWORD_GENERATION}),
+        adapter_version="1",
+        prompt_version="keyword-generation-v1",
+        is_available=False,
+    )
+    key = descriptor.identity.provider_key
+    model_key = descriptor.identity.model_key
+    adapter_version = descriptor.adapter_version
+    prompt_version = descriptor.prompt_version
+
+    def invoke(
+        self,
+        request: AIAdapterRequest[KeywordGenerationRequest],
+    ) -> AIAdapterResponse[KeywordGenerationResponse]:
+        raise AIAdapterError(AIAdapterErrorCategory.CONFIGURATION_UNAVAILABLE, retryable=False)
 
     def generate(self, request: KeywordGenerationRequest) -> KeywordGenerationResponse:
         raise KeywordGenerationProviderUnavailable
 
 
+model_registry.register(MockKeywordGenerationProvider.descriptor, MockKeywordGenerationProvider)
+model_registry.register(
+    UnavailableKeywordGenerationProvider.descriptor,
+    UnavailableKeywordGenerationProvider,
+)
+
+
 def get_keyword_generation_provider(provider_key: str | None = None):
     key = provider_key or settings.KEYWORD_GENERATION_PROVIDER
-    if key == "mock":
-        return MockKeywordGenerationProvider()
-    if key == "unavailable":
-        return UnavailableKeywordGenerationProvider()
-    raise KeywordGenerationProviderUnavailable
+    try:
+        return model_registry.resolve_provider(
+            provider_key=key,
+            capability=AIModelCapability.KEYWORD_GENERATION,
+        )
+    except AIAdapterError:
+        raise KeywordGenerationProviderUnavailable from None
 
 
 def require_available_keyword_generation_provider():
     provider = get_keyword_generation_provider()
-    if provider.key == "unavailable":
+    if not provider.descriptor.is_available:
         raise KeywordGenerationProviderUnavailable
     return provider
