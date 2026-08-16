@@ -18,6 +18,7 @@ FILE_IDEMPOTENCY_HMAC_KEY = require_env("FILE_IDEMPOTENCY_HMAC_KEY")
 WEB_IMPORT_IDEMPOTENCY_HMAC_KEY = require_env("WEB_IMPORT_IDEMPOTENCY_HMAC_KEY")
 SUBJECT_ENRICHMENT_IDEMPOTENCY_HMAC_KEY = require_env("SUBJECT_ENRICHMENT_IDEMPOTENCY_HMAC_KEY")
 KEYWORD_GENERATION_IDEMPOTENCY_HMAC_KEY = require_env("KEYWORD_GENERATION_IDEMPOTENCY_HMAC_KEY")
+DISTILLATION_IDEMPOTENCY_HMAC_KEY = require_env("DISTILLATION_IDEMPOTENCY_HMAC_KEY")
 weak_secret_markers = {
     "changeme",
     "change-me",
@@ -119,6 +120,24 @@ if KEYWORD_GENERATION_IDEMPOTENCY_HMAC_KEY in {
 }:
     raise ImproperlyConfigured("KEYWORD_GENERATION_IDEMPOTENCY_HMAC_KEY must be independent.")
 
+if DISTILLATION_PROVIDER == "mock":
+    raise ImproperlyConfigured("Mock distillation provider is forbidden in production.")
+if DISTILLATION_PROVIDER != "unavailable":
+    raise ImproperlyConfigured("Only unavailable distillation provider is supported in production.")
+if len(DISTILLATION_IDEMPOTENCY_HMAC_KEY) < 50:
+    raise ImproperlyConfigured("DISTILLATION_IDEMPOTENCY_HMAC_KEY is too weak for production.")
+if DISTILLATION_IDEMPOTENCY_HMAC_KEY in {
+    SECRET_KEY,
+    SMS_VERIFICATION_HMAC_KEY,
+    QUOTA_IDEMPOTENCY_HMAC_KEY,
+    PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY,
+    FILE_IDEMPOTENCY_HMAC_KEY,
+    WEB_IMPORT_IDEMPOTENCY_HMAC_KEY,
+    SUBJECT_ENRICHMENT_IDEMPOTENCY_HMAC_KEY,
+    KEYWORD_GENERATION_IDEMPOTENCY_HMAC_KEY,
+}:
+    raise ImproperlyConfigured("DISTILLATION_IDEMPOTENCY_HMAC_KEY must be independent.")
+
 WEB_IMPORT_ENABLED = env_bool("WEB_IMPORT_ENABLED", False)
 WEB_IMPORT_NETWORK_POLICY_ENFORCED = env_bool("WEB_IMPORT_NETWORK_POLICY_ENFORCED", False)
 if WEB_IMPORT_ENABLED and not WEB_IMPORT_NETWORK_POLICY_ENFORCED:
@@ -194,6 +213,10 @@ for forbidden_variable in ("DATABASE_URL", "REDIS_URL"):
         raise ImproperlyConfigured(
             "KEYWORD_GENERATION_IDEMPOTENCY_HMAC_KEY must not reuse "
             f"{forbidden_variable} credentials."
+        )
+    if DISTILLATION_IDEMPOTENCY_HMAC_KEY in {configured_url, configured_password}:
+        raise ImproperlyConfigured(
+            f"DISTILLATION_IDEMPOTENCY_HMAC_KEY must not reuse {forbidden_variable} credentials."
         )
 SMS_PROVIDER = os.getenv("SMS_PROVIDER", "unconfigured").strip().lower()
 if SMS_PROVIDER == "mock":

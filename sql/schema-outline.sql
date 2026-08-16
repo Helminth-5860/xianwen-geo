@@ -353,27 +353,135 @@ CREATE TABLE keyword_generation_events (
     CHECK (event_type IN ('started','retry_scheduled','succeeded','failed','conflict','superseded'))
 );
 
+CREATE TABLE distillation_jobs (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id uuid NOT NULL REFERENCES users(id),
+    subject_id uuid NOT NULL REFERENCES subjects(id),
+    subject_version_id uuid NOT NULL REFERENCES subject_versions(id),
+    input_keyword_set_version_id uuid NOT NULL REFERENCES keyword_set_versions(id),
+    subscription_id uuid NOT NULL REFERENCES subscriptions(id),
+    quota_hold_id uuid REFERENCES quota_hold_groups(id),
+    status varchar(16) NOT NULL DEFAULT 'queued',
+    billing_mode varchar(16) NOT NULL,
+    version bigint NOT NULL DEFAULT 1,
+    expected_workspace_version bigint NOT NULL,
+    input_subject_values jsonb NOT NULL,
+    input_keywords jsonb NOT NULL,
+    provider_key varchar(32) NOT NULL,
+    model_key varchar(64) NOT NULL,
+    adapter_version varchar(32) NOT NULL,
+    prompt_version varchar(32) NOT NULL,
+    input_digest varchar(64) NOT NULL,
+    idempotency_key_digest varchar(64) NOT NULL UNIQUE,
+    request_digest varchar(64) NOT NULL,
+    generation uuid,
+    attempts integer NOT NULL DEFAULT 0,
+    retry_count integer NOT NULL DEFAULT 0,
+    next_attempt_at timestamptz,
+    stable_error_code varchar(64) NOT NULL DEFAULT '',
+    started_at timestamptz,
+    finished_at timestamptz,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    CHECK (status IN ('queued','running','retry_wait','succeeded','failed','conflict','superseded')),
+    CHECK ((billing_mode = 'free_initial' AND quota_hold_id IS NULL)
+        OR (billing_mode = 'regeneration' AND quota_hold_id IS NOT NULL))
+);
+CREATE UNIQUE INDEX distillation_one_open_idx ON distillation_jobs(subject_id)
+WHERE status IN ('queued','running','retry_wait');
+
+CREATE TABLE distillation_results (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    job_id uuid NOT NULL UNIQUE REFERENCES distillation_jobs(id),
+    output_snapshot jsonb NOT NULL,
+    output_digest varchar(64) NOT NULL,
+    item_count integer NOT NULL,
+    applied_workspace_version bigint NOT NULL,
+    provider_metrics jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE distillation_events (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    job_id uuid NOT NULL REFERENCES distillation_jobs(id),
+    event_type varchar(24) NOT NULL,
+    stable_error_code varchar(64) NOT NULL DEFAULT '',
+    safe_summary jsonb NOT NULL DEFAULT '{}'::jsonb,
+    request_id uuid,
+    correlation_id uuid,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE distillation_workspaces (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id uuid NOT NULL REFERENCES users(id),
+    subject_id uuid NOT NULL UNIQUE REFERENCES subjects(id),
+    draft_input_version_id uuid NOT NULL REFERENCES keyword_set_versions(id),
+    draft_source_result_id uuid NOT NULL REFERENCES distillation_results(id),
+    current_set_id uuid,
+    version bigint NOT NULL DEFAULT 1,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
 CREATE TABLE distillation_sets (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    workspace_id uuid NOT NULL REFERENCES distillation_workspaces(id),
+    user_id uuid NOT NULL REFERENCES users(id),
     subject_id uuid NOT NULL REFERENCES subjects(id),
-    input_keyword_set_id uuid NOT NULL REFERENCES keyword_sets(id),
-    version_no integer NOT NULL,
-    status varchar(32) NOT NULL DEFAULT 'draft',
-    is_current boolean NOT NULL DEFAULT false,
+    subject_version_id uuid NOT NULL REFERENCES subject_versions(id),
+    input_keyword_set_version_id uuid NOT NULL REFERENCES keyword_set_versions(id),
+    source_result_id uuid NOT NULL REFERENCES distillation_results(id),
+    version_no bigint NOT NULL,
+    content_digest varchar(64) NOT NULL,
+    item_count integer NOT NULL,
+    confirmed_by_id uuid REFERENCES users(id),
+    confirmed_at timestamptz NOT NULL,
     created_at timestamptz NOT NULL DEFAULT now(),
-    UNIQUE (subject_id, version_no)
+    UNIQUE (workspace_id, version_no)
+);
+ALTER TABLE distillation_workspaces ADD CONSTRAINT distillation_workspace_current_fk
+    FOREIGN KEY (current_set_id) REFERENCES distillation_sets(id);
+
+CREATE TABLE distillation_draft_items (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    workspace_id uuid NOT NULL REFERENCES distillation_workspaces(id) ON DELETE CASCADE,
+    source_keyword_id uuid NOT NULL REFERENCES keywords(id),
+    action varchar(16) NOT NULL,
+    canonical_keyword_id uuid REFERENCES keywords(id),
+    merge_group_key uuid,
+    ai_action varchar(16) NOT NULL,
+    ai_canonical_keyword_id uuid REFERENCES keywords(id),
+    ai_merge_group_key uuid,
+    ai_reason varchar(1000) NOT NULL,
+    user_reason varchar(1000) NOT NULL DEFAULT '',
+    user_overridden boolean NOT NULL DEFAULT false,
+    sort_order integer NOT NULL,
+    UNIQUE (workspace_id, source_keyword_id),
+    UNIQUE (workspace_id, sort_order),
+    CHECK (action IN ('keep','merge','delete','low_value')),
+    CHECK (ai_action IN ('keep','merge','delete','low_value'))
 );
 
 CREATE TABLE distillation_items (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    distillation_set_id uuid NOT NULL REFERENCES distillation_sets(id) ON DELETE CASCADE,
+    distillation_set_id uuid NOT NULL REFERENCES distillation_sets(id),
     source_keyword_id uuid NOT NULL REFERENCES keywords(id),
-    action varchar(32) NOT NULL,
-    canonical_text varchar(500),
-    merge_group_key varchar(100),
-    reason text NOT NULL,
+    action varchar(16) NOT NULL,
+    canonical_keyword_id uuid REFERENCES keywords(id),
+    merge_group_key uuid,
+    ai_action varchar(16) NOT NULL,
+    ai_canonical_keyword_id uuid REFERENCES keywords(id),
+    ai_merge_group_key uuid,
+    ai_reason varchar(1000) NOT NULL,
+    user_reason varchar(1000) NOT NULL DEFAULT '',
     user_overridden boolean NOT NULL DEFAULT false,
-    CHECK (action IN ('keep','merge','delete','low_value'))
+    sort_order integer NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (distillation_set_id, source_keyword_id),
+    UNIQUE (distillation_set_id, sort_order),
+    CHECK (action IN ('keep','merge','delete','low_value')),
+    CHECK (ai_action IN ('keep','merge','delete','low_value'))
 );
 
 CREATE TABLE question_categories (

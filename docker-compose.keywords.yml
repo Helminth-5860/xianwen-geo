@@ -26,6 +26,7 @@ services:
       - pytest
       - tests/test_keywords_postgres.py
       - tests/test_keyword_generation_postgres.py
+      - tests/test_distillation_postgres.py
       - -x
       - --reuse-db
       - -p

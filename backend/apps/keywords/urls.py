@@ -1,5 +1,12 @@
 from django.urls import path
 
+from .distillation_views import (
+    DistillationConfirmView,
+    DistillationCreateView,
+    DistillationCurrentView,
+    DistillationDraftView,
+    DistillationJobDetailView,
+)
 from .generation_views import (
     KeywordGenerationCreateView,
     KeywordGenerationDetailView,
@@ -13,6 +20,20 @@ from .views import (
 )
 
 urlpatterns = [
+    path("subjects/<uuid:subject_id>/distillations", DistillationCreateView.as_view()),
+    path("distillation-jobs/<uuid:job_id>", DistillationJobDetailView.as_view()),
+    path(
+        "subjects/<uuid:subject_id>/distillations/current",
+        DistillationCurrentView.as_view(),
+    ),
+    path(
+        "subjects/<uuid:subject_id>/distillations/draft",
+        DistillationDraftView.as_view(),
+    ),
+    path(
+        "subjects/<uuid:subject_id>/distillations/confirm",
+        DistillationConfirmView.as_view(),
+    ),
     path(
         "subjects/<uuid:subject_id>/keywords/generate",
         KeywordGenerationCreateView.as_view(),

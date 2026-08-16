@@ -255,11 +255,18 @@
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| POST | `/subjects/{id}/distillations` | 发起蒸馏 |
-| GET | `/distillation-jobs/{job_id}` | 进度 |
-| GET | `/subjects/{id}/distillations/current` | 当前结果 |
-| PATCH | `/subjects/{id}/distillations/draft` | 编辑草稿 |
-| POST | `/subjects/{id}/distillations/confirm` | 确认并创建版本 |
+| POST | `/subjects/{id}/distillations` | 以当前不可变 KeywordSetVersion 发起任务 |
+| GET | `/distillation-jobs/{job_id}` | owner-scoped 安全任务投影 |
+| GET | `/subjects/{id}/distillations/draft` | 当前关键词输入与调整草稿 |
+| PATCH | `/subjects/{id}/distillations/draft` | expected_version 全量保存用户调整 |
+| GET | `/subjects/{id}/distillations/current` | 当前不可变确认版本 |
+| POST | `/subjects/{id}/distillations/confirm` | 明确确认并创建连续正式版本 |
+
+创建请求必须提供 `Idempotency-Key`、`keyword_set_version_id`、`expected_workspace_version` 和布尔 `regenerate`。只有主体当前 SubjectVersion 与关键词当前 KeywordSetVersion 均与输入绑定一致时才接受。相同幂等键与 canonical 请求重放原任务；一个主体至多一个 active job。
+
+任务状态为 `queued/running/retry_wait/succeeded/failed/conflict/superseded`。第一次成功应用草稿免费；服务端检测到历史成功后，未显式确认返回 `409 DISTILLATION_REGENERATION_CONFIRMATION_REQUIRED`，确认后冻结既有 `distillation_regenerations`。只在结构化结果原子应用 workspace 后扣除；失败、冲突和过期结果释放。
+
+PATCH 只接受 source_keyword_id、互斥 action、可选 canonical_keyword_id/merge_group_key 和 user_reason，不允许客户端覆盖 ai_reason/provenance。merge group 至少两个成员、canonical 在组内且地域签名一致。confirm 不修改 KeywordSetVersion/Keyword，只创建不可变 DistillationSet。所有响应为 `Cache-Control: no-store`，任务响应不暴露输入快照、prompt、digest、密钥或 provider raw response。
 
 ## 12. 问题库 API
 

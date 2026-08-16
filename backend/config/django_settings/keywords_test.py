@@ -29,5 +29,8 @@ KEYWORD_GENERATION_MOCK_SCENARIO = "success"
 KEYWORD_GENERATION_IDEMPOTENCY_HMAC_KEY = (
     "test-only-keyword-generation-hmac-key-never-use-in-deployment"
 )
+DISTILLATION_PROVIDER = "mock"
+DISTILLATION_MOCK_SCENARIO = "success"
+DISTILLATION_IDEMPOTENCY_HMAC_KEY = "test-only-distillation-hmac-key-never-use-in-deployment"
 ROOT_URLCONF = "tests.api_urls"
 LOGGING = build_logging_config("test")

@@ -1126,14 +1126,134 @@ paths:
       - $ref: '#/components/parameters/IdempotencyKey'
     post:
       tags: [Keywords]
-      summary: 发起关键词蒸馏
+      summary: Start owner-scoped keyword distillation from one immutable formal keyword version
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/DistillationCreateRequest'}
       responses:
         '202':
-          description: 关键词蒸馏任务已创建
+          description: Durable job queued or idempotently replayed; no formal keyword history is mutated
+          headers:
+            Cache-Control: {schema: {type: string, const: no-store}}
+            X-Request-ID: {$ref: '#/components/headers/RequestId'}
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/TaskEnvelope'
+              schema: {$ref: '#/components/schemas/DistillationJobEnvelope'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/CsrfFailed'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+        '409': {$ref: '#/components/responses/BusinessConflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+  /distillation-jobs/{jobId}:
+    parameters:
+      - name: jobId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    get:
+      tags: [Keywords]
+      summary: Poll an owner-scoped keyword distillation job
+      responses:
+        '200':
+          description: Safe job projection without input snapshots, prompts, digests, or raw provider response
+          headers:
+            Cache-Control: {schema: {type: string, const: no-store}}
+            X-Request-ID: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DistillationJobEnvelope'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+  /subjects/{subjectId}/distillations/draft:
+    parameters:
+      - $ref: '#/components/parameters/SubjectId'
+    get:
+      tags: [Keywords]
+      summary: Read the mutable user-adjustment layer and current formal keyword input
+      responses:
+        '200':
+          description: Distillation adjustment workspace
+          headers:
+            Cache-Control: {schema: {type: string, const: no-store}}
+            X-Request-ID: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DistillationDraftEnvelope'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+    patch:
+      tags: [Keywords]
+      summary: Replace user adjustments with optimistic concurrency
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/DistillationDraftSaveRequest'}
+      responses:
+        '200':
+          description: Saved adjustment workspace; original AI evidence remains immutable
+          headers:
+            Cache-Control: {schema: {type: string, const: no-store}}
+            X-Request-ID: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DistillationDraftEnvelope'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/CsrfFailed'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+        '409': {$ref: '#/components/responses/BusinessConflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /subjects/{subjectId}/distillations/current:
+    parameters:
+      - $ref: '#/components/parameters/SubjectId'
+    get:
+      tags: [Keywords]
+      summary: Read the current immutable confirmed distillation version
+      responses:
+        '200':
+          description: Current confirmed distillation version
+          headers:
+            Cache-Control: {schema: {type: string, const: no-store}}
+            X-Request-ID: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DistillationVersionEnvelope'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+  /subjects/{subjectId}/distillations/confirm:
+    parameters:
+      - $ref: '#/components/parameters/SubjectId'
+    post:
+      tags: [Keywords]
+      summary: Confirm adjustments into a new immutable distillation version
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/DistillationConfirmRequest'}
+      responses:
+        '201':
+          description: Immutable version created; formal keywords are unchanged
+          headers:
+            Cache-Control: {schema: {type: string, const: no-store}}
+            X-Request-ID: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DistillationConfirmEnvelope'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/CsrfFailed'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+        '409': {$ref: '#/components/responses/BusinessConflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
   /subjects/{subjectId}/question-banks/generate:
     parameters:
       - $ref: '#/components/parameters/SubjectId'
@@ -5240,6 +5360,158 @@ components:
       allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/SubjectFieldConfig'}}}]
     SubjectFieldOptionEnvelope:
       allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/SubjectFieldOption'}}}]
+
+    DistillationAction:
+      type: string
+      enum: [keep, merge, delete, low_value]
+    DistillationCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [keyword_set_version_id, expected_workspace_version]
+      properties:
+        keyword_set_version_id: {type: string, format: uuid}
+        expected_workspace_version: {type: integer, minimum: 0}
+        regenerate: {type: boolean, default: false}
+    DistillationDraftItemInput:
+      type: object
+      additionalProperties: false
+      required: [source_keyword_id, action]
+      properties:
+        source_keyword_id: {type: string, format: uuid}
+        action: {$ref: '#/components/schemas/DistillationAction'}
+        canonical_keyword_id: {type: [string, 'null'], format: uuid}
+        merge_group_key: {type: [string, 'null'], format: uuid}
+        user_reason: {type: string, maxLength: 1000, default: ''}
+    DistillationDraftSaveRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version, items]
+      properties:
+        expected_version: {type: integer, minimum: 1}
+        items:
+          type: array
+          minItems: 1
+          items: {$ref: '#/components/schemas/DistillationDraftItemInput'}
+    DistillationConfirmRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version]
+      properties:
+        expected_version: {type: integer, minimum: 1}
+    DistillationKeywordProjection:
+      type: object
+      additionalProperties: false
+      required: [id, text, structure_type, is_regional, region_level, region_text, sort_order]
+      properties:
+        id: {type: string, format: uuid}
+        text: {type: string}
+        structure_type: {type: string, enum: [short, long_tail, general]}
+        is_regional: {type: boolean}
+        region_level: {type: [string, 'null']}
+        region_text: {type: [string, 'null']}
+        sort_order: {type: integer, minimum: 0}
+    DistillationItem:
+      type: object
+      additionalProperties: false
+      required: [source_keyword, action, canonical_keyword_id, merge_group_key, ai_action, ai_canonical_keyword_id, ai_merge_group_key, ai_reason, user_reason, user_overridden, sort_order]
+      properties:
+        source_keyword: {$ref: '#/components/schemas/DistillationKeywordProjection'}
+        action: {$ref: '#/components/schemas/DistillationAction'}
+        canonical_keyword_id: {type: [string, 'null'], format: uuid}
+        merge_group_key: {type: [string, 'null'], format: uuid}
+        ai_action: {$ref: '#/components/schemas/DistillationAction'}
+        ai_canonical_keyword_id: {type: [string, 'null'], format: uuid}
+        ai_merge_group_key: {type: [string, 'null'], format: uuid}
+        ai_reason: {type: string, minLength: 1, maxLength: 1000}
+        user_reason: {type: string, maxLength: 1000}
+        user_overridden: {type: boolean}
+        sort_order: {type: integer, minimum: 0}
+    DistillationKeywordVersionRef:
+      type: object
+      additionalProperties: false
+      required: [id, version_no, item_count]
+      properties:
+        id: {type: string, format: uuid}
+        version_no: {type: integer, minimum: 1}
+        item_count: {type: integer, minimum: 1}
+    DistillationDraft:
+      type: object
+      additionalProperties: false
+      required: [version, can_write, read_only_reason, current_keyword_set_version, draft_input_version, source_result_id, current_distillation_version_no, items]
+      properties:
+        version: {type: integer, minimum: 0}
+        can_write: {type: boolean}
+        read_only_reason: {type: [string, 'null']}
+        current_keyword_set_version:
+          oneOf: [{$ref: '#/components/schemas/DistillationKeywordVersionRef'}, {type: 'null'}]
+        draft_input_version:
+          oneOf: [{$ref: '#/components/schemas/DistillationKeywordVersionRef'}, {type: 'null'}]
+        source_result_id: {type: [string, 'null'], format: uuid}
+        current_distillation_version_no: {type: [integer, 'null'], minimum: 1}
+        items: {type: array, items: {$ref: '#/components/schemas/DistillationItem'}}
+    DistillationVersion:
+      type: object
+      additionalProperties: false
+      required: [id, version_no, subject_version_id, keyword_set_version_id, source_result_id, item_count, confirmed_at, items]
+      properties:
+        id: {type: string, format: uuid}
+        version_no: {type: integer, minimum: 1}
+        subject_version_id: {type: string, format: uuid}
+        keyword_set_version_id: {type: string, format: uuid}
+        source_result_id: {type: string, format: uuid}
+        item_count: {type: integer, minimum: 1}
+        confirmed_at: {type: string, format: date-time}
+        items: {type: array, minItems: 1, items: {$ref: '#/components/schemas/DistillationItem'}}
+    DistillationJob:
+      type: object
+      additionalProperties: false
+      required: [id, subject_id, subject_version_id, keyword_set_version_id, status, version, stable_error_code, billing, provenance, result, attempts, created_at, updated_at, finished_at]
+      properties:
+        id: {type: string, format: uuid}
+        subject_id: {type: string, format: uuid}
+        subject_version_id: {type: string, format: uuid}
+        keyword_set_version_id: {type: string, format: uuid}
+        status: {type: string, enum: [queued, running, retry_wait, succeeded, failed, conflict, superseded]}
+        version: {type: integer, minimum: 1}
+        stable_error_code: {type: string}
+        billing:
+          type: object
+          additionalProperties: false
+          required: [billing_mode, held, remaining]
+          properties:
+            billing_mode: {type: string, enum: [free_initial, regeneration]}
+            held: {type: boolean}
+            remaining: {type: [integer, 'null'], minimum: 0}
+        provenance:
+          type: object
+          additionalProperties: false
+          required: [provider_key, model_key, adapter_version, prompt_version]
+          properties:
+            provider_key: {type: string, enum: [mock, unavailable]}
+            model_key: {type: string}
+            adapter_version: {type: string}
+            prompt_version: {type: string}
+        result:
+          oneOf:
+            - type: object
+              additionalProperties: false
+              required: [item_count, applied_workspace_version]
+              properties:
+                item_count: {type: integer, minimum: 1}
+                applied_workspace_version: {type: integer, minimum: 1}
+            - type: 'null'
+        attempts: {type: integer, minimum: 0}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        finished_at: {type: [string, 'null'], format: date-time}
+    DistillationJobEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/DistillationJob'}}}]
+    DistillationDraftEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/DistillationDraft'}}}]
+    DistillationVersionEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/DistillationVersion'}}}]
+    DistillationConfirmEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: object, additionalProperties: false, required: [version], properties: {version: {$ref: '#/components/schemas/DistillationVersion'}}}}}]
 
     SubjectEnrichmentSourceRef:
       type: object
