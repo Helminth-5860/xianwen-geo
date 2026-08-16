@@ -33,13 +33,14 @@ const actionLabels: Record<DistillationAction, string> = {
 type Props = Readonly<{
   subjectId: string;
   keywordDirty: boolean;
+  onDirtyChange?: (dirty: boolean) => void;
 }>;
 
 function editableItem(item: DistillationDraftItem): DistillationDraftItem {
   return { ...item };
 }
 
-export default function DistillationPanel({ subjectId, keywordDirty }: Props) {
+export default function DistillationPanel({ subjectId, keywordDirty, onDirtyChange }: Props) {
   const [draft, setDraft] = useState<DistillationDraftState>();
   const [items, setItems] = useState<DistillationDraftItem[]>([]);
   const [job, setJob] = useState<DistillationJob>();
@@ -64,6 +65,10 @@ export default function DistillationPanel({ subjectId, keywordDirty }: Props) {
     );
     return () => window.clearTimeout(timer);
   }, [reload]);
+
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
 
   useEffect(() => {
     if (!dirty) return;

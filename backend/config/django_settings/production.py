@@ -138,6 +138,29 @@ if DISTILLATION_IDEMPOTENCY_HMAC_KEY in {
 }:
     raise ImproperlyConfigured("DISTILLATION_IDEMPOTENCY_HMAC_KEY must be independent.")
 
+if QUESTION_GENERATION_PROVIDER == "mock":
+    raise ImproperlyConfigured("Mock question generation provider is forbidden in production.")
+if QUESTION_GENERATION_PROVIDER != "unavailable":
+    raise ImproperlyConfigured(
+        "Only unavailable question generation provider is supported in production."
+    )
+if len(QUESTION_GENERATION_IDEMPOTENCY_HMAC_KEY) < 50:
+    raise ImproperlyConfigured(
+        "QUESTION_GENERATION_IDEMPOTENCY_HMAC_KEY is too weak for production."
+    )
+if QUESTION_GENERATION_IDEMPOTENCY_HMAC_KEY in {
+    SECRET_KEY,
+    SMS_VERIFICATION_HMAC_KEY,
+    QUOTA_IDEMPOTENCY_HMAC_KEY,
+    PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY,
+    FILE_IDEMPOTENCY_HMAC_KEY,
+    WEB_IMPORT_IDEMPOTENCY_HMAC_KEY,
+    SUBJECT_ENRICHMENT_IDEMPOTENCY_HMAC_KEY,
+    KEYWORD_GENERATION_IDEMPOTENCY_HMAC_KEY,
+    DISTILLATION_IDEMPOTENCY_HMAC_KEY,
+}:
+    raise ImproperlyConfigured("QUESTION_GENERATION_IDEMPOTENCY_HMAC_KEY must be independent.")
+
 WEB_IMPORT_ENABLED = env_bool("WEB_IMPORT_ENABLED", False)
 WEB_IMPORT_NETWORK_POLICY_ENFORCED = env_bool("WEB_IMPORT_NETWORK_POLICY_ENFORCED", False)
 if WEB_IMPORT_ENABLED and not WEB_IMPORT_NETWORK_POLICY_ENFORCED:
@@ -217,6 +240,11 @@ for forbidden_variable in ("DATABASE_URL", "REDIS_URL"):
     if DISTILLATION_IDEMPOTENCY_HMAC_KEY in {configured_url, configured_password}:
         raise ImproperlyConfigured(
             f"DISTILLATION_IDEMPOTENCY_HMAC_KEY must not reuse {forbidden_variable} credentials."
+        )
+    if QUESTION_GENERATION_IDEMPOTENCY_HMAC_KEY in {configured_url, configured_password}:
+        raise ImproperlyConfigured(
+            "QUESTION_GENERATION_IDEMPOTENCY_HMAC_KEY must not reuse "
+            f"{forbidden_variable} credentials."
         )
 SMS_PROVIDER = os.getenv("SMS_PROVIDER", "unconfigured").strip().lower()
 if SMS_PROVIDER == "mock":

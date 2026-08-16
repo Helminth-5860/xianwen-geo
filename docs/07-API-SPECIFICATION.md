@@ -279,14 +279,15 @@ PATCH 只接受 source_keyword_id、互斥 action、可选 canonical_keyword_id/
 | GET/POST | `/admin/question-tags` | 管理员查询／创建辅助标签 |
 | GET/PATCH | `/admin/question-tags/{id}` | 标签详情／expected_version 修改 |
 | POST | `/admin/question-tags/{id}/enable`、`disable` | 标签启停 |
-| POST | `/subjects/{id}/question-banks/generate` | 生成问题库（XW-0305，尚未实现） |
-| GET | `/question-bank-jobs/{job_id}` | 进度 |
-| GET | `/subjects/{id}/question-banks/current` | 当前版本 |
-| PATCH | `/subjects/{id}/question-banks/draft` | 编辑草稿 |
-| POST | `/subjects/{id}/question-banks/confirm` | 确认版本 |
-| GET | `/subjects/{id}/question-banks/versions` | 版本列表 |
+| POST | /subjects/{id}/question-banks/generate | Create a durable generation job; Idempotency-Key required |
+| GET | /question-bank-jobs/{job_id} | Owner-scoped job state, billing and safe provenance |
+| GET | /subjects/{id}/question-banks/current | Current immutable confirmed version |
+| GET/PATCH | /subjects/{id}/question-banks/draft | Read/replace mutable draft with expected_version |
+| POST | /subjects/{id}/question-banks/confirm | Confirm a new immutable version |
+| GET | /subjects/{id}/question-banks/versions | Immutable version summaries |
+| GET | /subjects/{id}/question-banks/versions/{version_id} | Immutable version detail |
 
-XW-0304 仅实现上述目录读取与管理端点；问题库生成、草稿、确认和版本端点属于 XW-0305，当前仍未实现。
+XW-0305 is implemented. Generation requires the current confirmed DistillationSet, uses question_bank_limit, and only consumes question_bank_regenerations after a validated result atomically replaces the draft. Manual edit and confirmation are free.
 
 ## 13. 模型列表与检测配置
 

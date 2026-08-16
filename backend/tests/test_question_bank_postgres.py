@@ -1,0 +1,146 @@
+import uuid
+from datetime import timedelta
+
+import pytest
+from django.core.management import call_command
+from django.db import DatabaseError, connection, transaction
+from django.utils import timezone
+
+from apps.questions.bank_models import (
+    QuestionBankWorkspace,
+    QuestionGenerationResult,
+)
+from apps.questions.catalog import BUILTIN_QUESTION_CATEGORIES
+from apps.questions.generation_services import (
+    claim_question_generation_job,
+    confirm_question_bank,
+    execute_question_generation,
+)
+from apps.questions.models import QuestionCategory
+from apps.quotas.services import _create_initialized_account
+from tests.test_question_bank import create_job, draft_payload, facts
+
+pytestmark = pytest.mark.django_db(transaction=True)
+
+
+@pytest.fixture(autouse=True)
+def require_postgresql():
+    if connection.vendor != "postgresql":
+        pytest.skip("Dedicated PostgreSQL evidence")
+    call_command("sync_subject_catalog", "--apply", verbosity=0)
+    for item in BUILTIN_QUESTION_CATEGORIES:
+        QuestionCategory.objects.get_or_create(
+            key=item.key,
+            defaults={
+                "name": item.name,
+                "normalized_name": item.name.casefold(),
+                "description": item.description,
+                "generation_guidance": item.generation_guidance,
+                "sort_order": item.sort_order,
+                "is_builtin": True,
+            },
+        )
+
+
+def succeeded():
+    user, subject, _, subscription, distilled = facts()
+    job, _ = create_job(user, subject, distilled)
+    assert execute_question_generation(job_id=job.pk)["status"] == "succeeded"
+    workspace = QuestionBankWorkspace.objects.get(subject=subject)
+    return user, subject, subscription, distilled, job, workspace
+
+
+def test_generation_result_and_formal_history_are_database_immutable():
+    user, subject, _, _, job, workspace = succeeded()
+    result = QuestionGenerationResult.objects.get(job=job)
+    with pytest.raises(DatabaseError), transaction.atomic():
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE question_generation_results SET item_count = item_count + 1 WHERE id = %s",
+                [result.pk],
+            )
+    _, version = confirm_question_bank(
+        user_id=user.pk,
+        subject_id=subject.pk,
+        expected_version=workspace.version,
+    )
+    question = version.questions.first()
+    with pytest.raises(DatabaseError), transaction.atomic():
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE questions SET text = 'forged history' WHERE id = %s",
+                [question.pk],
+            )
+
+
+def test_terminal_transition_requires_exactly_once_hold_settlement():
+    _, subject, _, distilled, _, workspace = succeeded()
+    user = subject.user
+    second, _ = create_job(user, subject, distilled, version=workspace.version, regenerate=True)
+    claim_question_generation_job(job_id=second.pk)
+    with pytest.raises(DatabaseError), transaction.atomic():
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE question_generation_jobs SET status = 'failed', finished_at = %s, "
+                "stable_error_code = 'FORGED', version = version + 1 WHERE id = %s",
+                [timezone.now(), second.pk],
+            )
+    second.refresh_from_db()
+    second.quota_hold.refresh_from_db()
+    assert second.status == "running" and second.quota_hold.status == "open"
+
+
+def test_regeneration_settles_the_original_hold_across_cycle_boundary():
+    user, subject, subscription, distilled, _, workspace = succeeded()
+    second, _ = create_job(user, subject, distilled, version=workspace.version, regenerate=True)
+    original = second.quota_hold.allocations.get().account
+    with transaction.atomic():
+        later = _create_initialized_account(
+            subscription=subscription,
+            subject=subject,
+            quota_type="question_bank_regenerations",
+            amount=2,
+            cycle_started_at=original.cycle_started_at + timedelta(days=1),
+            cycle_ends_at=original.cycle_ends_at,
+            request_id=uuid.uuid4(),
+            actor=None,
+        )
+    assert execute_question_generation(job_id=second.pk)["status"] == "succeeded"
+    original.refresh_from_db()
+    later.refresh_from_db()
+    second.quota_hold.refresh_from_db()
+    assert second.quota_hold.consumed_amount == 1
+    assert original.available == 1 and original.frozen == 0
+    assert later.available == 2 and later.frozen == 0
+
+
+def test_workspace_current_version_must_point_to_latest_formal_version():
+    user, subject, _, _, _, workspace = succeeded()
+    workspace, first = confirm_question_bank(
+        user_id=user.pk,
+        subject_id=subject.pk,
+        expected_version=workspace.version,
+    )
+    payload = draft_payload(workspace)
+    payload[0]["priority"] = "low" if payload[0]["priority"] != "low" else "high"
+    from apps.questions.generation_services import save_question_bank_draft
+
+    workspace, _ = save_question_bank_draft(
+        user_id=user.pk,
+        subject_id=subject.pk,
+        expected_version=workspace.version,
+        items=payload,
+    )
+    workspace, second = confirm_question_bank(
+        user_id=user.pk,
+        subject_id=subject.pk,
+        expected_version=workspace.version,
+    )
+    assert second.version_no == first.version_no + 1
+    with pytest.raises(DatabaseError), transaction.atomic():
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE question_bank_workspaces SET current_version_id = %s, "
+                "version = version + 1 WHERE id = %s",
+                [first.pk, workspace.pk],
+            )

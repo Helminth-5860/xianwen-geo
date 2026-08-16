@@ -1365,19 +1365,57 @@ paths:
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ExpectedQuestionCatalogVersion'}}}}
       responses: {'200': {description: 已停用, content: {application/json: {schema: {$ref: '#/components/schemas/AdminQuestionTagEnvelope'}}}}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/CsrfFailed'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}}
   /subjects/{subjectId}/question-banks/generate:
-    parameters:
-      - $ref: '#/components/parameters/SubjectId'
-      - $ref: '#/components/parameters/IdempotencyKey'
+    parameters: [{$ref: '#/components/parameters/SubjectId'}, {$ref: '#/components/parameters/IdempotencyKey'}]
     post:
       tags: [Questions]
-      summary: 生成问题库
-      responses:
-        '202':
-          description: 问题库生成任务已创建
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TaskEnvelope'
+      summary: Generate a reviewable question bank draft
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/QuestionGenerationCreateRequest'}}}}
+      responses: {'202': {description: Durable generation job, content: {application/json: {schema: {$ref: '#/components/schemas/QuestionGenerationJobEnvelope'}}}}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}, '503': {$ref: '#/components/responses/ServiceUnavailable'}}
+  /question-bank-jobs/{jobId}:
+    parameters: [{name: jobId, in: path, required: true, schema: {type: string, format: uuid}}]
+    get:
+      tags: [Questions]
+      summary: Get owner-scoped question generation job
+      responses: {'200': {description: Job state and safe provenance, content: {application/json: {schema: {$ref: '#/components/schemas/QuestionGenerationJobEnvelope'}}}}, '404': {$ref: '#/components/responses/ResourceNotFound'}}
+  /subjects/{subjectId}/question-banks/draft:
+    parameters: [{$ref: '#/components/parameters/SubjectId'}]
+    get:
+      tags: [Questions]
+      summary: Get mutable question bank workspace
+      responses: {'200': {description: Draft and applicable catalog, content: {application/json: {schema: {$ref: '#/components/schemas/QuestionBankDraftEnvelope'}}}}}
+    patch:
+      tags: [Questions]
+      summary: Replace mutable question bank draft
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/QuestionBankDraftSaveRequest'}}}}
+      responses: {'200': {description: Saved draft, content: {application/json: {schema: {$ref: '#/components/schemas/QuestionBankDraftEnvelope'}}}}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /subjects/{subjectId}/question-banks/confirm:
+    parameters: [{$ref: '#/components/parameters/SubjectId'}]
+    post:
+      tags: [Questions]
+      summary: Confirm an immutable question bank version
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/QuestionBankConfirmRequest'}}}}
+      responses: {'201': {description: Confirmed version, content: {application/json: {schema: {$ref: '#/components/schemas/QuestionBankConfirmEnvelope'}}}}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /subjects/{subjectId}/question-banks/current:
+    parameters: [{$ref: '#/components/parameters/SubjectId'}]
+    get:
+      tags: [Questions]
+      summary: Get current confirmed question bank
+      responses: {'200': {description: Current version, content: {application/json: {schema: {$ref: '#/components/schemas/QuestionBankVersionEnvelope'}}}}, '404': {$ref: '#/components/responses/ResourceNotFound'}}
+  /subjects/{subjectId}/question-banks/versions:
+    parameters: [{$ref: '#/components/parameters/SubjectId'}]
+    get:
+      tags: [Questions]
+      summary: List immutable question bank versions
+      responses: {'200': {description: Version summaries, content: {application/json: {schema: {$ref: '#/components/schemas/QuestionBankVersionListEnvelope'}}}}}
+  /subjects/{subjectId}/question-banks/versions/{versionId}:
+    parameters: [{$ref: '#/components/parameters/SubjectId'}, {name: versionId, in: path, required: true, schema: {type: string, format: uuid}}]
+    get:
+      tags: [Questions]
+      summary: Get immutable question bank version
+      responses: {'200': {description: Version snapshot, content: {application/json: {schema: {$ref: '#/components/schemas/QuestionBankVersionEnvelope'}}}}, '404': {$ref: '#/components/responses/ResourceNotFound'}}
   /subjects/{subjectId}/geo/estimate:
     parameters:
       - $ref: '#/components/parameters/SubjectId'
@@ -5594,6 +5632,141 @@ components:
       allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: array, items: {$ref: '#/components/schemas/AdminQuestionTag'}}}}]
     AdminQuestionTagEnvelope:
       allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/AdminQuestionTag'}}}]
+
+    QuestionPriority:
+      type: string
+      enum: [high, medium, low]
+    QuestionType:
+      type: string
+      enum: [natural, brand_directed]
+    QuestionGenerationCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [distillation_set_id, expected_workspace_version]
+      properties:
+        distillation_set_id: {type: string, format: uuid}
+        expected_workspace_version: {type: integer, minimum: 0}
+        regenerate: {type: boolean, default: false}
+    QuestionCatalogSnapshot:
+      type: object
+      additionalProperties: false
+      required: [id, key, name, version]
+      properties:
+        id: {type: string, format: uuid}
+        key: {type: string}
+        name: {type: string}
+        version: {type: integer, minimum: 1}
+        guidance: {type: string}
+    QuestionDraftItemInput:
+      type: object
+      additionalProperties: false
+      required: [text, primary_category_id, priority, question_type, participates_in_scoring]
+      properties:
+        text: {type: string, minLength: 1, maxLength: 1000}
+        primary_category_id: {type: string, format: uuid}
+        tag_ids: {type: array, uniqueItems: true, items: {type: string, format: uuid}}
+        keyword_ids: {type: array, uniqueItems: true, items: {type: string, format: uuid}}
+        priority: {$ref: '#/components/schemas/QuestionPriority'}
+        question_type: {$ref: '#/components/schemas/QuestionType'}
+        participates_in_scoring: {type: boolean}
+        ai_reason: {type: string, maxLength: 1000}
+    QuestionBankDraftSaveRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version, items]
+      properties:
+        expected_version: {type: integer, minimum: 1}
+        items: {type: array, minItems: 1, items: {$ref: '#/components/schemas/QuestionDraftItemInput'}}
+    QuestionBankConfirmRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version]
+      properties: {expected_version: {type: integer, minimum: 1}}
+    QuestionDraftItem:
+      allOf:
+        - $ref: '#/components/schemas/QuestionDraftItemInput'
+        - type: object
+          required: [id, primary_category, sort_order]
+          properties:
+            id: {type: string, format: uuid}
+            primary_category: {$ref: '#/components/schemas/QuestionCatalogSnapshot'}
+            sort_order: {type: integer, minimum: 0}
+    QuestionBankDraft:
+      type: object
+      additionalProperties: false
+      required: [version, can_write, read_only_reason, question_limit, catalog, current_distillation_set, draft_input, source_result_id, current_question_bank_version_no, items]
+      properties:
+        version: {type: integer, minimum: 0}
+        can_write: {type: boolean}
+        read_only_reason: {type: [string, 'null']}
+        question_limit: {type: [integer, 'null'], minimum: 1}
+        catalog:
+          type: object
+          required: [categories, tags]
+          properties:
+            categories: {type: array, minItems: 1, items: {$ref: '#/components/schemas/QuestionCatalogSnapshot'}}
+            tags: {type: array, items: {$ref: '#/components/schemas/QuestionCatalogSnapshot'}}
+        current_distillation_set: {type: [object, 'null']}
+        draft_input: {type: [object, 'null']}
+        source_result_id: {type: [string, 'null'], format: uuid}
+        current_question_bank_version_no: {type: [integer, 'null'], minimum: 1}
+        items: {type: array, items: {$ref: '#/components/schemas/QuestionDraftItem'}}
+    QuestionGenerationJob:
+      type: object
+      additionalProperties: false
+      required: [id, subject_id, subject_version_id, distillation_set_id, status, version, stable_error_code, question_limit, billing, provenance, result, attempts, created_at, updated_at, finished_at]
+      properties:
+        id: {type: string, format: uuid}
+        subject_id: {type: string, format: uuid}
+        subject_version_id: {type: string, format: uuid}
+        distillation_set_id: {type: string, format: uuid}
+        status: {type: string, enum: [queued, running, retry_wait, succeeded, failed, conflict, superseded]}
+        version: {type: integer, minimum: 1}
+        stable_error_code: {type: string}
+        question_limit: {type: integer, minimum: 1}
+        billing:
+          type: object
+          required: [billing_mode, held, remaining]
+          properties:
+            billing_mode: {type: string, enum: [free_initial, regeneration]}
+            held: {type: boolean}
+            remaining: {type: [integer, 'null'], minimum: 0}
+        provenance:
+          type: object
+          required: [provider_key, model_key, adapter_version, prompt_version]
+          properties:
+            provider_key: {type: string, enum: [mock, unavailable]}
+            model_key: {type: string}
+            adapter_version: {type: string}
+            prompt_version: {type: string}
+        result: {type: [object, 'null']}
+        attempts: {type: integer, minimum: 0}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        finished_at: {type: [string, 'null'], format: date-time}
+    QuestionBankVersion:
+      type: object
+      additionalProperties: false
+      required: [id, version_no, subject_version_id, distillation_set_id, source_result_id, item_count, confirmed_at]
+      properties:
+        id: {type: string, format: uuid}
+        version_no: {type: integer, minimum: 1}
+        subject_version_id: {type: string, format: uuid}
+        distillation_set_id: {type: string, format: uuid}
+        source_result_id: {type: [string, 'null'], format: uuid}
+        item_count: {type: integer, minimum: 1}
+        confirmed_at: {type: string, format: date-time}
+        items: {type: array, items: {type: object}}
+    QuestionGenerationJobEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/QuestionGenerationJob'}}}]
+    QuestionBankDraftEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/QuestionBankDraft'}}}]
+    QuestionBankVersionEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/QuestionBankVersion'}}}]
+    QuestionBankVersionListEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: object, required: [versions], properties: {versions: {type: array, items: {$ref: '#/components/schemas/QuestionBankVersion'}}}}}}]
+    QuestionBankConfirmEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: object, required: [version], properties: {version: {$ref: '#/components/schemas/QuestionBankVersion'}}}}}]
 
     DistillationAction:
       type: string

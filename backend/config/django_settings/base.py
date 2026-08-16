@@ -352,6 +352,39 @@ DISTILLATION_INTERNAL_MAX_RETRIES = positive_env_int("DISTILLATION_INTERNAL_MAX_
 if DISTILLATION_INTERNAL_MAX_RETRIES > 10:
     raise ImproperlyConfigured("DISTILLATION_INTERNAL_MAX_RETRIES must not exceed 10.")
 DISTILLATION_MOCK_SCENARIO = os.getenv("DISTILLATION_MOCK_SCENARIO", "success").strip().lower()
+QUESTION_GENERATION_PROVIDER = (
+    os.getenv("QUESTION_GENERATION_PROVIDER", "unavailable").strip().lower()
+)
+QUESTION_GENERATION_IDEMPOTENCY_HMAC_KEY = os.getenv(
+    "QUESTION_GENERATION_IDEMPOTENCY_HMAC_KEY",
+    "local-test-question-generation-idempotency-key-not-for-production",
+).strip()
+if len(QUESTION_GENERATION_IDEMPOTENCY_HMAC_KEY) < 32:
+    raise ImproperlyConfigured(
+        "QUESTION_GENERATION_IDEMPOTENCY_HMAC_KEY is too weak; minimum length is 32."
+    )
+QUESTION_GENERATION_PROVIDER_TIMEOUT_SECONDS = positive_env_int(
+    "QUESTION_GENERATION_PROVIDER_TIMEOUT_SECONDS", 30
+)
+QUESTION_GENERATION_MAX_PROVIDER_ATTEMPTS = positive_env_int(
+    "QUESTION_GENERATION_MAX_PROVIDER_ATTEMPTS", 3
+)
+if QUESTION_GENERATION_MAX_PROVIDER_ATTEMPTS > 10:
+    raise ImproperlyConfigured("QUESTION_GENERATION_MAX_PROVIDER_ATTEMPTS must not exceed 10.")
+QUESTION_GENERATION_RETRY_BASE_SECONDS = positive_env_int(
+    "QUESTION_GENERATION_RETRY_BASE_SECONDS", 30
+)
+QUESTION_GENERATION_RUNNING_STALE_SECONDS = positive_env_int(
+    "QUESTION_GENERATION_RUNNING_STALE_SECONDS", 120
+)
+QUESTION_GENERATION_INTERNAL_MAX_RETRIES = positive_env_int(
+    "QUESTION_GENERATION_INTERNAL_MAX_RETRIES", 3
+)
+if QUESTION_GENERATION_INTERNAL_MAX_RETRIES > 10:
+    raise ImproperlyConfigured("QUESTION_GENERATION_INTERNAL_MAX_RETRIES must not exceed 10.")
+QUESTION_GENERATION_MOCK_SCENARIO = (
+    os.getenv("QUESTION_GENERATION_MOCK_SCENARIO", "success").strip().lower()
+)
 S3_ACCESS_KEY = os.getenv("S3_ACCESS_KEY", "xianwen-local").strip()
 S3_SECRET_KEY = os.getenv("S3_SECRET_KEY", "xianwen-local-secret").strip()
 SMS_VERIFICATION_HMAC_KEY = os.getenv(
@@ -428,6 +461,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "keywords.dispatch_distillation_jobs",
         "schedule": timedelta(seconds=60),
     },
+    "dispatch-question-generation-jobs": {
+        "task": "questions.dispatch_generation_jobs",
+        "schedule": timedelta(seconds=60),
+    },
     "dispatch-queued-web-imports": {
         "task": "web_sources.dispatch_queued_imports",
         "schedule": timedelta(seconds=60),
@@ -441,6 +478,7 @@ CELERY_TASK_ROUTES = {
     "subjects.execute_enrichment": {"queue": "ai_content"},
     "keywords.execute_generation": {"queue": "ai_content"},
     "keywords.execute_distillation": {"queue": "ai_content"},
+    "questions.execute_generation": {"queue": "ai_content"},
     "documents.execute_parse_job": {"queue": "file_processing"},
     "web_sources.execute_import": {"queue": "web_fetch"},
 }

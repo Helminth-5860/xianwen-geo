@@ -557,3 +557,11 @@ Mock 必须通过环境配置显式启用，生产环境禁止启用。关键词
 
 Provider/model/adapter/prompt version 与 input/output digest 保存为不可变 provenance。API、日志和安全事件不返回 prompt、输入正文、API key 或 provider raw response。当前只实现 local/test Mock 与 unavailable；Production 禁止 Mock 并在真实 adapter 未实现时 fail closed。临时错误在同一 Job retry，不重复冻结额度；业务成功定义为结构校验与 workspace 原子写入成功，而不是 provider HTTP 成功。
 
+## XW-0305 Question bank generation Provider boundary
+
+The provider receives immutable projections of the current formal SubjectVersion, the current confirmed DistillationSet effective keywords, applicable active question categories/tags, and the plan question limit. Subject fields, keyword text, category guidance, and tag text are untrusted data; they are serialized as data and never interpreted as system instructions.
+
+The structured response is accepted only after strict schema, normalization, uniqueness, count, enum, and identifier-whitelist validation. A successful provider call is not business success: success requires atomically storing the immutable result, replacing the editable workspace draft, settling any regeneration hold exactly once, and moving the job to succeeded.
+
+Provider/model/adapter/prompt versions and input/output digests are immutable provenance. Logs, events, API responses, and notifications expose only stable codes and bounded safe metrics; they do not expose prompts, source text, API keys, or provider raw responses. Local/test may use the deterministic Mock provider. Production rejects Mock and fails closed while no production adapter is configured. Temporary provider failures retry on the same durable job and hold; terminal failure or input/workspace conflict releases the hold.
+

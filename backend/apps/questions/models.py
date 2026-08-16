@@ -125,3 +125,17 @@ class QuestionTagSubjectType(models.Model):  # noqa: DJ008
                 fields=("tag", "subject_type"), name="question_tag_subject_type_unique"
             )
         ]
+
+
+# Imported after catalog models to avoid a circular dependency.
+from .bank_models import (  # noqa: E402,F401
+    Question,
+    QuestionBankVersion,
+    QuestionBankWorkspace,
+    QuestionDraftItem,
+    QuestionGenerationEvent,
+    QuestionGenerationJob,
+    QuestionGenerationResult,
+    QuestionKeywordLink,
+    QuestionTagLink,
+)

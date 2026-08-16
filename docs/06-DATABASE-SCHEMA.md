@@ -401,34 +401,37 @@ PostgreSQL 条件唯一约束保证每个主体至多一个 active job。触发�
 
 `question_category_subject_types` 将分类映射到主体类型并保证同一组合唯一；没有映射表示适用于全部主体，有映射表示只适用于所列主体类型。主体类型删除受保护。
 
-### 14.2 `question_bank_versions`
+### 14.2 question_bank_workspaces and question_draft_items
 
-主体、主体版本、蒸馏版本、版本号、状态、是否当前、确认时间。
+One mutable workspace per subject binds the current SubjectVersion, confirmed
+DistillationSet, source QuestionGenerationResult and current formal version.
+The workspace has an optimistic version. Draft items store normalized question
+text, one live applicable category, unique tag/keyword ID sets, priority, type,
+participation, AI reason and order.
 
-### 14.3 `questions`
+### 14.3 question_bank_versions and questions
 
-| 字段 | 说明 |
-|---|---|
-| question_bank_version_id | 问题库版本 |
-| text | 问题 |
-| primary_category_id | 主分类 |
-| priority | high/medium/low |
-| question_type | natural/brand_directed |
-| participates_in_scoring | 是否评分 |
-| ai_reason | AI 理由 |
-| enabled | 当前版本启用 |
+QuestionBankVersion is append-only and binds subject, SubjectVersion,
+DistillationSet, optional source result, continuous version number, digest,
+count and confirmation facts. Questions are append-only and snapshot category
+key/name/version. QuestionTagLink and QuestionKeywordLink snapshot historical
+tag and keyword display semantics while retaining protected foreign keys.
 
-### 14.4 `question_tags` 与 `question_tag_links`
+### 14.4 question_generation_jobs/results/events
 
-`question_tags` 是管理员维护的辅助标签目录，采用与分类相同的稳定 key、规范化名称、启停、排序、version 和不可删除 API 边界，但没有生成提示字段。`question_tag_subject_types` 表达适用主体；需求未定义内置标签，因此 XW-0304 不预置标签。未来 `question_tag_links` 属于问题库实现，不在 XW-0304 创建。
+Jobs freeze provider/model/adapter/prompt versions, input digest, canonical
+request digest, current SubjectVersion, confirmed DistillationSet, effective
+keywords, applicable category/tag catalogs, question_bank_limit and optional
+question_bank_regenerations hold. Results and events are append-only. Result
+count must be between one and the frozen plan limit.
 
-### 14.5 `question_keyword_links`
+### 14.5 PostgreSQL guards
 
-问题与关键词多对多。
-
-### 14.6 `question_generation_jobs`
-
-生成任务和次数结算。
+Database triggers protect immutable job request/provenance, legal job
+transitions, terminal consume/release consistency, append-only evidence and
+formal history, one-step workspace versions, continuous formal versions and a
+current pointer to the maximum version. Draft CRUD remains ordinary application
+data and is protected by constraints plus optimistic concurrency.
 
 ## 15. GEO 模型配置
 
