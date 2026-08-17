@@ -33,7 +33,7 @@ $env:WEB_IMPORT_IDEMPOTENCY_HMAC_KEY = (New-RandomSecret)
 $env:DATABASE_URL = "postgresql://$($env:POSTGRES_USER):$($env:POSTGRES_PASSWORD)@postgres:5432/$($env:POSTGRES_DB)"
 $env:REDIS_URL = "redis://redis:6379/18"
 $env:CELERY_BROKER_URL = "redis://redis:6379/19"
-$files = @("-f", "docker-compose.yml", "-f", "docker-compose.ai-credentials.yml")
+$files = @("-f", "docker-compose.yml", "-f", "docker-compose.ai-key-management.yml")
 $projectName = "xianwen-ai-credential-test"
 
 try {
