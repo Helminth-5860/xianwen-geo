@@ -1,3 +1,5 @@
+import base64
+import hashlib
 import os
 from datetime import timedelta
 from ipaddress import ip_network
@@ -386,6 +388,15 @@ if QUESTION_GENERATION_INTERNAL_MAX_RETRIES > 10:
 QUESTION_GENERATION_MOCK_SCENARIO = (
     os.getenv("QUESTION_GENERATION_MOCK_SCENARIO", "success").strip().lower()
 )
+LOCAL_FIELD_ENCRYPTION_MASTER_KEY = base64.urlsafe_b64encode(
+    hashlib.sha256(b"xianwen-local-field-encryption-key-not-for-production").digest()
+).decode("ascii")
+FIELD_ENCRYPTION_MASTER_KEY = os.getenv(
+    "FIELD_ENCRYPTION_MASTER_KEY", LOCAL_FIELD_ENCRYPTION_MASTER_KEY
+).strip()
+API_CREDENTIAL_ENVIRONMENT = os.getenv("API_CREDENTIAL_ENVIRONMENT", "staging").strip().lower()
+if API_CREDENTIAL_ENVIRONMENT not in {"staging", "production"}:
+    raise ImproperlyConfigured("API_CREDENTIAL_ENVIRONMENT must be staging or production.")
 S3_ACCESS_KEY = os.getenv("S3_ACCESS_KEY", "xianwen-local").strip()
 S3_SECRET_KEY = os.getenv("S3_SECRET_KEY", "xianwen-local-secret").strip()
 SMS_VERIFICATION_HMAC_KEY = os.getenv(

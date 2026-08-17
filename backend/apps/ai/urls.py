@@ -9,9 +9,27 @@ from .views import (
     AdminAIModelRuntimeConfigDetailView,
     AdminAIModelRuntimeConfigListView,
     AdminAIModelUnpauseView,
+    AdminAPICredentialListCreateView,
+    AdminAPICredentialRotateView,
+    AdminAPICredentialTestView,
 )
 
 urlpatterns = [
+    path(
+        "admin/api-credentials",
+        AdminAPICredentialListCreateView.as_view(),
+        name="admin-api-credentials",
+    ),
+    path(
+        "admin/api-credentials/<uuid:credential_id>/rotate",
+        AdminAPICredentialRotateView.as_view(),
+        name="admin-api-credential-rotate",
+    ),
+    path(
+        "admin/api-credentials/<uuid:credential_id>/test",
+        AdminAPICredentialTestView.as_view(),
+        name="admin-api-credential-test",
+    ),
     path("admin/ai-models", AdminAIModelListView.as_view(), name="admin-ai-models"),
     path(
         "admin/ai-models/<uuid:model_id>",

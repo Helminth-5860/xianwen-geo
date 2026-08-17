@@ -107,3 +107,10 @@ secret 从 `repr` 排除。XW-0401 不读取、保存、轮换或展示生产 cr
 合并后按普通应用发布顺序更新 web 和现有 `ai_content` worker，无迁移或配置前置步骤。上线后
 验证 production Mock 拒绝、unavailable fail-closed，以及四条既有 AI Job 的创建、重试、结果
 写入与 provenance。
+
+## XW-0403 credential resolver integration
+
+XW-0403 在不改变统一 Adapter request/response 的前提下实现数据库凭据 Resolver：
+active credential 先由独立 `FIELD_ENCRYPTION_MASTER_KEY` 解密，再临时封装为 `AdapterCredential`。
+密钥明文不进入 request、response、provenance、日志或持久化 result。XW-0403 的 `/test`
+只检查本地存储与解密边界；真实 Provider 验证继续由 XW-0404 及后续真实 Adapter 负责。

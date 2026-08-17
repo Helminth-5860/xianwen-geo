@@ -567,14 +567,18 @@ XW-0402 已实现：
 读取要求 `models.list`，写入要求 `models.manage`；写入使用 CSRF 与 `expected_version`，
 冲突返回稳定错误码。响应不返回 API key、token、secret 或 provider raw response。
 
-以下密钥和真实调用相关端点仍由 XW-0403 及后续任务实现：
+XW-0403 实现：
 
-- `/admin/api-credentials`
-- `/admin/api-credentials/{id}/rotate`
-- `/admin/api-credentials/{id}/test`
-- `/admin/system-test-quotas`
+- `GET/POST /admin/api-credentials`
+- `POST /admin/api-credentials/{id}/rotate`
+- `POST /admin/api-credentials/{id}/test`
 
-只有超级管理员可访问密钥相关端点。
+只有完成管理员安全 Session 的超级管理员可访问。新增/轮换请求中的 `api_key` 为 `writeOnly`，
+明文只存在于请求与加密调用栈，响应只返回掩码和安全元数据。轮换要求 `expected_version`，
+成功后创建下一版本并擦除旧记录密文。`test` 仅执行本地密文解密/credential-injection 完整性检查，
+固定返回 `remote_validated=false`，不得被解释为真实 Provider 连通性成功。
+
+`/admin/system-test-quotas` 与真实 Provider 网络验证仍由后续任务实现。
 
 ### 26.6 提示词
 

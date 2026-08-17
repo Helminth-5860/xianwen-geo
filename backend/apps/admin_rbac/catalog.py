@@ -187,6 +187,9 @@ PERMISSION_CATALOG = (
     CatalogPermission("menu.admin.models", "模型运行配置菜单", "models", "menu", 91),
     CatalogPermission("models.list", "模型运行配置列表", "models", "action", 1110),
     CatalogPermission("models.manage", "管理模型运行配置", "models", "action", 1120),
+    CatalogPermission(
+        "api_credentials.manage", "管理模型 API 密钥", "models", "action", 1130, True
+    ),
 )
 
 CATALOG_BY_KEY = {item.key: item for item in PERMISSION_CATALOG}

@@ -1,3 +1,5 @@
+import base64
+import hashlib
 import os
 import subprocess
 import sys
@@ -6,6 +8,9 @@ from pathlib import Path
 import pytest
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
+FERNET_TEST_KEY = base64.urlsafe_b64encode(
+    hashlib.sha256(b"xianwen-production-settings-fernet-test-key").digest()
+).decode("ascii")
 REQUIRED_ENVIRONMENT = {
     "APP_ENV": "production",
     "DJANGO_SETTINGS_MODULE": "config.settings",
@@ -20,6 +25,8 @@ REQUIRED_ENVIRONMENT = {
     "KEYWORD_GENERATION_IDEMPOTENCY_HMAC_KEY": "k" * 64,
     "DISTILLATION_IDEMPOTENCY_HMAC_KEY": "d" * 64,
     "QUESTION_GENERATION_IDEMPOTENCY_HMAC_KEY": "u" * 64,
+    "FIELD_ENCRYPTION_MASTER_KEY": FERNET_TEST_KEY,
+    "API_CREDENTIAL_ENVIRONMENT": "production",
     "SMS_PROVIDER": "unconfigured",
     "FILE_STORAGE_PROVIDER": "unavailable",
     "FILE_SCANNER_PROVIDER": "unavailable",
@@ -56,6 +63,8 @@ def import_settings(overrides: dict[str, str] | None = None, missing: str | None
             "DISTILLATION_PROVIDER",
             "QUESTION_GENERATION_IDEMPOTENCY_HMAC_KEY",
             "QUESTION_GENERATION_PROVIDER",
+            "FIELD_ENCRYPTION_MASTER_KEY",
+            "API_CREDENTIAL_ENVIRONMENT",
             "SMS_PROVIDER",
             "FILE_STORAGE_PROVIDER",
             "FILE_SCANNER_PROVIDER",
@@ -96,6 +105,8 @@ def import_settings(overrides: dict[str, str] | None = None, missing: str | None
         "SUBJECT_ENRICHMENT_IDEMPOTENCY_HMAC_KEY",
         "KEYWORD_GENERATION_IDEMPOTENCY_HMAC_KEY",
         "DISTILLATION_IDEMPOTENCY_HMAC_KEY",
+        "FIELD_ENCRYPTION_MASTER_KEY",
+        "API_CREDENTIAL_ENVIRONMENT",
         "DATABASE_URL",
         "REDIS_URL",
         "ALLOWED_HOSTS",
@@ -116,6 +127,18 @@ def test_production_missing_required_environment_fails_fast(missing):
         ({"DATABASE_URL": "sqlite:///unsafe.sqlite3"}, "SQLite is forbidden"),
         ({"ALLOWED_HOSTS": "*"}, "Wildcard ALLOWED_HOSTS"),
         ({"DJANGO_SECRET_KEY": "weak"}, "DJANGO_SECRET_KEY is too weak"),
+        ({"FIELD_ENCRYPTION_MASTER_KEY": "invalid"}, "must be a valid Fernet key"),
+        (
+            {
+                "FIELD_ENCRYPTION_MASTER_KEY": base64.urlsafe_b64encode(
+                    hashlib.sha256(
+                        b"xianwen-local-field-encryption-key-not-for-production"
+                    ).digest()
+                ).decode("ascii")
+            },
+            "must not use the local default",
+        ),
+        ({"API_CREDENTIAL_ENVIRONMENT": "local"}, "must be staging or production"),
         (
             {"SMS_VERIFICATION_HMAC_KEY": "weak"},
             "SMS_VERIFICATION_HMAC_KEY is too weak",
@@ -363,3 +386,27 @@ def test_production_rejects_plan_change_hmac_reusing_redis_password():
     )
     assert result.returncode != 0
     assert "PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY must not reuse REDIS_URL credentials" in result.stderr
+
+
+def test_production_rejects_field_encryption_key_reusing_database_password():
+    key = FERNET_TEST_KEY
+    result = import_settings(
+        overrides={
+            "FIELD_ENCRYPTION_MASTER_KEY": key,
+            "DATABASE_URL": f"postgresql://app:{key}@database:5432/xianwen",
+        }
+    )
+    assert result.returncode != 0
+    assert "FIELD_ENCRYPTION_MASTER_KEY must not reuse DATABASE_URL credentials" in result.stderr
+
+
+def test_production_rejects_field_encryption_key_reusing_redis_password():
+    key = FERNET_TEST_KEY
+    result = import_settings(
+        overrides={
+            "FIELD_ENCRYPTION_MASTER_KEY": key,
+            "REDIS_URL": f"redis://:{key}@redis:6379/0",
+        }
+    )
+    assert result.returncode != 0
+    assert "FIELD_ENCRYPTION_MASTER_KEY must not reuse REDIS_URL credentials" in result.stderr

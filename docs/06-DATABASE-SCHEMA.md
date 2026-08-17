@@ -461,11 +461,17 @@ identity、删除、runtime binding 和逐次版本推进。完整字段与发�
 
 ### 15.5 `api_credentials`
 
-只保存供应商、环境、掩码、密文引用、版本、状态、创建和替换记录。严禁普通查询返回密文。
+XW-0403 为固定 Provider 保存环境（`staging|production`）、掩码、Fernet 认证密文、逐次版本、
+状态以及创建／替换元数据。每个 Provider/环境最多一个 `active` 版本；轮换创建新版本并把旧版本
+标记 `replaced`，同时擦除旧记录中的密文，只保留掩码与历史元数据。普通查询永不返回密文。
+应用解密主密钥由 `FIELD_ENCRYPTION_MASTER_KEY` 从数据库外注入。
 
 ### 15.6 `api_credential_audit`
 
-密钥新增、替换、验证、停用记录。
+XW-0403 使用追加式 `api_credential_audit` 保存新增、轮换和本地安全存储检查的安全摘要，并同时
+写入统一 `AuditEvent`。两者都禁止保存明文、密文、Authorization Header 或 Provider raw response。
+`/test` 在本任务只证明当前密文可安全解密并满足 `AdapterCredential` 注入边界，
+`remote_validated=false`；真实 Provider 连通性由 XW-0404 及后续 Adapter 任务实现。
 
 ## 16. 提示词与评分规则
 
