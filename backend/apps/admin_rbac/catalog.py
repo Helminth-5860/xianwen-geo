@@ -184,6 +184,9 @@ PERMISSION_CATALOG = (
     CatalogPermission(
         "question_tags.disable", "启停问题辅助标签", "question_catalog", "action", 1100
     ),
+    CatalogPermission("menu.admin.models", "模型运行配置菜单", "models", "menu", 91),
+    CatalogPermission("models.list", "模型运行配置列表", "models", "action", 1110),
+    CatalogPermission("models.manage", "管理模型运行配置", "models", "action", 1120),
 )
 
 CATALOG_BY_KEY = {item.key: item for item in PERMISSION_CATALOG}

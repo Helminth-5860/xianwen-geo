@@ -1254,6 +1254,81 @@ paths:
         '404': {$ref: '#/components/responses/ResourceNotFound'}
         '409': {$ref: '#/components/responses/BusinessConflict'}
         '422': {$ref: '#/components/responses/ValidationError'}
+  /admin/ai-models:
+    get:
+      tags: [Admin, AI]
+      summary: 查询固定 8 模型和运行配置
+      responses:
+        '200': {description: 模型配置列表, headers: {Cache-Control: {schema: {type: string, const: no-store}}}, content: {application/json: {schema: {$ref: '#/components/schemas/AIModelRuntimeConfigListEnvelope'}}}}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/PermissionDenied'}
+  /admin/ai-models/{modelId}:
+    parameters:
+      - {name: modelId, in: path, required: true, schema: {type: string, format: uuid}}
+    get:
+      tags: [Admin, AI]
+      summary: 查询固定模型配置详情
+      responses:
+        '200': {description: 模型配置, content: {application/json: {schema: {$ref: '#/components/schemas/AIModelRuntimeConfigEnvelope'}}}}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/PermissionDenied'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+  /admin/ai-models/{modelId}/enable:
+    parameters:
+      - {name: modelId, in: path, required: true, schema: {type: string, format: uuid}}
+    post:
+      tags: [Admin, AI]
+      summary: 启用模型
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ExpectedAIModelConfigVersion'}}}}
+      responses: {'200': {description: 已启用, content: {application/json: {schema: {$ref: '#/components/schemas/AIModelRuntimeConfigEnvelope'}}}}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/CsrfFailed'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /admin/ai-models/{modelId}/disable:
+    parameters:
+      - {name: modelId, in: path, required: true, schema: {type: string, format: uuid}}
+    post:
+      tags: [Admin, AI]
+      summary: 停用模型
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ExpectedAIModelConfigVersion'}}}}
+      responses: {'200': {description: 已停用, content: {application/json: {schema: {$ref: '#/components/schemas/AIModelRuntimeConfigEnvelope'}}}}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/CsrfFailed'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /admin/ai-models/{modelId}/pause:
+    parameters:
+      - {name: modelId, in: path, required: true, schema: {type: string, format: uuid}}
+    post:
+      tags: [Admin, AI]
+      summary: 暂停模型
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/PauseAIModelRequest'}}}}
+      responses: {'200': {description: 已暂停, content: {application/json: {schema: {$ref: '#/components/schemas/AIModelRuntimeConfigEnvelope'}}}}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/CsrfFailed'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /admin/ai-models/{modelId}/unpause:
+    parameters:
+      - {name: modelId, in: path, required: true, schema: {type: string, format: uuid}}
+    post:
+      tags: [Admin, AI]
+      summary: 恢复暂停模型
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ExpectedAIModelConfigVersion'}}}}
+      responses: {'200': {description: 已恢复, content: {application/json: {schema: {$ref: '#/components/schemas/AIModelRuntimeConfigEnvelope'}}}}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/CsrfFailed'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /admin/ai-model-runtime-configs:
+    get:
+      tags: [Admin, AI]
+      summary: 查询模型运行配置
+      responses:
+        '200': {description: 运行配置列表, headers: {Cache-Control: {schema: {type: string, const: no-store}}}, content: {application/json: {schema: {$ref: '#/components/schemas/AIModelRuntimeConfigListEnvelope'}}}}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/PermissionDenied'}
+  /admin/ai-model-runtime-configs/{modelId}:
+    parameters:
+      - {name: modelId, in: path, required: true, schema: {type: string, format: uuid}}
+    get:
+      tags: [Admin, AI]
+      summary: 查询单个模型运行配置
+      responses:
+        '200': {description: 运行配置, content: {application/json: {schema: {$ref: '#/components/schemas/AIModelRuntimeConfigEnvelope'}}}}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/PermissionDenied'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+    patch:
+      tags: [Admin, AI]
+      summary: 修改单个模型运行配置
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AIModelRuntimeConfigUpdateRequest'}}}}
+      responses: {'200': {description: 已更新, content: {application/json: {schema: {$ref: '#/components/schemas/AIModelRuntimeConfigEnvelope'}}}}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/CsrfFailed'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}}
   /question-categories:
     get:
       tags: [Questions]
@@ -5508,6 +5583,81 @@ components:
       allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/SubjectFieldConfig'}}}]
     SubjectFieldOptionEnvelope:
       allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/SubjectFieldOption'}}}]
+
+    AIModelRuntimeConfig:
+      type: object
+      additionalProperties: false
+      required: [model_id, provider_key, model_key, canonical_display_name, display_name, display_name_override, canonical_order, purpose, is_builtin, provider_model_id, api_version, enabled, sort_order, network_access_enabled, web_search_failure_policy, timeout_seconds, max_retries, retry_base_seconds, retry_backoff, max_concurrency, cost_unit, currency, input_cost, output_cost, request_cost, paused, pause_reason, version, created_at, updated_at]
+      properties:
+        model_id: {type: string, format: uuid, readOnly: true}
+        provider_key: {type: string, enum: [deepseek, doubao, qwen, hunyuan, wenxin, kimi, glm, spark], readOnly: true}
+        model_key: {$ref: '#/components/schemas/PlanModelKey'}
+        canonical_display_name: {type: string, maxLength: 150, readOnly: true}
+        display_name: {type: string, maxLength: 150, readOnly: true}
+        display_name_override: {type: string, maxLength: 150}
+        canonical_order: {type: integer, minimum: 0, readOnly: true}
+        purpose: {type: string, const: geo_detection, readOnly: true}
+        is_builtin: {type: boolean, const: true, readOnly: true}
+        provider_model_id: {type: string, maxLength: 255}
+        api_version: {type: string, maxLength: 100}
+        enabled: {type: boolean}
+        sort_order: {type: integer, minimum: 0, maximum: 65535}
+        network_access_enabled: {type: boolean}
+        web_search_failure_policy: {type: string, enum: [degrade_formal, degrade_reference, fail]}
+        timeout_seconds: {type: integer, minimum: 1, maximum: 300}
+        max_retries: {type: integer, minimum: 0, maximum: 10}
+        retry_base_seconds: {type: integer, minimum: 1, maximum: 3600}
+        retry_backoff: {type: string, enum: [fixed, exponential]}
+        max_concurrency: {type: integer, minimum: 1, maximum: 1000}
+        cost_unit: {type: [string, 'null'], enum: [per_million_tokens, per_request, null]}
+        currency: {type: string, const: CNY}
+        input_cost: {type: [string, 'null'], pattern: '^\d{1,12}(\.\d{1,6})?$', default: null}
+        output_cost: {type: [string, 'null'], pattern: '^\d{1,12}(\.\d{1,6})?$', default: null}
+        request_cost: {type: [string, 'null'], pattern: '^\d{1,12}(\.\d{1,6})?$', default: null}
+        paused: {type: boolean}
+        pause_reason: {type: string, maxLength: 200}
+        version: {type: integer, minimum: 1, readOnly: true}
+        created_at: {type: string, format: date-time, readOnly: true}
+        updated_at: {type: string, format: date-time, readOnly: true}
+    AIModelRuntimeConfigUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version]
+      properties:
+        expected_version: {type: integer, minimum: 1}
+        display_name_override: {type: string, maxLength: 150}
+        provider_model_id: {type: string, maxLength: 255}
+        api_version: {type: string, maxLength: 100}
+        sort_order: {type: integer, minimum: 0, maximum: 65535}
+        network_access_enabled: {type: boolean}
+        web_search_failure_policy: {type: string, enum: [degrade_formal, degrade_reference, fail]}
+        timeout_seconds: {type: integer, minimum: 1, maximum: 300}
+        max_retries: {type: integer, minimum: 0, maximum: 10}
+        retry_base_seconds: {type: integer, minimum: 1, maximum: 3600}
+        retry_backoff: {type: string, enum: [fixed, exponential]}
+        max_concurrency: {type: integer, minimum: 1, maximum: 1000}
+        cost_unit: {type: [string, 'null'], enum: [per_million_tokens, per_request, null]}
+        currency: {type: string, const: CNY}
+        input_cost: {type: [number, 'null'], minimum: 0, multipleOf: 0.000001}
+        output_cost: {type: [number, 'null'], minimum: 0, multipleOf: 0.000001}
+        request_cost: {type: [number, 'null'], minimum: 0, multipleOf: 0.000001}
+    ExpectedAIModelConfigVersion:
+      type: object
+      additionalProperties: false
+      required: [expected_version]
+      properties:
+        expected_version: {type: integer, minimum: 1}
+    PauseAIModelRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version, reason]
+      properties:
+        expected_version: {type: integer, minimum: 1}
+        reason: {type: string, minLength: 1, maxLength: 200}
+    AIModelRuntimeConfigListEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: array, minItems: 8, maxItems: 8, items: {$ref: '#/components/schemas/AIModelRuntimeConfig'}}}}]
+    AIModelRuntimeConfigEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/AIModelRuntimeConfig'}}}]
 
     QuestionCatalogStatus:
       type: string

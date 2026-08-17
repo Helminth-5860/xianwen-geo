@@ -1,0 +1,39 @@
+services:
+  ai-model-config-migrate:
+    profiles: [ai-model-config-test]
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: test
+    command: ["python", "manage.py", "migrate", "--noinput"]
+    environment: &ai-model-config-env
+      DJANGO_SETTINGS_MODULE: config.django_settings.questions_test
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?set isolated AI model config test secret}
+      DATABASE_URL: ${DATABASE_URL:?set isolated AI model config test database URL}
+      RUN_MIGRATIONS: "false"
+    depends_on:
+      postgres: {condition: service_healthy}
+
+  ai-model-config-tests:
+    profiles: [ai-model-config-test]
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: test
+    command:
+      - python
+      - -m
+      - pytest
+      - tests/test_ai_model_configs.py
+      - tests/test_ai_model_configs_postgres.py
+      - tests/test_ai_model_configs_openapi.py
+      - tests/test_ai_adapters.py
+      - -x
+      - --reuse-db
+      - -p
+      - no:cacheprovider
+    environment: *ai-model-config-env
+    volumes:
+      - ./openapi:/openapi:ro
+    depends_on:
+      postgres: {condition: service_healthy}

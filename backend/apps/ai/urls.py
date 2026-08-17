@@ -1,0 +1,51 @@
+from django.urls import path
+
+from .views import (
+    AdminAIModelDetailView,
+    AdminAIModelDisableView,
+    AdminAIModelEnableView,
+    AdminAIModelListView,
+    AdminAIModelPauseView,
+    AdminAIModelRuntimeConfigDetailView,
+    AdminAIModelRuntimeConfigListView,
+    AdminAIModelUnpauseView,
+)
+
+urlpatterns = [
+    path("admin/ai-models", AdminAIModelListView.as_view(), name="admin-ai-models"),
+    path(
+        "admin/ai-models/<uuid:model_id>",
+        AdminAIModelDetailView.as_view(),
+        name="admin-ai-model-detail",
+    ),
+    path(
+        "admin/ai-models/<uuid:model_id>/enable",
+        AdminAIModelEnableView.as_view(),
+        name="admin-ai-model-enable",
+    ),
+    path(
+        "admin/ai-models/<uuid:model_id>/disable",
+        AdminAIModelDisableView.as_view(),
+        name="admin-ai-model-disable",
+    ),
+    path(
+        "admin/ai-models/<uuid:model_id>/pause",
+        AdminAIModelPauseView.as_view(),
+        name="admin-ai-model-pause",
+    ),
+    path(
+        "admin/ai-models/<uuid:model_id>/unpause",
+        AdminAIModelUnpauseView.as_view(),
+        name="admin-ai-model-unpause",
+    ),
+    path(
+        "admin/ai-model-runtime-configs",
+        AdminAIModelRuntimeConfigListView.as_view(),
+        name="admin-ai-model-runtime-configs",
+    ),
+    path(
+        "admin/ai-model-runtime-configs/<uuid:model_id>",
+        AdminAIModelRuntimeConfigDetailView.as_view(),
+        name="admin-ai-model-runtime-config-detail",
+    ),
+]

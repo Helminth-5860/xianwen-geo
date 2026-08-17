@@ -553,8 +553,22 @@ XW-0305 is implemented. Generation requires the current confirmed DistillationSe
 
 ### 26.5 模型和密钥
 
-- `/admin/ai-models`
-- `/admin/ai-model-runtime-configs`
+XW-0402 已实现：
+
+- `GET /admin/ai-models`
+- `GET /admin/ai-models/{id}`
+- `POST /admin/ai-models/{id}/enable`
+- `POST /admin/ai-models/{id}/disable`
+- `POST /admin/ai-models/{id}/pause`
+- `POST /admin/ai-models/{id}/unpause`
+- `GET /admin/ai-model-runtime-configs`
+- `GET/PATCH /admin/ai-model-runtime-configs/{id}`
+
+读取要求 `models.list`，写入要求 `models.manage`；写入使用 CSRF 与 `expected_version`，
+冲突返回稳定错误码。响应不返回 API key、token、secret 或 provider raw response。
+
+以下密钥和真实调用相关端点仍由 XW-0403 及后续任务实现：
+
 - `/admin/api-credentials`
 - `/admin/api-credentials/{id}/rotate`
 - `/admin/api-credentials/{id}/test`

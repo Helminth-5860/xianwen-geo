@@ -65,6 +65,7 @@ INSTALLED_APPS = [
     "corsheaders",
     "rest_framework",
     "apps.core",
+    "apps.ai",
     "apps.users",
     "apps.admin_rbac",
     "apps.plans",
