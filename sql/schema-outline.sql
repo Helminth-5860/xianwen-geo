@@ -736,16 +736,31 @@ CREATE TABLE ai_model_versions (
 CREATE TABLE api_credentials (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     provider_id uuid NOT NULL REFERENCES ai_providers(id),
-    environment varchar(32) NOT NULL,
+    environment varchar(32) NOT NULL CHECK (environment IN ('staging', 'production')),
     secret_reference text NOT NULL,
     secret_mask varchar(100) NOT NULL,
-    version_no integer NOT NULL,
-    status varchar(32) NOT NULL DEFAULT 'active',
+    version_no integer NOT NULL CHECK (version_no >= 1),
+    status varchar(16) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'replaced')),
     created_by_id uuid NOT NULL REFERENCES admin_users(id),
+    replaced_by_id uuid REFERENCES admin_users(id),
+    replaced_at timestamptz,
     created_at timestamptz NOT NULL DEFAULT now(),
     UNIQUE (provider_id, environment, version_no)
 );
--- secret_reference 必须是密钥管理引用或应用层加密密文，不得为明文。
+-- XW-0403 的 Django migration 另加 provider/environment active 条件唯一约束和 PostgreSQL guards。
+-- secret_reference 只允许保存应用层 Fernet 认证密文；轮换后旧版本 secret_reference 被擦除为空串。
+
+CREATE TABLE api_credential_audit (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    credential_id uuid NOT NULL REFERENCES api_credentials(id),
+    action varchar(16) NOT NULL,
+    outcome varchar(16) NOT NULL,
+    actor_id uuid REFERENCES admin_users(id),
+    safe_summary jsonb NOT NULL DEFAULT '{}'::jsonb,
+    stable_error_code varchar(64) NOT NULL DEFAULT '',
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+-- 追加式安全审计；禁止保存明文、密文或 provider raw response。
 
 CREATE TABLE scoring_rule_versions (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

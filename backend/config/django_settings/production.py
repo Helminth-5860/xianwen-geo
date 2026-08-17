@@ -2,6 +2,7 @@
 import os
 from urllib.parse import urlsplit
 
+from cryptography.fernet import Fernet
 from django.core.exceptions import ImproperlyConfigured
 
 from apps.core.logging import build_logging_config
@@ -19,6 +20,14 @@ WEB_IMPORT_IDEMPOTENCY_HMAC_KEY = require_env("WEB_IMPORT_IDEMPOTENCY_HMAC_KEY")
 SUBJECT_ENRICHMENT_IDEMPOTENCY_HMAC_KEY = require_env("SUBJECT_ENRICHMENT_IDEMPOTENCY_HMAC_KEY")
 KEYWORD_GENERATION_IDEMPOTENCY_HMAC_KEY = require_env("KEYWORD_GENERATION_IDEMPOTENCY_HMAC_KEY")
 DISTILLATION_IDEMPOTENCY_HMAC_KEY = require_env("DISTILLATION_IDEMPOTENCY_HMAC_KEY")
+FIELD_ENCRYPTION_MASTER_KEY = require_env("FIELD_ENCRYPTION_MASTER_KEY")
+API_CREDENTIAL_ENVIRONMENT = require_env("API_CREDENTIAL_ENVIRONMENT").lower()
+if API_CREDENTIAL_ENVIRONMENT not in {"staging", "production"}:
+    raise ImproperlyConfigured("API_CREDENTIAL_ENVIRONMENT must be staging or production.")
+try:
+    Fernet(FIELD_ENCRYPTION_MASTER_KEY.encode("ascii"))
+except (TypeError, ValueError, UnicodeEncodeError) as exc:
+    raise ImproperlyConfigured("FIELD_ENCRYPTION_MASTER_KEY must be a valid Fernet key.") from exc
 weak_secret_markers = {
     "changeme",
     "change-me",
@@ -29,6 +38,21 @@ weak_secret_markers = {
 }
 if len(SECRET_KEY) < 50 or SECRET_KEY.lower() in weak_secret_markers:
     raise ImproperlyConfigured("DJANGO_SECRET_KEY is too weak for production.")
+if FIELD_ENCRYPTION_MASTER_KEY == LOCAL_FIELD_ENCRYPTION_MASTER_KEY:
+    raise ImproperlyConfigured("FIELD_ENCRYPTION_MASTER_KEY must not use the local default.")
+if FIELD_ENCRYPTION_MASTER_KEY in {
+    SECRET_KEY,
+    SMS_VERIFICATION_HMAC_KEY,
+    QUOTA_IDEMPOTENCY_HMAC_KEY,
+    PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY,
+    FILE_IDEMPOTENCY_HMAC_KEY,
+    WEB_IMPORT_IDEMPOTENCY_HMAC_KEY,
+    SUBJECT_ENRICHMENT_IDEMPOTENCY_HMAC_KEY,
+    KEYWORD_GENERATION_IDEMPOTENCY_HMAC_KEY,
+    DISTILLATION_IDEMPOTENCY_HMAC_KEY,
+    QUESTION_GENERATION_IDEMPOTENCY_HMAC_KEY,
+}:
+    raise ImproperlyConfigured("FIELD_ENCRYPTION_MASTER_KEY must be independent.")
 if len(SMS_VERIFICATION_HMAC_KEY) < 50 or SMS_VERIFICATION_HMAC_KEY.lower() in weak_secret_markers:
     raise ImproperlyConfigured("SMS_VERIFICATION_HMAC_KEY is too weak for production.")
 if SMS_VERIFICATION_HMAC_KEY == SECRET_KEY:
@@ -246,6 +270,12 @@ for forbidden_variable in ("DATABASE_URL", "REDIS_URL"):
             "QUESTION_GENERATION_IDEMPOTENCY_HMAC_KEY must not reuse "
             f"{forbidden_variable} credentials."
         )
+    if FIELD_ENCRYPTION_MASTER_KEY in {configured_url, configured_password}:
+        raise ImproperlyConfigured(
+            f"FIELD_ENCRYPTION_MASTER_KEY must not reuse {forbidden_variable} credentials."
+        )
+if FILE_STORAGE_PROVIDER == "s3" and FIELD_ENCRYPTION_MASTER_KEY == S3_SECRET_KEY:
+    raise ImproperlyConfigured("FIELD_ENCRYPTION_MASTER_KEY must not reuse S3_SECRET_KEY.")
 SMS_PROVIDER = os.getenv("SMS_PROVIDER", "unconfigured").strip().lower()
 if SMS_PROVIDER == "mock":
     raise ImproperlyConfigured("Mock SMS provider is forbidden in production.")

@@ -177,3 +177,133 @@ class AIModelRuntimeConfig(models.Model):  # noqa: DJ008
     @property
     def display_name(self) -> str:
         return self.display_name_override or self.model.canonical_display_name
+
+
+class APICredential(models.Model):  # noqa: DJ008
+    class Environment(models.TextChoices):
+        STAGING = "staging", "Staging"
+        PRODUCTION = "production", "Production"
+
+    class Status(models.TextChoices):
+        ACTIVE = "active", "启用"
+        REPLACED = "replaced", "已替换"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    provider = models.ForeignKey(
+        AIProvider, on_delete=models.PROTECT, related_name="api_credentials"
+    )
+    environment = models.CharField(max_length=32, choices=Environment.choices)
+    secret_reference = models.TextField(blank=True)
+    secret_mask = models.CharField(max_length=100)
+    version_no = models.PositiveIntegerField()
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.ACTIVE)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="created_ai_api_credentials",
+    )
+    replaced_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="replaced_ai_api_credentials",
+    )
+    replaced_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "api_credentials"
+        ordering = ("provider_id", "environment", "-version_no")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("provider", "environment", "version_no"),
+                name="ai_credential_provider_env_version_unique",
+            ),
+            models.UniqueConstraint(
+                fields=("provider", "environment"),
+                condition=models.Q(status="active"),
+                name="ai_credential_one_active_per_env",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(environment__in=("staging", "production")),
+                name="ai_credential_environment_valid",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(status__in=("active", "replaced")),
+                name="ai_credential_status_valid",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(version_no__gte=1),
+                name="ai_credential_version_gte_1",
+            ),
+            models.CheckConstraint(
+                condition=~models.Q(secret_mask=""),
+                name="ai_credential_mask_not_empty",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(status="active", replaced_at__isnull=True)
+                    & ~models.Q(secret_reference="")
+                    | models.Q(status="replaced", secret_reference="")
+                    & models.Q(replaced_at__isnull=False)
+                ),
+                name="ai_credential_secret_state_shape",
+            ),
+        ]
+
+
+class AppendOnlyCredentialAuditQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        raise TypeError("API 密钥审计事件不允许更新。")
+
+    def delete(self):
+        raise TypeError("API 密钥审计事件不允许删除。")
+
+
+class APICredentialAudit(models.Model):  # noqa: DJ008
+    class Action(models.TextChoices):
+        CREATED = "created", "新增"
+        ROTATED = "rotated", "轮换"
+        TESTED = "tested", "测试"
+
+    class Outcome(models.TextChoices):
+        SUCCESS = "success", "成功"
+        FAILURE = "failure", "失败"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    credential = models.ForeignKey(
+        APICredential, on_delete=models.PROTECT, related_name="credential_audits"
+    )
+    action = models.CharField(max_length=16, choices=Action.choices)
+    outcome = models.CharField(max_length=16, choices=Outcome.choices)
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="ai_api_credential_audits",
+    )
+    safe_summary = models.JSONField(default=dict)
+    stable_error_code = models.CharField(max_length=64, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = AppendOnlyCredentialAuditQuerySet.as_manager()
+
+    class Meta:
+        db_table = "api_credential_audit"
+        ordering = ("-created_at", "-id")
+        indexes = [
+            models.Index(
+                fields=("credential", "created_at"),
+                name="ai_cred_audit_credential_idx",
+            )
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk and not self._state.adding:
+            raise TypeError("API 密钥审计事件不允许更新。")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise TypeError("API 密钥审计事件不允许删除。")

@@ -1,0 +1,43 @@
+services:
+  ai-credential-migrate:
+    profiles: [ai-credential-test]
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: test
+    command: ["python", "manage.py", "migrate", "--noinput"]
+    environment: &ai-credential-env
+      DJANGO_SETTINGS_MODULE: config.django_settings.questions_test
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?set isolated AI credential test secret}
+      FIELD_ENCRYPTION_MASTER_KEY: ${FIELD_ENCRYPTION_MASTER_KEY:?set isolated field encryption key}
+      API_CREDENTIAL_ENVIRONMENT: staging
+      DATABASE_URL: ${DATABASE_URL:?set isolated AI credential test database URL}
+      RUN_MIGRATIONS: "false"
+    depends_on:
+      postgres: {condition: service_healthy}
+
+  ai-credential-tests:
+    profiles: [ai-credential-test]
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: test
+    command:
+      - python
+      - -m
+      - pytest
+      - tests/test_api_credentials.py
+      - tests/test_api_credentials_postgres.py
+      - tests/test_api_credentials_openapi.py
+      - tests/test_ai_adapters.py
+      - tests/test_ai_model_configs.py
+      - tests/test_production_settings.py
+      - -x
+      - --reuse-db
+      - -p
+      - no:cacheprovider
+    environment: *ai-credential-env
+    volumes:
+      - ./openapi:/openapi:ro
+    depends_on:
+      postgres: {condition: service_healthy}

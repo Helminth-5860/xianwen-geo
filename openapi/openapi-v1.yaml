@@ -1899,13 +1899,53 @@ paths:
       tags: [Admin]
       summary: API 密钥掩码列表，仅超级管理员
       responses:
-        '200': {description: 只返回掩码和状态}
-        '403': {description: 非超级管理员禁止}
+        '200': {description: 只返回当前启用版本的掩码和状态, content: {application/json: {schema: {$ref: '#/components/schemas/APICredentialListEnvelope'}}}}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/PermissionDenied'}
     post:
       tags: [Admin]
-      summary: 新增 API 密钥，明文只在请求中出现
+      summary: 新增 API 密钥；明文仅存在于请求调用栈
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/APICredentialCreateRequest'}}}}
       responses:
-        '201': {description: 保存后只返回掩码}
+        '201': {description: 已加密保存并仅返回掩码, content: {application/json: {schema: {$ref: '#/components/schemas/APICredentialEnvelope'}}}}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/PermissionDenied'}
+        '409': {$ref: '#/components/responses/AccountStateConflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+  /admin/api-credentials/{credentialId}/rotate:
+    post:
+      tags: [Admin]
+      summary: 轮换 API 密钥；旧密文在本地记录中擦除
+      parameters:
+        - {name: credentialId, in: path, required: true, schema: {type: string, format: uuid}}
+        - {$ref: '#/components/parameters/CsrfToken'}
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/APICredentialRotateRequest'}}}}
+      responses:
+        '200': {description: 轮换完成, content: {application/json: {schema: {$ref: '#/components/schemas/APICredentialEnvelope'}}}}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/PermissionDenied'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+        '409': {$ref: '#/components/responses/AccountStateConflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+  /admin/api-credentials/{credentialId}/test:
+    post:
+      tags: [Admin]
+      summary: 检查密钥安全存储/解密边界；XW-0403 不执行真实 Provider 网络验证
+      parameters:
+        - {name: credentialId, in: path, required: true, schema: {type: string, format: uuid}}
+        - {$ref: '#/components/parameters/CsrfToken'}
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/APICredentialTestRequest'}}}}
+      responses:
+        '200': {description: 本地安全存储检查通过；remote_validated 固定为 false, content: {application/json: {schema: {$ref: '#/components/schemas/APICredentialTestEnvelope'}}}}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/PermissionDenied'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+        '409': {$ref: '#/components/responses/AccountStateConflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
   /admin/auth/login/password:
     post:
       tags: [Admin]
@@ -5658,6 +5698,55 @@ components:
       allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: array, minItems: 8, maxItems: 8, items: {$ref: '#/components/schemas/AIModelRuntimeConfig'}}}}]
     AIModelRuntimeConfigEnvelope:
       allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/AIModelRuntimeConfig'}}}]
+
+    APICredential:
+      type: object
+      additionalProperties: false
+      required: [id, provider_key, provider_name, environment, secret_mask, version_no, status, created_at]
+      properties:
+        id: {type: string, format: uuid, readOnly: true}
+        provider_key: {type: string, enum: [deepseek, doubao, qwen, hunyuan, wenxin, kimi, glm, spark], readOnly: true}
+        provider_name: {type: string, maxLength: 150, readOnly: true}
+        environment: {type: string, enum: [staging, production], readOnly: true}
+        secret_mask: {type: string, minLength: 8, maxLength: 100, readOnly: true}
+        version_no: {type: integer, minimum: 1, readOnly: true}
+        status: {type: string, enum: [active], readOnly: true}
+        created_at: {type: string, format: date-time, readOnly: true}
+    APICredentialCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [provider_key, environment, api_key]
+      properties:
+        provider_key: {type: string, enum: [deepseek, doubao, qwen, hunyuan, wenxin, kimi, glm, spark]}
+        environment: {type: string, enum: [staging, production]}
+        api_key: {type: string, minLength: 8, maxLength: 4096, writeOnly: true}
+    APICredentialRotateRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version, api_key]
+      properties:
+        expected_version: {type: integer, minimum: 1}
+        api_key: {type: string, minLength: 8, maxLength: 4096, writeOnly: true}
+    APICredentialTestRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version]
+      properties:
+        expected_version: {type: integer, minimum: 1}
+    APICredentialTestResult:
+      type: object
+      additionalProperties: false
+      required: [credential, storage_valid, remote_validated]
+      properties:
+        credential: {$ref: '#/components/schemas/APICredential'}
+        storage_valid: {type: boolean}
+        remote_validated: {type: boolean, const: false}
+    APICredentialListEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: array, items: {$ref: '#/components/schemas/APICredential'}}}}]
+    APICredentialEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/APICredential'}}}]
+    APICredentialTestEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/APICredentialTestResult'}}}]
 
     QuestionCatalogStatus:
       type: string

@@ -2,7 +2,7 @@ from rest_framework import serializers
 
 from apps.admin_rbac.serializers import StrictSerializer
 
-from .models import AIModelRuntimeConfig
+from .models import AIModelRuntimeConfig, APICredential
 
 
 class AIModelRuntimeConfigSerializer(serializers.ModelSerializer):
@@ -106,3 +106,42 @@ class ExpectedAIModelConfigVersionSerializer(StrictSerializer):
 
 class PauseAIModelSerializer(ExpectedAIModelConfigVersionSerializer):
     reason = serializers.CharField(max_length=200, trim_whitespace=False)
+
+
+class APICredentialSerializer(serializers.ModelSerializer):
+    provider_key = serializers.CharField(source="provider.provider_key", read_only=True)
+    provider_name = serializers.CharField(source="provider.canonical_name", read_only=True)
+    secret_mask = serializers.CharField(read_only=True)
+
+    class Meta:
+        model = APICredential
+        fields = (
+            "id",
+            "provider_key",
+            "provider_name",
+            "environment",
+            "secret_mask",
+            "version_no",
+            "status",
+            "created_at",
+        )
+        read_only_fields = fields
+
+
+class APICredentialCreateSerializer(StrictSerializer):
+    provider_key = serializers.CharField(max_length=100)
+    environment = serializers.ChoiceField(choices=("staging", "production"))
+    api_key = serializers.CharField(
+        min_length=8, max_length=4096, trim_whitespace=False, write_only=True
+    )
+
+
+class APICredentialRotateSerializer(StrictSerializer):
+    expected_version = serializers.IntegerField(min_value=1)
+    api_key = serializers.CharField(
+        min_length=8, max_length=4096, trim_whitespace=False, write_only=True
+    )
+
+
+class APICredentialTestSerializer(StrictSerializer):
+    expected_version = serializers.IntegerField(min_value=1)

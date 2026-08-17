@@ -5,15 +5,25 @@ from rest_framework.response import Response
 from rest_framework.status import HTTP_409_CONFLICT, HTTP_422_UNPROCESSABLE_ENTITY
 from rest_framework.views import APIView
 
-from apps.admin_rbac.permissions import HasAdminPermission
+from apps.admin_rbac.permissions import HasAdminPermission, HasSuperuserAdminSession
 from apps.core.error_codes import ErrorCode
 from apps.core.responses import error_response
 
-from .exceptions import AIModelConfigError
-from .models import AIModelRuntimeConfig
+from .credentials import (
+    create_api_credential,
+    list_active_credentials,
+    rotate_api_credential,
+    test_api_credential,
+)
+from .exceptions import AICredentialError, AIModelConfigError
+from .models import AIModelRuntimeConfig, APICredential
 from .serializers import (
     AIModelRuntimeConfigSerializer,
     AIModelRuntimeConfigUpdateSerializer,
+    APICredentialCreateSerializer,
+    APICredentialRotateSerializer,
+    APICredentialSerializer,
+    APICredentialTestSerializer,
     ExpectedAIModelConfigVersionSerializer,
     PauseAIModelSerializer,
 )
@@ -23,6 +33,11 @@ ERROR_STATUS = {
     "AI_MODEL_CONFIG_VERSION_CONFLICT": HTTP_409_CONFLICT,
     "AI_MODEL_CONFIG_STATE_CONFLICT": HTTP_409_CONFLICT,
     "AI_MODEL_CONFIG_INVALID": HTTP_422_UNPROCESSABLE_ENTITY,
+    "AI_CREDENTIAL_ALREADY_EXISTS": HTTP_409_CONFLICT,
+    "AI_CREDENTIAL_VERSION_CONFLICT": HTTP_409_CONFLICT,
+    "AI_CREDENTIAL_STATE_CONFLICT": HTTP_409_CONFLICT,
+    "AI_CREDENTIAL_INVALID": HTTP_422_UNPROCESSABLE_ENTITY,
+    "AI_CREDENTIAL_CRYPTO_FAILURE": 503,
 }
 
 
@@ -31,7 +46,7 @@ def _no_store(response):
     return response
 
 
-def _error(exc: AIModelConfigError, request):
+def _error(exc: AIModelConfigError | AICredentialError, request):
     return error_response(
         ErrorCode(exc.code),
         status_code=ERROR_STATUS.get(exc.code, HTTP_409_CONFLICT),
@@ -158,3 +173,81 @@ class AdminAIModelPauseView(AdminAIModelPausedView):
 
 class AdminAIModelUnpauseView(AdminAIModelPausedView):
     paused = False
+
+
+class AdminAPICredentialListCreateView(APIView):
+    permission_classes = [HasSuperuserAdminSession]
+
+    def get(self, request):
+        return _no_store(
+            Response(APICredentialSerializer(list_active_credentials(), many=True).data)
+        )
+
+    @method_decorator(csrf_protect)
+    def post(self, request):
+        serializer = APICredentialCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            credential = create_api_credential(
+                request=request,
+                provider_key=serializer.validated_data["provider_key"],
+                environment=serializer.validated_data["environment"],
+                secret=serializer.validated_data["api_key"],
+            )
+        except AICredentialError as exc:
+            return _error(exc, request)
+        return _no_store(Response(APICredentialSerializer(credential).data, status=201))
+
+
+class AdminAPICredentialRotateView(APIView):
+    permission_classes = [HasSuperuserAdminSession]
+
+    @method_decorator(csrf_protect)
+    def post(self, request, credential_id):
+        serializer = APICredentialRotateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            credential = rotate_api_credential(
+                request=request,
+                credential_id=credential_id,
+                expected_version=serializer.validated_data["expected_version"],
+                secret=serializer.validated_data["api_key"],
+            )
+        except AICredentialError as exc:
+            if isinstance(exc.__cause__, APICredential.DoesNotExist):
+                raise NotFound from exc
+            return _error(exc, request)
+        return _no_store(Response(APICredentialSerializer(credential).data))
+
+
+class AdminAPICredentialTestView(APIView):
+    permission_classes = [HasSuperuserAdminSession]
+
+    @method_decorator(csrf_protect)
+    def post(self, request, credential_id):
+        serializer = APICredentialTestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            result = test_api_credential(
+                request=request,
+                credential_id=credential_id,
+                expected_version=serializer.validated_data["expected_version"],
+            )
+        except AICredentialError as exc:
+            if isinstance(exc.__cause__, APICredential.DoesNotExist):
+                raise NotFound from exc
+            return _error(exc, request)
+        if not result.storage_valid:
+            return _no_store(
+                error_response(
+                    ErrorCode.AI_CREDENTIAL_CRYPTO_FAILURE,
+                    status_code=503,
+                    request=request,
+                )
+            )
+        payload = {
+            "credential": APICredentialSerializer(result.credential).data,
+            "storage_valid": True,
+            "remote_validated": False,
+        }
+        return _no_store(Response(payload))

@@ -27,10 +27,24 @@ import {
   unpauseAIModel,
   updateAIModelRuntimeConfig,
 } from "@/lib/ai-model-config-client";
+import {
+  createAPICredential,
+  getAPICredentials,
+  rotateAPICredential,
+  testAPICredential,
+  type APICredential,
+  type APICredentialEnvironment,
+} from "@/lib/api-credential-client";
 import { userMessage } from "@/lib/auth-client";
 
 type ConfigForm = AIModelRuntimeConfigInput;
 type PauseForm = { reason: string };
+type CredentialForm = {
+  provider_key: string;
+  environment: APICredentialEnvironment;
+  api_key: string;
+};
+type RotateCredentialForm = { api_key: string };
 
 const numericCost = (value: string | null) => (value === null ? null : Number(value));
 
@@ -44,7 +58,18 @@ export default function AdminAIModelsPage() {
   const [message, setMessage] = useState("");
   const [configForm] = Form.useForm<ConfigForm>();
   const [pauseForm] = Form.useForm<PauseForm>();
+  const [credentials, setCredentials] = useState<APICredential[]>([]);
+  const [credentialOpen, setCredentialOpen] = useState(false);
+  const [rotatingCredential, setRotatingCredential] = useState<APICredential | null>(null);
+  const [credentialBusy, setCredentialBusy] = useState(false);
+  const [credentialMessage, setCredentialMessage] = useState("");
+  const [credentialError, setCredentialError] = useState("");
+  const [credentialForm] = Form.useForm<CredentialForm>();
+  const [rotateForm] = Form.useForm<RotateCredentialForm>();
   const canManage = capabilities?.permission_keys.includes("models.manage") ?? false;
+  const canManageCredentials =
+    Boolean(capabilities?.is_superuser) &&
+    Boolean(capabilities?.permission_keys.includes("api_credentials.manage"));
   const costUnit = Form.useWatch("cost_unit", configForm);
 
   const load = useCallback(async () => {
@@ -61,6 +86,27 @@ export default function AdminAIModelsPage() {
       .then(setRows)
       .catch((reason) => setError(userMessage(reason)));
   }, []);
+
+  const loadCredentials = useCallback(async () => {
+    if (!canManageCredentials) {
+      setCredentials([]);
+      return;
+    }
+    setCredentialError("");
+    try {
+      setCredentials(await getAPICredentials());
+    } catch (reason) {
+      setCredentialError(userMessage(reason));
+    }
+  }, [canManageCredentials]);
+
+  useEffect(() => {
+    if (!canManageCredentials) return;
+
+    void getAPICredentials()
+      .then(setCredentials)
+      .catch((reason) => setCredentialError(userMessage(reason)));
+  }, [canManageCredentials]);
 
   const run = async (operation: () => Promise<unknown>, success: string) => {
     setBusy(true);
@@ -119,6 +165,117 @@ export default function AdminAIModelsPage() {
     setPausing(null);
     pauseForm.resetFields();
   };
+
+  const runCredentialOperation = async (operation: () => Promise<unknown>, success: string) => {
+    setCredentialBusy(true);
+    setCredentialError("");
+    setCredentialMessage("");
+    try {
+      await operation();
+      setCredentialMessage(success);
+      await loadCredentials();
+    } catch (reason) {
+      setCredentialError(userMessage(reason));
+      throw reason;
+    } finally {
+      setCredentialBusy(false);
+    }
+  };
+
+  const submitCredential = async () => {
+    const values = await credentialForm.validateFields();
+    try {
+      await runCredentialOperation(
+        () => createAPICredential(values),
+        "API 密钥已加密保存；明文不会再次显示",
+      );
+      credentialForm.resetFields();
+      setCredentialOpen(false);
+    } catch {
+      // Keep the modal open so the superuser can correct the input.
+    }
+  };
+
+  const submitRotation = async () => {
+    if (!rotatingCredential) return;
+    const values = await rotateForm.validateFields();
+    try {
+      await runCredentialOperation(
+        () => rotateAPICredential(rotatingCredential, values.api_key),
+        "API 密钥已轮换，旧版本密文已擦除",
+      );
+      rotateForm.resetFields();
+      setRotatingCredential(null);
+    } catch {
+      // Keep the modal open so the superuser can retry safely.
+    }
+  };
+
+  const runStorageTest = async (credential: APICredential) => {
+    setCredentialBusy(true);
+    try {
+      const result = await testAPICredential(credential);
+      setCredentialMessage(
+        result.storage_valid && !result.remote_validated
+          ? "本地加密存储测试通过；未执行真实 Provider 网络验证"
+          : "密钥存储测试完成",
+      );
+      setCredentialError("");
+      await loadCredentials();
+    } catch (reason) {
+      setCredentialMessage("");
+      setCredentialError(userMessage(reason));
+    } finally {
+      setCredentialBusy(false);
+    }
+  };
+
+  const providerOptions = Array.from(new Set(rows.map((row) => row.provider_key))).map((value) => ({
+    value,
+    label: value,
+  }));
+
+  const credentialColumns = [
+    { title: "Provider", dataIndex: "provider_name" },
+    {
+      title: "环境",
+      render: (_: unknown, row: APICredential) => (
+        <Tag color={row.environment === "production" ? "red" : "blue"}>
+          {row.environment === "production" ? "Production" : "Staging"}
+        </Tag>
+      ),
+    },
+    { title: "掩码", dataIndex: "secret_mask" },
+    { title: "版本", dataIndex: "version_no" },
+    {
+      title: "状态",
+      render: (_: unknown, row: APICredential) => (
+        <Tag color={row.status === "active" ? "green" : "default"}>{row.status}</Tag>
+      ),
+    },
+    {
+      title: "操作",
+      render: (_: unknown, row: APICredential) => (
+        <Space>
+          <Button
+            disabled={!canManageCredentials || credentialBusy}
+            onClick={() => {
+              rotateForm.resetFields();
+              setRotatingCredential(row);
+            }}
+          >
+            轮换
+          </Button>
+          <Button
+            disabled={!canManageCredentials || credentialBusy}
+            onClick={() => void runStorageTest(row)}
+          >
+            本地测试
+          </Button>
+        </Space>
+      ),
+    },
+  ];
 
   const columns = [
     { title: "模型", dataIndex: "display_name" },
@@ -181,7 +338,7 @@ export default function AdminAIModelsPage() {
     <main className="admin-page">
       <Typography.Title>模型和运行配置</Typography.Title>
       <Typography.Paragraph>
-        固定 8 个检测模型；停用或暂停都会阻止新任务使用。API 密钥不在本页面管理。
+        固定 8 个检测模型；停用或暂停都会阻止新任务使用。API 密钥仅超级管理员可在本页下方管理。
       </Typography.Paragraph>
       {!canManage && <Alert type="info" showIcon title="当前账号只有查看权限" />}
       {message && <Alert type="success" showIcon title={message} />}
@@ -189,6 +346,43 @@ export default function AdminAIModelsPage() {
       <Card>
         <Table rowKey="model_id" dataSource={rows} columns={columns} pagination={false} />
       </Card>
+
+      {canManageCredentials && (
+        <Card
+          title="API 密钥安全管理"
+          extra={
+            <Button
+              type="primary"
+              onClick={() => {
+                credentialForm.resetFields();
+                setCredentialOpen(true);
+              }}
+            >
+              新增密钥
+            </Button>
+          }
+        >
+          <Alert
+            type="warning"
+            showIcon
+            title="保存后仅显示掩码"
+            description="密钥使用独立主密钥加密保存；“本地测试”只验证存储/解密链路，不访问真实 Provider。"
+          />
+          {credentialMessage && (
+            <Alert type="success" showIcon title={credentialMessage} style={{ marginTop: 12 }} />
+          )}
+          {credentialError && (
+            <Alert type="error" showIcon title={credentialError} style={{ marginTop: 12 }} />
+          )}
+          <Table
+            style={{ marginTop: 16 }}
+            rowKey="id"
+            dataSource={credentials}
+            columns={credentialColumns}
+            pagination={false}
+          />
+        </Card>
+      )}
 
       <Modal
         title={`编辑 ${editing?.display_name ?? "模型"}`}
@@ -294,6 +488,71 @@ export default function AdminAIModelsPage() {
         <Form form={pauseForm} layout="vertical">
           <Form.Item label="暂停原因" name="reason" rules={[{ required: true }]}>
             <Input maxLength={200} />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="新增 API 密钥"
+        open={credentialOpen}
+        onCancel={() => {
+          credentialForm.resetFields();
+          setCredentialOpen(false);
+        }}
+        onOk={() => void submitCredential()}
+        confirmLoading={credentialBusy}
+        okText="加密保存"
+      >
+        <Form form={credentialForm} layout="vertical">
+          <Form.Item label="Provider" name="provider_key" rules={[{ required: true }]}>
+            <Select options={providerOptions} placeholder="选择固定 Provider" />
+          </Form.Item>
+          <Form.Item
+            label="环境"
+            name="environment"
+            rules={[{ required: true }]}
+            initialValue="staging"
+          >
+            <Select
+              options={[
+                { value: "staging", label: "Staging" },
+                { value: "production", label: "Production" },
+              ]}
+            />
+          </Form.Item>
+          <Form.Item label="API Key" name="api_key" rules={[{ required: true, min: 8, max: 4096 }]}>
+            <Input.Password
+              autoComplete="new-password"
+              placeholder="保存后只显示掩码，不可再次查看明文"
+            />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title={`轮换 ${rotatingCredential?.provider_name ?? ""} API 密钥`}
+        open={rotatingCredential !== null}
+        onCancel={() => {
+          rotateForm.resetFields();
+          setRotatingCredential(null);
+        }}
+        onOk={() => void submitRotation()}
+        confirmLoading={credentialBusy}
+        okText="确认轮换"
+      >
+        <Alert
+          type="warning"
+          showIcon
+          title="轮换会创建新版本，并擦除旧版本密文"
+          style={{ marginBottom: 12 }}
+        />
+        <Form form={rotateForm} layout="vertical">
+          <Form.Item
+            label="新 API Key"
+            name="api_key"
+            rules={[{ required: true, min: 8, max: 4096 }]}
+          >
+            <Input.Password autoComplete="new-password" />
           </Form.Item>
         </Form>
       </Modal>
