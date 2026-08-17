@@ -12,6 +12,7 @@ $env:POSTGRES_DB = "ai_model_config_test_db"
 $env:POSTGRES_USER = "ai_model_config_test_user"
 $env:POSTGRES_PASSWORD = (New-RandomSecret)
 $env:DJANGO_SECRET_KEY = (New-RandomSecret)
+$env:SMS_VERIFICATION_HMAC_KEY = (New-RandomSecret)
 $env:QUOTA_IDEMPOTENCY_HMAC_KEY = (New-RandomSecret)
 $env:PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY = (New-RandomSecret)
 $env:WEB_IMPORT_IDEMPOTENCY_HMAC_KEY = (New-RandomSecret)
