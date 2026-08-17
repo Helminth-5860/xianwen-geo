@@ -16,6 +16,8 @@ $env:QUOTA_IDEMPOTENCY_HMAC_KEY = (New-RandomSecret)
 $env:PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY = (New-RandomSecret)
 $env:WEB_IMPORT_IDEMPOTENCY_HMAC_KEY = (New-RandomSecret)
 $env:DATABASE_URL = "postgresql://$($env:POSTGRES_USER):$($env:POSTGRES_PASSWORD)@postgres:5432/$($env:POSTGRES_DB)"
+$env:REDIS_URL = "redis://redis:6379/16"
+$env:CELERY_BROKER_URL = "redis://redis:6379/17"
 $files = @("-f", "docker-compose.yml", "-f", "docker-compose.ai-model-config.yml")
 $projectName = "xianwen-ai-model-config-test"
 

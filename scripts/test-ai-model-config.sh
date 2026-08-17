@@ -13,6 +13,8 @@ export QUOTA_IDEMPOTENCY_HMAC_KEY="${QUOTA_IDEMPOTENCY_HMAC_KEY:-$(random_secret
 export PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY="${PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY:-$(random_secret)}"
 export WEB_IMPORT_IDEMPOTENCY_HMAC_KEY="${WEB_IMPORT_IDEMPOTENCY_HMAC_KEY:-$(random_secret)}"
 export DATABASE_URL="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
+export REDIS_URL="${REDIS_URL:-redis://redis:6379/16}"
+export CELERY_BROKER_URL="${CELERY_BROKER_URL:-redis://redis:6379/17}"
 files=(-f docker-compose.yml -f docker-compose.ai-model-config.yml)
 project=xianwen-ai-model-config-test
 cleanup() {
