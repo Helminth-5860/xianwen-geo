@@ -11,6 +11,7 @@ from django.db import IntegrityError, models, transaction
 from django.http import Http404
 from django.utils import timezone
 
+from apps.ai.sanitization import sanitize_provider_metrics
 from apps.quotas.models import QuotaAccount
 from apps.quotas.services import (
     consume_hold,
@@ -513,22 +514,7 @@ def _generated_items(job, response):
 
 
 def _safe_provider_metrics(metrics):
-    if not isinstance(metrics, dict):
-        return {}
-    allowed = {
-        "input_tokens",
-        "output_tokens",
-        "latency_ms",
-        "item_count",
-        "mock",
-    }
-    result = {}
-    for key, value in metrics.items():
-        if key in allowed and (
-            isinstance(value, bool) or (type(value) is int and 0 <= value <= 2**63 - 1)
-        ):
-            result[key] = value
-    return result
+    return sanitize_provider_metrics(metrics)
 
 
 def _finalize_success(job_id, generation, response):

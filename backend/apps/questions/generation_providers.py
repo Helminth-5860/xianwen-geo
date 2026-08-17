@@ -1,4 +1,17 @@
+from dataclasses import replace
+
 from django.conf import settings
+
+from apps.ai.contracts import (
+    AIAdapterDescriptor,
+    AIAdapterRequest,
+    AIAdapterResponse,
+    AIModelCapability,
+    AIModelIdentity,
+)
+from apps.ai.errors import AIAdapterError, AIAdapterErrorCategory, domain_provider_error_code
+from apps.ai.mock import DeterministicMockAIAdapter
+from apps.ai.registry import model_registry
 
 from .generation_contracts import (
     GeneratedQuestion,
@@ -11,25 +24,32 @@ from .generation_exceptions import (
 )
 
 
-class MockQuestionGenerationProvider:
-    key = "mock"
-    model_key = "mock-question-generation-v1"
-    adapter_version = "1"
-    prompt_version = "question-generation-v1"
+class MockQuestionGenerationProvider(
+    DeterministicMockAIAdapter[QuestionGenerationRequest, QuestionGenerationResponse]
+):
+    descriptor = AIAdapterDescriptor(
+        identity=AIModelIdentity(
+            provider_key="mock",
+            model_key="mock-question-generation-v1",
+        ),
+        capabilities=frozenset({AIModelCapability.QUESTION_GENERATION}),
+        adapter_version="1",
+        prompt_version="question-generation-v1",
+        is_mock=True,
+    )
+    key = descriptor.identity.provider_key
+    model_key = descriptor.identity.model_key
+    adapter_version = descriptor.adapter_version
+    prompt_version = descriptor.prompt_version
 
-    def generate(self, request: QuestionGenerationRequest) -> QuestionGenerationResponse:
-        scenario = getattr(settings, "QUESTION_GENERATION_MOCK_SCENARIO", "success")
-        if scenario in {"timeout", "rate_limit", "temporary"}:
-            code = {
-                "timeout": "QUESTION_GENERATION_PROVIDER_TIMEOUT",
-                "rate_limit": "QUESTION_GENERATION_PROVIDER_RATE_LIMITED",
-                "temporary": "QUESTION_GENERATION_PROVIDER_TEMPORARY",
-            }[scenario]
-            raise QuestionGenerationProviderError(code, permanent=False)
-        if scenario == "permanent":
-            raise QuestionGenerationProviderError(
-                "QUESTION_GENERATION_PROVIDER_REJECTED", permanent=True
-            )
+    def _scenario(self) -> str:
+        return getattr(settings, "QUESTION_GENERATION_MOCK_SCENARIO", "success")
+
+    def _build_output(
+        self,
+        request: QuestionGenerationRequest,
+        scenario: str,
+    ) -> QuestionGenerationResponse:
         count = min(request.question_limit, max(1, len(request.keywords)))
         category = request.categories[0]
         questions = []
@@ -66,28 +86,68 @@ class MockQuestionGenerationProvider:
             provider_metrics={"mock": True, "item_count": len(questions)},
         )
 
+    def generate(self, request: QuestionGenerationRequest) -> QuestionGenerationResponse:
+        normalized = self.normalized_request(
+            request,
+            request_id=request.job_id,
+            timeout_seconds=settings.QUESTION_GENERATION_PROVIDER_TIMEOUT_SECONDS,
+        )
+        try:
+            response = self.invoke(normalized)
+        except AIAdapterError as exc:
+            raise QuestionGenerationProviderError(
+                domain_provider_error_code(exc, "QUESTION_GENERATION_PROVIDER"),
+                permanent=not exc.retryable,
+            ) from None
+        return replace(
+            response.output,
+            provider_metrics=dict(response.sanitized_provider_metadata),
+        )
+
 
 class UnavailableQuestionGenerationProvider:
-    key = "unavailable"
-    model_key = "unavailable"
-    adapter_version = "1"
-    prompt_version = "question-generation-v1"
+    descriptor = AIAdapterDescriptor(
+        identity=AIModelIdentity(provider_key="unavailable", model_key="unavailable"),
+        capabilities=frozenset({AIModelCapability.QUESTION_GENERATION}),
+        adapter_version="1",
+        prompt_version="question-generation-v1",
+        is_available=False,
+    )
+    key = descriptor.identity.provider_key
+    model_key = descriptor.identity.model_key
+    adapter_version = descriptor.adapter_version
+    prompt_version = descriptor.prompt_version
+
+    def invoke(
+        self,
+        request: AIAdapterRequest[QuestionGenerationRequest],
+    ) -> AIAdapterResponse[QuestionGenerationResponse]:
+        raise AIAdapterError(AIAdapterErrorCategory.CONFIGURATION_UNAVAILABLE, retryable=False)
 
     def generate(self, request: QuestionGenerationRequest) -> QuestionGenerationResponse:
         raise QuestionGenerationProviderUnavailable
 
 
+model_registry.register(MockQuestionGenerationProvider.descriptor, MockQuestionGenerationProvider)
+model_registry.register(
+    UnavailableQuestionGenerationProvider.descriptor,
+    UnavailableQuestionGenerationProvider,
+)
+
+
 def get_question_generation_provider(provider_key=None):
     key = provider_key or settings.QUESTION_GENERATION_PROVIDER
-    if key == "mock":
-        return MockQuestionGenerationProvider()
-    if key == "unavailable":
-        return UnavailableQuestionGenerationProvider()
-    raise QuestionGenerationProviderUnavailable
+    try:
+        return model_registry.resolve_provider(
+            provider_key=key,
+            capability=AIModelCapability.QUESTION_GENERATION,
+        )
+    except AIAdapterError:
+        raise QuestionGenerationProviderUnavailable from None
 
 
 def require_available_question_generation_provider():
     provider = get_question_generation_provider()
-    if provider.key == "unavailable":
+    if not provider.descriptor.is_available:
         raise QuestionGenerationProviderUnavailable
     return provider

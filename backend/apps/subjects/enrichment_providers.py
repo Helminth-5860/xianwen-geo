@@ -1,6 +1,19 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 from django.conf import settings
+
+from apps.ai.contracts import (
+    AIAdapterDescriptor,
+    AIAdapterRequest,
+    AIAdapterResponse,
+    AIModelCapability,
+    AIModelIdentity,
+)
+from apps.ai.errors import AIAdapterError, AIAdapterErrorCategory, domain_provider_error_code
+from apps.ai.mock import DeterministicMockAIAdapter
+from apps.ai.registry import model_registry
 
 from .enrichment_contracts import (
     FieldSuggestion,
@@ -14,11 +27,23 @@ from .enrichment_exceptions import (
 )
 
 
-class MockSubjectEnrichmentProvider:
-    key = "mock"
-    model_key = "mock-subject-enrichment-v1"
-    adapter_version = "1"
-    prompt_version = "subject-enrichment-v1"
+class MockSubjectEnrichmentProvider(
+    DeterministicMockAIAdapter[SubjectEnrichmentRequest, SubjectEnrichmentResponse]
+):
+    descriptor = AIAdapterDescriptor(
+        identity=AIModelIdentity(
+            provider_key="mock",
+            model_key="mock-subject-enrichment-v1",
+        ),
+        capabilities=frozenset({AIModelCapability.SUBJECT_ENRICHMENT}),
+        adapter_version="1",
+        prompt_version="subject-enrichment-v1",
+        is_mock=True,
+    )
+    key = descriptor.identity.provider_key
+    model_key = descriptor.identity.model_key
+    adapter_version = descriptor.adapter_version
+    prompt_version = descriptor.prompt_version
 
     def _value(self, field):
         if field.field_type == "textarea":
@@ -40,24 +65,14 @@ class MockSubjectEnrichmentProvider:
             return list(field.options[:1])
         raise SubjectEnrichmentInvalidResponse
 
-    def enrich(self, request: SubjectEnrichmentRequest) -> SubjectEnrichmentResponse:
-        scenario = getattr(settings, "SUBJECT_ENRICHMENT_MOCK_SCENARIO", "success")
-        if scenario == "timeout":
-            raise SubjectEnrichmentProviderError(
-                "SUBJECT_ENRICHMENT_PROVIDER_TIMEOUT", permanent=False
-            )
-        if scenario == "rate_limit":
-            raise SubjectEnrichmentProviderError(
-                "SUBJECT_ENRICHMENT_PROVIDER_RATE_LIMITED", permanent=False
-            )
-        if scenario == "temporary":
-            raise SubjectEnrichmentProviderError(
-                "SUBJECT_ENRICHMENT_PROVIDER_TEMPORARY", permanent=False
-            )
-        if scenario == "permanent":
-            raise SubjectEnrichmentProviderError(
-                "SUBJECT_ENRICHMENT_PROVIDER_REJECTED", permanent=True
-            )
+    def _scenario(self) -> str:
+        return getattr(settings, "SUBJECT_ENRICHMENT_MOCK_SCENARIO", "success")
+
+    def _build_output(
+        self,
+        request: SubjectEnrichmentRequest,
+        scenario: str,
+    ) -> SubjectEnrichmentResponse:
         if scenario == "invalid_response":
             return SubjectEnrichmentResponse(
                 suggestions=(
@@ -92,28 +107,68 @@ class MockSubjectEnrichmentProvider:
             provider_metrics={"mock": True, "source_count": len(request.sources)},
         )
 
+    def enrich(self, request: SubjectEnrichmentRequest) -> SubjectEnrichmentResponse:
+        normalized = self.normalized_request(
+            request,
+            request_id=request.job_id,
+            timeout_seconds=settings.SUBJECT_ENRICHMENT_PROVIDER_TIMEOUT_SECONDS,
+        )
+        try:
+            response = self.invoke(normalized)
+        except AIAdapterError as exc:
+            raise SubjectEnrichmentProviderError(
+                domain_provider_error_code(exc, "SUBJECT_ENRICHMENT_PROVIDER"),
+                permanent=not exc.retryable,
+            ) from None
+        return replace(
+            response.output,
+            provider_metrics=dict(response.sanitized_provider_metadata),
+        )
+
 
 class UnavailableSubjectEnrichmentProvider:
-    key = "unavailable"
-    model_key = "unavailable"
-    adapter_version = "1"
-    prompt_version = "subject-enrichment-v1"
+    descriptor = AIAdapterDescriptor(
+        identity=AIModelIdentity(provider_key="unavailable", model_key="unavailable"),
+        capabilities=frozenset({AIModelCapability.SUBJECT_ENRICHMENT}),
+        adapter_version="1",
+        prompt_version="subject-enrichment-v1",
+        is_available=False,
+    )
+    key = descriptor.identity.provider_key
+    model_key = descriptor.identity.model_key
+    adapter_version = descriptor.adapter_version
+    prompt_version = descriptor.prompt_version
+
+    def invoke(
+        self,
+        request: AIAdapterRequest[SubjectEnrichmentRequest],
+    ) -> AIAdapterResponse[SubjectEnrichmentResponse]:
+        raise AIAdapterError(AIAdapterErrorCategory.CONFIGURATION_UNAVAILABLE, retryable=False)
 
     def enrich(self, request: SubjectEnrichmentRequest) -> SubjectEnrichmentResponse:
         raise SubjectEnrichmentProviderUnavailable
 
 
+model_registry.register(MockSubjectEnrichmentProvider.descriptor, MockSubjectEnrichmentProvider)
+model_registry.register(
+    UnavailableSubjectEnrichmentProvider.descriptor,
+    UnavailableSubjectEnrichmentProvider,
+)
+
+
 def get_subject_enrichment_provider(provider_key: str | None = None):
     provider = provider_key or settings.SUBJECT_ENRICHMENT_PROVIDER
-    if provider == "mock":
-        return MockSubjectEnrichmentProvider()
-    if provider == "unavailable":
-        return UnavailableSubjectEnrichmentProvider()
-    raise SubjectEnrichmentProviderUnavailable
+    try:
+        return model_registry.resolve_provider(
+            provider_key=provider,
+            capability=AIModelCapability.SUBJECT_ENRICHMENT,
+        )
+    except AIAdapterError:
+        raise SubjectEnrichmentProviderUnavailable from None
 
 
 def require_available_subject_enrichment_provider():
     provider = get_subject_enrichment_provider()
-    if provider.key == "unavailable":
+    if not provider.descriptor.is_available:
         raise SubjectEnrichmentProviderUnavailable
     return provider

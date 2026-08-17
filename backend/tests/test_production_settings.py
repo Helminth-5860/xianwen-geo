@@ -19,6 +19,7 @@ REQUIRED_ENVIRONMENT = {
     "SUBJECT_ENRICHMENT_IDEMPOTENCY_HMAC_KEY": "e" * 64,
     "KEYWORD_GENERATION_IDEMPOTENCY_HMAC_KEY": "k" * 64,
     "DISTILLATION_IDEMPOTENCY_HMAC_KEY": "d" * 64,
+    "QUESTION_GENERATION_IDEMPOTENCY_HMAC_KEY": "u" * 64,
     "SMS_PROVIDER": "unconfigured",
     "FILE_STORAGE_PROVIDER": "unavailable",
     "FILE_SCANNER_PROVIDER": "unavailable",
@@ -53,6 +54,8 @@ def import_settings(overrides: dict[str, str] | None = None, missing: str | None
             "KEYWORD_GENERATION_PROVIDER",
             "DISTILLATION_IDEMPOTENCY_HMAC_KEY",
             "DISTILLATION_PROVIDER",
+            "QUESTION_GENERATION_IDEMPOTENCY_HMAC_KEY",
+            "QUESTION_GENERATION_PROVIDER",
             "SMS_PROVIDER",
             "FILE_STORAGE_PROVIDER",
             "FILE_SCANNER_PROVIDER",
@@ -215,6 +218,22 @@ def test_production_missing_required_environment_fails_fast(missing):
         (
             {"DISTILLATION_PROVIDER": "deepseek"},
             "Only unavailable distillation provider is supported",
+        ),
+        (
+            {"QUESTION_GENERATION_IDEMPOTENCY_HMAC_KEY": "weak"},
+            "QUESTION_GENERATION_IDEMPOTENCY_HMAC_KEY is too weak",
+        ),
+        (
+            {"QUESTION_GENERATION_IDEMPOTENCY_HMAC_KEY": "x" * 64},
+            "QUESTION_GENERATION_IDEMPOTENCY_HMAC_KEY must be independent",
+        ),
+        (
+            {"QUESTION_GENERATION_PROVIDER": "mock"},
+            "Mock question generation provider is forbidden",
+        ),
+        (
+            {"QUESTION_GENERATION_PROVIDER": "deepseek"},
+            "Only unavailable question generation provider is supported",
         ),
     ],
 )

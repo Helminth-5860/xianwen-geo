@@ -9,6 +9,7 @@ from django.db.models import Q
 from django.http import Http404
 from django.utils import timezone
 
+from apps.ai.sanitization import sanitize_provider_metrics
 from apps.keywords.models import DistillationSet, DistillationWorkspace, Keyword
 from apps.keywords.services import _assert_user_write_allowed, _lock_effective_subscription
 from apps.quotas.models import QuotaAccount
@@ -443,15 +444,7 @@ def _schedule_retry(job_id, generation, code):
 
 
 def _safe_provider_metrics(metrics):
-    if not isinstance(metrics, dict):
-        return {}
-    allowed = {"input_tokens", "output_tokens", "latency_ms", "item_count", "mock"}
-    return {
-        key: value
-        for key, value in metrics.items()
-        if key in allowed
-        and (isinstance(value, bool) or (type(value) is int and 0 <= value <= 2**63 - 1))
-    }
+    return sanitize_provider_metrics(metrics)
 
 
 def _replace_draft(workspace, normalized):

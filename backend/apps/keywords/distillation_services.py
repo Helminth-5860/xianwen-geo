@@ -10,6 +10,7 @@ from django.db import IntegrityError, models, transaction
 from django.http import Http404
 from django.utils import timezone
 
+from apps.ai.sanitization import sanitize_provider_metrics
 from apps.quotas.models import QuotaAccount
 from apps.quotas.services import (
     consume_hold,
@@ -404,15 +405,7 @@ def _schedule_retry(job_id, generation, code):
 
 
 def _safe_provider_metrics(metrics):
-    if not isinstance(metrics, dict):
-        return {}
-    allowed = {"input_tokens", "output_tokens", "latency_ms", "item_count", "mock"}
-    return {
-        key: value
-        for key, value in metrics.items()
-        if key in allowed
-        and (isinstance(value, bool) or (type(value) is int and 0 <= value <= 2**63 - 1))
-    }
+    return sanitize_provider_metrics(metrics)
 
 
 def _replace_workspace_draft(*, workspace, normalized, source_order):
