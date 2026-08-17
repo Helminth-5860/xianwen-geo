@@ -451,6 +451,14 @@ data and is protected by constraints plus optimistic concurrency.
 
 超时、重试、重试间隔、并发、联网失败策略、成本阈值、暂停／恢复策略。
 
+XW-0402 已实现的权威边界：`ai_providers` 和 `ai_models` 只保存固定 8 个 GEO 检测模型的
+不可变 machine identity、canonical metadata 与 purpose；启停、展示名覆盖、展示排序、
+Provider 模型 ID、API 版本、联网策略、超时、重试、并发、估算成本、暂停状态和乐观并发
+`version` 均保存在一对一 `ai_model_runtime_configs`。Seed 默认全部停用。运行配置不保存
+API key、token、secret 或 secret reference，也不产生用户账单。PostgreSQL guards 保护固定
+identity、删除、runtime binding 和逐次版本推进。完整字段与发布边界见
+`40-MODEL-RUNTIME-CONFIG-ADMIN.md`。
+
 ### 15.5 `api_credentials`
 
 只保存供应商、环境、掩码、密文引用、版本、状态、创建和替换记录。严禁普通查询返回密文。

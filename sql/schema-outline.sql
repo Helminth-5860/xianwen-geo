@@ -724,6 +724,15 @@ CREATE TABLE ai_model_versions (
     created_at timestamptz NOT NULL DEFAULT now()
 );
 
+-- XW-0402 implemented schema override:
+-- Django migrations `apps.ai.0001_initial` and `0002_seed_and_postgresql_guards`
+-- are authoritative for the fixed eight detection providers/models and their
+-- one-to-one `ai_model_runtime_configs`. Provider/model canonical identity is
+-- immutable; mutable runtime fields include display override/order, provider
+-- model ID/API version, enabled/network/failure policy, timeout/retry/backoff,
+-- concurrency, CNY cost metadata, pause state and optimistic version. All seed
+-- rows start disabled. No credential or secret reference is stored by XW-0402.
+
 CREATE TABLE api_credentials (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     provider_id uuid NOT NULL REFERENCES ai_providers(id),
@@ -959,7 +968,7 @@ CREATE TABLE admin_audit_logs (
 -- customer_contact_logs, customer_followups, risk_types, risk_rules, subject_reviews,
 -- user_documents, document_versions, document_parse_jobs, document_parsed_versions,
 -- web_source_imports, distillation_jobs,
--- question_keyword_links, ai_model_runtime_configs, api_credential_audit,
+-- question_keyword_links, api_credential_audit,
 -- prompt_templates, prompt_template_versions, prompt_test_cases, prompt_test_runs,
 -- model_call_attempts, api_cost_records, geo_detection_model_runs, model_scores,
 -- competitor_entities, competitor_mentions, strategy_reports, strategy_notes,
