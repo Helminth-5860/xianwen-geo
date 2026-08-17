@@ -29,6 +29,7 @@ services:
       - tests/test_api_credentials.py
       - tests/test_api_credentials_postgres.py
       - tests/test_api_credentials_openapi.py
+      - tests/test_deepseek_adapter.py
       - tests/test_ai_adapters.py
       - tests/test_ai_model_configs.py
       - tests/test_production_settings.py

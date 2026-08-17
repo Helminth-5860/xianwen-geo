@@ -114,3 +114,11 @@ XW-0403 在不改变统一 Adapter request/response 的前提下实现数据库�
 active credential 先由独立 `FIELD_ENCRYPTION_MASTER_KEY` 解密，再临时封装为 `AdapterCredential`。
 密钥明文不进入 request、response、provenance、日志或持久化 result。XW-0403 的 `/test`
 只检查本地存储与解密边界；真实 Provider 验证继续由 XW-0404 及后续真实 Adapter 负责。
+
+## XW-0404 DeepSeek detection integration
+
+XW-0404 registers the first real `geo_detection` Adapter in the shared code-level registry.
+The Adapter consumes XW-0402 runtime model IDs/timeouts and XW-0403 `DatabaseCredentialResolver`,
+performs exactly one provider HTTP call, returns the XW-0401 normalized response contract, and
+maps provider/network failures into the existing `AIAdapterError` taxonomy. It does not implement
+retry scheduling, queues, ModelCall persistence, scoring, or text-generation capabilities.

@@ -105,3 +105,11 @@ Migrations：
 4. 滚动 API / Frontend；
 5. 不要求 Celery/Redis/端口拓扑变化；
 6. 执行超级管理员 create/list/rotate/test smoke，并确认响应/日志无明文。
+
+## XW-0404 real-call boundary
+
+The DeepSeek detection Adapter resolves the active credential only through
+`DatabaseCredentialResolver`. The XW-0403 admin `/test` endpoint remains a storage/decryption check;
+XW-0404 adds a separate safe management-command smoke that performs a real provider call without
+printing the API key, Authorization header, provider raw JSON, or answer text. This keeps the public
+credential API stable while providing deployment-time remote validation for the first real Adapter.
