@@ -122,3 +122,12 @@ The Adapter consumes XW-0402 runtime model IDs/timeouts and XW-0403 `DatabaseCre
 performs exactly one provider HTTP call, returns the XW-0401 normalized response contract, and
 maps provider/network failures into the existing `AIAdapterError` taxonomy. It does not implement
 retry scheduling, queues, ModelCall persistence, scoring, or text-generation capabilities.
+
+## XW-0405 Doubao detection integration
+
+XW-0405 registers `doubao/doubao/geo_detection` independently against the current Volcengine Ark
+Responses API. It reuses the same runtime and database credential boundaries without treating the
+DeepSeek wire protocol as generic. The Adapter performs one non-streaming, non-stored request with
+thinking disabled, does not enable Web Search tools in this contract, and truthfully reports requested
+search as degraded with no fabricated citations. Full details are in
+`docs/43-DOUBAO-DETECTION-ADAPTER.md`.
