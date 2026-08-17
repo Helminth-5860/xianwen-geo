@@ -66,3 +66,10 @@ Seed migration reverse 为 noop，避免孤立后续引用；guard reverse 仅�
 
 发布时先部署兼容代码，单独执行 migration 并检查退出码，再滚动 web。部署后核对 8 条 Seed、
 后台读写与 AuditEvent，以及 disabled/paused/缺失 Adapter 的失败关闭行为。
+
+## XW-0404 DeepSeek consumption
+
+The DeepSeek detection Adapter consumes `provider_model_id` and `timeout_seconds` from the immutable
+runtime snapshot. No DeepSeek model ID is hardcoded into the registry identity. The fixed internal
+identity remains `provider_key=deepseek`, `model_key=deepseek`; current provider model aliases are
+runtime data. Enabled/paused checks remain in `resolve_detection_adapter()` before new calls.

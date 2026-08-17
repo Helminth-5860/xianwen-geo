@@ -129,5 +129,5 @@ jobs:
         run: bash scripts/test-questions.sh
       - name: Run PostgreSQL AI model runtime configuration tests
         run: bash scripts/test-ai-model-config.sh
-      - name: Run PostgreSQL API credential security tests
+      - name: Run PostgreSQL API credential security and DeepSeek adapter tests
         run: bash scripts/test-ai-credentials.sh
