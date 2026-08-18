@@ -84,6 +84,10 @@ class UnavailableSmsProvider:
 def _provider_for_name(provider_name: str) -> SmsProvider:
     if provider_name == "mock":
         return MockSmsProvider()
+    if provider_name == "tencent":
+        from .tencent import TencentSmsProvider
+
+        return TencentSmsProvider.from_settings()
     return UnavailableSmsProvider()
 
 
