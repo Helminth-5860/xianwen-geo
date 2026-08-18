@@ -60,6 +60,8 @@ class Command(BaseCommand):
                 f"latency_ms={response.timing.latency_ms} "
                 f"answer_chars={len(response.output.raw_text)} "
                 f"citations={len(response.output.citations)} "
-                f"web_search_used={response.output.web_search_used}"
+                f"web_search_used={response.output.web_search_used} "
+                f"degraded={response.output.degraded} "
+                f"provider_request_id={response.provider_request_id or 'none'}"
             )
         )
