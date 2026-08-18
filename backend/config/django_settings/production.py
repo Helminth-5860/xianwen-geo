@@ -277,8 +277,31 @@ for forbidden_variable in ("DATABASE_URL", "REDIS_URL"):
 if FILE_STORAGE_PROVIDER == "s3" and FIELD_ENCRYPTION_MASTER_KEY == S3_SECRET_KEY:
     raise ImproperlyConfigured("FIELD_ENCRYPTION_MASTER_KEY must not reuse S3_SECRET_KEY.")
 SMS_PROVIDER = os.getenv("SMS_PROVIDER", "unconfigured").strip().lower()
+ENABLE_REAL_SMS = env_bool("ENABLE_REAL_SMS", False)
 if SMS_PROVIDER == "mock":
     raise ImproperlyConfigured("Mock SMS provider is forbidden in production.")
+if SMS_PROVIDER == "tencent":
+    if not ENABLE_REAL_SMS:
+        raise ImproperlyConfigured("ENABLE_REAL_SMS must be true for SMS_PROVIDER=tencent.")
+    required_tencent_sms = {
+        "SMS_REGION": SMS_REGION,
+        "SMS_APP_ID": SMS_APP_ID,
+        "SMS_SECRET_ID": SMS_SECRET_ID,
+        "SMS_SECRET_KEY": SMS_SECRET_KEY,
+        "SMS_SIGN_NAME": SMS_SIGN_NAME,
+        "SMS_TEMPLATE_REGISTER": SMS_TEMPLATE_REGISTER,
+        "SMS_TEMPLATE_LOGIN": SMS_TEMPLATE_LOGIN,
+        "SMS_TEMPLATE_SECURITY": SMS_TEMPLATE_SECURITY,
+    }
+    missing_tencent_sms = [name for name, value in required_tencent_sms.items() if not value]
+    if missing_tencent_sms:
+        raise ImproperlyConfigured(
+            "Missing Tencent SMS settings: " + ", ".join(missing_tencent_sms)
+        )
+elif ENABLE_REAL_SMS:
+    raise ImproperlyConfigured("SMS_PROVIDER must be tencent when ENABLE_REAL_SMS is true.")
+elif SMS_PROVIDER != "unconfigured":
+    raise ImproperlyConfigured("Unsupported production SMS_PROVIDER.")
 if TRUSTED_PROXY_HOPS > 0 and not TRUSTED_PROXY_NETWORKS:
     raise ImproperlyConfigured(
         "TRUSTED_PROXY_CIDRS is required when TRUSTED_PROXY_HOPS is enabled."

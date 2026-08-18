@@ -505,7 +505,11 @@ URL 安全、可访问性、标题／正文匹配、三种结果和记录。
 
 ### XW-1002 短信正式集成
 
-验证码、审核、安全、到期和严重告警。
+XW-1002 具体交付腾讯云短信 Provider（key `tencent`），使用官方 Cloud API 3.0
+`SendSms` / `2021-01-11` / `sms.tencentcloudapi.com` 和固定版本 SDK
+`tencentcloud-sdk-python==3.1.141`。`SMS_REGION` 必填；验证码模板变量固定
+`{1}=code`、`{2}=expiry_minutes`；超时默认 10 秒、内部不重试，真实环境不得回退 Mock。
+审核、到期和严重告警模板配置保留给各自后续通知调用路径，不强塞入验证码发送。
 
 ### XW-1003 系统告警
 

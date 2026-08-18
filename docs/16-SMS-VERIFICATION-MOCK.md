@@ -23,6 +23,31 @@ XW-0102 提供短信验证码发送和内部验证消费基础：
 production 禁止 `SMS_PROVIDER=mock`。未配置真实 Provider 时应用仍可启动，但发送接口
 统一返回 `503 SERVICE_TEMPORARILY_UNAVAILABLE`。真实腾讯云适配器属于 XW-1002。
 
+## XW-1002 腾讯云正式 Provider
+
+XW-1002 只实现腾讯云短信，Provider key 为 `tencent`；部署文档中的“已批准短信服务”
+仅表示未来可扩展其他适配器。实现使用官方 Cloud API 3.0 Python SDK
+`tencentcloud-sdk-python==3.1.141`，调用 `SendSms`（API `2021-01-11`），固定 HTTPS
+POST 到 `sms.tencentcloudapi.com`，client region 来自必填 `SMS_REGION`。
+
+验证码用途映射如下：
+
+- `register` → `SMS_TEMPLATE_REGISTER`
+- `login` → `SMS_TEMPLATE_LOGIN`
+- `password_reset`、`admin_login_2fa` → `SMS_TEMPLATE_SECURITY`
+
+`SMS_TEMPLATE_REVIEW` 和 `SMS_TEMPLATE_PLAN_EXPIRY` 不属于当前
+`send_verification_code` 用途，不进入该调用路径。已审核腾讯模板的参数必须固定为
+`{1}=code`、`{2}=expiry_minutes`，其中分钟数向上取整。每次发送只提交一个 E.164
+手机号；仅目标 `SendStatusSet.Code == "Ok"` 视为成功。
+
+`SMS_PROVIDER_TIMEOUT_SECONDS` 开发默认 10 秒、允许范围 1–60 秒；SDK 显式使用
+Noop retry。staging/production 启用真实短信时必须设置 `SMS_PROVIDER=tencent`、
+`ENABLE_REAL_SMS=true`、region/app/credential/sign 和三个 active-purpose 模板；任何缺失、
+超时、网络或 provider 失败都统一失败关闭，绝不回退 Mock。部署必须允许出站访问
+`sms.tencentcloudapi.com:443`。SDK raw request/response、OTP、Secret ID/Key 值和完整手机号
+不得进入日志。
+
 ## 验证码和 HMAC
 
 - 验证码由 `secrets.randbelow` 生成并格式化为 6 位数字。

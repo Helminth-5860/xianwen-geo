@@ -164,6 +164,20 @@ QUOTA_IDEMPOTENCY_HMAC_KEY = os.getenv(
 if len(QUOTA_IDEMPOTENCY_HMAC_KEY) < 32:
     raise ImproperlyConfigured("QUOTA_IDEMPOTENCY_HMAC_KEY is too weak; minimum length is 32.")
 SMS_PROVIDER = os.getenv("SMS_PROVIDER", "unconfigured").strip().lower()
+ENABLE_REAL_SMS = env_bool("ENABLE_REAL_SMS", False)
+SMS_REGION = os.getenv("SMS_REGION", "").strip()
+SMS_APP_ID = os.getenv("SMS_APP_ID", "").strip()
+SMS_SECRET_ID = os.getenv("SMS_SECRET_ID", "").strip()
+SMS_SECRET_KEY = os.getenv("SMS_SECRET_KEY", "").strip()
+SMS_SIGN_NAME = os.getenv("SMS_SIGN_NAME", "").strip()
+SMS_TEMPLATE_REGISTER = os.getenv("SMS_TEMPLATE_REGISTER", "").strip()
+SMS_TEMPLATE_LOGIN = os.getenv("SMS_TEMPLATE_LOGIN", "").strip()
+SMS_TEMPLATE_SECURITY = os.getenv("SMS_TEMPLATE_SECURITY", "").strip()
+SMS_TEMPLATE_REVIEW = os.getenv("SMS_TEMPLATE_REVIEW", "").strip()
+SMS_TEMPLATE_PLAN_EXPIRY = os.getenv("SMS_TEMPLATE_PLAN_EXPIRY", "").strip()
+SMS_PROVIDER_TIMEOUT_SECONDS = positive_env_int("SMS_PROVIDER_TIMEOUT_SECONDS", 10)
+if SMS_PROVIDER_TIMEOUT_SECONDS > 60:
+    raise ImproperlyConfigured("SMS_PROVIDER_TIMEOUT_SECONDS must not exceed 60.")
 PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY = os.getenv(
     "PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY",
     "local-test-plan-change-idempotency-key-not-for-production",

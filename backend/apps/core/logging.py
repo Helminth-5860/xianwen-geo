@@ -99,5 +99,10 @@ def build_logging_config(environment: str) -> dict:
                 "level": "INFO",
                 "propagate": False,
             },
+            "tencentcloud_sdk_common": {
+                "handlers": [],
+                "level": "CRITICAL",
+                "propagate": False,
+            },
         },
     }
