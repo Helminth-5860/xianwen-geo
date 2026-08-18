@@ -12,6 +12,7 @@ idna==3.15
 psycopg[binary]==3.3.4
 Pillow==12.3.0
 redis==7.1.0
+tencentcloud-sdk-python==3.1.141
 pypdf==6.15.0
 python-docx==1.2.0
 openpyxl==3.1.5
