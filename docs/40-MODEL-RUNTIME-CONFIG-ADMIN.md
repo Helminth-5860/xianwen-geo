@@ -73,3 +73,10 @@ The DeepSeek detection Adapter consumes `provider_model_id` and `timeout_seconds
 runtime snapshot. No DeepSeek model ID is hardcoded into the registry identity. The fixed internal
 identity remains `provider_key=deepseek`, `model_key=deepseek`; current provider model aliases are
 runtime data. Enabled/paused checks remain in `resolve_detection_adapter()` before new calls.
+
+## XW-0405 Doubao consumption
+
+The Doubao Responses Adapter follows the same runtime authority with fixed internal identity
+`provider_key=doubao`, `model_key=doubao`. Its actual Ark model or endpoint ID is runtime
+`provider_model_id`; the Adapter does not embed a model alias. Runtime enabled/paused checks and the
+immutable timeout/concurrency snapshot remain unchanged.

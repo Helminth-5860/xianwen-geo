@@ -113,3 +113,10 @@ The DeepSeek detection Adapter resolves the active credential only through
 XW-0404 adds a separate safe management-command smoke that performs a real provider call without
 printing the API key, Authorization header, provider raw JSON, or answer text. This keeps the public
 credential API stable while providing deployment-time remote validation for the first real Adapter.
+
+## XW-0405 Doubao real-call boundary
+
+The Doubao detection Adapter also resolves only the active environment-scoped database credential.
+It adds no `DOUBAO_API_KEY`, `ARK_API_KEY`, or `VOLCENGINE_API_KEY` fallback. Its separate safe smoke
+uses a fixed question and prints only bounded call metrics and identifiers, never the credential,
+prompt, answer text, Authorization header, or Provider raw response.
