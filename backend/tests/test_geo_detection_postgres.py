@@ -17,6 +17,8 @@ def test_postgresql_geo_tables_constraints_and_immutability_triggers_are_install
         "model_calls",
         "model_call_attempts",
         "model_responses",
+        "model_response_citations",
+        "programmatic_score_results",
     }
     with connection.cursor() as cursor:
         cursor.execute(
@@ -38,4 +40,6 @@ def test_postgresql_geo_tables_constraints_and_immutability_triggers_are_install
         "geo_model_calls_no_delete",
         "geo_model_call_attempts_no_delete",
         "geo_model_responses_immutable",
+        "geo_model_response_citations_immutable",
+        "geo_programmatic_scores_immutable",
     }.issubset(triggers)

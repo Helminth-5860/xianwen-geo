@@ -28,6 +28,7 @@ from apps.quotas.services import consume_hold, freeze_quota, release_hold
 from apps.subjects.models import Subject
 from apps.subjects.subject_services import subject_for_user_or_404
 
+from .citations import normalize_detection_citations, persist_response_citations
 from .exceptions import (
     GeoDetectionConcurrencyLimit,
     GeoDetectionIdempotencyConflict,
@@ -46,6 +47,7 @@ from .models import (
     ModelCallAttempt,
     ModelResponse,
 )
+from .scoring import score_programmatic_response
 from .semaphores import DetectionSemaphoreStore, DetectionSemaphoreUnavailable
 
 User = get_user_model()
@@ -1091,6 +1093,8 @@ def execute_model_call(*, call_id, semaphore_store: DetectionSemaphoreStore | No
                 )
                 return {"status": "failed"}
 
+        normalized_citations = normalize_detection_citations(response.output)
+
         with transaction.atomic():
             locked = (
                 ModelCall.objects.select_for_update().select_related("model_run").get(pk=call.pk)
@@ -1111,7 +1115,7 @@ def execute_model_call(*, call_id, semaphore_store: DetectionSemaphoreStore | No
             attempt.finished_at = timezone.now()
             attempt.save()
             raw_text = response.output.raw_text
-            ModelResponse.objects.get_or_create(
+            stored_response, response_created = ModelResponse.objects.get_or_create(
                 model_call=locked,
                 defaults={
                     "provider_model_id": response.output.provider_model_id,
@@ -1120,6 +1124,12 @@ def execute_model_call(*, call_id, semaphore_store: DetectionSemaphoreStore | No
                     "provider_metadata": copy.deepcopy(dict(response.sanitized_provider_metadata)),
                 },
             )
+            if response_created:
+                persist_response_citations(
+                    model_response=stored_response,
+                    citations=normalized_citations,
+                )
+                score_programmatic_response(model_response=stored_response)
             cost, currency = _estimated_cost(locked.model_run.runtime_snapshot, response)
             locked.web_search_used = response.output.web_search_used
             locked.degraded = response.output.degraded
