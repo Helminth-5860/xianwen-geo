@@ -445,3 +445,181 @@ class ModelResponse(models.Model):  # noqa: DJ008
 
     def delete(self, *args, **kwargs):
         raise TypeError("Model responses are immutable.")
+
+
+class ModelResponseCitation(models.Model):  # noqa: DJ008
+    class UrlStatus(models.TextChoices):
+        SAFE = "safe", "Safe"
+        MISSING = "missing", "Missing"
+        INVALID = "invalid", "Invalid"
+        BLOCKED = "blocked", "Blocked"
+        UNRESOLVED = "unresolved", "Unresolved"
+
+    class SourceCategory(models.TextChoices):
+        UNKNOWN = "unknown", "Unknown"
+        WEB = "web", "Web"
+
+    class ExtractionMethod(models.TextChoices):
+        PROVIDER = "provider", "Provider"
+        RAW_TEXT = "raw_text", "Raw text"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    model_response = models.ForeignKey(
+        ModelResponse,
+        on_delete=models.PROTECT,
+        related_name="citations",
+    )
+    sort_order = models.PositiveIntegerField()
+    title = models.CharField(max_length=500, blank=True, default="")
+    canonical_url = models.TextField(blank=True, default="")
+    source_name = models.CharField(max_length=500, blank=True, default="")
+    source_host = models.CharField(max_length=253, blank=True, default="")
+    quoted_text = models.TextField(blank=True, default="")
+    provider_rank = models.PositiveIntegerField(null=True, blank=True)
+    url_status = models.CharField(max_length=16, choices=UrlStatus.choices)
+    source_category = models.CharField(
+        max_length=24,
+        choices=SourceCategory.choices,
+        default=SourceCategory.UNKNOWN,
+    )
+    extraction_method = models.CharField(max_length=16, choices=ExtractionMethod.choices)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = ImmutableSnapshotQuerySet.as_manager()
+
+    class Meta:
+        db_table = "model_response_citations"
+        ordering = ("model_response_id", "sort_order", "id")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("model_response", "sort_order"),
+                name="model_response_citation_sort_unique",
+            ),
+            models.CheckConstraint(
+                condition=Q(provider_rank__isnull=True) | Q(provider_rank__gte=1),
+                name="model_response_citation_rank_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(url_status__in=("safe", "missing", "invalid", "blocked", "unresolved")),
+                name="model_response_citation_status_valid",
+            ),
+            models.CheckConstraint(
+                condition=~Q(url_status="safe") | (~Q(canonical_url="") & ~Q(source_host="")),
+                name="model_response_citation_safe_url_present",
+            ),
+            models.CheckConstraint(
+                condition=Q(url_status="safe") | Q(canonical_url=""),
+                name="model_response_citation_unsafe_url_hidden",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise TypeError("Model response citations are immutable.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise TypeError("Model response citations are immutable.")
+
+
+class ProgrammaticScoreResult(models.Model):  # noqa: DJ008
+    class RankResolution(models.TextChoices):
+        DETERMINISTIC = "deterministic", "Deterministic"
+        SEMANTIC_REQUIRED = "semantic_required", "Semantic required"
+        NOT_APPLICABLE = "not_applicable", "Not applicable"
+
+    class CitationResolution(models.TextChoices):
+        DETERMINISTIC = "deterministic", "Deterministic"
+        SEMANTIC_REQUIRED = "semantic_required", "Semantic required"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    model_response = models.OneToOneField(
+        ModelResponse,
+        on_delete=models.PROTECT,
+        related_name="programmatic_score",
+    )
+    scoring_rule_version = models.CharField(max_length=64)
+    question_type = models.CharField(max_length=24)
+    mention_score = models.PositiveSmallIntegerField(null=True, blank=True)
+    matched_kind = models.CharField(max_length=32, blank=True, default="")
+    matched_value = models.CharField(max_length=500, blank=True, default="")
+    rank_position = models.PositiveIntegerField(null=True, blank=True)
+    rank_score = models.PositiveSmallIntegerField(null=True, blank=True)
+    rank_resolution = models.CharField(max_length=24, choices=RankResolution.choices)
+    citation_base_score = models.PositiveSmallIntegerField(null=True, blank=True)
+    citation_resolution = models.CharField(max_length=24, choices=CitationResolution.choices)
+    citation_evidence_count = models.PositiveIntegerField(default=0)
+    evidence = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = ImmutableSnapshotQuerySet.as_manager()
+
+    class Meta:
+        db_table = "programmatic_score_results"
+        constraints = [
+            models.CheckConstraint(
+                condition=~Q(scoring_rule_version=""),
+                name="programmatic_score_rule_present",
+            ),
+            models.CheckConstraint(
+                condition=Q(question_type__in=("natural", "brand_directed")),
+                name="programmatic_score_question_type_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(mention_score__isnull=True) | Q(mention_score__in=(0, 100)),
+                name="programmatic_score_mention_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(rank_position__isnull=True) | Q(rank_position__gte=1),
+                name="programmatic_score_rank_position_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(rank_score__isnull=True) | Q(rank_score__in=(0, 20, 40, 60, 80, 100)),
+                name="programmatic_score_rank_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(citation_base_score__isnull=True) | Q(citation_base_score__in=(0, 20)),
+                name="programmatic_score_citation_base_valid",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    Q(
+                        question_type="brand_directed",
+                        mention_score__isnull=True,
+                        rank_score__isnull=True,
+                        rank_position__isnull=True,
+                        rank_resolution="not_applicable",
+                    )
+                    | Q(question_type="natural")
+                ),
+                name="programmatic_score_brand_na_valid",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    Q(rank_resolution="deterministic", rank_score__isnull=False)
+                    | Q(
+                        rank_resolution__in=("semantic_required", "not_applicable"),
+                        rank_score__isnull=True,
+                    )
+                ),
+                name="programmatic_score_rank_resolution_valid",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    Q(citation_resolution="deterministic", citation_base_score__isnull=False)
+                    | Q(
+                        citation_resolution="semantic_required",
+                        citation_base_score__isnull=True,
+                    )
+                ),
+                name="programmatic_score_citation_resolution_valid",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise TypeError("Programmatic score results are immutable.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise TypeError("Programmatic score results are immutable.")

@@ -326,3 +326,62 @@ def test_priority_dispatch_order_uses_database_queue_truth(geo_facts):
     job, _ = _create(geo_facts)
     call_ids = list(job.model_calls.order_by("id").values_list("id", flat=True))
     assert due_model_call_ids(limit=10) == call_ids
+
+
+def test_successful_call_persists_prevalidated_citation_facts(geo_facts):
+    from apps.geo.citations import NormalizedCitation
+    from apps.geo.models import ModelResponseCitation
+
+    normalized = NormalizedCitation(
+        title="Example",
+        canonical_url="https://example.com/article",
+        source_name="Example",
+        source_host="example.com",
+        quoted_text="quote",
+        provider_rank=1,
+        url_status=ModelResponseCitation.UrlStatus.SAFE,
+        source_category=ModelResponseCitation.SourceCategory.WEB,
+        extraction_method=ModelResponseCitation.ExtractionMethod.PROVIDER,
+    )
+    job, _ = _create(geo_facts)
+    call = job.model_calls.order_by("id").first()
+    assert call is not None
+
+    with (
+        patch(
+            "apps.geo.services.normalize_detection_citations",
+            return_value=(normalized,),
+        ),
+        patch("apps.geo.services.model_registry.resolve", return_value=_SuccessAdapter()),
+    ):
+        result = execute_model_call(
+            call_id=call.pk,
+            semaphore_store=_FakeSemaphoreStore(),
+        )
+
+    assert result == {"status": "succeeded"}
+    citation = ModelResponseCitation.objects.get(model_response__model_call=call)
+    assert citation.canonical_url == "https://example.com/article"
+    assert citation.source_host == "example.com"
+    assert citation.url_status == ModelResponseCitation.UrlStatus.SAFE
+
+
+def test_successful_natural_call_persists_programmatic_zero_for_no_mention(geo_facts):
+    from apps.geo.models import ProgrammaticScoreResult
+
+    job, _ = _create(geo_facts)
+    call = job.model_calls.filter(question_snapshot__question_type="natural").order_by("id").first()
+    assert call is not None
+
+    with patch("apps.geo.services.model_registry.resolve", return_value=_SuccessAdapter()):
+        result = execute_model_call(
+            call_id=call.pk,
+            semaphore_store=_FakeSemaphoreStore(),
+        )
+
+    assert result == {"status": "succeeded"}
+    score = ProgrammaticScoreResult.objects.get(model_response__model_call=call)
+    assert score.mention_score == 0
+    assert score.rank_score == 0
+    assert score.rank_resolution == ProgrammaticScoreResult.RankResolution.DETERMINISTIC
+    assert score.scoring_rule_version == call.job.snapshot.scoring_rule_version
