@@ -68,6 +68,7 @@ INSTALLED_APPS = [
     "rest_framework",
     "apps.core",
     "apps.ai",
+    "apps.geo",
     "apps.users",
     "apps.admin_rbac",
     "apps.plans",
@@ -163,6 +164,18 @@ QUOTA_IDEMPOTENCY_HMAC_KEY = os.getenv(
 ).strip()
 if len(QUOTA_IDEMPOTENCY_HMAC_KEY) < 32:
     raise ImproperlyConfigured("QUOTA_IDEMPOTENCY_HMAC_KEY is too weak; minimum length is 32.")
+GEO_DETECTION_IDEMPOTENCY_HMAC_KEY = os.getenv(
+    "GEO_DETECTION_IDEMPOTENCY_HMAC_KEY",
+    "local-test-geo-detection-idempotency-key-not-for-production",
+).strip()
+if len(GEO_DETECTION_IDEMPOTENCY_HMAC_KEY) < 32:
+    raise ImproperlyConfigured(
+        "GEO_DETECTION_IDEMPOTENCY_HMAC_KEY is too weak; minimum length is 32."
+    )
+GEO_DETECTION_GLOBAL_MAX_CONCURRENCY = positive_env_int("GEO_DETECTION_GLOBAL_MAX_CONCURRENCY", 32)
+GEO_DETECTION_QUEUE_TIMEOUT_SECONDS = positive_env_int("GEO_DETECTION_QUEUE_TIMEOUT_SECONDS", 900)
+GEO_DETECTION_DISPATCH_BATCH = positive_env_int("GEO_DETECTION_DISPATCH_BATCH", 100)
+GEO_DETECTION_INTERNAL_MAX_RETRIES = positive_env_int("GEO_DETECTION_INTERNAL_MAX_RETRIES", 3)
 SMS_PROVIDER = os.getenv("SMS_PROVIDER", "unconfigured").strip().lower()
 ENABLE_REAL_SMS = env_bool("ENABLE_REAL_SMS", False)
 SMS_REGION = os.getenv("SMS_REGION", "").strip()
@@ -491,6 +504,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "questions.dispatch_generation_jobs",
         "schedule": timedelta(seconds=60),
     },
+    "dispatch-geo-detection-calls": {
+        "task": "geo.dispatch_model_calls",
+        "schedule": timedelta(seconds=5),
+    },
     "dispatch-queued-web-imports": {
         "task": "web_sources.dispatch_queued_imports",
         "schedule": timedelta(seconds=60),
@@ -505,6 +522,7 @@ CELERY_TASK_ROUTES = {
     "keywords.execute_generation": {"queue": "ai_content"},
     "keywords.execute_distillation": {"queue": "ai_content"},
     "questions.execute_generation": {"queue": "ai_content"},
+    "geo.execute_model_call": {"queue": "geo_detection"},
     "documents.execute_parse_job": {"queue": "file_processing"},
     "web_sources.execute_import": {"queue": "web_fetch"},
 }

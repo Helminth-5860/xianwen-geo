@@ -77,6 +77,7 @@ def _facts(
     distillation_regenerations=2,
     question_limit=0,
     question_regenerations=0,
+    model_permissions=None,
 ):
     suffix = uuid.uuid4().hex[:10]
     user = User.objects.create_user(
@@ -132,6 +133,10 @@ def _facts(
         question_limit=question_limit,
         question_regenerations=question_regenerations,
     )
+    entitlement = {"limits": limits}
+    if model_permissions is not None:
+        entitlement["model_permissions"] = [dict(item) for item in model_permissions]
+
     plan = Plan.objects.create(
         code=f"distillation-{suffix}",
         name="Distillation plan",
@@ -144,7 +149,7 @@ def _facts(
         status=PlanVersion.Status.PUBLISHED,
         valid_days=30,
         queue_priority=1,
-        effective_config={"limits": limits},
+        effective_config=entitlement,
         config_digest="a" * 64,
         snapshot_generated_at=now,
         published_at=now,
@@ -155,7 +160,7 @@ def _facts(
         plan=plan,
         plan_version=plan_version,
         plan_version_no=1,
-        entitlement_snapshot={"limits": limits},
+        entitlement_snapshot=entitlement,
         entitlement_digest="b" * 64,
         starts_at=now - timedelta(days=1),
         ends_at=now + timedelta(days=20),

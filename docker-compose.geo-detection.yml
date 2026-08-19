@@ -1,0 +1,50 @@
+services:
+  geo-detection-migrate:
+    profiles: [geo-detection-test]
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: test
+    command: ["python", "manage.py", "migrate", "--noinput"]
+    environment: &geo-detection-env
+      DJANGO_SETTINGS_MODULE: config.django_settings.questions_test
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?set isolated geo detection test secret}
+      DATABASE_URL: ${DATABASE_URL:?set isolated geo detection test database URL}
+      REDIS_URL: redis://redis:6379/15
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:?set isolated geo detection test broker URL}
+      SMS_VERIFICATION_HMAC_KEY: ${SMS_VERIFICATION_HMAC_KEY:?set isolated SMS HMAC key}
+      QUOTA_IDEMPOTENCY_HMAC_KEY: ${QUOTA_IDEMPOTENCY_HMAC_KEY:?set isolated quota HMAC key}
+      GEO_DETECTION_IDEMPOTENCY_HMAC_KEY: ${GEO_DETECTION_IDEMPOTENCY_HMAC_KEY:?set isolated geo detection HMAC key}
+      PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY: ${PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY:?set isolated plan change HMAC key}
+      WEB_IMPORT_IDEMPOTENCY_HMAC_KEY: ${WEB_IMPORT_IDEMPOTENCY_HMAC_KEY:?set isolated web import HMAC key}
+      QUESTION_GENERATION_IDEMPOTENCY_HMAC_KEY: ${QUESTION_GENERATION_IDEMPOTENCY_HMAC_KEY:?set isolated question HMAC key}
+      API_CREDENTIAL_ENVIRONMENT: staging
+      RUN_MIGRATIONS: "false"
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+
+  geo-detection-tests:
+    profiles: [geo-detection-test]
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: test
+    command:
+      - python
+      - -m
+      - pytest
+      - tests/test_geo_detection.py
+      - tests/test_geo_detection_postgres.py
+      - tests/test_geo_detection_redis.py
+      - tests/test_ai_adapters.py
+      - tests/test_ai_model_configs.py
+      - tests/test_api_credentials.py
+      - -x
+      - --reuse-db
+      - -p
+      - no:cacheprovider
+    environment: *geo-detection-env
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
