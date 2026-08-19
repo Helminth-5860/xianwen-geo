@@ -194,6 +194,7 @@ def test_celery_lifecycle_safety_configuration(settings):
         "dispatch-keyword-generation-jobs",
         "dispatch-distillation-jobs",
         "dispatch-question-generation-jobs",
+        "dispatch-geo-detection-calls",
         "dispatch-queued-web-imports",
         "scan-web-import-retries",
     }

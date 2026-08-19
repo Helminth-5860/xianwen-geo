@@ -43,10 +43,11 @@ from tests.test_distillation import _facts as distillation_facts
 pytestmark = pytest.mark.django_db
 
 
-def facts(*, limit=3, regenerations=2):
+def facts(*, limit=3, regenerations=2, model_permissions=None):
     user, subject, subject_version, subscription, _, keyword_version = distillation_facts(
         question_limit=limit,
         question_regenerations=regenerations,
+        model_permissions=model_permissions,
     )
     distillation, _ = create_distillation(user, subject, keyword_version)
     execute_distillation(job_id=distillation.pk)

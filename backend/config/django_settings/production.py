@@ -14,6 +14,7 @@ APP_ENV = "production"
 SECRET_KEY = require_env("DJANGO_SECRET_KEY")
 SMS_VERIFICATION_HMAC_KEY = require_env("SMS_VERIFICATION_HMAC_KEY")
 QUOTA_IDEMPOTENCY_HMAC_KEY = require_env("QUOTA_IDEMPOTENCY_HMAC_KEY")
+GEO_DETECTION_IDEMPOTENCY_HMAC_KEY = require_env("GEO_DETECTION_IDEMPOTENCY_HMAC_KEY")
 PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY = require_env("PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY")
 FILE_IDEMPOTENCY_HMAC_KEY = require_env("FILE_IDEMPOTENCY_HMAC_KEY")
 WEB_IMPORT_IDEMPOTENCY_HMAC_KEY = require_env("WEB_IMPORT_IDEMPOTENCY_HMAC_KEY")
@@ -44,6 +45,7 @@ if FIELD_ENCRYPTION_MASTER_KEY in {
     SECRET_KEY,
     SMS_VERIFICATION_HMAC_KEY,
     QUOTA_IDEMPOTENCY_HMAC_KEY,
+    GEO_DETECTION_IDEMPOTENCY_HMAC_KEY,
     PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY,
     FILE_IDEMPOTENCY_HMAC_KEY,
     WEB_IMPORT_IDEMPOTENCY_HMAC_KEY,
@@ -67,6 +69,19 @@ if QUOTA_IDEMPOTENCY_HMAC_KEY in {SECRET_KEY, SMS_VERIFICATION_HMAC_KEY}:
         "QUOTA_IDEMPOTENCY_HMAC_KEY must not reuse another application secret."
     )
 if (
+    len(GEO_DETECTION_IDEMPOTENCY_HMAC_KEY) < 50
+    or GEO_DETECTION_IDEMPOTENCY_HMAC_KEY.lower() in weak_secret_markers
+):
+    raise ImproperlyConfigured("GEO_DETECTION_IDEMPOTENCY_HMAC_KEY is too weak for production.")
+if GEO_DETECTION_IDEMPOTENCY_HMAC_KEY in {
+    SECRET_KEY,
+    SMS_VERIFICATION_HMAC_KEY,
+    QUOTA_IDEMPOTENCY_HMAC_KEY,
+}:
+    raise ImproperlyConfigured(
+        "GEO_DETECTION_IDEMPOTENCY_HMAC_KEY must not reuse another application secret."
+    )
+if (
     len(PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY) < 50
     or PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY.lower() in weak_secret_markers
 ):
@@ -75,6 +90,7 @@ if PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY in {
     SECRET_KEY,
     SMS_VERIFICATION_HMAC_KEY,
     QUOTA_IDEMPOTENCY_HMAC_KEY,
+    GEO_DETECTION_IDEMPOTENCY_HMAC_KEY,
 }:
     raise ImproperlyConfigured(
         "PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY must not reuse another application secret."
@@ -237,6 +253,10 @@ for forbidden_variable in ("DATABASE_URL", "REDIS_URL"):
     if QUOTA_IDEMPOTENCY_HMAC_KEY in {configured_url, configured_password}:
         raise ImproperlyConfigured(
             f"QUOTA_IDEMPOTENCY_HMAC_KEY must not reuse {forbidden_variable} credentials."
+        )
+    if GEO_DETECTION_IDEMPOTENCY_HMAC_KEY in {configured_url, configured_password}:
+        raise ImproperlyConfigured(
+            f"GEO_DETECTION_IDEMPOTENCY_HMAC_KEY must not reuse {forbidden_variable} credentials."
         )
     if PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY in {configured_url, configured_password}:
         raise ImproperlyConfigured(

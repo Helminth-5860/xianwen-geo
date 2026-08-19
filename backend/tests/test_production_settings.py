@@ -18,6 +18,7 @@ REQUIRED_ENVIRONMENT = {
     "DJANGO_DEBUG": "false",
     "SMS_VERIFICATION_HMAC_KEY": "s" * 64,
     "QUOTA_IDEMPOTENCY_HMAC_KEY": "q" * 64,
+    "GEO_DETECTION_IDEMPOTENCY_HMAC_KEY": "g" * 64,
     "PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY": "p" * 64,
     "FILE_IDEMPOTENCY_HMAC_KEY": "f" * 64,
     "WEB_IMPORT_IDEMPOTENCY_HMAC_KEY": "w" * 64,
@@ -52,6 +53,7 @@ def import_settings(overrides: dict[str, str] | None = None, missing: str | None
             "DJANGO_DEBUG",
             "SMS_VERIFICATION_HMAC_KEY",
             "QUOTA_IDEMPOTENCY_HMAC_KEY",
+            "GEO_DETECTION_IDEMPOTENCY_HMAC_KEY",
             "PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY",
             "FILE_IDEMPOTENCY_HMAC_KEY",
             "WEB_IMPORT_IDEMPOTENCY_HMAC_KEY",
@@ -99,6 +101,7 @@ def import_settings(overrides: dict[str, str] | None = None, missing: str | None
         "DJANGO_SECRET_KEY",
         "SMS_VERIFICATION_HMAC_KEY",
         "QUOTA_IDEMPOTENCY_HMAC_KEY",
+        "GEO_DETECTION_IDEMPOTENCY_HMAC_KEY",
         "PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY",
         "FILE_IDEMPOTENCY_HMAC_KEY",
         "WEB_IMPORT_IDEMPOTENCY_HMAC_KEY",
@@ -146,6 +149,14 @@ def test_production_missing_required_environment_fails_fast(missing):
         (
             {"QUOTA_IDEMPOTENCY_HMAC_KEY": "weak"},
             "QUOTA_IDEMPOTENCY_HMAC_KEY is too weak",
+        ),
+        (
+            {"GEO_DETECTION_IDEMPOTENCY_HMAC_KEY": "weak"},
+            "GEO_DETECTION_IDEMPOTENCY_HMAC_KEY is too weak",
+        ),
+        (
+            {"GEO_DETECTION_IDEMPOTENCY_HMAC_KEY": "q" * 64},
+            "GEO_DETECTION_IDEMPOTENCY_HMAC_KEY must not reuse another application secret",
         ),
         (
             {"PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY": "weak"},

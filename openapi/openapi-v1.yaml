@@ -1491,12 +1491,37 @@ paths:
       tags: [Questions]
       summary: Get immutable question bank version
       responses: {'200': {description: Version snapshot, content: {application/json: {schema: {$ref: '#/components/schemas/QuestionBankVersionEnvelope'}}}}, '404': {$ref: '#/components/responses/ResourceNotFound'}}
+  /geo/models:
+    get:
+      tags: [GEO]
+      summary: 获取当前套餐可用于 GEO 检测的模型
+      responses:
+        '200':
+          description: 可用模型和模型选择限制
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeoModelsEnvelope'
+  /subjects/{subjectId}/geo/detection-options:
+    parameters:
+      - $ref: '#/components/parameters/SubjectId'
+    get:
+      tags: [GEO]
+      summary: 获取主体检测问题、模型、额度和并发选项
+      responses:
+        '200':
+          description: 检测选项
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeoDetectionOptionsEnvelope'
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
   /subjects/{subjectId}/geo/estimate:
     parameters:
       - $ref: '#/components/parameters/SubjectId'
     post:
       tags: [GEO]
-      summary: 估算检测点
+      summary: 服务端重新估算检测点和并发可提交状态
       requestBody:
         required: true
         content:
@@ -1510,13 +1535,27 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GeoEstimateEnvelope'
+        '409': {$ref: '#/components/responses/BusinessConflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
   /subjects/{subjectId}/geo/detections:
     parameters:
       - $ref: '#/components/parameters/SubjectId'
-      - $ref: '#/components/parameters/IdempotencyKey'
+    get:
+      tags: [GEO]
+      summary: 获取当前主体最近的 GEO 检测任务
+      responses:
+        '200':
+          description: 检测任务历史
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeoDetectionHistoryEnvelope'
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
     post:
       tags: [GEO]
-      summary: 创建 GEO 检测任务
+      summary: 创建不可变快照、冻结检测点并排队 GEO 检测
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
         content:
@@ -1525,13 +1564,13 @@ paths:
               $ref: '#/components/schemas/GeoDetectionSelection'
       responses:
         '202':
-          description: GEO 检测任务已创建
+          description: GEO 检测任务已创建或幂等重放
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TaskEnvelope'
-        '409':
-          $ref: '#/components/responses/BusinessConflict'
+                $ref: '#/components/schemas/GeoDetectionCreateEnvelope'
+        '409': {$ref: '#/components/responses/BusinessConflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
   /geo/detections/{detectionId}:
     parameters:
       - name: detectionId
@@ -1540,14 +1579,32 @@ paths:
         schema: {type: string, format: uuid}
     get:
       tags: [GEO]
-      summary: 检测任务进度
+      summary: 获取检测任务总体进度和额度结算状态
       responses:
         '200':
           description: 检测任务当前进度
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TaskEnvelope'
+                $ref: '#/components/schemas/GeoDetectionJobEnvelope'
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+  /geo/detections/{detectionId}/model-progress:
+    parameters:
+      - name: detectionId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    get:
+      tags: [GEO]
+      summary: 获取各检测模型的独立进度
+      responses:
+        '200':
+          description: 模型进度
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeoModelProgressEnvelope'
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
   /geo/detections/{detectionId}/cancel:
     parameters:
       - name: detectionId
@@ -1556,11 +1613,16 @@ paths:
         schema: {type: string, format: uuid}
     post:
       tags: [GEO]
-      summary: 取消尚未开始的调用
+      summary: 请求取消并原子取消尚未开始的模型调用
       responses:
-        '200': {description: 已受理取消}
-        '409':
-          $ref: '#/components/responses/BusinessConflict'
+        '200':
+          description: 取消已受理
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeoDetectionJobEnvelope'
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+        '409': {$ref: '#/components/responses/BusinessConflict'}
   /geo/reports/{reportId}:
     parameters:
       - name: reportId
@@ -4278,6 +4340,7 @@ components:
       allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, properties: {data: {$ref: '#/components/schemas/KeywordGenerationJob'}}}]
     GeoDetectionSelection:
       type: object
+      additionalProperties: false
       required: [question_ids, model_ids]
       properties:
         question_ids:
@@ -4288,8 +4351,57 @@ components:
         model_ids:
           type: array
           minItems: 1
+          maxItems: 8
           uniqueItems: true
           items: {type: string, format: uuid}
+        mode: {type: string, enum: [new], default: new}
+    GeoModelOption:
+      type: object
+      additionalProperties: false
+      required: [id, model_key, provider_key, display_name, selected_by_default, sort_order, enabled, paused, configured, network_access_enabled, runtime_version]
+      properties:
+        id: {type: string, format: uuid}
+        model_key: {type: string}
+        provider_key: {type: string}
+        display_name: {type: string}
+        selected_by_default: {type: boolean}
+        sort_order: {type: integer, minimum: 0}
+        enabled: {type: boolean}
+        paused: {type: boolean}
+        configured: {type: boolean}
+        network_access_enabled: {type: boolean}
+        runtime_version: {type: integer, minimum: 1}
+    GeoModelsEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          properties:
+            data:
+              type: object
+              required: [models, allow_user_model_selection, max_models_per_detection]
+              properties:
+                models: {type: array, items: {$ref: '#/components/schemas/GeoModelOption'}}
+                allow_user_model_selection: {type: boolean}
+                max_models_per_detection: {type: integer, minimum: 1}
+    GeoDetectionOptionsEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          properties:
+            data:
+              type: object
+              required: [question_bank_version_id, question_count, max_questions_per_detection, models, max_models_per_detection, allow_user_model_selection, available_detection_points, active_detection_jobs, concurrent_detection_jobs, can_start_job]
+              properties:
+                question_bank_version_id: {type: string, format: uuid}
+                question_count: {type: integer, minimum: 0}
+                max_questions_per_detection: {type: integer, minimum: 1}
+                models: {type: array, items: {$ref: '#/components/schemas/GeoModelOption'}}
+                max_models_per_detection: {type: integer, minimum: 1}
+                allow_user_model_selection: {type: boolean}
+                available_detection_points: {type: integer, minimum: 0}
+                active_detection_jobs: {type: integer, minimum: 0}
+                concurrent_detection_jobs: {type: integer, minimum: 1}
+                can_start_job: {type: boolean}
     GeoEstimateEnvelope:
       allOf:
         - $ref: '#/components/schemas/EnvelopeBase'
@@ -4297,12 +4409,108 @@ components:
           properties:
             data:
               type: object
+              required: [question_count, model_count, required_detection_points, available_detection_points, active_detection_jobs, concurrent_detection_jobs, can_submit]
               properties:
-                question_count: {type: integer}
-                model_count: {type: integer}
-                required_detection_points: {type: integer}
-                available_detection_points: {type: integer}
+                question_count: {type: integer, minimum: 1}
+                model_count: {type: integer, minimum: 1}
+                required_detection_points: {type: integer, minimum: 1}
+                available_detection_points: {type: integer, minimum: 0}
+                active_detection_jobs: {type: integer, minimum: 0}
+                concurrent_detection_jobs: {type: integer, minimum: 1}
                 can_submit: {type: boolean}
+    GeoDetectionQuotaState:
+      type: object
+      additionalProperties: false
+      required: [held, consumed, released]
+      properties:
+        held: {type: integer, minimum: 0}
+        consumed: {type: integer, minimum: 0}
+        released: {type: integer, minimum: 0}
+    GeoDetectionJob:
+      type: object
+      additionalProperties: false
+      required: [id, subject_id, status, version, planned_question_count, planned_model_count, planned_detection_points, completed_calls, successful_calls, failed_calls, cancelled_calls, progress_percent, queue_priority, queue_position, cancel_requested, quota, queued_at, started_at, finished_at, cancelled_at, created_at, updated_at]
+      properties:
+        id: {type: string, format: uuid}
+        subject_id: {type: string, format: uuid}
+        status: {type: string, enum: [queued, running, partial, succeeded, failed, cancelled]}
+        version: {type: integer, minimum: 1}
+        planned_question_count: {type: integer, minimum: 1}
+        planned_model_count: {type: integer, minimum: 1}
+        planned_detection_points: {type: integer, minimum: 1}
+        completed_calls: {type: integer, minimum: 0}
+        successful_calls: {type: integer, minimum: 0}
+        failed_calls: {type: integer, minimum: 0}
+        cancelled_calls: {type: integer, minimum: 0}
+        progress_percent: {type: integer, minimum: 0, maximum: 100}
+        queue_priority: {type: integer, minimum: 0, maximum: 1000}
+        queue_position: {type: [integer, 'null'], minimum: 1}
+        cancel_requested: {type: boolean}
+        quota: {$ref: '#/components/schemas/GeoDetectionQuotaState'}
+        queued_at: {type: string, format: date-time}
+        started_at: {type: [string, 'null'], format: date-time}
+        finished_at: {type: [string, 'null'], format: date-time}
+        cancelled_at: {type: [string, 'null'], format: date-time}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    GeoDetectionJobEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          properties: {data: {$ref: '#/components/schemas/GeoDetectionJob'}}
+    GeoDetectionHistoryEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          properties:
+            data:
+              type: object
+              required: [items]
+              properties:
+                items: {type: array, items: {$ref: '#/components/schemas/GeoDetectionJob'}}
+    GeoDetectionCreateResult:
+      type: object
+      additionalProperties: false
+      required: [detection_id, status, planned_detection_points, quota_hold, status_url, replayed]
+      properties:
+        detection_id: {type: string, format: uuid}
+        status: {type: string, enum: [queued]}
+        planned_detection_points: {type: integer, minimum: 1}
+        quota_hold: {type: integer, minimum: 1}
+        status_url: {type: string}
+        replayed: {type: boolean}
+    GeoDetectionCreateEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          properties: {data: {$ref: '#/components/schemas/GeoDetectionCreateResult'}}
+    GeoModelProgress:
+      type: object
+      additionalProperties: false
+      required: [model_id, model_key, provider_key, provider_model_id, status, planned_calls, completed_calls, successful_calls, failed_calls, cancelled_calls, web_search_used_count, degraded_count]
+      properties:
+        model_id: {type: string, format: uuid}
+        model_key: {type: string}
+        provider_key: {type: string}
+        provider_model_id: {type: string}
+        status: {type: string, enum: [queued, running, partial, succeeded, failed, cancelled]}
+        planned_calls: {type: integer, minimum: 1}
+        completed_calls: {type: integer, minimum: 0}
+        successful_calls: {type: integer, minimum: 0}
+        failed_calls: {type: integer, minimum: 0}
+        cancelled_calls: {type: integer, minimum: 0}
+        web_search_used_count: {type: integer, minimum: 0}
+        degraded_count: {type: integer, minimum: 0}
+    GeoModelProgressEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          properties:
+            data:
+              type: object
+              required: [items]
+              properties:
+                items: {type: array, items: {$ref: '#/components/schemas/GeoModelProgress'}}
     AsyncTask:
       type: object
       properties:
