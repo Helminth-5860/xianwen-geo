@@ -128,6 +128,9 @@ describe("DetectionProgressPage", () => {
     getDetectionProgress.mockResolvedValue({ job: job("succeeded"), models });
     render(<DetectionProgressPage />);
     await act(async () => void (await Promise.resolve()));
+    expect(screen.getByRole("link", { name: "查看检测报告" }).getAttribute("href")).toBe(
+      "/geo/detections/detection-42/report",
+    );
     expect(screen.getByRole("link", { name: "返回主体" }).getAttribute("href")).toBe(
       "/subjects/subject-7",
     );

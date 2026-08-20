@@ -7,7 +7,21 @@ from .views import (
     GeoDetectionEstimateView,
     GeoDetectionModelProgressView,
     GeoDetectionOptionsView,
+    GeoDetectionReportView,
+    GeoModelCallResponseView,
     GeoModelsView,
+    GeoReportAdjustedRetestView,
+    GeoReportAnswerView,
+    GeoReportComparisonView,
+    GeoReportDetailView,
+    GeoReportExportDetailView,
+    GeoReportExportView,
+    GeoReportHistoryView,
+    GeoReportQuestionsView,
+    GeoReportQuestionView,
+    GeoReportQuickRetestView,
+    GeoReportRetestView,
+    GeoReportTrendsView,
 )
 
 urlpatterns = [
@@ -41,5 +55,76 @@ urlpatterns = [
         "geo/detections/<uuid:detection_id>/cancel",
         GeoDetectionCancelView.as_view(),
         name="geo-detection-cancel",
+    ),
+    path(
+        "geo/detections/<uuid:detection_id>/report",
+        GeoDetectionReportView.as_view(),
+        name="geo-detection-report",
+    ),
+    path("geo/reports/<uuid:report_id>", GeoReportDetailView.as_view(), name="geo-report"),
+    path(
+        "geo/reports/<uuid:report_id>/questions",
+        GeoReportQuestionsView.as_view(),
+        name="geo-report-questions",
+    ),
+    path(
+        "geo/reports/<uuid:report_id>/questions/<uuid:question_id>",
+        GeoReportQuestionView.as_view(),
+        name="geo-report-question",
+    ),
+    path(
+        "geo/reports/<uuid:report_id>/answers/<uuid:call_id>",
+        GeoReportAnswerView.as_view(),
+        name="geo-report-answer",
+    ),
+    path(
+        "geo/model-calls/<uuid:call_id>/response",
+        GeoModelCallResponseView.as_view(),
+        name="geo-model-call-response",
+    ),
+    path(
+        "subjects/<uuid:subject_id>/geo/reports",
+        GeoReportHistoryView.as_view(),
+        name="geo-report-history",
+    ),
+    path(
+        "subjects/<uuid:subject_id>/geo/trends",
+        GeoReportTrendsView.as_view(),
+        name="geo-report-trends",
+    ),
+    path(
+        "geo/reports/<uuid:report_id>/comparison/<uuid:other_id>",
+        GeoReportComparisonView.as_view(),
+        name="geo-report-comparison",
+    ),
+    path(
+        "geo/reports/<uuid:report_id>/exports",
+        GeoReportExportView.as_view(),
+        name="geo-report-export",
+    ),
+    path(
+        "geo/report-exports/<uuid:export_id>",
+        GeoReportExportDetailView.as_view(),
+        name="geo-report-export-detail",
+    ),
+    path(
+        "report-exports/<uuid:export_id>",
+        GeoReportExportDetailView.as_view(),
+        name="report-export-detail",
+    ),
+    path(
+        "geo/reports/<uuid:report_id>/quick-retest",
+        GeoReportQuickRetestView.as_view(),
+        name="geo-report-quick-retest",
+    ),
+    path(
+        "geo/reports/<uuid:report_id>/adjusted-retest",
+        GeoReportAdjustedRetestView.as_view(),
+        name="geo-report-adjusted-retest",
+    ),
+    path(
+        "geo/reports/<uuid:report_id>/retest",
+        GeoReportRetestView.as_view(),
+        name="geo-report-retest",
     ),
 ]

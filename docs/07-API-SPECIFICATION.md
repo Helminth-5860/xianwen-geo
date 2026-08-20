@@ -309,6 +309,7 @@ XW-0305 is implemented. Generation requires the current confirmed DistillationSe
 | POST | `/geo/detections/{id}/cancel` | 取消未开始调用 |
 | GET | `/subjects/{id}/geo/detections` | 检测历史 |
 | POST | `/geo/reports/{report_id}/retest` | 快速或调整后复测 |
+| GET | `/geo/detections/{id}/report` | 评分完成后生成／恢复不可变报告 |
 
 ### 14.1 创建请求
 
@@ -344,7 +345,7 @@ XW-0305 is implemented. Generation requires the current confirmed DistillationSe
 |---|---|---|
 | GET | `/geo/reports/{id}` | 首页报告摘要 |
 | GET | `/geo/reports/{id}/questions` | 按问题分页的明细 |
-| GET | `/geo/reports/{id}/questions/{question_key}` | 单问题 8 模型结果 |
+| GET | `/geo/reports/{id}/questions/{question_id}` | 单问题所选模型结果 |
 | GET | `/geo/model-calls/{call_id}/response` | 完整原始回答和引用 |
 | GET | `/subjects/{id}/geo/trends` | 可比趋势数据 |
 | GET | `/geo/reports/{id}/comparison/{other_id}` | 可比性和并排对比 |
@@ -483,7 +484,7 @@ XW-0305 is implemented. Generation requires the current confirmed DistillationSe
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | POST | `/geo/reports/{id}/exports` | PDF/Word/Excel |
-| GET | `/report-exports/{id}` | 导出任务和短期下载地址 |
+| GET | `/report-exports/{id}` | 导出任务和未过期的短期下载地址 |
 | GET | `/subjects/{id}/white-label` | 默认白标配置 |
 | PUT | `/subjects/{id}/white-label` | 保存默认配置 |
 | POST | `/geo/reports/{id}/shares` | 创建完整报告分享 |

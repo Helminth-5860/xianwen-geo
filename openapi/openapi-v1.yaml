@@ -1623,6 +1623,23 @@ paths:
                 $ref: '#/components/schemas/GeoDetectionJobEnvelope'
         '404': {$ref: '#/components/responses/ResourceNotFound'}
         '409': {$ref: '#/components/responses/BusinessConflict'}
+  /geo/detections/{detectionId}/report:
+    parameters:
+      - name: detectionId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    get:
+      tags: [Reports]
+      summary: 检测和语义评分完成后生成或恢复不可变 GEO 报告
+      responses:
+        '200':
+          description: 报告已固化
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/GeoReportEnvelope'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+        '409': {$ref: '#/components/responses/BusinessConflict'}
   /geo/reports/{reportId}:
     parameters:
       - name: reportId
@@ -1633,7 +1650,127 @@ paths:
       tags: [Reports]
       summary: GEO 报告首页数据
       responses:
-        '200': {description: 报告数据}
+        '200':
+          description: 不可变报告摘要、来源与基线比较
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/GeoReportEnvelope'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+  /geo/reports/{reportId}/questions:
+    parameters:
+      - name: reportId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+      - $ref: '#/components/parameters/Page'
+    get:
+      tags: [Reports]
+      summary: 按冻结问题分页加载模型状态、关键片段、评分和安全引用
+      responses:
+        '200':
+          description: 每页固定最多十个问题的分组明细
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/GeoReportQuestionPageEnvelope'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+  /geo/reports/{reportId}/questions/{questionId}:
+    parameters:
+      - name: reportId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+      - name: questionId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    get:
+      tags: [Reports]
+      summary: 加载一个冻结问题下的全部模型结果
+      responses:
+        '200': {description: 单问题分组明细}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+  /geo/model-calls/{callId}/response:
+    parameters:
+      - name: callId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    get:
+      tags: [Reports]
+      summary: 按需加载当前用户报告内的一条完整原始回答和安全引用
+      responses:
+        '200':
+          description: 完整原始回答；报告明细默认不返回此大文本
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/GeoReportAnswerEnvelope'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+  /subjects/{subjectId}/geo/reports:
+    parameters:
+      - $ref: '#/components/parameters/SubjectId'
+    get:
+      tags: [Reports]
+      summary: 获取当前用户主体的不可变历史报告
+      responses:
+        '200':
+          description: 历史报告
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/GeoReportHistoryEnvelope'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+  /subjects/{subjectId}/geo/trends:
+    parameters:
+      - $ref: '#/components/parameters/SubjectId'
+    get:
+      tags: [Reports]
+      summary: 按问题、逻辑模型和评分规则签名生成正式可比趋势
+      responses:
+        '200':
+          description: 可比组内的顺序趋势；不同签名不连接正式涨跌
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/GeoReportTrendEnvelope'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+  /geo/reports/{reportId}/comparison/{otherId}:
+    parameters:
+      - name: reportId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+      - name: otherId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    get:
+      tags: [Reports]
+      summary: 基于两份不可变来源事实判定可比性并返回允许的涨跌
+      responses:
+        '200': {description: 并排报告和事实可比性}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+  /geo/reports/{reportId}/retest:
+    parameters:
+      - name: reportId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+      - $ref: '#/components/parameters/IdempotencyKey'
+    post:
+      tags: [Reports]
+      summary: 创建快速或调整后独立复测并复用现有检测进度流
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/GeoRetestRequest'}
+      responses:
+        '202':
+          description: 返回新的 detection ID；快速复测不可静默替换模型
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/GeoRetestCreatedEnvelope'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+        '409': {$ref: '#/components/responses/BusinessConflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
   /geo/reports/{reportId}/strategies:
     parameters:
       - name: reportId
@@ -1736,13 +1873,35 @@ paths:
     post:
       tags: [Reports]
       summary: 生成 PDF、Word 或 Excel
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/GeoReportExportRequest'}
       responses:
         '202':
           description: 报告导出任务已创建
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/TaskEnvelope'
+              schema: {$ref: '#/components/schemas/GeoReportExportCreatedEnvelope'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /report-exports/{exportId}:
+    parameters:
+      - name: exportId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    get:
+      tags: [Reports]
+      summary: 获取导出任务状态和未过期的短期下载地址
+      responses:
+        '200':
+          description: 导出任务
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/GeoReportExportEnvelope'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
   /geo/reports/{reportId}/shares:
     parameters:
       - name: reportId
@@ -4512,6 +4671,187 @@ components:
               required: [items]
               properties:
                 items: {type: array, items: {$ref: '#/components/schemas/GeoModelProgress'}}
+    GeoReportComparison:
+      type: object
+      additionalProperties: false
+      required: [baseline_report_id, status, same_subject, same_questions, same_models, same_scoring_rule, subject_version_changed, scoring_version_changed, geo_score_delta, brand_reputation_score_delta, exposure_index_delta, dimension_deltas, model_deltas]
+      properties:
+        baseline_report_id: {type: string, format: uuid}
+        status: {type: string, enum: [comparable, not_comparable]}
+        same_subject: {type: boolean}
+        same_questions: {type: boolean}
+        same_models: {type: boolean}
+        same_scoring_rule: {type: boolean}
+        subject_version_changed: {type: boolean}
+        scoring_version_changed: {type: boolean}
+        geo_score_delta: {type: [string, 'null']}
+        brand_reputation_score_delta: {type: [string, 'null']}
+        exposure_index_delta: {type: [string, 'null']}
+        dimension_deltas: {type: object, additionalProperties: {type: [string, 'null']}}
+        model_deltas: {type: array, items: {type: object, additionalProperties: true}}
+    GeoReport:
+      type: object
+      additionalProperties: false
+      required: [id, detection_id, subject_id, subject_version_id, retest_mode, summary, provenance, comparison, generated_at]
+      properties:
+        id: {type: string, format: uuid}
+        detection_id: {type: string, format: uuid}
+        subject_id: {type: string, format: uuid}
+        subject_version_id: {type: string, format: uuid}
+        retest_mode: {type: string, enum: ['', quick, adjusted]}
+        summary:
+          type: object
+          description: 固化的综合分、口碑、曝光、模型、六维和竞品事实。
+          additionalProperties: true
+        provenance:
+          type: object
+          description: 冻结问题、逻辑模型、主体版本、评分规则和语义评分来源。
+          additionalProperties: true
+        comparison:
+          oneOf:
+            - $ref: '#/components/schemas/GeoReportComparison'
+            - type: 'null'
+        generated_at: {type: string, format: date-time}
+    GeoReportEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          properties: {data: {$ref: '#/components/schemas/GeoReport'}}
+    GeoReportHistoryEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          properties:
+            data:
+              type: object
+              required: [items]
+              properties:
+                items: {type: array, items: {$ref: '#/components/schemas/GeoReport'}}
+    GeoReportQuestionPageEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          properties:
+            data:
+              type: object
+              additionalProperties: false
+              required: [results, pagination]
+              properties:
+                results: {type: array, items: {type: object, additionalProperties: true}}
+                pagination:
+                  type: object
+                  additionalProperties: false
+                  required: [page, page_size, count, total_pages]
+                  properties:
+                    page: {type: integer, minimum: 1}
+                    page_size: {type: integer, const: 10}
+                    count: {type: integer, minimum: 0}
+                    total_pages: {type: integer, minimum: 1}
+    GeoReportAnswerEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          properties:
+            data:
+              type: object
+              additionalProperties: false
+              required: [call_id, model_key, answer, citations]
+              properties:
+                call_id: {type: string, format: uuid}
+                model_key: {type: string}
+                answer: {type: string}
+                citations: {type: array, items: {type: object, additionalProperties: true}}
+    GeoReportTrendEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          properties:
+            data:
+              type: object
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  items:
+                    type: object
+                    additionalProperties: false
+                    required: [report_id, generated_at, subject_version_id, geo_score, comparison]
+                    properties:
+                      report_id: {type: string, format: uuid}
+                      generated_at: {type: string, format: date-time}
+                      subject_version_id: {type: string, format: uuid}
+                      geo_score: {type: [string, 'null']}
+                      comparison:
+                        oneOf:
+                          - $ref: '#/components/schemas/GeoReportComparison'
+                          - type: 'null'
+    GeoRetestRequest:
+      type: object
+      additionalProperties: false
+      required: [mode]
+      properties:
+        mode: {type: string, enum: [quick, adjusted]}
+        question_ids:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: {type: string, format: uuid}
+        model_ids:
+          type: array
+          minItems: 1
+          maxItems: 8
+          uniqueItems: true
+          items: {type: string, format: uuid}
+      description: quick 禁止提交选择并精确复用基线；adjusted 必须提交当前合法问题和模型。
+    GeoRetestCreatedEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          properties:
+            data:
+              type: object
+              additionalProperties: false
+              required: [detection_id, status, replayed]
+              properties:
+                detection_id: {type: string, format: uuid}
+                status: {type: string, enum: [queued]}
+                replayed: {type: boolean}
+    GeoReportExportRequest:
+      type: object
+      additionalProperties: false
+      required: [format]
+      properties:
+        format: {type: string, enum: [pdf, word, excel]}
+    GeoReportExportCreatedEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          properties:
+            data:
+              type: object
+              additionalProperties: false
+              required: [id, status]
+              properties:
+                id: {type: string, format: uuid}
+                status: {type: string, enum: [queued]}
+    GeoReportExport:
+      type: object
+      additionalProperties: false
+      required: [id, report_id, format, status, safe_error_code, download_url, expires_at, expired]
+      properties:
+        id: {type: string, format: uuid}
+        report_id: {type: string, format: uuid}
+        format: {type: string, enum: [pdf, word, excel]}
+        status: {type: string, enum: [queued, running, succeeded, failed]}
+        safe_error_code: {type: string}
+        download_url: {type: [string, 'null']}
+        expires_at: {type: [string, 'null'], format: date-time}
+        expired: {type: boolean}
+    GeoReportExportEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          properties: {data: {$ref: '#/components/schemas/GeoReportExport'}}
     AsyncTask:
       type: object
       properties:

@@ -946,3 +946,137 @@ class CompetitorDisposition(models.Model):  # noqa: DJ008
 
     def delete(self, *args, **kwargs):
         raise TypeError("Competitor dispositions are append-only.")
+
+
+class GeoReport(models.Model):  # noqa: DJ008
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    job = models.OneToOneField(GeoDetectionJob, on_delete=models.PROTECT, related_name="report")
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="geo_reports"
+    )
+    subject = models.ForeignKey(
+        "subjects.Subject", on_delete=models.PROTECT, related_name="geo_reports"
+    )
+    subject_version = models.ForeignKey(
+        "subjects.SubjectVersion", on_delete=models.PROTECT, related_name="geo_reports"
+    )
+    baseline_report = models.ForeignKey(
+        "self", null=True, blank=True, on_delete=models.PROTECT, related_name="retests"
+    )
+    retest_mode = models.CharField(max_length=16, blank=True, default="")
+    question_signature = models.CharField(max_length=64)
+    model_signature = models.CharField(max_length=64)
+    scoring_rule_version = models.CharField(max_length=64)
+    summary = models.JSONField()
+    provenance = models.JSONField()
+    generated_at = models.DateTimeField(auto_now_add=True)
+
+    objects = ImmutableSnapshotQuerySet.as_manager()
+
+    class Meta:
+        db_table = "geo_reports"
+        ordering = ("-generated_at", "-id")
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(retest_mode__in=("", "quick", "adjusted")),
+                name="geo_report_retest_mode_valid",
+            ),
+            models.CheckConstraint(
+                condition=~Q(question_signature=""), name="geo_report_question_sig_present"
+            ),
+            models.CheckConstraint(
+                condition=~Q(model_signature=""), name="geo_report_model_sig_present"
+            ),
+            models.CheckConstraint(
+                condition=~Q(scoring_rule_version=""), name="geo_report_rule_present"
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise TypeError("GEO reports are immutable.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise TypeError("GEO reports are immutable.")
+
+
+class ReportExport(models.Model):  # noqa: DJ008
+    class Format(models.TextChoices):
+        PDF = "pdf", "PDF"
+        WORD = "word", "Word"
+        EXCEL = "excel", "Excel"
+
+    class Status(models.TextChoices):
+        QUEUED = "queued", "Queued"
+        RUNNING = "running", "Running"
+        SUCCEEDED = "succeeded", "Succeeded"
+        FAILED = "failed", "Failed"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    report = models.ForeignKey(GeoReport, on_delete=models.PROTECT, related_name="exports")
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="report_exports"
+    )
+    format = models.CharField(max_length=16, choices=Format.choices)
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.QUEUED)
+    brand_snapshot = models.JSONField(default=dict)
+    object_key = models.CharField(max_length=500, blank=True, default="")
+    safe_error_code = models.CharField(max_length=100, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    expires_at = models.DateTimeField(null=True, blank=True)
+
+    objects = ProtectedDetectionQuerySet.as_manager()
+
+    class Meta:
+        db_table = "report_exports"
+        ordering = ("-created_at", "-id")
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(format__in=("pdf", "word", "excel")),
+                name="report_export_format_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(status__in=("queued", "running", "succeeded", "failed")),
+                name="report_export_status_valid",
+            ),
+        ]
+
+    def delete(self, *args, **kwargs):
+        raise TypeError("Report export history cannot be deleted.")
+
+
+class DetectionRetest(models.Model):  # noqa: DJ008
+    class Mode(models.TextChoices):
+        QUICK = "quick", "Quick"
+        ADJUSTED = "adjusted", "Adjusted"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    job = models.OneToOneField(
+        GeoDetectionJob, on_delete=models.PROTECT, related_name="retest_origin"
+    )
+    baseline_report = models.ForeignKey(
+        GeoReport, on_delete=models.PROTECT, related_name="detection_retests"
+    )
+    mode = models.CharField(max_length=16, choices=Mode.choices)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = ImmutableSnapshotQuerySet.as_manager()
+
+    class Meta:
+        db_table = "geo_detection_retests"
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(mode__in=("quick", "adjusted")),
+                name="geo_detection_retest_mode_valid",
+            )
+        ]
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise TypeError("Detection retest provenance is immutable.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise TypeError("Detection retest provenance is immutable.")

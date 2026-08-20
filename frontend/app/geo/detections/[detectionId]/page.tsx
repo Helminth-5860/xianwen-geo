@@ -172,8 +172,11 @@ export default function DetectionProgressPage() {
 
           {terminalDetectionStatuses.has(job.status) && (
             <Space>
+              <Link href={`/geo/detections/${job.id}/report`}>
+                <Button type="primary">查看检测报告</Button>
+              </Link>
               <Link href={`/subjects/${job.subject_id}`}>
-                <Button type="primary">返回主体</Button>
+                <Button>返回主体</Button>
               </Link>
               <Button onClick={() => void load()}>刷新最终状态</Button>
             </Space>
