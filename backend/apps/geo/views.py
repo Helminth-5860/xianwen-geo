@@ -3,6 +3,8 @@ from __future__ import annotations
 import logging
 
 from django.db import transaction
+from django.http import Http404
+from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_protect
 from rest_framework.response import Response
@@ -16,11 +18,31 @@ from rest_framework.views import APIView
 
 from apps.core.error_codes import ErrorCode
 from apps.core.responses import error_response
+from apps.documents.storage import storage_provider
 from apps.quotas.exceptions import QuotaError
 from apps.subjects.permissions import IsAvailableAuthenticatedUser
+from apps.subjects.subject_services import subject_for_user_or_404
 
 from .exceptions import GeoDetectionError
-from .serializers import GeoDetectionSelectionSerializer
+from .models import GeoDetectionQuestionSnapshot, GeoReport, ReportExport
+from .reports import (
+    comparison,
+    create_export,
+    full_answer,
+    prepare_report,
+    question_group_page,
+    report_for_user_or_404,
+    report_history,
+    report_payload,
+    report_trends,
+)
+from .retests import QuickRetestBlocked, create_adjusted_retest, create_quick_retest
+from .serializers import (
+    AdjustedRetestSerializer,
+    GeoDetectionSelectionSerializer,
+    GeoRetestSerializer,
+    ReportExportSerializer,
+)
 from .services import (
     cancel_detection,
     create_detection_job,
@@ -32,7 +54,7 @@ from .services import (
     model_progress_payload,
     models_for_user,
 )
-from .tasks import dispatch_model_calls_task
+from .tasks import dispatch_model_calls_task, execute_report_export_task
 
 logger = logging.getLogger(__name__)
 
@@ -186,3 +208,282 @@ class GeoDetectionCancelView(APIView):
         except GeoDetectionError as exc:
             return _error(exc, request)
         return _no_store(Response(job_payload(job)))
+
+
+class GeoDetectionReportView(APIView):
+    permission_classes = [IsAvailableAuthenticatedUser]
+
+    def get(self, request, detection_id):
+        job = detection_for_user_or_404(user=request.user, detection_id=detection_id)
+        try:
+            report = prepare_report(job=job)
+            if report is None:
+                raise ValueError
+        except ValueError:
+            return error_response(
+                ErrorCode.GEO_DETECTION_STATE_CONFLICT,
+                status_code=HTTP_409_CONFLICT,
+                request=request,
+            )
+        return _no_store(Response(report_payload(report)))
+
+
+class GeoReportDetailView(APIView):
+    permission_classes = [IsAvailableAuthenticatedUser]
+
+    def get(self, request, report_id):
+        return _no_store(
+            Response(report_payload(report_for_user_or_404(user=request.user, report_id=report_id)))
+        )
+
+
+class GeoReportQuestionsView(APIView):
+    permission_classes = [IsAvailableAuthenticatedUser]
+
+    def get(self, request, report_id):
+        report = report_for_user_or_404(user=request.user, report_id=report_id)
+        try:
+            page = max(1, int(request.query_params.get("page", "1")))
+        except ValueError:
+            page = 1
+        return _no_store(Response(question_group_page(report=report, page=page)))
+
+
+class GeoReportQuestionView(APIView):
+    permission_classes = [IsAvailableAuthenticatedUser]
+
+    def get(self, request, report_id, question_id):
+        report = report_for_user_or_404(user=request.user, report_id=report_id)
+        try:
+            question = report.job.snapshot.questions.get(pk=question_id)
+        except GeoDetectionQuestionSnapshot.DoesNotExist as exc:
+            raise Http404 from exc
+        page = question.sort_order // 10 + 1
+        payload = question_group_page(report=report, page=page)
+        try:
+            result = next(
+                row for row in payload["results"] if row["question_id"] == str(question_id)
+            )
+        except StopIteration as exc:
+            raise Http404 from exc
+        return _no_store(Response(result))
+
+
+class GeoReportAnswerView(APIView):
+    permission_classes = [IsAvailableAuthenticatedUser]
+
+    def get(self, request, report_id, call_id):
+        report = report_for_user_or_404(user=request.user, report_id=report_id)
+        return _no_store(Response(full_answer(report=report, call_id=call_id)))
+
+
+class GeoModelCallResponseView(APIView):
+    permission_classes = [IsAvailableAuthenticatedUser]
+
+    def get(self, request, call_id):
+        try:
+            report = GeoReport.objects.get(job__model_calls__pk=call_id, user=request.user)
+        except GeoReport.DoesNotExist as exc:
+            raise Http404 from exc
+        return _no_store(Response(full_answer(report=report, call_id=call_id)))
+
+
+class GeoReportHistoryView(APIView):
+    permission_classes = [IsAvailableAuthenticatedUser]
+
+    def get(self, request, subject_id):
+        subject_for_user_or_404(user=request.user, subject_id=subject_id)
+        return _no_store(
+            Response({"items": report_history(user=request.user, subject_id=subject_id)})
+        )
+
+
+class GeoReportTrendsView(APIView):
+    permission_classes = [IsAvailableAuthenticatedUser]
+
+    def get(self, request, subject_id):
+        subject_for_user_or_404(user=request.user, subject_id=subject_id)
+        return _no_store(
+            Response({"items": report_trends(user=request.user, subject_id=subject_id)})
+        )
+
+
+class GeoReportComparisonView(APIView):
+    permission_classes = [IsAvailableAuthenticatedUser]
+
+    def get(self, request, report_id, other_id):
+        current = report_for_user_or_404(user=request.user, report_id=report_id)
+        baseline = report_for_user_or_404(user=request.user, report_id=other_id)
+        if current.subject_id != baseline.subject_id:
+            raise Http404
+        return _no_store(
+            Response(
+                {
+                    "current": report_payload(current),
+                    "baseline": report_payload(baseline),
+                    "comparison": comparison(current, baseline),
+                }
+            )
+        )
+
+
+class GeoReportExportView(APIView):
+    permission_classes = [IsAvailableAuthenticatedUser]
+
+    @method_decorator(csrf_protect)
+    def post(self, request, report_id):
+        report = report_for_user_or_404(user=request.user, report_id=report_id)
+        serializer = ReportExportSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        export = create_export(report=report, user=request.user, **serializer.validated_data)
+        transaction.on_commit(
+            lambda: execute_report_export_task.apply_async(
+                args=[str(export.pk)], queue="system_tasks"
+            )
+        )
+        return Response({"id": str(export.pk), "status": export.status}, status=HTTP_202_ACCEPTED)
+
+
+class GeoReportExportDetailView(APIView):
+    permission_classes = [IsAvailableAuthenticatedUser]
+
+    def get(self, request, export_id):
+        try:
+            export = ReportExport.objects.select_related("report").get(
+                pk=export_id, user=request.user
+            )
+        except ReportExport.DoesNotExist as exc:
+            raise Http404 from exc
+        data = {
+            "id": str(export.pk),
+            "report_id": str(export.report_id),
+            "format": export.format,
+            "status": export.status,
+            "safe_error_code": export.safe_error_code,
+            "download_url": None,
+            "expires_at": export.expires_at,
+            "expired": bool(export.expires_at and export.expires_at <= timezone.now()),
+        }
+        if export.status == ReportExport.Status.SUCCEEDED and not data["expired"]:
+            content_types = {
+                "pdf": "application/pdf",
+                "word": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "excel": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            }
+            extensions = {"pdf": "pdf", "word": "docx", "excel": "xlsx"}
+            data["download_url"] = storage_provider().create_download_url(
+                key=export.object_key,
+                filename=f"geo-report-{export.report_id}.{extensions[export.format]}",
+                content_type=content_types[export.format],
+            )
+        return _no_store(Response(data))
+
+
+def _retest_response(job, created):
+    return _no_store(
+        Response(
+            {
+                "detection_id": str(job.pk),
+                "status": job.status,
+                "replayed": not created,
+            },
+            status=HTTP_202_ACCEPTED,
+        )
+    )
+
+
+def _quick_retest_error(exc, request):
+    return error_response(
+        ErrorCode.GEO_DETECTION_PROVIDER_UNAVAILABLE,
+        status_code=HTTP_409_CONFLICT,
+        request=request,
+        details={
+            "model_key": exc.model_key,
+            "reason": exc.reason,
+            "suggested_actions": ["retry_later", "restore_access", "use_adjusted_retest"],
+        },
+    )
+
+
+class GeoReportQuickRetestView(APIView):
+    permission_classes = [IsAvailableAuthenticatedUser]
+
+    @method_decorator(csrf_protect)
+    def post(self, request, report_id):
+        try:
+            job, created = create_quick_retest(
+                user_id=request.user.pk,
+                baseline_report_id=report_id,
+                idempotency_key=request.headers.get("Idempotency-Key", ""),
+                request_id=request.request_id,
+            )
+        except QuickRetestBlocked as exc:
+            return _quick_retest_error(exc, request)
+        except GeoDetectionError as exc:
+            return _error(exc, request)
+        except QuotaError as exc:
+            return _quota_error(exc, request)
+        if created:
+            transaction.on_commit(_dispatch_after_commit)
+        return _retest_response(job, created)
+
+
+class GeoReportAdjustedRetestView(APIView):
+    permission_classes = [IsAvailableAuthenticatedUser]
+
+    @method_decorator(csrf_protect)
+    def post(self, request, report_id):
+        serializer = AdjustedRetestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            job, created = create_adjusted_retest(
+                user_id=request.user.pk,
+                baseline_report_id=report_id,
+                idempotency_key=request.headers.get("Idempotency-Key", ""),
+                request_id=request.request_id,
+                question_ids=serializer.validated_data["question_ids"],
+                model_ids=serializer.validated_data["model_ids"],
+            )
+        except GeoDetectionError as exc:
+            return _error(exc, request)
+        except QuotaError as exc:
+            return _quota_error(exc, request)
+        if created:
+            transaction.on_commit(_dispatch_after_commit)
+        return _retest_response(job, created)
+
+
+class GeoReportRetestView(APIView):
+    permission_classes = [IsAvailableAuthenticatedUser]
+
+    @method_decorator(csrf_protect)
+    def post(self, request, report_id):
+        serializer = GeoRetestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        mode = serializer.validated_data["mode"]
+        try:
+            if mode == "quick":
+                job, created = create_quick_retest(
+                    user_id=request.user.pk,
+                    baseline_report_id=report_id,
+                    idempotency_key=request.headers.get("Idempotency-Key", ""),
+                    request_id=request.request_id,
+                )
+            else:
+                job, created = create_adjusted_retest(
+                    user_id=request.user.pk,
+                    baseline_report_id=report_id,
+                    idempotency_key=request.headers.get("Idempotency-Key", ""),
+                    request_id=request.request_id,
+                    question_ids=serializer.validated_data["question_ids"],
+                    model_ids=serializer.validated_data["model_ids"],
+                )
+        except QuickRetestBlocked as exc:
+            return _quick_retest_error(exc, request)
+        except GeoDetectionError as exc:
+            return _error(exc, request)
+        except QuotaError as exc:
+            return _quota_error(exc, request)
+        if created:
+            transaction.on_commit(_dispatch_after_commit)
+        return _retest_response(job, created)

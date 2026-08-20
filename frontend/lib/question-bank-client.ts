@@ -85,6 +85,9 @@ export type QuestionBankVersion = Readonly<{
   source_result_id: string | null;
   item_count: number;
   confirmed_at: string;
+  items?: ReadonlyArray<
+    Pick<QuestionDraftItem, "id" | "text" | "priority" | "question_type" | "sort_order">
+  >;
 }>;
 
 export const getQuestionBankDraft = (subjectId: string) =>
@@ -138,3 +141,6 @@ export const confirmQuestionBank = (subjectId: string, expectedVersion: number) 
 
 export const getQuestionBankVersions = (subjectId: string) =>
   get<{ versions: QuestionBankVersion[] }>(`/subjects/${subjectId}/question-banks/versions`);
+
+export const getCurrentQuestionBank = (subjectId: string) =>
+  get<QuestionBankVersion>(`/subjects/${subjectId}/question-banks/current`);

@@ -567,7 +567,11 @@ GEO 权重、等级、口碑权重、曝光公式、评分模型版本和状态�
 
 ### 17.10 `geo_reports`
 
-综合 GEO 分、口碑分、曝光指数、等级、正式／临时状态、成功模型数、摘要、生成时间。
+每个 detection 一份不可变报告：综合 GEO 分、口碑分、曝光指数、等级、正式／临时状态、模型和六维摘要、竞品摘要、冻结问题/逻辑模型签名、评分与语义 provenance、baseline/retest 关系和生成时间。ORM 与 PostgreSQL trigger 均拒绝更新和删除。
+
+### 17.10.1 `geo_detection_retests`
+
+独立复测 detection 与 baseline report 的不可变关系，模式为 `quick` 或 `adjusted`。可比性不读取模式字段，只读取两份报告的冻结事实。
 
 ### 17.11 `competitor_entities` 与 `competitor_mentions`
 
@@ -587,7 +591,7 @@ GEO 权重、等级、口碑权重、曝光公式、评分模型版本和状态�
 
 ### 19.1 `report_exports`
 
-报告、格式、品牌配置快照、COS 对象键、状态、生成时间、过期时间。
+报告、格式、品牌配置快照、对象键、queued/running/succeeded/failed 状态、安全错误码、生成时间和过期时间。生命周期可更新但历史不可删除。
 
 ### 19.2 `subject_white_label_configs`
 

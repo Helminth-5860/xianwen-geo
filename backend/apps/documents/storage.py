@@ -51,6 +51,7 @@ class StorageProvider(Protocol):
     def delete_temporary_object(self, key: str) -> None: ...
     def create_download_url(self, *, key: str, filename: str, content_type: str) -> str: ...
     def list_system_objects(self, *, prefix: str, limit: int) -> list[StoredObject]: ...
+    def put_system_object(self, *, key: str, data: bytes, content_type: str) -> None: ...
 
 
 class S3CompatibleStorageProvider:
@@ -182,6 +183,18 @@ class S3CompatibleStorageProvider:
             if isinstance(item.get("Key"), str)
         ]
 
+    def put_system_object(self, *, key: str, data: bytes, content_type: str) -> None:
+        try:
+            self.client.put_object(
+                Bucket=self.bucket,
+                Key=key,
+                Body=data,
+                ContentType=content_type,
+                Metadata={"sha256": hashlib_sha256(data)},
+            )
+        except Exception as exc:
+            raise FileStorageUnavailable from exc
+
 
 class MockStorageProvider:
     _objects: dict[str, tuple[bytes, str, dict[str, str]]] = {}
@@ -259,6 +272,9 @@ class MockStorageProvider:
         if key not in self._objects:
             raise FileStorageUnavailable
         return f"mock://download/{key}"
+
+    def put_system_object(self, *, key: str, data: bytes, content_type: str) -> None:
+        self.put_for_test(key, data, content_type)
 
     def list_system_objects(self, *, prefix: str, limit: int) -> list[StoredObject]:
         with self._lock:
