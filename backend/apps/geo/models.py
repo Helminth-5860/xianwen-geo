@@ -623,3 +623,208 @@ class ProgrammaticScoreResult(models.Model):  # noqa: DJ008
 
     def delete(self, *args, **kwargs):
         raise TypeError("Programmatic score results are immutable.")
+
+
+class ScoreResult(models.Model):  # noqa: DJ008
+    class Track(models.TextChoices):
+        GEO = "geo", "GEO"
+        BRAND_REPUTATION = "brand_reputation", "Brand reputation"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    model_response = models.OneToOneField(
+        ModelResponse,
+        on_delete=models.PROTECT,
+        related_name="score_result",
+    )
+    question_type = models.CharField(max_length=24)
+    track = models.CharField(max_length=24, choices=Track.choices)
+    mention_score = models.DecimalField(max_digits=7, decimal_places=4, null=True, blank=True)
+    recommendation_score = models.DecimalField(max_digits=7, decimal_places=4)
+    rank_score = models.DecimalField(max_digits=7, decimal_places=4, null=True, blank=True)
+    accuracy_score = models.DecimalField(max_digits=7, decimal_places=4)
+    sentiment_score = models.DecimalField(max_digits=7, decimal_places=4)
+    citation_score = models.DecimalField(max_digits=7, decimal_places=4)
+    total_score = models.DecimalField(max_digits=7, decimal_places=4)
+    scoring_rule_version = models.CharField(max_length=64)
+    semantic_schema_version = models.CharField(max_length=64)
+    semantic_provider_key = models.CharField(max_length=100)
+    semantic_model_key = models.CharField(max_length=100)
+    semantic_adapter_version = models.CharField(max_length=100)
+    semantic_prompt_version = models.CharField(max_length=100)
+    semantic_provider_model_id = models.CharField(max_length=255)
+    semantic_output_digest = models.CharField(max_length=64)
+    evidence = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = ImmutableSnapshotQuerySet.as_manager()
+
+    class Meta:
+        db_table = "score_results"
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(question_type__in=("natural", "brand_directed")),
+                name="score_result_qtype_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(track__in=("geo", "brand_reputation")),
+                name="score_result_track_valid",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    Q(
+                        question_type="natural",
+                        track="geo",
+                        mention_score__isnull=False,
+                        rank_score__isnull=False,
+                    )
+                    | Q(
+                        question_type="brand_directed",
+                        track="brand_reputation",
+                        mention_score__isnull=True,
+                        rank_score__isnull=True,
+                    )
+                ),
+                name="score_result_track_shape",
+            ),
+            models.CheckConstraint(
+                condition=Q(recommendation_score__gte=0, recommendation_score__lte=100),
+                name="score_result_recommend_range",
+            ),
+            models.CheckConstraint(
+                condition=Q(accuracy_score__gte=0, accuracy_score__lte=100),
+                name="score_result_accuracy_range",
+            ),
+            models.CheckConstraint(
+                condition=Q(sentiment_score__gte=0, sentiment_score__lte=100),
+                name="score_result_sentiment_range",
+            ),
+            models.CheckConstraint(
+                condition=Q(citation_score__gte=0, citation_score__lte=100),
+                name="score_result_citation_range",
+            ),
+            models.CheckConstraint(
+                condition=Q(total_score__gte=0, total_score__lte=100),
+                name="score_result_total_range",
+            ),
+            models.CheckConstraint(
+                condition=Q(mention_score__isnull=True)
+                | Q(mention_score__gte=0, mention_score__lte=100),
+                name="score_result_mention_range",
+            ),
+            models.CheckConstraint(
+                condition=Q(rank_score__isnull=True) | Q(rank_score__gte=0, rank_score__lte=100),
+                name="score_result_rank_range",
+            ),
+            models.CheckConstraint(
+                condition=~Q(scoring_rule_version=""),
+                name="score_result_rule_present",
+            ),
+            models.CheckConstraint(
+                condition=~Q(semantic_schema_version=""),
+                name="score_result_schema_present",
+            ),
+            models.CheckConstraint(
+                condition=~Q(semantic_provider_key="")
+                & ~Q(semantic_model_key="")
+                & ~Q(semantic_adapter_version="")
+                & ~Q(semantic_prompt_version="")
+                & ~Q(semantic_provider_model_id="")
+                & ~Q(semantic_output_digest=""),
+                name="score_result_provenance_present",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise TypeError("Score results are immutable.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise TypeError("Score results are immutable.")
+
+
+class ModelScoreResult(models.Model):  # noqa: DJ008
+    class Track(models.TextChoices):
+        GEO = "geo", "GEO"
+        BRAND_REPUTATION = "brand_reputation", "Brand reputation"
+
+    class Status(models.TextChoices):
+        FORMAL = "formal", "Formal"
+        REFERENCE = "reference", "Reference"
+        NOT_GENERATED = "not_generated", "Not generated"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    model_run = models.ForeignKey(
+        GeoDetectionModelRun,
+        on_delete=models.PROTECT,
+        related_name="score_results",
+    )
+    track = models.CharField(max_length=24, choices=Track.choices)
+    planned_count = models.PositiveIntegerField()
+    successful_count = models.PositiveIntegerField()
+    success_rate = models.DecimalField(max_digits=7, decimal_places=4, null=True, blank=True)
+    score = models.DecimalField(max_digits=7, decimal_places=4, null=True, blank=True)
+    status = models.CharField(max_length=16, choices=Status.choices)
+    scoring_rule_version = models.CharField(max_length=64)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = ImmutableSnapshotQuerySet.as_manager()
+
+    class Meta:
+        db_table = "model_scores"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("model_run", "track"),
+                name="model_score_unique",
+            ),
+            models.CheckConstraint(
+                condition=Q(track__in=("geo", "brand_reputation")),
+                name="model_score_track_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(status__in=("formal", "reference", "not_generated")),
+                name="model_score_status_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(successful_count__lte=models.F("planned_count")),
+                name="model_score_counts_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(success_rate__isnull=True)
+                | Q(success_rate__gte=0, success_rate__lte=100),
+                name="model_score_rate_range",
+            ),
+            models.CheckConstraint(
+                condition=Q(score__isnull=True) | Q(score__gte=0, score__lte=100),
+                name="model_score_value_range",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    Q(
+                        status="not_generated",
+                        planned_count=0,
+                        successful_count=0,
+                        success_rate__isnull=True,
+                        score__isnull=True,
+                    )
+                    | Q(
+                        status__in=("formal", "reference"),
+                        planned_count__gte=1,
+                        success_rate__isnull=False,
+                    )
+                ),
+                name="model_score_state_valid",
+            ),
+            models.CheckConstraint(
+                condition=~Q(scoring_rule_version=""),
+                name="model_score_rule_present",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise TypeError("Model score results are immutable.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise TypeError("Model score results are immutable.")
