@@ -4421,8 +4421,9 @@ components:
     GeoDetectionQuotaState:
       type: object
       additionalProperties: false
-      required: [held, consumed, released]
+      required: [status, held, consumed, released]
       properties:
+        status: {type: string, enum: [open, partially_settled, settled]}
         held: {type: integer, minimum: 0}
         consumed: {type: integer, minimum: 0}
         released: {type: integer, minimum: 0}
