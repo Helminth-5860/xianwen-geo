@@ -828,3 +828,121 @@ class ModelScoreResult(models.Model):  # noqa: DJ008
 
     def delete(self, *args, **kwargs):
         raise TypeError("Model score results are immutable.")
+
+
+class CompetitorEntity(models.Model):  # noqa: DJ008
+    class EntityType(models.TextChoices):
+        BRAND = "brand", "Brand"
+        COMPANY = "company", "Company"
+        PRODUCT = "product", "Product"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    job = models.ForeignKey(
+        GeoDetectionJob, on_delete=models.PROTECT, related_name="competitor_entities"
+    )
+    canonical_name = models.CharField(max_length=255)
+    canonical_key = models.CharField(max_length=255)
+    aliases = models.JSONField(default=list)
+    entity_type = models.CharField(max_length=16, choices=EntityType.choices)
+    semantic_schema_version = models.CharField(max_length=64)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = ImmutableSnapshotQuerySet.as_manager()
+
+    class Meta:
+        db_table = "competitor_entities"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("job", "canonical_key"), name="competitor_entity_job_key_unique"
+            ),
+            models.CheckConstraint(
+                condition=Q(entity_type__in=("brand", "company", "product")),
+                name="competitor_entity_type_valid",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise TypeError("Competitor entities are immutable.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise TypeError("Competitor entities are immutable.")
+
+
+class CompetitorMention(models.Model):  # noqa: DJ008
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    entity = models.ForeignKey(CompetitorEntity, on_delete=models.PROTECT, related_name="mentions")
+    score_result = models.ForeignKey(
+        ScoreResult, on_delete=models.PROTECT, related_name="competitor_mentions"
+    )
+    question = models.CharField(max_length=1000)
+    model_key = models.CharField(max_length=100)
+    occurrence = models.PositiveIntegerField()
+    recommendation_score = models.DecimalField(max_digits=7, decimal_places=4)
+    subject_rank = models.PositiveIntegerField(null=True, blank=True)
+    competitor_rank = models.PositiveIntegerField(null=True, blank=True)
+    rank_gap = models.IntegerField(null=True, blank=True)
+    evidence = models.JSONField(default=dict)
+    provenance = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = ImmutableSnapshotQuerySet.as_manager()
+
+    class Meta:
+        db_table = "competitor_mentions"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("entity", "score_result"), name="competitor_mention_score_unique"
+            ),
+            models.CheckConstraint(
+                condition=Q(occurrence__gte=1), name="competitor_mention_occurrence_gte_1"
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise TypeError("Competitor mentions are immutable.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise TypeError("Competitor mentions are immutable.")
+
+
+class CompetitorDisposition(models.Model):  # noqa: DJ008
+    class Decision(models.TextChoices):
+        COMPETITOR = "competitor", "Competitor"
+        NOT_COMPETITOR = "not_competitor", "Not competitor"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    entity = models.ForeignKey(
+        CompetitorEntity, on_delete=models.PROTECT, related_name="dispositions"
+    )
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="competitor_dispositions",
+    )
+    decision = models.CharField(max_length=24, choices=Decision.choices)
+    note = models.CharField(max_length=1000, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = ImmutableSnapshotQuerySet.as_manager()
+
+    class Meta:
+        db_table = "competitor_dispositions"
+        ordering = ("entity_id", "created_at", "id")
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(decision__in=("competitor", "not_competitor")),
+                name="competitor_disposition_decision_valid",
+            )
+        ]
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise TypeError("Competitor dispositions are append-only.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise TypeError("Competitor dispositions are append-only.")

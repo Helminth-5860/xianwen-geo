@@ -21,6 +21,9 @@ def test_postgresql_geo_tables_constraints_and_immutability_triggers_are_install
         "programmatic_score_results",
         "score_results",
         "model_scores",
+        "competitor_entities",
+        "competitor_mentions",
+        "competitor_dispositions",
     }
     with connection.cursor() as cursor:
         cursor.execute(
@@ -46,4 +49,7 @@ def test_postgresql_geo_tables_constraints_and_immutability_triggers_are_install
         "geo_programmatic_scores_immutable",
         "geo_score_results_immutable",
         "geo_model_scores_immutable",
+        "geo_competitor_entities_immutable",
+        "geo_competitor_mentions_immutable",
+        "geo_competitor_dispositions_immutable",
     }.issubset(triggers)

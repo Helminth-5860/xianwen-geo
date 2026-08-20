@@ -37,6 +37,9 @@ services:
       - tests/test_geo_detection.py
       - tests/test_geo_detection_postgres.py
       - tests/test_geo_detection_redis.py
+      - tests/test_geo_competitors.py
+      - tests/test_geo_exposure.py
+      - tests/test_ai_semantic_scoring.py
       - tests/test_ai_adapters.py
       - tests/test_ai_model_configs.py
       - tests/test_api_credentials.py

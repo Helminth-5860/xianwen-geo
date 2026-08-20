@@ -11,7 +11,7 @@ from apps.geo.score_orchestration import (
 
 def _semantic() -> SemanticScoringOutput:
     return SemanticScoringOutput(
-        schema_version="geo-semantic-score-schema-v1",
+        schema_version="geo-semantic-score-schema-v2",
         recommendation_level="recommendation",
         recommendation_score=75,
         accuracy_score=75,
