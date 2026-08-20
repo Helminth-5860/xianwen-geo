@@ -617,6 +617,7 @@ def job_payload(job: GeoDetectionJob) -> dict:
         "queue_position": queue_position(job),
         "cancel_requested": job.cancel_requested_at is not None,
         "quota": {
+            "status": hold.status if hold else "settled",
             "held": hold.requested_amount if hold else 0,
             "consumed": hold.consumed_amount if hold else 0,
             "released": hold.released_amount if hold else 0,

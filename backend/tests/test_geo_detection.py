@@ -4,8 +4,10 @@ import uuid
 from unittest.mock import patch
 
 import pytest
+from django.contrib.auth import get_user_model
 from django.core.management import call_command
 from django.utils import timezone
+from rest_framework.test import APIClient
 
 from apps.ai.contracts import (
     AIAdapterDescriptor,
@@ -23,7 +25,7 @@ from apps.geo.exceptions import (
     GeoDetectionConcurrencyLimit,
     GeoDetectionIdempotencyConflict,
 )
-from apps.geo.models import GeoDetectionJob, ModelCall, ModelResponse
+from apps.geo.models import GeoDetectionJob, GeoDetectionModelRun, ModelCall, ModelResponse
 from apps.geo.services import (
     cancel_detection,
     create_detection_job,
@@ -385,3 +387,129 @@ def test_successful_natural_call_persists_programmatic_zero_for_no_mention(geo_f
     assert score.rank_score == 0
     assert score.rank_resolution == ProgrammaticScoreResult.RankResolution.DETERMINISTIC
     assert score.scoring_rule_version == call.job.snapshot.scoring_rule_version
+
+
+def test_progress_apis_restore_owned_job_and_quota_settlement(geo_facts):
+    job, _ = _create(geo_facts)
+    user = geo_facts[0]
+    client = APIClient()
+    client.force_authenticate(user)
+
+    detail = client.get(f"/api/v1/geo/detections/{job.pk}")
+    progress = client.get(f"/api/v1/geo/detections/{job.pk}/model-progress")
+
+    assert detail.status_code == 200
+    assert detail.json()["data"]["progress_percent"] == 0
+    assert detail.json()["data"]["quota"] == {
+        "status": "open",
+        "held": 2,
+        "consumed": 0,
+        "released": 0,
+    }
+    assert progress.status_code == 200
+    assert (
+        progress.json()["data"]["items"][0]
+        | {
+            "model_key": "deepseek",
+            "status": "queued",
+            "planned_calls": 2,
+            "completed_calls": 0,
+        }
+        == progress.json()["data"]["items"][0]
+    )
+
+    cancel_detection(user=user, detection_id=job.pk)
+    terminal = client.get(f"/api/v1/geo/detections/{job.pk}")
+    assert terminal.status_code == 200
+    assert (
+        terminal.json()["data"]
+        | {
+            "status": "cancelled",
+            "completed_calls": 2,
+            "cancelled_calls": 2,
+            "progress_percent": 100,
+            "quota": {"status": "settled", "held": 2, "consumed": 0, "released": 2},
+        }
+        == terminal.json()["data"]
+    )
+
+
+def test_model_progress_api_returns_mixed_stored_run_statuses(geo_facts):
+    job, _ = _create(geo_facts)
+    user = geo_facts[0]
+    original = job.model_runs.get()
+    models = list(
+        AIModelRuntimeConfig.objects.select_related("model__provider")
+        .exclude(model_id=original.model_id)
+        .order_by("model__canonical_order")[:3]
+    )
+    assert len(models) == 3
+
+    original.status = GeoDetectionModelRun.Status.SUCCEEDED
+    original.completed_calls = 2
+    original.successful_calls = 2
+    original.save(update_fields=("status", "completed_calls", "successful_calls", "updated_at"))
+    run_facts = (
+        (models[0], GeoDetectionModelRun.Status.RUNNING, 2, 1, 1, 0, 0),
+        (models[1], GeoDetectionModelRun.Status.FAILED, 2, 2, 0, 2, 0),
+        (models[2], GeoDetectionModelRun.Status.CANCELLED, 2, 2, 0, 0, 2),
+    )
+    for runtime, status, planned, completed, succeeded, failed, cancelled in run_facts:
+        GeoDetectionModelRun.objects.create(
+            job=job,
+            model=runtime.model,
+            provider_key=runtime.model.provider.provider_key,
+            model_key=runtime.model.model_key,
+            provider_model_id=runtime.provider_model_id or f"{runtime.model.model_key}-test",
+            runtime_snapshot={},
+            adapter_version="progress-test-v1",
+            prompt_version="geo-detection-v1",
+            status=status,
+            planned_calls=planned,
+            completed_calls=completed,
+            successful_calls=succeeded,
+            failed_calls=failed,
+            cancelled_calls=cancelled,
+        )
+
+    client = APIClient()
+    client.force_authenticate(user)
+    response = client.get(f"/api/v1/geo/detections/{job.pk}/model-progress")
+    assert response.status_code == 200
+    items = {item["model_key"]: item for item in response.json()["data"]["items"]}
+    assert len(items) == 4
+    expected = {
+        original.model_key: ("succeeded", 2, 2, 2, 0, 0),
+        models[0].model.model_key: ("running", 2, 1, 1, 0, 0),
+        models[1].model.model_key: ("failed", 2, 2, 0, 2, 0),
+        models[2].model.model_key: ("cancelled", 2, 2, 0, 0, 2),
+    }
+    for model_key, facts in expected.items():
+        item = items[model_key]
+        assert item["model_id"]
+        assert (
+            item["status"],
+            item["planned_calls"],
+            item["completed_calls"],
+            item["successful_calls"],
+            item["failed_calls"],
+            item["cancelled_calls"],
+        ) == facts
+
+
+def test_progress_apis_hide_other_users_jobs_and_missing_jobs(geo_facts):
+    job, _ = _create(geo_facts)
+    User = get_user_model()
+    other = User.objects.create_user(
+        phone="13500135042",
+        nickname="Progress reader",
+        password="progress-test-password",
+        approval_status="approved",
+        approved_at=timezone.now(),
+    )
+    client = APIClient()
+    client.force_authenticate(other)
+
+    assert client.get(f"/api/v1/geo/detections/{job.pk}").status_code == 404
+    assert client.get(f"/api/v1/geo/detections/{job.pk}/model-progress").status_code == 404
+    assert client.get(f"/api/v1/geo/detections/{uuid.uuid4()}").status_code == 404
