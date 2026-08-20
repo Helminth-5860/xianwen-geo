@@ -20,11 +20,22 @@ def canonical_digest(value: object) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-def derive_detection_idempotency(*, user_id, subject_id, raw_key: str) -> str:
+def derive_geo_idempotency(*, namespace: str, user_id, subject_id, raw_key: str) -> str:
     key = (raw_key or "").strip()
     if not 16 <= len(key) <= 200 or any(ord(character) < 33 for character in key):
         raise ValueError("Invalid Idempotency-Key")
+    if not namespace or not namespace.replace("-", "").isalnum():
+        raise ValueError("Invalid idempotency namespace")
     master = settings.GEO_DETECTION_IDEMPOTENCY_HMAC_KEY.encode("utf-8")
-    subkey = hmac.new(master, b"geo-detection:idempotency:v1", hashlib.sha256).digest()
+    subkey = hmac.new(master, f"geo-{namespace}:idempotency:v1".encode(), hashlib.sha256).digest()
     message = f"{KEY_VERSION}:{user_id}:{subject_id}:{key}".encode()
     return hmac.new(subkey, message, hashlib.sha256).hexdigest()
+
+
+def derive_detection_idempotency(*, user_id, subject_id, raw_key: str) -> str:
+    return derive_geo_idempotency(
+        namespace="detection",
+        user_id=user_id,
+        subject_id=subject_id,
+        raw_key=raw_key,
+    )

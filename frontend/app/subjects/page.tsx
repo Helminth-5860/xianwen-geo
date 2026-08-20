@@ -86,7 +86,12 @@ export default function SubjectsPage() {
 
   return (
     <main className="page-shell">
-      <Typography.Title>{"\u6211\u7684\u4e3b\u4f53"}</Typography.Title>
+      <Space wrap align="baseline">
+        <Typography.Title>{"\u6211\u7684\u4e3b\u4f53"}</Typography.Title>
+        <Button href="/assistant" type="primary">
+          显问 AI 助手
+        </Button>
+      </Space>
       <Typography.Paragraph type="secondary">
         {
           "\u8349\u7a3f\u4e0d\u4ee3\u8868\u5df2\u6b63\u5f0f\u63d0\u4ea4\uff1b\u6fc0\u6d3b\u540e\u624d\u5360\u7528\u5957\u9910\u4e3b\u4f53\u540d\u989d\u3002"

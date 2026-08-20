@@ -18,6 +18,8 @@ class AIModelCapability(StrEnum):
     TEXT_GENERATION = "text_generation"
     IMAGE_GENERATION = "image_generation"
     SEMANTIC_SCORING = "semantic_scoring"
+    IMPROVEMENT_STRATEGY = "improvement_strategy"
+    SUBJECT_ASSISTANT = "subject_assistant"
 
 
 class AIFinishReason(StrEnum):

@@ -1,6 +1,8 @@
 from django.urls import path
 
 from .views import (
+    AssistantContextView,
+    AssistantRespondView,
     GeoDetectionCancelView,
     GeoDetectionCreateView,
     GeoDetectionDetailView,
@@ -21,7 +23,10 @@ from .views import (
     GeoReportQuestionView,
     GeoReportQuickRetestView,
     GeoReportRetestView,
+    GeoReportStrategiesView,
     GeoReportTrendsView,
+    StrategyDetailView,
+    StrategyNoteView,
 )
 
 urlpatterns = [
@@ -127,4 +132,26 @@ urlpatterns = [
         GeoReportRetestView.as_view(),
         name="geo-report-retest",
     ),
+    path(
+        "geo/reports/<uuid:report_id>/strategies",
+        GeoReportStrategiesView.as_view(),
+        name="geo-report-strategies",
+    ),
+    path(
+        "strategy-jobs/<uuid:strategy_id>",
+        StrategyDetailView.as_view(),
+        name="strategy-job-detail",
+    ),
+    path(
+        "strategies/<uuid:strategy_id>",
+        StrategyDetailView.as_view(),
+        name="strategy-detail",
+    ),
+    path(
+        "strategies/<uuid:strategy_id>/note",
+        StrategyNoteView.as_view(),
+        name="strategy-note",
+    ),
+    path("assistant/context", AssistantContextView.as_view(), name="assistant-context"),
+    path("assistant/respond", AssistantRespondView.as_view(), name="assistant-respond"),
 ]

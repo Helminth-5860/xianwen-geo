@@ -1777,25 +1777,141 @@ paths:
         in: path
         required: true
         schema: {type: string, format: uuid}
-      - $ref: '#/components/parameters/IdempotencyKey'
-    post:
+    get:
       tags: [Reports]
-      summary: 生成 GEO 改善策略
+      summary: 获取报告的不可变策略历史、首次免费状态和剩余额度
       responses:
-        '202':
-          description: 改善策略生成任务已创建
+        '200':
+          description: 策略历史，新版本不会覆盖旧 AI 正文
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/TaskEnvelope'
+              schema: {$ref: '#/components/schemas/ImprovementStrategyListEnvelope'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+    post:
+      tags: [Reports]
+      summary: 从不可变报告事实异步生成 GEO 改善策略
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ImprovementStrategyCreateRequest'}
+      responses:
+        '202':
+          description: 首份免费或重生成策略任务已创建；重生成仅成功后消费额度
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ImprovementStrategyEnvelope'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+        '409': {$ref: '#/components/responses/BusinessConflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+  /strategy-jobs/{strategyId}:
+    parameters:
+      - name: strategyId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    get:
+      tags: [Reports]
+      summary: 轮询当前用户策略生成状态和终态正文
+      responses:
+        '200': {description: 策略状态, content: {application/json: {schema: {$ref: '#/components/schemas/ImprovementStrategyEnvelope'}}}}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+  /strategies/{strategyId}:
+    parameters:
+      - name: strategyId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    get:
+      tags: [Reports]
+      summary: 获取当前用户的一份不可变策略结果
+      responses:
+        '200': {description: 策略结果, content: {application/json: {schema: {$ref: '#/components/schemas/ImprovementStrategyEnvelope'}}}}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+  /strategies/{strategyId}/note:
+    parameters:
+      - name: strategyId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    get:
+      tags: [Reports]
+      summary: 获取独立于 AI 正文的用户备注
+      responses:
+        '200': {description: 用户备注, content: {application/json: {schema: {$ref: '#/components/schemas/StrategyNoteEnvelope'}}}}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+    put:
+      tags: [Reports]
+      summary: 创建或按乐观版本更新用户备注
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/StrategyNoteWriteRequest'}}}}
+      responses:
+        '200': {description: 已保存, content: {application/json: {schema: {$ref: '#/components/schemas/StrategyNoteEnvelope'}}}}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+        '409': {$ref: '#/components/responses/BusinessConflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+    patch:
+      tags: [Reports]
+      summary: 按乐观版本更新用户备注
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/StrategyNoteWriteRequest'}}}}
+      responses:
+        '200': {description: 已保存, content: {application/json: {schema: {$ref: '#/components/schemas/StrategyNoteEnvelope'}}}}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+        '409': {$ref: '#/components/responses/BusinessConflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+    delete:
+      tags: [Reports]
+      summary: 按乐观版本删除用户备注，不影响不可变 AI 正文
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/StrategyNoteDeleteRequest'}}}}
+      responses:
+        '204': {description: 已删除}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+        '409': {$ref: '#/components/responses/BusinessConflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /assistant/context:
+    get:
+      tags: [Assistant]
+      summary: 获取服务端授权的当前主体和账号周期助手剩余额度
+      responses:
+        '200':
+          description: 当前主体上下文；不含聊天历史
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AssistantContextEnvelope'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
   /assistant/respond:
     post:
       tags: [Assistant]
-      summary: 显问 AI 助手单次回复，不保存聊天记录
+      summary: 固定 DeepSeek、仅当前主体的显问 AI 助手单次回复
+      description: 不保存用户消息或助手正文；成功消费一次 assistant_messages，失败或安全拒绝不消费，不执行任务。
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AssistantRespondRequest'}
       responses:
-        '200': {description: 助手回复}
-        '409':
-          $ref: '#/components/responses/BusinessConflict'
+        '200':
+          description: 仅本次响应正文、安全导航建议和剩余额度
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AssistantReplyEnvelope'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/PermissionDenied'}
+        '409': {$ref: '#/components/responses/BusinessConflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
   /subjects/{subjectId}/articles:
     parameters:
       - $ref: '#/components/parameters/SubjectId'
@@ -4816,6 +4932,231 @@ components:
                 detection_id: {type: string, format: uuid}
                 status: {type: string, enum: [queued]}
                 replayed: {type: boolean}
+    ImprovementStrategyCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [period]
+      properties:
+        period: {type: string, enum: [7d, 30d, 90d, custom]}
+        custom_days: {type: integer, minimum: 1, maximum: 365}
+        regenerate: {type: boolean, default: false}
+      description: custom 必须提供 custom_days；非 custom 禁止提供。已有成功策略时 regenerate 必须为 true。
+    StrategyPriority:
+      type: object
+      additionalProperties: false
+      required: [title, rationale, actions, success_metric]
+      properties:
+        title: {type: string, maxLength: 200}
+        rationale: {type: string, maxLength: 1200}
+        actions:
+          type: array
+          minItems: 1
+          maxItems: 8
+          items: {type: string, maxLength: 600}
+        success_metric: {type: string, maxLength: 600}
+    StrategyScheduleItem:
+      type: object
+      additionalProperties: false
+      required: [phase, focus, actions]
+      properties:
+        phase: {type: string, maxLength: 100}
+        focus: {type: string, maxLength: 600}
+        actions:
+          type: array
+          minItems: 1
+          maxItems: 8
+          items: {type: string, maxLength: 600}
+    StrategyArticleTopic:
+      type: object
+      additionalProperties: false
+      required: [title, reason, route]
+      properties:
+        title: {type: string, maxLength: 200}
+        reason: {type: string, maxLength: 600}
+        route:
+          type: string
+          description: 服务端生成的站内主题意图路由；访问本身不创建文章或消费 article_credits。
+    ImprovementStrategyBody:
+      type: object
+      additionalProperties: false
+      required: [overview, priorities, schedule, article_topics]
+      properties:
+        overview: {type: string, maxLength: 5000}
+        priorities:
+          type: array
+          minItems: 1
+          maxItems: 8
+          items: {$ref: '#/components/schemas/StrategyPriority'}
+        schedule:
+          type: array
+          minItems: 1
+          maxItems: 12
+          items: {$ref: '#/components/schemas/StrategyScheduleItem'}
+        article_topics:
+          type: array
+          maxItems: 12
+          items: {$ref: '#/components/schemas/StrategyArticleTopic'}
+    StrategyNote:
+      type: object
+      additionalProperties: false
+      required: [text, version, updated_at]
+      properties:
+        text: {type: string, maxLength: 10000}
+        version: {type: integer, minimum: 1}
+        updated_at: {type: string, format: date-time}
+    StrategyBilling:
+      type: object
+      additionalProperties: false
+      required: [mode, first_free, held, remaining]
+      properties:
+        mode: {type: string, enum: [free_initial, regeneration]}
+        first_free: {type: boolean}
+        held: {type: boolean}
+        remaining: {type: [integer, 'null'], minimum: 0}
+    StrategyProvenance:
+      type: object
+      additionalProperties: false
+      required: [provider_key, model_key, provider_model_id, adapter_version, prompt_version, schema_version, report_scoring_rule_version]
+      properties:
+        provider_key: {type: string, enum: [deepseek]}
+        model_key: {type: string, enum: [deepseek]}
+        provider_model_id: {type: string}
+        adapter_version: {type: string}
+        prompt_version: {type: string}
+        schema_version: {type: string}
+        report_scoring_rule_version: {type: string}
+    ImprovementStrategy:
+      type: object
+      additionalProperties: false
+      required: [id, report_id, subject_id, subject_version_id, period, period_days, status, billing, body, note, provenance, safe_error_code, created_at, generated_at, finished_at]
+      properties:
+        id: {type: string, format: uuid}
+        report_id: {type: string, format: uuid}
+        subject_id: {type: string, format: uuid}
+        subject_version_id: {type: string, format: uuid}
+        period: {type: string, enum: [7d, 30d, 90d, custom]}
+        period_days: {type: integer, minimum: 1, maximum: 365}
+        status: {type: string, enum: [queued, running, succeeded, failed]}
+        billing: {$ref: '#/components/schemas/StrategyBilling'}
+        body:
+          oneOf:
+            - $ref: '#/components/schemas/ImprovementStrategyBody'
+            - type: 'null'
+        note:
+          oneOf:
+            - $ref: '#/components/schemas/StrategyNote'
+            - type: 'null'
+        provenance: {$ref: '#/components/schemas/StrategyProvenance'}
+        safe_error_code: {type: string}
+        created_at: {type: string, format: date-time}
+        generated_at: {type: [string, 'null'], format: date-time}
+        finished_at: {type: [string, 'null'], format: date-time}
+    ImprovementStrategyEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          properties: {data: {$ref: '#/components/schemas/ImprovementStrategy'}}
+    ImprovementStrategyListEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          properties:
+            data:
+              type: object
+              additionalProperties: false
+              required: [items, first_free_available, remaining_regenerations]
+              properties:
+                items: {type: array, items: {$ref: '#/components/schemas/ImprovementStrategy'}}
+                first_free_available: {type: boolean}
+                remaining_regenerations: {type: [integer, 'null'], minimum: 0}
+    StrategyNoteWriteRequest:
+      type: object
+      additionalProperties: false
+      required: [text, expected_version]
+      properties:
+        text: {type: string, maxLength: 10000}
+        expected_version: {type: integer, minimum: 0}
+    StrategyNoteDeleteRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version]
+      properties:
+        expected_version: {type: integer, minimum: 1}
+    StrategyNoteEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          properties: {data: {$ref: '#/components/schemas/StrategyNote'}}
+    AssistantContextSubject:
+      type: object
+      additionalProperties: false
+      required: [id, version_id, name]
+      properties:
+        id: {type: string, format: uuid}
+        version_id: {type: string, format: uuid}
+        name: {type: string}
+    AssistantContextEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          properties:
+            data:
+              type: object
+              additionalProperties: false
+              required: [current_subject, remaining_messages]
+              properties:
+                current_subject:
+                  oneOf:
+                    - $ref: '#/components/schemas/AssistantContextSubject'
+                    - type: 'null'
+                remaining_messages: {type: [integer, 'null'], minimum: 0}
+    AssistantMessage:
+      type: object
+      additionalProperties: false
+      required: [role, content]
+      properties:
+        role: {type: string, enum: [user, assistant]}
+        content: {type: string, minLength: 1, maxLength: 2000}
+    AssistantRespondRequest:
+      type: object
+      additionalProperties: false
+      required: [subject_id, messages]
+      properties:
+        subject_id:
+          type: string
+          format: uuid
+          description: 必须等于服务端 SubjectContext.current_subject_id；请求正文不能切换授权范围。
+        messages:
+          type: array
+          minItems: 1
+          maxItems: 12
+          items: {$ref: '#/components/schemas/AssistantMessage'}
+      description: 总正文最多 8000 字且最后一条必须为 user；消息仅用于本次调用，不持久化。
+    AssistantSuggestedAction:
+      type: object
+      additionalProperties: false
+      required: [label, route]
+      properties:
+        label: {type: string}
+        route: {type: string, description: 服务端白名单站内导航，不代表执行任务。}
+    AssistantReplyEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          properties:
+            data:
+              type: object
+              additionalProperties: false
+              required: [answer, suggested_actions, remaining_messages, usage_event_id, history_persisted]
+              properties:
+                answer: {type: string, minLength: 1, maxLength: 6000}
+                suggested_actions:
+                  type: array
+                  maxItems: 4
+                  items: {$ref: '#/components/schemas/AssistantSuggestedAction'}
+                remaining_messages: {type: integer, minimum: 0}
+                usage_event_id: {type: string, format: uuid}
+                history_persisted: {type: boolean, const: false}
     GeoReportExportRequest:
       type: object
       additionalProperties: false
