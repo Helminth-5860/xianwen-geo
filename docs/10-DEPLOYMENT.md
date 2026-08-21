@@ -134,34 +134,40 @@ repo/
 - `nginx`
 - `frontend`
 - `api`
-- `celery_geo`
-- `celery_text`
-- `celery_image`
-- `celery_files`
-- `celery_beat`
+- `celery`（`system_tasks,ai_content`）
+- `geo-detection-worker`
+- `image-generation-worker`
+- `file-processing-worker`
+- `web-fetch-worker`
+- `celery-beat`
 
 PostgreSQL 和 Redis 使用云托管实例，不在生产 Compose 内自建。
 
 ## 7. Celery 队列
 
 ```text
-geo_detection    8模型调用
-geo_scoring      DeepSeek评分和报告聚合
-text_generation  主体补充、关键词、蒸馏、问题库、策略、文章、助手
-image_generation 豆包生图和AI图片处理
-file_processing  文件解析、网页抓取、导出、ZIP
-system_tasks     通知、重置、保留期、清理、健康检查
+geo_detection    检测模型调用
+ai_content       主体补充、关键词、蒸馏、问题库、策略和文章
+image_generation 豆包生图和 AI 图片处理
+file_processing  私有文件解析
+web_fetch        受限公网网页抓取
+system_tasks     调度、语义评分、报告聚合/导出、通知、重置、清理和健康检查
 ```
+
+当前没有生产任务路由到 `geo_scoring`。语义评分和报告聚合使用 `system_tasks`；不得为
+不存在的 route 创建空 worker。`RELEASE_EXPECTED_WORKER_QUEUES` 必须与上述真实 production
+route 集合完全一致，canonical Compose 必须为每个 queue 提供 consumer。
 
 ### 7.1 初期 Worker 建议
 
 当前 4 vCPU / 8 GiB 服务器上，外部 API 任务以 I/O 为主，但仍需控制内存：
 
 - API Gunicorn：2–3 workers，按压测调整
-- `celery_geo`：4–8 并发，受全站和每模型信号量二次限制
-- `celery_text`：2–4 并发
-- `celery_image`：1–2 并发
-- `celery_files`：1–2 并发
+- `geo-detection-worker`：4–8 并发，受全站和每模型信号量二次限制
+- `celery`：2–4 并发
+- `image-generation-worker`：1–2 并发
+- `file-processing-worker`：1–2 并发
+- `web-fetch-worker`：1 并发并保持 SSRF 网络边界
 
 不要一次启动过高并发。正式值以压力测试和内存监控为准。
 
