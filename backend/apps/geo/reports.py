@@ -517,8 +517,7 @@ def report_trends(*, user, subject_id) -> list[dict[str, Any]]:
     return items
 
 
-def _export_bytes(report: GeoReport, format: str) -> tuple[bytes, str]:
-    title = f"GEO Report {report.pk}"
+def full_report_snapshot(report: GeoReport) -> dict[str, Any]:
     export_payload: dict[str, Any] = {
         "report": report_payload(report),
         "questions": [],
@@ -536,7 +535,18 @@ def _export_bytes(report: GeoReport, format: str) -> tuple[bytes, str]:
                 )
                 question_copy["results"].append({**result, "full_answer": answer})
             export_payload["questions"].append(question_copy)
-    export_payload = _json_value(export_payload)
+    return _json_value(export_payload)
+
+
+def _export_bytes(
+    report: GeoReport, format: str, brand_snapshot: dict[str, Any] | None = None
+) -> tuple[bytes, str]:
+    brand_snapshot = brand_snapshot or {"brand_name": "显问 GEO", "white_label": False}
+    title = f"{brand_snapshot.get('brand_name') or '显问 GEO'} · GEO Report {report.pk}"
+    export_payload = full_report_snapshot(report)
+    export_payload["brand"] = {
+        key: value for key, value in brand_snapshot.items() if not key.endswith("_object_key")
+    }
     if format == "pdf":
         from reportlab.pdfbase import pdfmetrics  # type: ignore[import-untyped]
         from reportlab.pdfbase.cidfonts import UnicodeCIDFont  # type: ignore[import-untyped]
@@ -625,11 +635,13 @@ def _export_bytes(report: GeoReport, format: str) -> tuple[bytes, str]:
 def create_export(*, report: GeoReport, user, format: str) -> ReportExport:
     if user.pk != report.user_id or format not in ReportExport.Format.values:
         raise Http404
+    from .sharing import brand_snapshot_for_subject
+
     return ReportExport.objects.create(
         report=report,
         user=user,
         format=format,
-        brand_snapshot={"brand_name": "显问 GEO", "white_label": False},
+        brand_snapshot=brand_snapshot_for_subject(user=user, subject=report.subject),
     )
 
 
@@ -638,7 +650,9 @@ def execute_export(*, export_id) -> ReportExport:
     export.status = ReportExport.Status.RUNNING
     export.save(update_fields=("status",))
     try:
-        data, content_type = _export_bytes(export.report, export.format)
+        data, content_type = _export_bytes(
+            export.report, export.format, brand_snapshot=export.brand_snapshot
+        )
         extensions = {"pdf": "pdf", "word": "docx", "excel": "xlsx"}
         key = f"system/report-exports/{export.report_id}/{export.pk}.{extensions[export.format]}"
         storage_provider().put_system_object(key=key, data=data, content_type=content_type)

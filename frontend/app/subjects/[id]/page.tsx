@@ -303,6 +303,9 @@ export default function SubjectDetailPage() {
           <Typography.Paragraph>
             <Link href={`/subjects/${subject.id}/keywords`}>管理关键词</Link>
           </Typography.Paragraph>
+          <Typography.Paragraph>
+            <Link href={`/subjects/${subject.id}/articles/new`}>创建 GEO 文章与渠道稿</Link>
+          </Typography.Paragraph>
           <Typography.Paragraph type="secondary">
             {subject.form_schema.description}
           </Typography.Paragraph>

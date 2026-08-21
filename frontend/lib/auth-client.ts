@@ -116,6 +116,19 @@ export async function write<T>(
   });
   return readEnvelope<T>(response);
 }
+
+export async function remove<T>(path: string) {
+  const csrfToken = await getCsrfToken();
+  const response = await fetch(`${publicEnvironment.apiBaseUrl}${path}`, {
+    method: "DELETE",
+    credentials: "include",
+    headers: {
+      Accept: "application/json",
+      "X-CSRFToken": csrfToken,
+    },
+  });
+  return readEnvelope<T>(response);
+}
 export function sendSms(phone: string, purpose: SmsPurpose) {
   return post<{ sent: true; expires_in: number; resend_after: number }>("/auth/sms/send", {
     phone,

@@ -438,3 +438,9 @@ evidence boundaries.
 关键词领域位于 `apps.keywords`：人工草稿使用乐观并发，正式 `KeywordSetVersion/Keyword` 为不可变历史，并绑定提交时的正式 `SubjectVersion`。XW-0301 不实现 AI 生成、蒸馏或关键词额度扣减。
 
 专属 PostgreSQL 验证：`scripts/test-keywords.ps1` / `scripts/test-keywords.sh`。
+
+## Stage 2 内容生成、分发与完整报告分享
+
+文章类型/模板、确认资料包、正文/大纲、固定质量规则、临时优化对比、五种文章导出、独立渠道适配、SSRF-safe 发布链接检测、白标和完整报告快照分享已经形成一个非图片 Macro Wave。图片 `XW-0710`—`XW-0717` 因真实豆包图片 provider/credential 与生产 COS 尚未冻结而保持显式阻塞，不使用占位图伪造交付。
+
+安全、额度、迁移、部署、测试和精确拆分依据见 [docs/56-STAGE2-CONTENT-DISTRIBUTION-WAVE.md](docs/56-STAGE2-CONTENT-DISTRIBUTION-WAVE.md)。专属 PostgreSQL 验证：`scripts/test-stage2-content.ps1` / `scripts/test-stage2-content.sh`。

@@ -21,6 +21,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { AuthApiError, userMessage } from "@/lib/auth-client";
+import { ReportSharing } from "@/components/report-sharing";
 import {
   adjustedRetest,
   createReportExport,
@@ -556,6 +557,7 @@ export default function GeoReportPage(props: Props) {
                 </Space>
               </Space>
             </Card>
+            <ReportSharing reportId={report.id} subjectId={report.subject_id} />
           </>
         )}
       </Space>

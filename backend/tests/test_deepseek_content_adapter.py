@@ -7,8 +7,10 @@ import httpx
 import pytest
 
 from apps.ai.adapters.deepseek_content import (
+    DEEPSEEK_ARTICLE_DESCRIPTOR,
     DEEPSEEK_ASSISTANT_DESCRIPTOR,
     DEEPSEEK_STRATEGY_DESCRIPTOR,
+    DeepSeekArticleAdapter,
     DeepSeekStrategyAdapter,
     DeepSeekSubjectAssistantAdapter,
 )
@@ -91,11 +93,35 @@ def test_deepseek_structured_adapter_uses_credential_in_header_and_returns_only_
     assert "must-not-survive" not in repr(response)
 
 
-def test_deepseek_strategy_and_assistant_capabilities_are_separate_and_fixed():
+def test_deepseek_structured_capabilities_are_separate_and_fixed():
     assert DEEPSEEK_STRATEGY_DESCRIPTOR.identity.provider_key == "deepseek"
     assert DEEPSEEK_ASSISTANT_DESCRIPTOR.identity.provider_key == "deepseek"
     assert DEEPSEEK_STRATEGY_DESCRIPTOR.capabilities == {AIModelCapability.IMPROVEMENT_STRATEGY}
     assert DEEPSEEK_ASSISTANT_DESCRIPTOR.capabilities == {AIModelCapability.SUBJECT_ASSISTANT}
+    assert DEEPSEEK_ARTICLE_DESCRIPTOR.capabilities == {AIModelCapability.TEXT_GENERATION}
+
+    article = DeepSeekArticleAdapter(
+        credential_resolver=_CredentialResolver(),
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(
+                200,
+                json={
+                    "model": "deepseek-chat",
+                    "choices": [
+                        {
+                            "finish_reason": "stop",
+                            "message": {"content": json.dumps({"outline": "已核验资料大纲"})},
+                        }
+                    ],
+                    "usage": {"prompt_tokens": 2, "completion_tokens": 2, "total_tokens": 4},
+                },
+            )
+        ),
+    )
+    response = article.invoke(
+        _request(article, AIModelCapability.TEXT_GENERATION, {"frozen_source_pack": {}})
+    )
+    assert response.output.content == {"outline": "已核验资料大纲"}
 
     adapter = DeepSeekStrategyAdapter(
         credential_resolver=_CredentialResolver(),

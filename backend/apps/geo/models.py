@@ -1430,3 +1430,95 @@ class AssistantUsageEvent(models.Model):  # noqa: DJ008
 
     def delete(self, *args, **kwargs):
         raise TypeError("Assistant usage evidence cannot be deleted.")
+
+
+class SubjectWhiteLabelConfig(models.Model):  # noqa: DJ008
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    subject = models.OneToOneField(
+        "subjects.Subject", on_delete=models.PROTECT, related_name="white_label_config"
+    )
+    brand_name = models.CharField(max_length=100)
+    logo_document_version = models.ForeignKey(
+        "documents.DocumentVersion",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="white_label_logos",
+    )
+    cover_document_version = models.ForeignKey(
+        "documents.DocumentVersion",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="white_label_covers",
+    )
+    primary_color = models.CharField(max_length=7, default="#1677ff")
+    header_text = models.CharField(max_length=500, blank=True)
+    footer_text = models.CharField(max_length=500, blank=True)
+    contact = models.CharField(max_length=500, blank=True)
+    statement = models.TextField(blank=True)
+    version = models.PositiveBigIntegerField(default=1)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "subject_white_label_configs"
+        constraints = [
+            models.CheckConstraint(condition=Q(version__gte=1), name="white_label_version_gte_1")
+        ]
+
+
+class ReportShare(models.Model):  # noqa: DJ008
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    report = models.ForeignKey(GeoReport, on_delete=models.PROTECT, related_name="shares")
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="report_shares"
+    )
+    subject = models.ForeignKey(
+        "subjects.Subject", on_delete=models.PROTECT, related_name="report_shares"
+    )
+    token_digest = models.CharField(max_length=64, unique=True)
+    report_snapshot = models.JSONField()
+    report_snapshot_digest = models.CharField(max_length=64)
+    brand_snapshot = models.JSONField()
+    password_hash = models.CharField(max_length=255, blank=True)
+    expires_at = models.DateTimeField(null=True, blank=True)
+    closed_at = models.DateTimeField(null=True, blank=True)
+    access_count = models.PositiveBigIntegerField(default=0)
+    last_accessed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "report_shares"
+        ordering = ("-created_at", "-id")
+        indexes = [
+            models.Index(fields=("user", "report", "created_at"), name="report_share_owner_idx")
+        ]
+
+    def delete(self, *args, **kwargs):
+        raise TypeError("Report shares must be closed, not deleted.")
+
+
+class ReportShareAccessLog(models.Model):  # noqa: DJ008
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    share = models.ForeignKey(ReportShare, on_delete=models.PROTECT, related_name="access_logs")
+    ip_digest = models.CharField(max_length=64)
+    user_agent = models.CharField(max_length=300, blank=True)
+    result = models.CharField(max_length=32)
+    accessed_at = models.DateTimeField(auto_now_add=True)
+
+    objects = ImmutableSnapshotQuerySet.as_manager()
+
+    class Meta:
+        db_table = "report_share_access_logs"
+        ordering = ("-accessed_at", "-id")
+        indexes = [models.Index(fields=("share", "accessed_at"), name="share_access_time_idx")]
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise TypeError("Share access logs are append-only.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise TypeError("Share access logs are append-only.")

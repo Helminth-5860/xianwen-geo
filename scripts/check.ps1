@@ -241,6 +241,8 @@ function Invoke-DockerChecks {
         GEO_DETECTION_IDEMPOTENCY_HMAC_KEY = "ci-only-geo-detection-hmac-key-with-more-than-fifty-characters-000000"
         PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY = "ci-only-plan-change-hmac-key-with-more-than-fifty-characters-000000"
         WEB_IMPORT_IDEMPOTENCY_HMAC_KEY = "ci-only-web-import-hmac-key-with-more-than-fifty-characters-000000"
+        ARTICLE_IDEMPOTENCY_HMAC_KEY = "ci-only-article-hmac-key-with-more-than-fifty-characters-000000"
+        REPORT_SHARE_HMAC_KEY = "ci-only-report-share-hmac-key-with-more-than-fifty-characters-000000"
         ALLOWED_HOSTS = "localhost,api"
         CSRF_TRUSTED_ORIGINS = "http://localhost:3000"
         CORS_ALLOWED_ORIGINS = "http://localhost:3000"

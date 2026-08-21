@@ -78,6 +78,7 @@ INSTALLED_APPS = [
     "apps.questions",
     "apps.documents",
     "apps.web_sources",
+    "apps.articles",
 ]
 
 MIDDLEWARE = [
@@ -277,6 +278,21 @@ WEB_IMPORT_RATE_LIMIT_SUBJECT = positive_env_int("WEB_IMPORT_RATE_LIMIT_SUBJECT"
 WEB_IMPORT_RATE_LIMIT_HOST = positive_env_int("WEB_IMPORT_RATE_LIMIT_HOST", 20)
 WEB_IMPORT_USER_AGENT = os.getenv("WEB_IMPORT_USER_AGENT", "XianwenWebImporter/1.0").strip()
 WEB_IMPORT_TEST_ALLOWED_CIDRS: tuple = ()
+ARTICLE_IDEMPOTENCY_HMAC_KEY = os.getenv(
+    "ARTICLE_IDEMPOTENCY_HMAC_KEY",
+    "local-test-article-idempotency-key-not-for-production",
+).strip()
+if len(ARTICLE_IDEMPOTENCY_HMAC_KEY) < 32:
+    raise ImproperlyConfigured("ARTICLE_IDEMPOTENCY_HMAC_KEY is too weak; minimum length is 32.")
+REPORT_SHARE_HMAC_KEY = os.getenv(
+    "REPORT_SHARE_HMAC_KEY",
+    "local-test-report-share-hmac-key-not-for-production",
+).strip()
+if len(REPORT_SHARE_HMAC_KEY) < 32:
+    raise ImproperlyConfigured("REPORT_SHARE_HMAC_KEY is too weak; minimum length is 32.")
+REPORT_SHARE_SESSION_TTL_SECONDS = positive_env_int("REPORT_SHARE_SESSION_TTL_SECONDS", 1800)
+REPORT_SHARE_MAX_EXPIRY_DAYS = positive_env_int("REPORT_SHARE_MAX_EXPIRY_DAYS", 365)
+ARTICLE_COMPARISON_TTL_SECONDS = positive_env_int("ARTICLE_COMPARISON_TTL_SECONDS", 86400)
 SUBJECT_ENRICHMENT_PROVIDER = (
     os.getenv("SUBJECT_ENRICHMENT_PROVIDER", "unavailable").strip().lower()
 )

@@ -36,6 +36,8 @@ DEEPSEEK_STRATEGY_ADAPTER_VERSION = "deepseek-strategy-v1"
 DEEPSEEK_STRATEGY_PROMPT_VERSION = "geo-improvement-strategy-v1"
 DEEPSEEK_ASSISTANT_ADAPTER_VERSION = "deepseek-assistant-v1"
 DEEPSEEK_ASSISTANT_PROMPT_VERSION = "subject-assistant-v1"
+DEEPSEEK_ARTICLE_ADAPTER_VERSION = "deepseek-article-v1"
+DEEPSEEK_ARTICLE_PROMPT_VERSION = "geo-article-content-v1"
 
 DEEPSEEK_STRATEGY_DESCRIPTOR = AIAdapterDescriptor(
     identity=AIModelIdentity(provider_key="deepseek", model_key="deepseek"),
@@ -48,6 +50,12 @@ DEEPSEEK_ASSISTANT_DESCRIPTOR = AIAdapterDescriptor(
     capabilities=frozenset({AIModelCapability.SUBJECT_ASSISTANT}),
     adapter_version=DEEPSEEK_ASSISTANT_ADAPTER_VERSION,
     prompt_version=DEEPSEEK_ASSISTANT_PROMPT_VERSION,
+)
+DEEPSEEK_ARTICLE_DESCRIPTOR = AIAdapterDescriptor(
+    identity=AIModelIdentity(provider_key="deepseek", model_key="deepseek"),
+    capabilities=frozenset({AIModelCapability.TEXT_GENERATION}),
+    adapter_version=DEEPSEEK_ARTICLE_ADAPTER_VERSION,
+    prompt_version=DEEPSEEK_ARTICLE_PROMPT_VERSION,
 )
 
 
@@ -211,8 +219,13 @@ class DeepSeekSubjectAssistantAdapter(_DeepSeekStructuredContentAdapter):
     descriptor = DEEPSEEK_ASSISTANT_DESCRIPTOR
 
 
+class DeepSeekArticleAdapter(_DeepSeekStructuredContentAdapter):
+    descriptor = DEEPSEEK_ARTICLE_DESCRIPTOR
+
+
 def register_deepseek_content_adapters(
     registry: AIModelRegistry = model_registry,
 ) -> None:
     registry.register(DEEPSEEK_STRATEGY_DESCRIPTOR, DeepSeekStrategyAdapter)
     registry.register(DEEPSEEK_ASSISTANT_DESCRIPTOR, DeepSeekSubjectAssistantAdapter)
+    registry.register(DEEPSEEK_ARTICLE_DESCRIPTOR, DeepSeekArticleAdapter)

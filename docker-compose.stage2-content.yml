@@ -1,0 +1,48 @@
+services:
+  stage2-content-migrate:
+    profiles: [stage2-content-test]
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: test
+    command: ["python", "manage.py", "migrate", "--noinput"]
+    environment: &stage2-content-env
+      DJANGO_SETTINGS_MODULE: config.django_settings.stage2_content_test
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?set isolated Stage 2 test secret}
+      DATABASE_URL: ${DATABASE_URL:?set isolated Stage 2 test database URL}
+      REDIS_URL: redis://redis:6379/15
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:?set isolated Stage 2 test broker URL}
+      SMS_VERIFICATION_HMAC_KEY: ${SMS_VERIFICATION_HMAC_KEY:?set isolated SMS HMAC key}
+      QUOTA_IDEMPOTENCY_HMAC_KEY: ${QUOTA_IDEMPOTENCY_HMAC_KEY:?set isolated quota HMAC key}
+      GEO_DETECTION_IDEMPOTENCY_HMAC_KEY: ${GEO_DETECTION_IDEMPOTENCY_HMAC_KEY:?set isolated GEO HMAC key}
+      PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY: ${PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY:?set isolated plan HMAC key}
+      WEB_IMPORT_IDEMPOTENCY_HMAC_KEY: ${WEB_IMPORT_IDEMPOTENCY_HMAC_KEY:?set isolated web import HMAC key}
+      QUESTION_GENERATION_IDEMPOTENCY_HMAC_KEY: ${QUESTION_GENERATION_IDEMPOTENCY_HMAC_KEY:?set isolated question HMAC key}
+      ARTICLE_IDEMPOTENCY_HMAC_KEY: ${ARTICLE_IDEMPOTENCY_HMAC_KEY:?set isolated article HMAC key}
+      REPORT_SHARE_HMAC_KEY: ${REPORT_SHARE_HMAC_KEY:?set isolated report share HMAC key}
+      API_CREDENTIAL_ENVIRONMENT: staging
+      RUN_MIGRATIONS: "false"
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+
+  stage2-content-tests:
+    profiles: [stage2-content-test]
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: test
+    command:
+      - python
+      - -m
+      - pytest
+      - tests/test_stage2_content_distribution.py
+      - tests/test_stage2_content_postgres.py
+      - -x
+      - --reuse-db
+      - -p
+      - no:cacheprovider
+    environment: *stage2-content-env
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}

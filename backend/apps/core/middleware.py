@@ -2,6 +2,7 @@ import logging
 from time import monotonic
 
 from .context import reset_request_id, set_request_id
+from .redaction import redact_request_path
 from .request_ids import request_id_or_new
 
 logger = logging.getLogger("xianwen.request")
@@ -29,7 +30,7 @@ class RequestIdMiddleware:
                 extra={
                     "request_id": request_id,
                     "method": request.method,
-                    "path": request.path,
+                    "path": redact_request_path(request.path),
                     "status_code": status_code,
                     "duration_ms": round((monotonic() - started_at) * 1000, 2),
                 },

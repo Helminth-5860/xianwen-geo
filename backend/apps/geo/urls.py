@@ -23,10 +23,16 @@ from .views import (
     GeoReportQuestionView,
     GeoReportQuickRetestView,
     GeoReportRetestView,
+    GeoReportSharesView,
     GeoReportStrategiesView,
     GeoReportTrendsView,
+    PublicReportSharePdfView,
+    PublicReportShareUnlockView,
+    PublicReportShareView,
+    ReportShareCloseView,
     StrategyDetailView,
     StrategyNoteView,
+    SubjectWhiteLabelView,
 )
 
 urlpatterns = [
@@ -154,4 +160,34 @@ urlpatterns = [
     ),
     path("assistant/context", AssistantContextView.as_view(), name="assistant-context"),
     path("assistant/respond", AssistantRespondView.as_view(), name="assistant-respond"),
+    path(
+        "subjects/<uuid:subject_id>/white-label",
+        SubjectWhiteLabelView.as_view(),
+        name="subject-white-label",
+    ),
+    path(
+        "geo/reports/<uuid:report_id>/shares",
+        GeoReportSharesView.as_view(),
+        name="geo-report-shares",
+    ),
+    path(
+        "report-shares/<uuid:share_id>",
+        ReportShareCloseView.as_view(),
+        name="report-share-close",
+    ),
+    path(
+        "public/report-shares/<str:token>",
+        PublicReportShareView.as_view(),
+        name="public-report-share",
+    ),
+    path(
+        "public/report-shares/<str:token>/unlock",
+        PublicReportShareUnlockView.as_view(),
+        name="public-report-share-unlock",
+    ),
+    path(
+        "public/report-shares/<str:token>/pdf",
+        PublicReportSharePdfView.as_view(),
+        name="public-report-share-pdf",
+    ),
 ]

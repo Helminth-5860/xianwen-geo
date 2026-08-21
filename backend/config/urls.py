@@ -15,6 +15,7 @@ urlpatterns = [
     path("api/v1/", include("apps.questions.urls")),
     path("api/v1/", include("apps.documents.urls")),
     path("api/v1/", include("apps.web_sources.urls")),
+    path("api/v1/", include("apps.articles.urls")),
 ]
 
 handler404 = "apps.core.handlers.api_page_not_found"
