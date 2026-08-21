@@ -174,6 +174,7 @@ def test_disposition_is_append_only_and_latest_decision_controls_active_filter(m
         entity=entity, actor=job.user, decision="competitor", note="Restored"
     )
     assert first.pk != second.pk
+    assert second.pk.int > first.pk.int
     assert CompetitorDisposition.objects.filter(entity=entity).count() == 2
     assert CompetitorMention.objects.filter(entity=entity).count() == evidence_count
     assert active_competitor_entities(job=job).filter(pk=entity.pk).exists()

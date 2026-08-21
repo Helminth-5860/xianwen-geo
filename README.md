@@ -444,3 +444,9 @@ evidence boundaries.
 文章类型/模板、确认资料包、正文/大纲、固定质量规则、临时优化对比、五种文章导出、独立渠道适配、SSRF-safe 发布链接检测、白标和完整报告快照分享构成内容分发波次。图片 `XW-0710`—`XW-0717` 已按独立豆包 ImageGenerations adapter、capability runtime/credential binding、逐图额度、私有存储、审核、主体图库、普通衍生图和 ZIP 下载实现；真实 Stage/Production 凭据与 COS smoke 仍是 Stage 3 UAT gate，不使用占位图伪造交付。
 
 安全、额度、迁移、部署、测试和精确拆分依据见 [docs/56-STAGE2-CONTENT-DISTRIBUTION-WAVE.md](docs/56-STAGE2-CONTENT-DISTRIBUTION-WAVE.md)。专属 PostgreSQL 验证：`scripts/test-stage2-content.ps1` / `scripts/test-stage2-content.sh`。
+
+## Stage 3 商用运营、发布加固与代码侧 UAT
+
+Stage 3 code-only 波次提供按 own/role/all 范围隔离的客户状态/标签、不可变联系记录、跟进、任务安全投影、文章/图片人工审核、公告、反馈、一次性只读协助视角、运营看板和经确认的脱敏 CSV 导出。发布就绪 API 与命令始终 fail closed；真实 COS、短信、Provider、worker 和恢复演练必须为同一完整 deploy SHA 留下短期不可变证据，否则状态保持 `NOT_READY`。
+
+仓库内的发布脚本只提供 ff-only、exact-SHA、dirty tree、迁移感知回滚、备份目录校验及原子 `DEPLOYED_SHA` guard，本轮不代表执行过部署。详细边界见 [docs/58-STAGE3-RELEASE-HARDENING-UAT-WAVE.md](docs/58-STAGE3-RELEASE-HARDENING-UAT-WAVE.md)；隔离 PostgreSQL/Redis 验证运行 `scripts/test-stage3-release.ps1` 或 `scripts/test-stage3-release.sh`。

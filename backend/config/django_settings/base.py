@@ -80,10 +80,12 @@ INSTALLED_APPS = [
     "apps.web_sources",
     "apps.articles",
     "apps.images",
+    "apps.operations",
 ]
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "apps.core.middleware.SecurityHeadersMiddleware",
     "apps.core.middleware.RequestIdMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -209,6 +211,11 @@ if len(FILE_IDEMPOTENCY_HMAC_KEY) < 32:
     raise ImproperlyConfigured("FILE_IDEMPOTENCY_HMAC_KEY is too weak; minimum length is 32.")
 FILE_STORAGE_PROVIDER = os.getenv("FILE_STORAGE_PROVIDER", "s3").strip().lower()
 FILE_SCANNER_PROVIDER = os.getenv("FILE_SCANNER_PROVIDER", "mock").strip().lower()
+CLAMAV_HOST = os.getenv("CLAMAV_HOST", "").strip()
+CLAMAV_PORT = positive_env_int("CLAMAV_PORT", 3310)
+CLAMAV_TIMEOUT_SECONDS = positive_env_int("CLAMAV_TIMEOUT_SECONDS", 10)
+if CLAMAV_TIMEOUT_SECONDS > 60:
+    raise ImproperlyConfigured("CLAMAV_TIMEOUT_SECONDS must not exceed 60.")
 FILE_UPLOAD_MAX_BYTES = positive_env_int("FILE_UPLOAD_MAX_BYTES", 50 * 1024 * 1024)
 FILE_UPLOAD_URL_TTL = positive_env_int("FILE_UPLOAD_URL_TTL", 300)
 FILE_DOWNLOAD_URL_TTL = positive_env_int("FILE_DOWNLOAD_URL_TTL", 300)
@@ -555,3 +562,31 @@ CELERY_TASK_ROUTES = {
     "web_sources.execute_import": {"queue": "web_fetch"},
     "images.execute_generation": {"queue": "image_generation"},
 }
+
+RELEASE_EXPECTED_WORKER_QUEUES = tuple(
+    env_list(
+        "RELEASE_EXPECTED_WORKER_QUEUES",
+        "geo_detection,geo_scoring,ai_content,image_generation,file_processing,web_fetch,system_tasks",
+    )
+)
+if not RELEASE_EXPECTED_WORKER_QUEUES or len(set(RELEASE_EXPECTED_WORKER_QUEUES)) != len(
+    RELEASE_EXPECTED_WORKER_QUEUES
+):
+    raise ImproperlyConfigured("RELEASE_EXPECTED_WORKER_QUEUES must be non-empty and unique.")
+
+RELEASE_DEPLOY_SHA = os.getenv("RELEASE_DEPLOY_SHA", "").strip().lower()
+RELEASE_EXPECTED_EXTERNAL_EVIDENCE = tuple(
+    env_list(
+        "RELEASE_EXPECTED_EXTERNAL_EVIDENCE",
+        (
+            "cos_private_read_write_delete,sms_delivery,deepseek_geo_detection,"
+            "doubao_geo_detection,qwen_geo_detection,hunyuan_geo_detection,"
+            "wenxin_geo_detection,kimi_geo_detection,glm_geo_detection,"
+            "spark_geo_detection,doubao_image_generation"
+        ),
+    )
+)
+if not RELEASE_EXPECTED_EXTERNAL_EVIDENCE or len(set(RELEASE_EXPECTED_EXTERNAL_EVIDENCE)) != len(
+    RELEASE_EXPECTED_EXTERNAL_EVIDENCE
+):
+    raise ImproperlyConfigured("RELEASE_EXPECTED_EXTERNAL_EVIDENCE must be non-empty and unique.")

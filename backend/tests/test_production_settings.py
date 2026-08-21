@@ -83,6 +83,23 @@ def import_settings(overrides: dict[str, str] | None = None, missing: str | None
             "ALLOWED_HOSTS",
             "CSRF_TRUSTED_ORIGINS",
             "CORS_ALLOWED_ORIGINS",
+            "RELEASE_ENFORCE_EXTERNAL_READINESS",
+            "RELEASE_DEPLOY_SHA",
+            "CLAMAV_HOST",
+            "S3_ENDPOINT_URL",
+            "S3_REGION",
+            "S3_BUCKET",
+            "S3_ACCESS_KEY",
+            "S3_SECRET_KEY",
+            "ENABLE_REAL_SMS",
+            "SMS_REGION",
+            "SMS_APP_ID",
+            "SMS_SECRET_ID",
+            "SMS_SECRET_KEY",
+            "SMS_SIGN_NAME",
+            "SMS_TEMPLATE_REGISTER",
+            "SMS_TEMPLATE_LOGIN",
+            "SMS_TEMPLATE_SECURITY",
         }
     }
     environment.update(REQUIRED_ENVIRONMENT)
@@ -313,6 +330,48 @@ def test_production_rejects_unsafe_configuration(overrides, expected_error):
 def test_production_accepts_complete_safe_configuration():
     result = import_settings()
     assert result.returncode == 0, result.stderr
+
+
+def test_production_release_enforcement_requires_exact_sha_and_external_dependencies():
+    invalid_sha = import_settings(
+        overrides={"RELEASE_ENFORCE_EXTERNAL_READINESS": "true", "RELEASE_DEPLOY_SHA": "abc"}
+    )
+    assert invalid_sha.returncode != 0
+    assert "RELEASE_DEPLOY_SHA must be a full lowercase Git SHA" in invalid_sha.stderr
+
+    missing_dependencies = import_settings(
+        overrides={
+            "RELEASE_ENFORCE_EXTERNAL_READINESS": "true",
+            "RELEASE_DEPLOY_SHA": "1" * 40,
+        }
+    )
+    assert missing_dependencies.returncode != 0
+    assert "External readiness requires private S3 storage and ClamAV scanning" in (
+        missing_dependencies.stderr
+    )
+
+
+def test_production_clamav_requires_an_explicit_host():
+    result = import_settings(overrides={"FILE_SCANNER_PROVIDER": "clamav"})
+    assert result.returncode != 0
+    assert "CLAMAV_HOST is required" in result.stderr
+
+
+def test_production_rejects_storage_secret_reuse_across_release_credentials():
+    result = import_settings(
+        overrides={
+            "FILE_STORAGE_PROVIDER": "s3",
+            "S3_ENDPOINT_URL": "https://cos.example.com",
+            "S3_REGION": "ap-shanghai",
+            "S3_BUCKET": "xianwen-private",
+            "S3_ACCESS_KEY": "storage-access-id",
+            "S3_SECRET_KEY": "x" * 64,
+        }
+    )
+    assert result.returncode != 0
+    assert "S3_SECRET_KEY must not reuse the value configured for DJANGO_SECRET_KEY" in (
+        result.stderr
+    )
 
 
 def test_production_rejects_sms_hmac_reusing_database_password():

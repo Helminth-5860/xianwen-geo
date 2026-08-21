@@ -1,0 +1,147 @@
+from django.urls import path
+
+from .views import (
+    AdminAnnouncementActionView,
+    AdminAnnouncementListCreateView,
+    AdminArticleModerationDecisionView,
+    AdminBackupRecordsView,
+    AdminCustomerContactListCreateView,
+    AdminCustomerDetailView,
+    AdminCustomerExportView,
+    AdminCustomerFollowupListCreateView,
+    AdminCustomerListView,
+    AdminCustomerStatusDetailView,
+    AdminCustomerStatusListCreateView,
+    AdminCustomerTagDetailView,
+    AdminCustomerTagListCreateView,
+    AdminDashboardView,
+    AdminFeedbackActionView,
+    AdminFeedbackListView,
+    AdminFollowupActionView,
+    AdminImageModerationDecisionView,
+    AdminModerationListView,
+    AdminReleaseReadinessView,
+    AdminRetentionJobsView,
+    AdminSupportViewCreateView,
+    AdminSupportViewSummaryView,
+    AdminSystemAlertActionView,
+    AdminSystemAlertsView,
+    AdminTasksView,
+    AnnouncementListView,
+    FeedbackDetailView,
+    FeedbackListCreateView,
+    SupportViewDecisionView,
+    UsageRecordsView,
+)
+
+urlpatterns = [
+    path("announcements", AnnouncementListView.as_view(), name="announcements"),
+    path("feedback", FeedbackListCreateView.as_view(), name="feedback"),
+    path("feedback/<uuid:feedback_id>", FeedbackDetailView.as_view(), name="feedback-detail"),
+    path("usage-records", UsageRecordsView.as_view(), name="usage-records"),
+    path(
+        "support-view-requests/<uuid:support_id>/decision",
+        SupportViewDecisionView.as_view(),
+        name="support-view-decision",
+    ),
+    path(
+        "admin/operations/dashboard",
+        AdminDashboardView.as_view(),
+        name="admin-operations-dashboard",
+    ),
+    path("admin/operations/customers", AdminCustomerListView.as_view(), name="admin-customers"),
+    path(
+        "admin/operations/exports/customers",
+        AdminCustomerExportView.as_view(),
+        name="admin-customer-export",
+    ),
+    path(
+        "admin/operations/customers/<uuid:customer_id>",
+        AdminCustomerDetailView.as_view(),
+        name="admin-customer-detail",
+    ),
+    path(
+        "admin/operations/customers/<uuid:customer_id>/contacts",
+        AdminCustomerContactListCreateView.as_view(),
+        name="admin-customer-contacts",
+    ),
+    path(
+        "admin/operations/customers/<uuid:customer_id>/followups",
+        AdminCustomerFollowupListCreateView.as_view(),
+        name="admin-customer-followups",
+    ),
+    path(
+        "admin/operations/followups/<uuid:followup_id>/action",
+        AdminFollowupActionView.as_view(),
+        name="admin-followup-action",
+    ),
+    path(
+        "admin/customer-statuses",
+        AdminCustomerStatusListCreateView.as_view(),
+        name="admin-customer-statuses",
+    ),
+    path(
+        "admin/customer-statuses/<uuid:catalog_id>",
+        AdminCustomerStatusDetailView.as_view(),
+        name="admin-customer-status-detail",
+    ),
+    path(
+        "admin/customer-tags", AdminCustomerTagListCreateView.as_view(), name="admin-customer-tags"
+    ),
+    path(
+        "admin/customer-tags/<uuid:catalog_id>",
+        AdminCustomerTagDetailView.as_view(),
+        name="admin-customer-tag-detail",
+    ),
+    path("admin/tasks", AdminTasksView.as_view(), name="admin-tasks"),
+    path("admin/moderation", AdminModerationListView.as_view(), name="admin-moderation"),
+    path(
+        "admin/moderation/articles/<uuid:article_id>/decision",
+        AdminArticleModerationDecisionView.as_view(),
+        name="admin-article-moderation-decision",
+    ),
+    path(
+        "admin/moderation/images/<uuid:image_id>/decision",
+        AdminImageModerationDecisionView.as_view(),
+        name="admin-image-moderation-decision",
+    ),
+    path(
+        "admin/announcements",
+        AdminAnnouncementListCreateView.as_view(),
+        name="admin-announcements",
+    ),
+    path(
+        "admin/announcements/<uuid:announcement_id>/action",
+        AdminAnnouncementActionView.as_view(),
+        name="admin-announcement-action",
+    ),
+    path("admin/feedback", AdminFeedbackListView.as_view(), name="admin-feedback"),
+    path(
+        "admin/feedback/<uuid:feedback_id>/action",
+        AdminFeedbackActionView.as_view(),
+        name="admin-feedback-action",
+    ),
+    path(
+        "admin/users/<uuid:customer_id>/support-view-request",
+        AdminSupportViewCreateView.as_view(),
+        name="admin-support-view-create",
+    ),
+    path(
+        "admin/support-view-sessions/<uuid:support_id>/summary",
+        AdminSupportViewSummaryView.as_view(),
+        name="admin-support-view-summary",
+    ),
+    path(
+        "admin/release-readiness",
+        AdminReleaseReadinessView.as_view(),
+        name="admin-release-readiness",
+    ),
+    path("admin/system-alerts", AdminSystemAlertsView.as_view(), name="admin-system-alerts"),
+    path(
+        "admin/system-alerts/<uuid:alert_id>/action",
+        AdminSystemAlertActionView.as_view(),
+        name="admin-system-alert-action",
+    ),
+    path("admin/backups", AdminBackupRecordsView.as_view(), name="admin-backups"),
+    path("admin/retention-jobs", AdminRetentionJobsView.as_view(), name="admin-retention-jobs"),
+]

@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from django.db import transaction
 from django.db.models import OuterRef, QuerySet, Subquery
@@ -220,10 +220,14 @@ def persist_competitor_reference(*, job: GeoDetectionJob) -> tuple[CompetitorEnt
     return tuple(entities)
 
 
+@transaction.atomic
 def record_competitor_disposition(
     *, entity: CompetitorEntity, actor, decision: str, note: str = ""
 ) -> CompetitorDisposition:
-    if actor.pk != entity.job.user_id:
+    locked_entity = (
+        CompetitorEntity.objects.select_for_update().select_related("job").get(pk=entity.pk)
+    )
+    if actor.pk != locked_entity.job.user_id:
         raise CompetitorReferenceError("actor does not own this detection.")
     if decision not in {
         CompetitorDisposition.Decision.COMPETITOR,
@@ -231,8 +235,19 @@ def record_competitor_disposition(
     }:
         raise CompetitorReferenceError("competitor disposition decision is invalid.")
     normalized_note = normalize_plain_text(note, max_length=1000)[0] if note.strip() else ""
+    latest = locked_entity.dispositions.order_by("-created_at", "-id").first()
+    disposition_id = uuid4()
+    # created_at can tie at the database's timestamp precision. The query contract
+    # already uses UUID as its final tiebreaker, so serialize writes and ensure the
+    # next UUID sorts after the current latest evidence instead of relying on chance.
+    if latest is not None and disposition_id.int <= latest.pk.int:
+        disposition_id = UUID(int=latest.pk.int + 1)
     return CompetitorDisposition.objects.create(
-        entity=entity, actor=actor, decision=decision, note=normalized_note
+        id=disposition_id,
+        entity=locked_entity,
+        actor=actor,
+        decision=decision,
+        note=normalized_note,
     )
 
 

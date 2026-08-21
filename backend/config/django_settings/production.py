@@ -270,8 +270,10 @@ if FILE_SCANNER_PROVIDER in {"mock", "always_clean"}:
     raise ImproperlyConfigured("Mock file scanner is forbidden in production.")
 if FILE_STORAGE_PROVIDER not in {"s3", "unavailable"}:
     raise ImproperlyConfigured("Unsupported production file storage provider.")
-if FILE_SCANNER_PROVIDER not in {"unavailable"}:
+if FILE_SCANNER_PROVIDER not in {"clamav", "unavailable"}:
     raise ImproperlyConfigured("Unsupported production file scanner provider.")
+if FILE_SCANNER_PROVIDER == "clamav" and not CLAMAV_HOST:
+    raise ImproperlyConfigured("CLAMAV_HOST is required for FILE_SCANNER_PROVIDER=clamav.")
 DOCUMENT_OCR_PROVIDER = os.getenv("DOCUMENT_OCR_PROVIDER", "unavailable").strip().lower()
 if DOCUMENT_OCR_PROVIDER != "unavailable":
     raise ImproperlyConfigured("Mock or unknown OCR providers are forbidden in production.")
@@ -442,3 +444,59 @@ SECURE_HSTS_SECONDS = int(os.getenv("SECURE_HSTS_SECONDS", "31536000"))
 SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 SECURE_HSTS_PRELOAD = True
 LOGGING = build_logging_config("production")
+
+SECURE_REFERRER_POLICY = "no-referrer"
+SECURE_CROSS_ORIGIN_OPENER_POLICY = "same-origin"
+DATA_UPLOAD_MAX_MEMORY_SIZE = positive_env_int("DATA_UPLOAD_MAX_MEMORY_SIZE", 2 * 1024 * 1024)
+FILE_UPLOAD_MAX_MEMORY_SIZE = positive_env_int("FILE_UPLOAD_MAX_MEMORY_SIZE", 2 * 1024 * 1024)
+
+RELEASE_ENFORCE_EXTERNAL_READINESS = env_bool("RELEASE_ENFORCE_EXTERNAL_READINESS", False)
+RELEASE_DEPLOY_SHA = os.getenv("RELEASE_DEPLOY_SHA", "").strip().lower()
+if RELEASE_DEPLOY_SHA and (
+    len(RELEASE_DEPLOY_SHA) != 40
+    or any(character not in "0123456789abcdef" for character in RELEASE_DEPLOY_SHA)
+):
+    raise ImproperlyConfigured("RELEASE_DEPLOY_SHA must be a full lowercase Git SHA.")
+if RELEASE_ENFORCE_EXTERNAL_READINESS:
+    if not RELEASE_DEPLOY_SHA:
+        raise ImproperlyConfigured(
+            "RELEASE_DEPLOY_SHA is required when external readiness enforcement is enabled."
+        )
+    if FILE_STORAGE_PROVIDER != "s3" or FILE_SCANNER_PROVIDER != "clamav":
+        raise ImproperlyConfigured(
+            "External readiness requires private S3 storage and ClamAV scanning."
+        )
+    if SMS_PROVIDER != "tencent" or not ENABLE_REAL_SMS:
+        raise ImproperlyConfigured("External readiness requires enabled Tencent SMS.")
+
+_release_secrets = {
+    "DJANGO_SECRET_KEY": SECRET_KEY,
+    "SMS_VERIFICATION_HMAC_KEY": SMS_VERIFICATION_HMAC_KEY,
+    "QUOTA_IDEMPOTENCY_HMAC_KEY": QUOTA_IDEMPOTENCY_HMAC_KEY,
+    "GEO_DETECTION_IDEMPOTENCY_HMAC_KEY": GEO_DETECTION_IDEMPOTENCY_HMAC_KEY,
+    "PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY": PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY,
+    "FILE_IDEMPOTENCY_HMAC_KEY": FILE_IDEMPOTENCY_HMAC_KEY,
+    "IMAGE_IDEMPOTENCY_HMAC_KEY": IMAGE_IDEMPOTENCY_HMAC_KEY,
+    "WEB_IMPORT_IDEMPOTENCY_HMAC_KEY": WEB_IMPORT_IDEMPOTENCY_HMAC_KEY,
+    "SUBJECT_ENRICHMENT_IDEMPOTENCY_HMAC_KEY": SUBJECT_ENRICHMENT_IDEMPOTENCY_HMAC_KEY,
+    "KEYWORD_GENERATION_IDEMPOTENCY_HMAC_KEY": KEYWORD_GENERATION_IDEMPOTENCY_HMAC_KEY,
+    "DISTILLATION_IDEMPOTENCY_HMAC_KEY": DISTILLATION_IDEMPOTENCY_HMAC_KEY,
+    "QUESTION_GENERATION_IDEMPOTENCY_HMAC_KEY": QUESTION_GENERATION_IDEMPOTENCY_HMAC_KEY,
+    "ARTICLE_IDEMPOTENCY_HMAC_KEY": ARTICLE_IDEMPOTENCY_HMAC_KEY,
+    "REPORT_SHARE_HMAC_KEY": REPORT_SHARE_HMAC_KEY,
+    "FIELD_ENCRYPTION_MASTER_KEY": FIELD_ENCRYPTION_MASTER_KEY,
+}
+if FILE_STORAGE_PROVIDER == "s3":
+    _release_secrets["S3_SECRET_KEY"] = S3_SECRET_KEY
+if SMS_PROVIDER == "tencent":
+    _release_secrets["SMS_SECRET_KEY"] = SMS_SECRET_KEY
+_secret_owners: dict[str, str] = {}
+for _secret_name, _secret_value in _release_secrets.items():
+    if not _secret_value:
+        continue
+    _previous_owner = _secret_owners.get(_secret_value)
+    if _previous_owner:
+        raise ImproperlyConfigured(
+            f"{_secret_name} must not reuse the value configured for {_previous_owner}."
+        )
+    _secret_owners[_secret_value] = _secret_name
