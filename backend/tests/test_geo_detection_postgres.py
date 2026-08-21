@@ -27,6 +27,9 @@ def test_postgresql_geo_tables_constraints_and_immutability_triggers_are_install
         "geo_reports",
         "report_exports",
         "geo_detection_retests",
+        "strategy_reports",
+        "strategy_notes",
+        "assistant_usage_events",
     }
     with connection.cursor() as cursor:
         cursor.execute(
@@ -37,7 +40,9 @@ def test_postgresql_geo_tables_constraints_and_immutability_triggers_are_install
         assert {row[0] for row in cursor.fetchall()} == expected_tables
         cursor.execute(
             "SELECT tgname FROM pg_trigger WHERE NOT tgisinternal "
-            "AND (tgname LIKE 'geo_%' OR tgname = 'report_exports_no_delete') ORDER BY tgname"
+            "AND (tgname LIKE 'geo_%' OR tgname IN "
+            "('report_exports_no_delete', 'strategy_reports_guard', "
+            "'assistant_usage_events_guard')) ORDER BY tgname"
         )
         triggers = {row[0] for row in cursor.fetchall()}
     assert {
@@ -59,3 +64,4 @@ def test_postgresql_geo_tables_constraints_and_immutability_triggers_are_install
         "geo_detection_retests_immutable",
     }.issubset(triggers)
     assert "report_exports_no_delete" in triggers
+    assert {"strategy_reports_guard", "assistant_usage_events_guard"}.issubset(triggers)

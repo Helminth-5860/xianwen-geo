@@ -10,6 +10,8 @@ from django.views.decorators.csrf import csrf_protect
 from rest_framework.response import Response
 from rest_framework.status import (
     HTTP_202_ACCEPTED,
+    HTTP_204_NO_CONTENT,
+    HTTP_403_FORBIDDEN,
     HTTP_409_CONFLICT,
     HTTP_422_UNPROCESSABLE_ENTITY,
     HTTP_503_SERVICE_UNAVAILABLE,
@@ -23,8 +25,9 @@ from apps.quotas.exceptions import QuotaError
 from apps.subjects.permissions import IsAvailableAuthenticatedUser
 from apps.subjects.subject_services import subject_for_user_or_404
 
-from .exceptions import GeoDetectionError
-from .models import GeoDetectionQuestionSnapshot, GeoReport, ReportExport
+from .assistant import assistant_context_payload, respond_to_assistant
+from .exceptions import AssistantError, GeoDetectionError, StrategyError
+from .models import GeoDetectionQuestionSnapshot, GeoReport, ReportExport, StrategyNote
 from .reports import (
     comparison,
     create_export,
@@ -39,9 +42,13 @@ from .reports import (
 from .retests import QuickRetestBlocked, create_adjusted_retest, create_quick_retest
 from .serializers import (
     AdjustedRetestSerializer,
+    AssistantRespondSerializer,
     GeoDetectionSelectionSerializer,
     GeoRetestSerializer,
     ReportExportSerializer,
+    StrategyCreateSerializer,
+    StrategyNoteDeleteSerializer,
+    StrategyNoteSerializer,
 )
 from .services import (
     cancel_detection,
@@ -54,7 +61,20 @@ from .services import (
     model_progress_payload,
     models_for_user,
 )
-from .tasks import dispatch_model_calls_task, execute_report_export_task
+from .strategy import (
+    create_strategy_report,
+    delete_strategy_note,
+    fail_strategy_enqueue,
+    put_strategy_note,
+    strategy_for_user_or_404,
+    strategy_list_payload,
+    strategy_payload,
+)
+from .tasks import (
+    dispatch_model_calls_task,
+    execute_report_export_task,
+    execute_strategy_report_task,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +93,17 @@ QUOTA_ERROR_STATUS = {
     "QUOTA_HOLD_STATE_CONFLICT": HTTP_409_CONFLICT,
     "QUOTA_BUSINESS_ALREADY_HELD": HTTP_409_CONFLICT,
     "IDEMPOTENCY_CONFLICT": HTTP_409_CONFLICT,
+}
+STRATEGY_ERROR_STATUS = {
+    "STRATEGY_VALUES_INVALID": HTTP_422_UNPROCESSABLE_ENTITY,
+    "STRATEGY_PROVIDER_UNAVAILABLE": HTTP_503_SERVICE_UNAVAILABLE,
+}
+ASSISTANT_ERROR_STATUS = {
+    "ASSISTANT_VALUES_INVALID": HTTP_422_UNPROCESSABLE_ENTITY,
+    "ASSISTANT_SCOPE_REFUSED": HTTP_403_FORBIDDEN,
+    "ASSISTANT_SECURITY_REFUSED": HTTP_403_FORBIDDEN,
+    "ASSISTANT_PROVIDER_UNAVAILABLE": HTTP_503_SERVICE_UNAVAILABLE,
+    "ASSISTANT_INVALID_RESPONSE": HTTP_503_SERVICE_UNAVAILABLE,
 }
 
 
@@ -94,6 +125,22 @@ def _quota_error(exc: QuotaError, request):
     return error_response(
         ErrorCode(code),
         status_code=QUOTA_ERROR_STATUS.get(code, HTTP_409_CONFLICT),
+        request=request,
+    )
+
+
+def _strategy_error(exc: StrategyError, request):
+    return error_response(
+        ErrorCode(exc.code),
+        status_code=STRATEGY_ERROR_STATUS.get(exc.code, HTTP_409_CONFLICT),
+        request=request,
+    )
+
+
+def _assistant_error(exc: AssistantError, request):
+    return error_response(
+        ErrorCode(exc.code),
+        status_code=ASSISTANT_ERROR_STATUS.get(exc.code, HTTP_409_CONFLICT),
         request=request,
     )
 
@@ -487,3 +534,150 @@ class GeoReportRetestView(APIView):
         if created:
             transaction.on_commit(_dispatch_after_commit)
         return _retest_response(job, created)
+
+
+def _enqueue_strategy(strategy_id, request_id):
+    try:
+        execute_strategy_report_task.apply_async(
+            args=[str(strategy_id)],
+            queue="ai_content",
+            headers={"request_id": str(request_id), "correlation_id": str(request_id)},
+        )
+    except Exception:
+        logger.exception(
+            "strategy generation enqueue failed",
+            extra={"context": {"strategy_id": str(strategy_id)}},
+        )
+        fail_strategy_enqueue(strategy_id=strategy_id)
+
+
+class GeoReportStrategiesView(APIView):
+    permission_classes = [IsAvailableAuthenticatedUser]
+
+    def get(self, request, report_id):
+        report = report_for_user_or_404(user=request.user, report_id=report_id)
+        return _no_store(Response(strategy_list_payload(user=request.user, report=report)))
+
+    @method_decorator(csrf_protect)
+    def post(self, request, report_id):
+        serializer = StrategyCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            with transaction.atomic():
+                strategy, created = create_strategy_report(
+                    user_id=request.user.pk,
+                    report_id=report_id,
+                    idempotency_key=request.headers.get("Idempotency-Key", ""),
+                    request_id=request.request_id,
+                    **serializer.validated_data,
+                )
+                if created:
+                    transaction.on_commit(
+                        lambda: _enqueue_strategy(strategy.pk, request.request_id)
+                    )
+        except StrategyError as exc:
+            return _strategy_error(exc, request)
+        except QuotaError as exc:
+            return _quota_error(exc, request)
+        return _no_store(Response(strategy_payload(strategy), status=HTTP_202_ACCEPTED))
+
+
+class StrategyDetailView(APIView):
+    permission_classes = [IsAvailableAuthenticatedUser]
+
+    def get(self, request, strategy_id):
+        strategy = strategy_for_user_or_404(user=request.user, strategy_id=strategy_id)
+        return _no_store(Response(strategy_payload(strategy)))
+
+
+class StrategyNoteView(APIView):
+    permission_classes = [IsAvailableAuthenticatedUser]
+
+    def get(self, request, strategy_id):
+        strategy = strategy_for_user_or_404(user=request.user, strategy_id=strategy_id)
+        try:
+            note = strategy.note
+        except StrategyNote.DoesNotExist:
+            raise Http404 from None
+        return _no_store(
+            Response({"text": note.text, "version": note.version, "updated_at": note.updated_at})
+        )
+
+    @method_decorator(csrf_protect)
+    def put(self, request, strategy_id):
+        return self._write(request, strategy_id)
+
+    @method_decorator(csrf_protect)
+    def patch(self, request, strategy_id):
+        return self._write(request, strategy_id)
+
+    def _write(self, request, strategy_id):
+        serializer = StrategyNoteSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            note = put_strategy_note(
+                user=request.user,
+                strategy_id=strategy_id,
+                **serializer.validated_data,
+            )
+        except StrategyError as exc:
+            return _strategy_error(exc, request)
+        return _no_store(
+            Response({"text": note.text, "version": note.version, "updated_at": note.updated_at})
+        )
+
+    @method_decorator(csrf_protect)
+    def delete(self, request, strategy_id):
+        serializer = StrategyNoteDeleteSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            delete_strategy_note(
+                user=request.user,
+                strategy_id=strategy_id,
+                **serializer.validated_data,
+            )
+        except StrategyError as exc:
+            return _strategy_error(exc, request)
+        return _no_store(Response(status=HTTP_204_NO_CONTENT))
+
+
+class AssistantContextView(APIView):
+    permission_classes = [IsAvailableAuthenticatedUser]
+
+    def get(self, request):
+        try:
+            payload = assistant_context_payload(user=request.user)
+        except GeoDetectionError as exc:
+            return _error(exc, request)
+        return _no_store(Response(payload))
+
+
+class AssistantRespondView(APIView):
+    permission_classes = [IsAvailableAuthenticatedUser]
+
+    @method_decorator(csrf_protect)
+    def post(self, request):
+        serializer = AssistantRespondSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            reply = respond_to_assistant(
+                user_id=request.user.pk,
+                idempotency_key=request.headers.get("Idempotency-Key", ""),
+                request_id=request.request_id,
+                **serializer.validated_data,
+            )
+        except AssistantError as exc:
+            return _assistant_error(exc, request)
+        except QuotaError as exc:
+            return _quota_error(exc, request)
+        return _no_store(
+            Response(
+                {
+                    "answer": reply.answer,
+                    "suggested_actions": reply.suggested_actions,
+                    "remaining_messages": reply.remaining_messages,
+                    "usage_event_id": reply.usage_event_id,
+                    "history_persisted": False,
+                }
+            )
+        )

@@ -1080,3 +1080,353 @@ class DetectionRetest(models.Model):  # noqa: DJ008
 
     def delete(self, *args, **kwargs):
         raise TypeError("Detection retest provenance is immutable.")
+
+
+class LifecycleEvidenceQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        raise TypeError("AI lifecycle evidence must use guarded model transitions.")
+
+    def delete(self):
+        raise TypeError("AI lifecycle evidence cannot be deleted.")
+
+
+class StrategyReport(models.Model):  # noqa: DJ008
+    class Period(models.TextChoices):
+        DAYS_7 = "7d", "7 days"
+        DAYS_30 = "30d", "30 days"
+        DAYS_90 = "90d", "90 days"
+        CUSTOM = "custom", "Custom"
+
+    class Status(models.TextChoices):
+        QUEUED = "queued", "Queued"
+        RUNNING = "running", "Running"
+        SUCCEEDED = "succeeded", "Succeeded"
+        FAILED = "failed", "Failed"
+
+    class BillingMode(models.TextChoices):
+        FREE_INITIAL = "free_initial", "First strategy for report"
+        REGENERATION = "regeneration", "Regeneration"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    report = models.ForeignKey(GeoReport, on_delete=models.PROTECT, related_name="strategies")
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="strategy_reports"
+    )
+    subject = models.ForeignKey(
+        "subjects.Subject", on_delete=models.PROTECT, related_name="strategy_reports"
+    )
+    subject_version = models.ForeignKey(
+        "subjects.SubjectVersion", on_delete=models.PROTECT, related_name="strategy_reports"
+    )
+    subscription = models.ForeignKey(
+        "plans.Subscription", on_delete=models.PROTECT, related_name="strategy_reports"
+    )
+    quota_hold = models.OneToOneField(
+        "quotas.QuotaHoldGroup",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="strategy_report",
+    )
+    period = models.CharField(max_length=16, choices=Period.choices)
+    period_days = models.PositiveIntegerField()
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.QUEUED)
+    billing_mode = models.CharField(max_length=24, choices=BillingMode.choices)
+    ai_body = models.JSONField(default=dict)
+    report_facts = models.JSONField()
+    provider_key = models.CharField(max_length=100)
+    model_key = models.CharField(max_length=100)
+    provider_model_id = models.CharField(max_length=255)
+    adapter_version = models.CharField(max_length=100)
+    prompt_version = models.CharField(max_length=100)
+    schema_version = models.CharField(max_length=100)
+    input_digest = models.CharField(max_length=64)
+    idempotency_key_digest = models.CharField(max_length=64, unique=True)
+    request_digest = models.CharField(max_length=64)
+    request_id = models.UUIDField()
+    generation = models.UUIDField(default=uuid.uuid4)
+    attempts = models.PositiveIntegerField(default=0)
+    safe_error_code = models.CharField(max_length=100, blank=True, default="")
+    usage_summary = models.JSONField(default=dict)
+    started_at = models.DateTimeField(null=True, blank=True)
+    generated_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    objects = LifecycleEvidenceQuerySet.as_manager()
+
+    class Meta:
+        db_table = "strategy_reports"
+        ordering = ("-created_at", "-id")
+        indexes = [
+            models.Index(fields=("user", "report", "created_at"), name="strategy_user_report_idx"),
+            models.Index(fields=("status", "created_at"), name="strategy_status_created_idx"),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=("report",),
+                condition=Q(status__in=("queued", "running")),
+                name="strategy_one_active_per_report",
+            ),
+            models.CheckConstraint(
+                condition=Q(period__in=("7d", "30d", "90d", "custom")),
+                name="strategy_period_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(period_days__gte=1, period_days__lte=365),
+                name="strategy_period_days_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(status__in=("queued", "running", "succeeded", "failed")),
+                name="strategy_status_valid",
+            ),
+            models.CheckConstraint(
+                condition=(Q(billing_mode="free_initial", quota_hold__isnull=True))
+                | Q(billing_mode="regeneration", quota_hold__isnull=False),
+                name="strategy_billing_hold_valid",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self._state.adding:
+            if (
+                self.status != self.Status.QUEUED
+                or self.attempts != 0
+                or self.ai_body
+                or self.usage_summary
+                or self.safe_error_code
+                or self.started_at is not None
+                or self.generated_at is not None
+                or self.finished_at is not None
+            ):
+                raise TypeError("Strategy reports must start in the queued state.")
+        else:
+            previous = StrategyReport.objects.get(pk=self.pk)
+            frozen = (
+                "report_id",
+                "user_id",
+                "subject_id",
+                "subject_version_id",
+                "subscription_id",
+                "quota_hold_id",
+                "period",
+                "period_days",
+                "billing_mode",
+                "report_facts",
+                "provider_key",
+                "model_key",
+                "provider_model_id",
+                "adapter_version",
+                "prompt_version",
+                "schema_version",
+                "input_digest",
+                "idempotency_key_digest",
+                "request_digest",
+                "request_id",
+            )
+            if any(getattr(previous, field) != getattr(self, field) for field in frozen):
+                raise TypeError("Strategy generation facts are immutable.")
+            if previous.status in {self.Status.SUCCEEDED, self.Status.FAILED}:
+                raise TypeError("Terminal strategy reports are immutable.")
+            if previous.ai_body and previous.ai_body != self.ai_body:
+                raise TypeError("Strategy AI output is immutable.")
+            valid_transition = False
+            if previous.status == self.Status.QUEUED and self.status == self.Status.RUNNING:
+                valid_transition = (
+                    self.attempts == previous.attempts + 1
+                    and self.generation != previous.generation
+                    and self.started_at is not None
+                    and self.generated_at is None
+                    and self.finished_at is None
+                    and self.ai_body == previous.ai_body
+                    and self.usage_summary == previous.usage_summary
+                    and not self.safe_error_code
+                )
+            elif previous.status == self.Status.QUEUED and self.status == self.Status.FAILED:
+                valid_transition = (
+                    self.attempts == previous.attempts
+                    and self.generation == previous.generation
+                    and self.started_at == previous.started_at
+                    and self.generated_at is None
+                    and self.finished_at is not None
+                    and self.ai_body == previous.ai_body
+                    and self.usage_summary == previous.usage_summary
+                    and bool(self.safe_error_code)
+                )
+            elif previous.status == self.Status.RUNNING and self.status == self.Status.SUCCEEDED:
+                valid_transition = (
+                    self.attempts == previous.attempts
+                    and self.generation == previous.generation
+                    and self.started_at == previous.started_at
+                    and self.generated_at is not None
+                    and self.finished_at is not None
+                    and bool(self.ai_body)
+                    and not previous.ai_body
+                    and not self.safe_error_code
+                )
+            elif previous.status == self.Status.RUNNING and self.status == self.Status.FAILED:
+                valid_transition = (
+                    self.attempts == previous.attempts
+                    and self.generation == previous.generation
+                    and self.started_at == previous.started_at
+                    and self.generated_at is None
+                    and self.finished_at is not None
+                    and self.ai_body == previous.ai_body
+                    and self.usage_summary == previous.usage_summary
+                    and bool(self.safe_error_code)
+                )
+            if not valid_transition:
+                raise TypeError("Invalid strategy report lifecycle transition.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise TypeError("Strategy history cannot be deleted.")
+
+
+class StrategyNote(models.Model):  # noqa: DJ008
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    strategy = models.OneToOneField(StrategyReport, on_delete=models.CASCADE, related_name="note")
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="strategy_notes"
+    )
+    text = models.TextField(blank=True, default="")
+    version = models.PositiveBigIntegerField(default=1)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "strategy_notes"
+        constraints = [
+            models.CheckConstraint(condition=Q(version__gte=1), name="strategy_note_version_gte_1")
+        ]
+
+
+class AssistantUsageEvent(models.Model):  # noqa: DJ008
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        SUCCEEDED = "succeeded", "Succeeded"
+        FAILED = "failed", "Failed"
+        REFUSED = "refused", "Refused"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="assistant_usage_events"
+    )
+    subject = models.ForeignKey(
+        "subjects.Subject", on_delete=models.PROTECT, related_name="assistant_usage_events"
+    )
+    subject_version = models.ForeignKey(
+        "subjects.SubjectVersion",
+        on_delete=models.PROTECT,
+        related_name="assistant_usage_events",
+    )
+    subscription = models.ForeignKey(
+        "plans.Subscription", on_delete=models.PROTECT, related_name="assistant_usage_events"
+    )
+    quota_hold = models.OneToOneField(
+        "quotas.QuotaHoldGroup",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="assistant_usage_event",
+    )
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.PENDING)
+    provider_key = models.CharField(max_length=100)
+    model_key = models.CharField(max_length=100)
+    provider_model_id = models.CharField(max_length=255)
+    adapter_version = models.CharField(max_length=100)
+    prompt_version = models.CharField(max_length=100)
+    schema_version = models.CharField(max_length=100)
+    context_digest = models.CharField(max_length=64)
+    idempotency_key_digest = models.CharField(max_length=64, unique=True)
+    request_digest = models.CharField(max_length=64)
+    request_id = models.UUIDField()
+    safe_error_code = models.CharField(max_length=100, blank=True, default="")
+    usage_summary = models.JSONField(default=dict)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    objects = LifecycleEvidenceQuerySet.as_manager()
+
+    class Meta:
+        db_table = "assistant_usage_events"
+        ordering = ("-created_at", "-id")
+        indexes = [
+            models.Index(fields=("user", "subject", "created_at"), name="assistant_usage_scope_idx")
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(status__in=("pending", "succeeded", "failed", "refused")),
+                name="assistant_usage_status_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(status="refused", quota_hold__isnull=True)
+                | (~Q(status="refused") & Q(quota_hold__isnull=False)),
+                name="assistant_usage_hold_valid",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self._state.adding:
+            if self.status == self.Status.PENDING:
+                valid_initial = (
+                    self.quota_hold_id is not None
+                    and not self.safe_error_code
+                    and not self.usage_summary
+                    and self.finished_at is None
+                )
+            else:
+                valid_initial = (
+                    self.status == self.Status.REFUSED
+                    and self.quota_hold_id is None
+                    and bool(self.safe_error_code)
+                    and not self.usage_summary
+                    and self.finished_at is not None
+                )
+            if not valid_initial:
+                raise TypeError("Invalid initial assistant usage state.")
+        else:
+            previous = AssistantUsageEvent.objects.get(pk=self.pk)
+            frozen = (
+                "user_id",
+                "subject_id",
+                "subject_version_id",
+                "subscription_id",
+                "quota_hold_id",
+                "provider_key",
+                "model_key",
+                "provider_model_id",
+                "adapter_version",
+                "prompt_version",
+                "schema_version",
+                "context_digest",
+                "idempotency_key_digest",
+                "request_digest",
+                "request_id",
+            )
+            if any(getattr(previous, field) != getattr(self, field) for field in frozen):
+                raise TypeError("Assistant usage facts are immutable.")
+            if previous.status != self.Status.PENDING:
+                raise TypeError("Terminal assistant usage is immutable.")
+            if self.status == self.Status.SUCCEEDED:
+                valid_transition = (
+                    self.finished_at is not None
+                    and not self.safe_error_code
+                    and bool(self.usage_summary)
+                )
+            elif self.status == self.Status.FAILED:
+                valid_transition = (
+                    self.finished_at is not None
+                    and bool(self.safe_error_code)
+                    and self.usage_summary == previous.usage_summary
+                )
+            else:
+                valid_transition = False
+            if not valid_transition:
+                raise TypeError("Invalid assistant usage lifecycle transition.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise TypeError("Assistant usage evidence cannot be deleted.")

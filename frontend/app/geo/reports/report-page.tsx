@@ -511,6 +511,18 @@ export default function GeoReportPage(props: Props) {
             <Card title="导出与复测">
               <Space orientation="vertical" style={{ width: "100%" }}>
                 <Space wrap>
+                  <Button
+                    type="primary"
+                    onClick={() => router.push(`/geo/reports/${report.id}/strategy`)}
+                  >
+                    生成改善策略
+                  </Button>
+                  <Typography.Text type="secondary">
+                    基于本报告不可修改的事实生成，不会重新检测或评分。
+                  </Typography.Text>
+                </Space>
+                <Divider />
+                <Space wrap>
                   {(["pdf", "word", "excel"] as const).map((format) => {
                     const item = exports[format];
                     return item?.download_url ? (

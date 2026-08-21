@@ -56,3 +56,41 @@ class GeoRetestSerializer(StrictSerializer):
             if len(values) != len(set(values)):
                 raise serializers.ValidationError(f"{field} must be unique")
         return attrs
+
+
+class StrategyCreateSerializer(StrictSerializer):
+    period = serializers.ChoiceField(choices=("7d", "30d", "90d", "custom"))
+    custom_days = serializers.IntegerField(min_value=1, max_value=365, required=False)
+    regenerate = serializers.BooleanField(default=False)
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        if attrs["period"] == "custom" and "custom_days" not in attrs:
+            raise serializers.ValidationError("custom_days is required for a custom period")
+        if attrs["period"] != "custom" and "custom_days" in attrs:
+            raise serializers.ValidationError("custom_days is only valid for a custom period")
+        return attrs
+
+
+class StrategyNoteSerializer(StrictSerializer):
+    text = serializers.CharField(max_length=10_000, allow_blank=True, trim_whitespace=False)
+    expected_version = serializers.IntegerField(min_value=0)
+
+
+class StrategyNoteDeleteSerializer(StrictSerializer):
+    expected_version = serializers.IntegerField(min_value=1)
+
+
+class AssistantMessageSerializer(StrictSerializer):
+    role = serializers.ChoiceField(choices=("user", "assistant"))
+    content = serializers.CharField(max_length=2000, trim_whitespace=True)
+
+
+class AssistantRespondSerializer(StrictSerializer):
+    subject_id = serializers.UUIDField()
+    messages = AssistantMessageSerializer(many=True, allow_empty=False)
+
+    def validate_messages(self, values):
+        if len(values) > 12:
+            raise serializers.ValidationError("messages must contain at most 12 items")
+        return values

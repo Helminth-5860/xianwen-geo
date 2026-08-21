@@ -581,11 +581,23 @@ GEO 权重、等级、口碑权重、曝光公式、评分模型版本和状态�
 
 ### 18.1 `strategy_reports`
 
-报告、周期、AI 原文、提示词版本、生成状态、是否首次免费、创建时间。
+每一行是一份追加式策略版本，绑定 `report_id/user_id/subject_id/subject_version_id/subscription_id`。记录周期（`7d/30d/90d/custom` 和规范化天数）、`queued/running/succeeded/failed` 状态、`free_initial/regeneration` 结算模式、不可变报告事实快照、AI 正文、模型/适配器/提示词/Schema 版本、输入和幂等摘要、安全错误码、最小 usage 汇总与时间戳。
+
+同一报告同一时刻最多一个 queued/running 策略。该报告第一次成功策略为免费；已有成功策略后的新版本必须绑定 `strategy_regenerations` subject-cycle hold。成功终态要求 hold 已消费 1，失败终态要求 hold 已释放 1。
+
+ORM 状态机与 PostgreSQL `strategy_reports_guard` 同时禁止绑定修改、非法状态跳转、终态修改和删除。AI 正文只能在 running -> succeeded 时首次写入；重生成追加新行，不覆盖旧结果。
 
 ### 18.2 `strategy_notes`
 
 用户个人备注，可修改和删除；与 AI 原文分离。
+
+一份策略至多一条备注，使用递增 `version` 做乐观并发控制。备注表不安装不可变 trigger。
+
+### 18.3 `assistant_usage_events`
+
+只保存最小使用证据：用户、服务端当前主体及其版本、订阅、quota hold、`pending/succeeded/failed/refused` 状态、固定 DeepSeek 的模型/适配器/提示词/Schema provenance、上下文/请求/幂等摘要、安全错误码、token usage 和时间戳。
+
+表中没有 user message、assistant answer、chat session 或 transcript 字段。`assistant_usage_events_guard` 校验主体当前版本、固定 DeepSeek、账号周期 `assistant_messages` hold、成功消费 1/失败释放 1，并禁止终态修改和删除。
 
 ## 19. 报告导出与分享
 

@@ -522,6 +522,7 @@ CELERY_TASK_ROUTES = {
     "keywords.execute_generation": {"queue": "ai_content"},
     "keywords.execute_distillation": {"queue": "ai_content"},
     "questions.execute_generation": {"queue": "ai_content"},
+    "geo.execute_strategy_report": {"queue": "ai_content"},
     "geo.execute_model_call": {"queue": "geo_detection"},
     "documents.execute_parse_job": {"queue": "file_processing"},
     "web_sources.execute_import": {"queue": "web_fetch"},

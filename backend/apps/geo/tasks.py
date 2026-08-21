@@ -21,6 +21,13 @@ from .services import (
 logger = logging.getLogger("xianwen.geo")
 
 
+@shared_task(name="geo.execute_strategy_report")
+def execute_strategy_report_task(strategy_id):
+    from .strategy import execute_strategy_report
+
+    return execute_strategy_report(strategy_id=strategy_id)
+
+
 @shared_task(name="geo.execute_report_export")
 def execute_report_export_task(export_id):
     from .reports import execute_export

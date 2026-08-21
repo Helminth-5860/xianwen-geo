@@ -359,17 +359,23 @@ XW-0305 is implemented. Generation requires the current confirmed DistillationSe
 | POST | `/geo/reports/{id}/strategies` | 首次／重新生成 |
 | GET | `/strategy-jobs/{job_id}` | 进度 |
 | GET | `/geo/reports/{id}/strategies` | 策略列表 |
-| PATCH | `/strategies/{id}/note` | 用户个人备注 |
+| GET | `/strategies/{id}` | 不可变策略详情 |
+| GET/PUT/PATCH/DELETE | `/strategies/{id}/note` | 独立用户备注 CRUD 和乐观版本 |
 
-请求包含周期：`7d/30d/90d/custom` 和自定义天数。
+请求包含周期：`7d/30d/90d/custom` 和自定义天数。POST 必须带 Idempotency-Key；已有成功策略后必须显式 `regenerate=true`。返回 `free_initial/regeneration`、hold 状态、剩余次数、终态正文和安全 provenance，不返回系统提示词、凭据、原始 provider JSON 或内部报告事实快照。
+
+首份免费按报告的第一次成功策略确定；失败可重新尝试免费生成。重生成在提交时冻结 subject-cycle 次数，只在规范化 AI 结果成功持久化时消费，任何 provider/队列/Schema 失败均释放。
 
 ## 17. 显问 AI 助手 API
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
+| GET | `/assistant/context` | 服务端当前主体和账号周期剩余次数 |
 | POST | `/assistant/respond` | 当前会话单次响应 |
 
-请求：当前主体 ID、当前会话消息数组。后端不得保存聊天记录；仅记录一次使用日志和额度结算，不保存完整对话正文，除非安全审计要求短期脱敏缓存。
+POST 必须带 Idempotency-Key。请求：当前主体 ID、最多 12 条且总计最多 8000 字的当前页面临时消息。请求主体必须等于服务端 `SubjectContext.current_subject_id`，正文中的其他主体名称或 ID 不会改变授权范围。
+
+后端不保存聊天记录、用户消息或助手回复，只记录最小 usage metadata 和额度结算。系统 prompt、credential/key/secret、加密键、原始 provider JSON、其他主体/用户数据和 prompt injection 请求在 provider 调用及额度冻结前拒绝。
 
 助手返回页面建议入口但不执行任务：
 
@@ -379,9 +385,13 @@ XW-0305 is implemented. Generation requires the current confirmed DistillationSe
   "suggested_actions": [
     {"label": "查看检测报告", "route": "/subjects/.../reports/..."}
   ],
-  "remaining_messages": 25
+  "remaining_messages": 25,
+  "usage_event_id": "...",
+  "history_persisted": false
 }
 ```
+
+只有成功且结构合法的回复消费一次账号周期 `assistant_messages`；网络/provider/结构失败释放冻结。重复幂等请求不再次调用 provider 或扣费。返回 action 只能是服务端白名单站内导航，不能执行检测、策略、文章或管理任务。
 
 ## 18. 文章类型与资料包 API
 
