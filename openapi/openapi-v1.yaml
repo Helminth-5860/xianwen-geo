@@ -1912,73 +1912,251 @@ paths:
         '409': {$ref: '#/components/responses/BusinessConflict'}
         '422': {$ref: '#/components/responses/ValidationError'}
         '503': {$ref: '#/components/responses/ServiceUnavailable'}
-  /subjects/{subjectId}/articles:
-    parameters:
-      - $ref: '#/components/parameters/SubjectId'
+  /article-types:
     get:
       tags: [Articles]
-      summary: 文章列表
+      summary: 获取稳定文章类型及当前不可变模板版本
       responses:
-        '200': {description: 文章列表}
+        '200': {description: 文章类型目录, content: {application/json: {schema: {$ref: '#/components/schemas/ArticleTypeListEnvelope'}}}}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+  /articles/source-packs:
     post:
       tags: [Articles]
-      summary: 创建文章草稿
+      summary: 从已确认主体、文件和网页版本创建资料包草稿
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ArticleSourcePackCreateRequest'}}}}
       responses:
-        '201': {description: 文章草稿}
+        '201': {description: 资料包草稿及关键事实冲突, content: {application/json: {schema: {$ref: '#/components/schemas/ArticleSourcePackEnvelope'}}}}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /articles/source-packs/{packId}:
+    parameters: [{name: packId, in: path, required: true, schema: {type: string, format: uuid}}]
+    get:
+      tags: [Articles]
+      summary: 获取本人资料包；不返回其他主体或用户资料
+      responses:
+        '200': {description: 资料包, content: {application/json: {schema: {$ref: '#/components/schemas/ArticleSourcePackEnvelope'}}}}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+  /articles/source-packs/{packId}/search:
+    parameters: [{name: packId, in: path, required: true, schema: {type: string, format: uuid}}]
+    post:
+      tags: [Articles]
+      summary: 对资料包现有已确认来源执行相关性准备
+      description: 不执行开放互联网搜索，不向资料包写入未确认网络内容。
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      responses:
+        '202': {description: 准备结果, content: {application/json: {schema: {$ref: '#/components/schemas/ArticleSourcePackEnvelope'}}}}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+  /articles/source-packs/{packId}/confirm:
+    parameters: [{name: packId, in: path, required: true, schema: {type: string, format: uuid}}]
+    post:
+      tags: [Articles]
+      summary: 显式选择来源、解决关键冲突并冻结资料包快照
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ArticleSourcePackConfirmRequest'}}}}
+      responses:
+        '200': {description: 不可变资料包快照, content: {application/json: {schema: {$ref: '#/components/schemas/ArticleSourcePackEnvelope'}}}}
+        '409': {$ref: '#/components/responses/BusinessConflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /subjects/{subjectId}/articles:
+    parameters: [{$ref: '#/components/parameters/SubjectId'}]
+    get:
+      tags: [Articles]
+      summary: 获取本人主体文章分页和当前额度
+      parameters: [{$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}]
+      responses:
+        '200': {description: 文章分页, content: {application/json: {schema: {$ref: '#/components/schemas/ArticlePageEnvelope'}}}}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+    post:
+      tags: [Articles]
+      summary: 创建绑定主体版本、类型、模板和已冻结资料包的文章草稿
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ArticleCreateRequest'}}}}
+      responses:
+        '201': {description: 文章草稿, content: {application/json: {schema: {$ref: '#/components/schemas/ArticleEnvelope'}}}}
+        '409': {$ref: '#/components/responses/BusinessConflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /articles/{articleId}:
+    parameters: [{name: articleId, in: path, required: true, schema: {type: string, format: uuid}}]
+    get:
+      tags: [Articles]
+      summary: 获取文章当前唯一稿、AI 原始证据摘要和质量建议
+      responses:
+        '200': {description: 文章, content: {application/json: {schema: {$ref: '#/components/schemas/ArticleEnvelope'}}}}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+  /articles/{articleId}/draft:
+    parameters: [{name: articleId, in: path, required: true, schema: {type: string, format: uuid}}]
+    patch:
+      tags: [Articles]
+      summary: 乐观锁保存当前唯一用户编辑稿
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ArticleDraftRequest'}}}}
+      responses:
+        '200': {description: 已保存文章, content: {application/json: {schema: {$ref: '#/components/schemas/ArticleEnvelope'}}}}
+        '409': {$ref: '#/components/responses/BusinessConflict'}
+  /articles/{articleId}/outline/generate:
+    parameters: [{name: articleId, in: path, required: true, schema: {type: string, format: uuid}}, {$ref: '#/components/parameters/IdempotencyKey'}]
+    post:
+      tags: [Articles]
+      summary: 生成大纲；首次免费，后续成功消费主体周期重生成次数
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      responses:
+        '202': {description: 生成任务, content: {application/json: {schema: {$ref: '#/components/schemas/ArticleJobEnvelope'}}}}
+        '409': {$ref: '#/components/responses/BusinessConflict'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+  /articles/{articleId}/outline:
+    parameters: [{name: articleId, in: path, required: true, schema: {type: string, format: uuid}}]
+    patch:
+      tags: [Articles]
+      summary: 编辑并可确认大纲
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ArticleOutlineRequest'}}}}
+      responses:
+        '200': {description: 大纲, content: {application/json: {schema: {$ref: '#/components/schemas/ArticleOutlineEnvelope'}}}}
+        '409': {$ref: '#/components/responses/BusinessConflict'}
   /articles/{articleId}/generate:
-    parameters:
-      - name: articleId
-        in: path
-        required: true
-        schema: {type: string, format: uuid}
-      - $ref: '#/components/parameters/IdempotencyKey'
+    parameters: [{name: articleId, in: path, required: true, schema: {type: string, format: uuid}}, {$ref: '#/components/parameters/IdempotencyKey'}]
     post:
       tags: [Articles]
-      summary: 生成正文并冻结文章额度
+      summary: 生成一次有资料包依据的正文并冻结文章额度
+      description: 仅成功消费 1 文章额度；provider、网络、schema 或引用越界失败释放；原始 AI 正文和引用不可覆盖。
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
       responses:
-        '202':
-          description: 文章生成任务已创建
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TaskEnvelope'
+        '202': {description: 文章生成任务, content: {application/json: {schema: {$ref: '#/components/schemas/ArticleJobEnvelope'}}}}
+        '409': {$ref: '#/components/responses/BusinessConflict'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+  /articles/{articleId}/quality-check:
+    parameters: [{name: articleId, in: path, required: true, schema: {type: string, format: uuid}}, {$ref: '#/components/parameters/IdempotencyKey'}]
+    post:
+      tags: [Articles]
+      summary: 按固定 25/25/15/15/10/10 权重重新质量检测
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      responses:
+        '202': {description: 复检任务, content: {application/json: {schema: {$ref: '#/components/schemas/ArticleJobEnvelope'}}}}
+  /articles/{articleId}/quality:
+    parameters: [{name: articleId, in: path, required: true, schema: {type: string, format: uuid}}]
+    get:
+      tags: [Articles]
+      summary: 获取最新只建议、不阻断导出分发的质量结果
+      responses:
+        '200': {description: 质量结果, content: {application/json: {schema: {$ref: '#/components/schemas/ArticleQualityEnvelope'}}}}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+  /articles/{articleId}/optimize/local:
+    parameters: [{name: articleId, in: path, required: true, schema: {type: string, format: uuid}}, {$ref: '#/components/parameters/IdempotencyKey'}]
+    post:
+      tags: [Articles]
+      summary: 创建临时局部优化对比；成功消费主体周期局部修改次数
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ArticleOptimizationRequest'}}}}
+      responses: {'202': {description: 优化任务, content: {application/json: {schema: {$ref: '#/components/schemas/ArticleJobEnvelope'}}}}, '409': {$ref: '#/components/responses/BusinessConflict'}}
+  /articles/{articleId}/optimize/full:
+    parameters: [{name: articleId, in: path, required: true, schema: {type: string, format: uuid}}, {$ref: '#/components/parameters/IdempotencyKey'}]
+    post:
+      tags: [Articles]
+      summary: 创建临时整篇优化对比；成功消费 1 文章额度
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ArticleOptimizationRequest'}}}}
+      responses: {'202': {description: 优化任务, content: {application/json: {schema: {$ref: '#/components/schemas/ArticleJobEnvelope'}}}}, '409': {$ref: '#/components/responses/BusinessConflict'}}
+  /article-comparisons/{comparisonId}:
+    parameters: [{name: comparisonId, in: path, required: true, schema: {type: string, format: uuid}}]
+    get:
+      tags: [Articles]
+      summary: 获取短期原稿/优化稿对比
+      responses: {'200': {description: 临时对比, content: {application/json: {schema: {$ref: '#/components/schemas/ArticleComparisonEnvelope'}}}}, '404': {$ref: '#/components/responses/ResourceNotFound'}}
+  /article-comparisons/{comparisonId}/choose:
+    parameters: [{name: comparisonId, in: path, required: true, schema: {type: string, format: uuid}}]
+    post:
+      tags: [Articles]
+      summary: 选择一个当前稿并立即丢弃两份临时对比正文
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {type: object, additionalProperties: false, required: [choice], properties: {choice: {type: string, enum: [original, optimized]}}}}}}
+      responses: {'200': {description: 当前文章, content: {application/json: {schema: {$ref: '#/components/schemas/ArticleEnvelope'}}}}, '409': {$ref: '#/components/responses/BusinessConflict'}}
+  /articles/{articleId}/moderation:
+    parameters: [{name: articleId, in: path, required: true, schema: {type: string, format: uuid}}]
+    get:
+      tags: [Articles]
+      summary: 获取审核状态、不可变审核记录和一次申诉可用性
+      responses: {'200': {description: 审核状态, content: {application/json: {schema: {$ref: '#/components/schemas/ArticleModerationEnvelope'}}}}, '404': {$ref: '#/components/responses/ResourceNotFound'}}
+  /articles/{articleId}/moderation/appeal:
+    parameters: [{name: articleId, in: path, required: true, schema: {type: string, format: uuid}}]
+    post:
+      tags: [Articles]
+      summary: 提交唯一一次审核申诉
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      responses: {'202': {description: 申诉已排队}, '409': {$ref: '#/components/responses/BusinessConflict'}}
+  /article-jobs/{jobId}:
+    parameters: [{name: jobId, in: path, required: true, schema: {type: string, format: uuid}}]
+    get:
+      tags: [Articles]
+      summary: 获取本人文章任务安全状态；不返回原始 provider JSON
+      responses: {'200': {description: 任务, content: {application/json: {schema: {$ref: '#/components/schemas/ArticleJobEnvelope'}}}}, '404': {$ref: '#/components/responses/ResourceNotFound'}}
+  /publishing-channels:
+    get:
+      tags: [Publishing]
+      summary: 获取官方导航及当前不可变渠道模板；actual_publishing_supported 固定为 false
+      responses: {'200': {description: 渠道目录, content: {application/json: {schema: {$ref: '#/components/schemas/PublishingChannelListEnvelope'}}}}, '401': {$ref: '#/components/responses/AuthRequired'}}
   /articles/{articleId}/channel-adaptations:
-    parameters:
-      - name: articleId
-        in: path
-        required: true
-        schema: {type: string, format: uuid}
-      - $ref: '#/components/parameters/IdempotencyKey'
+    parameters: [{name: articleId, in: path, required: true, schema: {type: string, format: uuid}}]
+    get:
+      tags: [Publishing]
+      summary: 获取独立渠道适配稿
+      parameters: [{$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}]
+      responses: {'200': {description: 渠道稿分页, content: {application/json: {schema: {$ref: '#/components/schemas/ChannelAdaptationListEnvelope'}}}}}
     post:
       tags: [Publishing]
-      summary: 批量生成渠道适配稿
-      responses:
-        '202':
-          description: 渠道适配任务已创建
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TaskEnvelope'
-  /subjects/{subjectId}/images/generate:
-    parameters:
-      - $ref: '#/components/parameters/SubjectId'
-      - $ref: '#/components/parameters/IdempotencyKey'
-    post:
-      tags: [Images]
-      summary: 生成一张或一组图片
-      responses:
-        '202':
-          description: 图片生成任务已创建
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TaskEnvelope'
+      summary: 批量创建相互独立的渠道适配任务
+      description: 每个成功渠道稿消费 1 文章额度，各渠道失败单独释放；不登录或发布第三方平台。
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}, {$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ChannelBatchRequest'}}}}
+      responses: {'202': {description: 渠道任务, content: {application/json: {schema: {$ref: '#/components/schemas/ChannelAdaptationBatchEnvelope'}}}}, '409': {$ref: '#/components/responses/BusinessConflict'}}
+  /channel-adaptation-jobs/{jobId}:
+    parameters: [{name: jobId, in: path, required: true, schema: {type: string, format: uuid}}]
+    get:
+      tags: [Publishing]
+      summary: 获取渠道适配任务
+      responses: {'200': {description: 渠道任务, content: {application/json: {schema: {$ref: '#/components/schemas/ArticleJobEnvelope'}}}}, '404': {$ref: '#/components/responses/ResourceNotFound'}}
+  /channel-adaptations/{adaptationId}:
+    parameters: [{name: adaptationId, in: path, required: true, schema: {type: string, format: uuid}}]
+    get:
+      tags: [Publishing]
+      summary: 获取本人渠道稿
+      responses: {'200': {description: 渠道稿, content: {application/json: {schema: {$ref: '#/components/schemas/ChannelAdaptationEnvelope'}}}}, '404': {$ref: '#/components/responses/ResourceNotFound'}}
+    patch:
+      tags: [Publishing]
+      summary: 乐观锁编辑渠道稿
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ChannelAdaptationUpdateRequest'}}}}
+      responses: {'200': {description: 已更新渠道稿, content: {application/json: {schema: {$ref: '#/components/schemas/ChannelAdaptationEnvelope'}}}}, '409': {$ref: '#/components/responses/BusinessConflict'}}
   /publication-checks:
     post:
       tags: [Publishing]
-      summary: 即时检测发布链接
-      responses:
-        '200': {description: 发布成功、失败或暂时无法判断}
+      summary: 对公开 HTTP(S) 链接执行一次 SSRF-safe 内容匹配
+      description: 仅返回 success、failed 或 unknown，不创建定时任务且不声称系统已发布。
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/PublicationCheckRequest'}}}}
+      responses: {'201': {description: 即时检测记录, content: {application/json: {schema: {$ref: '#/components/schemas/PublicationCheckEnvelope'}}}}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /publication-checks/{checkId}:
+    parameters: [{name: checkId, in: path, required: true, schema: {type: string, format: uuid}}]
+    get:
+      tags: [Publishing]
+      summary: 获取本人不可变即时检测记录
+      responses: {'200': {description: 检测记录, content: {application/json: {schema: {$ref: '#/components/schemas/PublicationCheckEnvelope'}}}}, '404': {$ref: '#/components/responses/ResourceNotFound'}}
+  /subjects/{subjectId}/publication-checks:
+    parameters: [{$ref: '#/components/parameters/SubjectId'}]
+    get:
+      tags: [Publishing]
+      summary: 获取主体即时检测记录分页
+      parameters: [{$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}]
+      responses: {'200': {description: 检测记录分页, content: {application/json: {schema: {$ref: '#/components/schemas/PublicationCheckPageEnvelope'}}}}, '404': {$ref: '#/components/responses/ResourceNotFound'}}
+  /articles/{articleId}/exports:
+    parameters: [{name: articleId, in: path, required: true, schema: {type: string, format: uuid}}]
+    post:
+      tags: [Articles]
+      summary: 导出已通过审核的当前稿为 Word、PDF、TXT、Markdown 或 HTML
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ArticleExportRequest'}}}}
+      responses: {'201': {description: 短期私有下载地址, content: {application/json: {schema: {$ref: '#/components/schemas/ArticleExportEnvelope'}}}}, '409': {$ref: '#/components/responses/BusinessConflict'}, '503': {$ref: '#/components/responses/ServiceUnavailable'}}
   /geo/reports/{reportId}/exports:
     parameters:
       - name: reportId
@@ -2024,11 +2202,62 @@ paths:
         in: path
         required: true
         schema: {type: string, format: uuid}
+    get:
+      tags: [Reports]
+      summary: 获取本人报告分享列表；永不返回 token 或 token digest
+      parameters: [{$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}]
+      responses: {'200': {description: 分享列表, content: {application/json: {schema: {$ref: '#/components/schemas/ReportShareListEnvelope'}}}}, '404': {$ref: '#/components/responses/ResourceNotFound'}}
     post:
       tags: [Reports]
-      summary: 创建完整报告分享链接
+      summary: 创建冻结完整报告与品牌快照的分享链接
+      description: 原始高熵 token 仅在创建 URL 中返回一次；数据库仅保存 HMAC digest，可选密码只保存哈希。
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ReportShareCreateRequest'}}}}
       responses:
-        '201': {description: 分享创建成功}
+        '201': {description: 分享创建成功, content: {application/json: {schema: {$ref: '#/components/schemas/ReportShareCreatedEnvelope'}}}}
+        '403': {$ref: '#/components/responses/PermissionDenied'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /subjects/{subjectId}/white-label:
+    parameters: [{$ref: '#/components/parameters/SubjectId'}]
+    get:
+      tags: [Reports]
+      summary: 获取主体默认或套餐白标配置
+      responses: {'200': {description: 有效品牌配置, content: {application/json: {schema: {$ref: '#/components/schemas/WhiteLabelEnvelope'}}}}, '404': {$ref: '#/components/responses/ResourceNotFound'}}
+    put:
+      tags: [Reports]
+      summary: 乐观锁保存有权益的主体白标配置
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/WhiteLabelUpdateRequest'}}}}
+      responses: {'200': {description: 已保存配置, content: {application/json: {schema: {$ref: '#/components/schemas/WhiteLabelEnvelope'}}}}, '403': {$ref: '#/components/responses/PermissionDenied'}, '409': {$ref: '#/components/responses/BusinessConflict'}}
+  /report-shares/{shareId}:
+    parameters: [{name: shareId, in: path, required: true, schema: {type: string, format: uuid}}]
+    delete:
+      tags: [Reports]
+      summary: 关闭本人分享；关闭不可逆且不物理删除证据
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      responses: {'200': {description: 已关闭分享, content: {application/json: {schema: {$ref: '#/components/schemas/ReportShareEnvelope'}}}}, '404': {$ref: '#/components/responses/ResourceNotFound'}}
+  /public/report-shares/{token}:
+    parameters: [{name: token, in: path, required: true, schema: {type: string, minLength: 32, maxLength: 100, writeOnly: true}}]
+    get:
+      security: []
+      tags: [Reports]
+      summary: 匿名读取冻结分享；密码保护时先返回最小锁定摘要
+      responses: {'200': {description: 锁定摘要或完整冻结快照, content: {application/json: {schema: {$ref: '#/components/schemas/PublicReportShareEnvelope'}}}}, '410': {description: 分享已过期或关闭}}
+  /public/report-shares/{token}/unlock:
+    parameters: [{name: token, in: path, required: true, schema: {type: string, minLength: 32, maxLength: 100, writeOnly: true}}]
+    post:
+      security: []
+      tags: [Reports]
+      summary: 限速验证分享密码并设置 HttpOnly、SameSite=Lax 短期 Cookie
+      requestBody: {required: true, content: {application/json: {schema: {type: object, additionalProperties: false, required: [password], properties: {password: {type: string, format: password, maxLength: 128, writeOnly: true}}}}}}
+      responses: {'200': {description: 已解锁}, '403': {$ref: '#/components/responses/PermissionDenied'}, '410': {description: 分享已过期或关闭}, '429': {$ref: '#/components/responses/RateLimited'}}
+  /public/report-shares/{token}/pdf:
+    parameters: [{name: token, in: path, required: true, schema: {type: string, minLength: 32, maxLength: 100, writeOnly: true}}]
+    get:
+      security: []
+      tags: [Reports]
+      summary: 对已解锁的冻结报告与品牌快照生成私有 PDF 下载地址
+      responses: {'200': {description: 短期下载地址, content: {application/json: {schema: {$ref: '#/components/schemas/ArticleExportEnvelope'}}}}, '403': {$ref: '#/components/responses/PermissionDenied'}, '410': {description: 分享已过期或关闭}, '503': {$ref: '#/components/responses/ServiceUnavailable'}}
   /admin/users:
     get:
       tags: [Admin]
@@ -7140,3 +7369,196 @@ components:
       allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/SubjectEnrichmentJob'}}}]
     SubjectEnrichmentConfirmEnvelope:
       allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: object, additionalProperties: false, required: [created, confirmation_id, subject], properties: {created: {type: boolean}, confirmation_id: {type: string, format: uuid}, subject: {$ref: '#/components/schemas/SubjectDetail'}}}}}]
+    ArticleTypeListEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: object, required: [items], properties: {items: {type: array, items: {type: object, required: [id, key, name, description, template_version], properties: {id: {type: string, format: uuid}, key: {type: string, enum: [brand_story, industry_insight, product_guide, faq_article]}, name: {type: string}, description: {type: string}, template_version: {type: object, required: [id, version_no, structure, network_policy, citation_required, allowed_source_types, recommended_channel_keys], properties: {id: {type: string, format: uuid}, version_no: {type: integer, minimum: 1}, structure: {type: object}, network_policy: {type: string, enum: [required, optional, disabled]}, citation_required: {type: boolean}, allowed_source_types: {type: array, items: {type: string, enum: [subject, document, web]}}, recommended_channel_keys: {type: array, items: {type: string}}}}}}}}}}}]
+    ArticleSourcePackCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [subject_id, article_type_id, document_source_ids, web_source_ids]
+      properties:
+        subject_id: {type: string, format: uuid}
+        article_type_id: {type: string, format: uuid}
+        document_source_ids: {type: array, maxItems: 50, uniqueItems: true, items: {type: string, format: uuid}}
+        web_source_ids: {type: array, maxItems: 50, uniqueItems: true, items: {type: string, format: uuid}}
+    ArticleSourcePackConfirmRequest:
+      type: object
+      additionalProperties: false
+      required: [selected_item_ids, conflict_resolutions]
+      properties:
+        selected_item_ids: {type: array, minItems: 1, maxItems: 101, uniqueItems: true, items: {type: string, format: uuid}}
+        conflict_resolutions: {type: array, items: {type: object, additionalProperties: false, required: [key, value], properties: {key: {type: string, maxLength: 100}, value: {type: string, maxLength: 500}}}}
+    ArticleSourcePack:
+      type: object
+      required: [id, subject_id, subject_version_id, article_type_id, template_version_id, status, conflict_status, conflicts, items, snapshot_digest]
+      properties:
+        id: {type: string, format: uuid}
+        subject_id: {type: string, format: uuid}
+        subject_version_id: {type: string, format: uuid}
+        article_type_id: {type: string, format: uuid}
+        template_version_id: {type: string, format: uuid}
+        status: {type: string, enum: [draft, confirmed]}
+        conflict_status: {type: string, enum: [clear, pending, resolved]}
+        conflicts: {type: array, items: {type: object, required: [key, options], properties: {key: {type: string}, options: {type: array, items: {type: object, required: [value, source_item_ids], properties: {value: {type: string}, source_item_ids: {type: array, items: {type: string, format: uuid}}}}}}}}
+        items: {type: array, items: {type: object, required: [id, source_type, title, trust_level, verification_status, excerpt, user_confirmed], properties: {id: {type: string, format: uuid}, source_type: {type: string, enum: [subject, document, web]}, title: {type: string}, url: {type: string}, trust_level: {type: integer, minimum: 0, maximum: 100}, verification_status: {type: string, enum: [verified, rejected]}, excerpt: {type: string}, user_confirmed: {type: boolean}}}}
+        snapshot_digest: {type: [string, 'null'], pattern: '^[0-9a-f]{64}$'}
+    ArticleSourcePackEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/ArticleSourcePack'}}}]
+    ArticleCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [content_depth]
+      properties:
+        article_type_id: {type: [string, 'null'], format: uuid}
+        custom_type: {type: string, maxLength: 100}
+        content_depth: {type: string, enum: [concise, standard, deep]}
+        title: {type: string, maxLength: 500}
+        source_pack_id: {type: [string, 'null'], format: uuid}
+    ArticleDraftRequest:
+      type: object
+      additionalProperties: false
+      required: [title, content, content_depth, expected_version]
+      properties:
+        title: {type: string, maxLength: 500}
+        content: {type: string, maxLength: 200000}
+        content_depth: {type: string, enum: [concise, standard, deep]}
+        expected_version: {type: integer, minimum: 1}
+    ArticleOutlineRequest:
+      type: object
+      additionalProperties: false
+      required: [text, expected_version, confirm]
+      properties: {text: {type: string, maxLength: 30000}, expected_version: {type: integer, minimum: 1}, confirm: {type: boolean}}
+    ArticleOutlineEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: object, required: [text, status, version], properties: {text: {type: string}, status: {type: string, enum: [empty, generating, ready, confirmed, failed]}, version: {type: integer, minimum: 1}, confirmed_at: {type: [string, 'null'], format: date-time}}}}}]
+    ArticleQuality:
+      type: object
+      required: [id, total_score, grade, dimensions, weights, suggestions, rule_version, first_free, advisory_only]
+      properties:
+        id: {type: string, format: uuid}
+        total_score: {type: integer, minimum: 0, maximum: 100}
+        grade: {type: string, enum: [excellent, good, fair, optimization_recommended]}
+        dimensions: {type: object, additionalProperties: {type: integer, minimum: 0, maximum: 100}}
+        weights: {type: object, description: 固定为 subject/factual/topic/structure/readability/keyword = 25/25/15/15/10/10, additionalProperties: {type: integer}}
+        suggestions: {type: array, maxItems: 20, items: {type: string}}
+        rule_version: {type: string, const: article-quality-v1}
+        first_free: {type: boolean}
+        advisory_only: {type: boolean, const: true}
+    Article:
+      type: object
+      required: [id, subject_id, subject_version_id, article_type, custom_type, template_version_id, source_pack_id, title, content, status, content_depth, moderation_status, current_quality_score, quality, citations, outline, version]
+      properties:
+        id: {type: string, format: uuid}
+        subject_id: {type: string, format: uuid}
+        subject_version_id: {type: string, format: uuid}
+        article_type: {oneOf: [{type: object, required: [id, key, name], properties: {id: {type: string, format: uuid}, key: {type: string}, name: {type: string}}}, {type: 'null'}]}
+        custom_type: {type: string}
+        template_version_id: {type: [string, 'null'], format: uuid}
+        source_pack_id: {type: [string, 'null'], format: uuid}
+        title: {type: string}
+        content: {type: string, description: 当前唯一用户稿；与不可变 AI generation result 分离}
+        status: {type: string, enum: [draft, generating, reviewing, ready, rejected]}
+        content_depth: {type: string, enum: [concise, standard, deep]}
+        moderation_status: {type: string, enum: [not_checked, passed, manual_review, rejected]}
+        current_quality_score: {type: [integer, 'null'], minimum: 0, maximum: 100}
+        quality: {oneOf: [{$ref: '#/components/schemas/ArticleQuality'}, {type: 'null'}]}
+        citations: {type: array, items: {type: object, required: [source_item_id, paragraph_index], properties: {source_item_id: {type: string, format: uuid}, paragraph_index: {type: integer, minimum: 0}}}}
+        outline: {oneOf: [{type: object, required: [text, status, generation_count, version], properties: {text: {type: string}, status: {type: string, enum: [empty, generating, ready, confirmed, failed]}, generation_count: {type: integer, minimum: 0}, version: {type: integer, minimum: 1}}}, {type: 'null'}]}
+        version: {type: integer, minimum: 1}
+        autosaved_at: {type: [string, 'null'], format: date-time}
+    ArticleEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/Article'}}}]
+    ArticlePageEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: object, required: [items, pagination, quota], properties: {items: {type: array, items: {$ref: '#/components/schemas/Article'}}, pagination: {type: object}, quota: {type: object, additionalProperties: {type: integer, minimum: 0}}}}}}]
+    ArticleJob:
+      type: object
+      required: [id, article_id, operation, status, billing, comparison_id, adaptation_id, safe_error_code]
+      properties:
+        id: {type: string, format: uuid}
+        article_id: {type: string, format: uuid}
+        operation: {type: string, enum: [outline, body, quality, local_optimize, full_optimize, channel_adapt]}
+        status: {type: string, enum: [queued, running, succeeded, failed]}
+        billing: {type: object, required: [quota_type, held, consumed], properties: {quota_type: {type: [string, 'null']}, held: {type: boolean}, consumed: {type: boolean}}}
+        comparison_id: {type: [string, 'null'], format: uuid}
+        adaptation_id: {type: [string, 'null'], format: uuid}
+        safe_error_code: {type: string}
+    ArticleJobEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/ArticleJob'}}}]
+    ArticleQualityEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/ArticleQuality'}}}]
+    ArticleOptimizationRequest:
+      type: object
+      additionalProperties: false
+      required: [instruction]
+      properties: {instruction: {type: string, maxLength: 2000}, selection: {type: string, maxLength: 20000}}
+    ArticleComparisonEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: object, required: [id, article_id, original, optimized, expires_at], properties: {id: {type: string, format: uuid}, article_id: {type: string, format: uuid}, original: {type: object, required: [title, content], properties: {title: {type: string}, content: {type: string}}}, optimized: {type: object, required: [title, content], properties: {title: {type: string}, content: {type: string}}}, expires_at: {type: string, format: date-time}}}}}]
+    ArticleModerationEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: object, required: [status, blocks_distribution, appeal_available, reviews], properties: {status: {type: string, enum: [not_checked, passed, manual_review, rejected]}, blocks_distribution: {type: boolean}, appeal_available: {type: boolean}, reviews: {type: array, items: {type: object}}}}}}]
+    PublishingChannel:
+      type: object
+      required: [id, key, name, official_url, channel_type, description, image_ratios, template_version_id, rules, actual_publishing_supported]
+      properties: {id: {type: string, format: uuid}, key: {type: string, enum: [website, wechat, zhihu, xiaohongshu]}, name: {type: string}, official_url: {type: string, format: uri}, channel_type: {type: string}, description: {type: string}, image_ratios: {type: array, items: {type: string}}, template_version_id: {type: string, format: uuid}, rules: {type: object}, actual_publishing_supported: {type: boolean, const: false}}
+    PublishingChannelListEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: object, required: [items], properties: {items: {type: array, items: {$ref: '#/components/schemas/PublishingChannel'}}}}}}]
+    ChannelBatchRequest:
+      type: object
+      additionalProperties: false
+      required: [channel_ids]
+      properties: {channel_ids: {type: array, minItems: 1, maxItems: 20, uniqueItems: true, items: {type: string, format: uuid}}}
+    ChannelAdaptation:
+      type: object
+      required: [id, article_id, channel, template_version_id, job_id, title, content, status, quality_score, safe_error_code, version]
+      properties: {id: {type: string, format: uuid}, article_id: {type: string, format: uuid}, channel: {$ref: '#/components/schemas/PublishingChannel'}, template_version_id: {type: string, format: uuid}, job_id: {type: [string, 'null'], format: uuid}, title: {type: string}, content: {type: string}, status: {type: string, enum: [queued, running, ready, failed]}, quality_score: {type: [integer, 'null'], minimum: 0, maximum: 100}, safe_error_code: {type: string}, version: {type: integer, minimum: 1}}
+    ChannelAdaptationEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/ChannelAdaptation'}}}]
+    ChannelAdaptationListEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: object, required: [items, pagination], properties: {items: {type: array, items: {$ref: '#/components/schemas/ChannelAdaptation'}}, pagination: {$ref: '#/components/schemas/Pagination'}}}}}]
+    ChannelAdaptationBatchEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: object, required: [items, estimated_article_credits], properties: {items: {type: array, items: {allOf: [{$ref: '#/components/schemas/ChannelAdaptation'}, {type: object, properties: {job: {$ref: '#/components/schemas/ArticleJob'}}}]}}, estimated_article_credits: {type: integer, minimum: 1}}}}}]
+    ChannelAdaptationUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [title, content, expected_version]
+      properties: {title: {type: string, maxLength: 500}, content: {type: string, maxLength: 200000}, expected_version: {type: integer, minimum: 1}}
+    PublicationCheckRequest:
+      type: object
+      additionalProperties: false
+      required: [subject_id, channel_id, url]
+      properties: {subject_id: {type: string, format: uuid}, article_id: {type: [string, 'null'], format: uuid}, adaptation_id: {type: [string, 'null'], format: uuid}, channel_id: {type: string, format: uuid}, url: {type: string, format: uri, maxLength: 4096}}
+    PublicationCheck:
+      type: object
+      required: [id, subject_id, article_id, adaptation_id, channel_id, url, result, detected_title, match_summary, safe_failure_code, checked_at, scheduled_recheck]
+      properties: {id: {type: string, format: uuid}, subject_id: {type: string, format: uuid}, article_id: {type: [string, 'null'], format: uuid}, adaptation_id: {type: [string, 'null'], format: uuid}, channel_id: {type: string, format: uuid}, url: {type: string, format: uri}, result: {type: string, enum: [success, failed, unknown]}, detected_title: {type: string}, match_summary: {type: string}, safe_failure_code: {type: string}, checked_at: {type: string, format: date-time}, scheduled_recheck: {type: boolean, const: false}}
+    PublicationCheckEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/PublicationCheck'}}}]
+    PublicationCheckPageEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: object, required: [items, pagination], properties: {items: {type: array, items: {$ref: '#/components/schemas/PublicationCheck'}}, pagination: {$ref: '#/components/schemas/Pagination'}}}}}]
+    ArticleExportRequest:
+      type: object
+      additionalProperties: false
+      required: [format]
+      properties: {format: {type: string, enum: [word, pdf, txt, markdown, html]}}
+    ArticleExportEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: object, required: [download_url], properties: {id: {type: string, format: uuid}, article_id: {type: string, format: uuid}, format: {type: string, enum: [word, pdf, txt, markdown, html]}, download_url: {type: string, format: uri}, created_at: {type: string, format: date-time}}}}}]
+    WhiteLabelUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [brand_name, logo_document_version_id, cover_document_version_id, primary_color, header_text, footer_text, contact, statement, expected_version]
+      properties: {brand_name: {type: string, maxLength: 100}, logo_document_version_id: {type: [string, 'null'], format: uuid}, cover_document_version_id: {type: [string, 'null'], format: uuid}, primary_color: {type: string, pattern: '^#[0-9a-fA-F]{6}$'}, header_text: {type: string, maxLength: 500}, footer_text: {type: string, maxLength: 500}, contact: {type: string, maxLength: 500}, statement: {type: string, maxLength: 5000}, expected_version: {type: integer, minimum: 0}}
+    WhiteLabelEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: object, required: [enabled, uses_default_brand, config, effective_brand], properties: {enabled: {type: boolean}, uses_default_brand: {type: boolean}, config: {type: [object, 'null']}, effective_brand: {type: object, description: 不含私有对象键}}}}}]
+    ReportShareCreateRequest:
+      type: object
+      additionalProperties: false
+      properties: {password: {type: string, format: password, minLength: 8, maxLength: 128, writeOnly: true}, expires_in_days: {type: [integer, 'null'], minimum: 1, maximum: 365}}
+    ReportShare:
+      type: object
+      required: [id, report_id, subject_id, password_required, expires_at, closed_at, status, access_count, last_accessed_at, created_at]
+      properties: {id: {type: string, format: uuid}, report_id: {type: string, format: uuid}, subject_id: {type: string, format: uuid}, password_required: {type: boolean}, expires_at: {type: [string, 'null'], format: date-time}, closed_at: {type: [string, 'null'], format: date-time}, status: {type: string, enum: [active, expired, closed]}, access_count: {type: integer, minimum: 0}, last_accessed_at: {type: [string, 'null'], format: date-time}, created_at: {type: string, format: date-time}}
+    ReportShareEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/ReportShare'}}}]
+    ReportShareListEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: object, required: [items, pagination], properties: {items: {type: array, items: {$ref: '#/components/schemas/ReportShare'}}, pagination: {$ref: '#/components/schemas/Pagination'}}}}}]
+    ReportShareCreatedEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {allOf: [{$ref: '#/components/schemas/ReportShare'}, {type: object, required: [url, token_returned_once], properties: {url: {type: string, description: 含仅返回一次的原始 token, writeOnly: true}, token_returned_once: {type: boolean, const: true}}}]}}}]
+    PublicReportShareEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: object, required: [password_required, unlocked], properties: {password_required: {type: boolean}, unlocked: {type: boolean}, summary: {type: object}, report: {type: object, description: 冻结的完整报告、问题和回答快照}, brand: {type: object, description: 不含内部对象键}, pdf_available: {type: boolean}}}}}]

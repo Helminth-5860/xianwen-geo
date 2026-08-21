@@ -5,6 +5,7 @@ from django.views.defaults import page_not_found, server_error
 from rest_framework import status
 
 from .error_codes import ErrorCode
+from .redaction import redact_request_path
 from .responses import error_envelope
 
 logger = logging.getLogger("xianwen.api")
@@ -25,7 +26,10 @@ def api_server_error(request):
     logger.error(
         "未处理的 Django 异常",
         exc_info=True,
-        extra={"exception_type": "UnhandledDjangoException", "path": request.path},
+        extra={
+            "exception_type": "UnhandledDjangoException",
+            "path": redact_request_path(request.path),
+        },
     )
     return JsonResponse(
         error_envelope(ErrorCode.INTERNAL_ERROR, request=request),

@@ -271,6 +271,7 @@ Cloud API 3.0 `SendSms`（版本 `2021-01-11`，固定端点
 - 敏感值通过云密钥管理或加密变量注入。
 - 不在镜像中写入生产 `.env`。
 - 应用启动时验证必需配置并失败退出，不带缺省危险值启动。
+- Stage 2 生产必须分别注入至少 50 字符的 `ARTICLE_IDEMPOTENCY_HMAC_KEY` 与 `REPORT_SHARE_HMAC_KEY`；两者不得相同，也不得复用 Django、quota、provider、数据库、Redis 或对象存储密钥。local/test 可使用明确标记为非生产的独立值。
 
 ## 14. Nginx
 

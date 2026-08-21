@@ -9,6 +9,7 @@ from rest_framework.response import Response
 from rest_framework.views import set_rollback
 
 from .error_codes import ErrorCode
+from .redaction import redact_request_path
 from .responses import error_envelope
 
 logger = logging.getLogger("xianwen.api")
@@ -72,7 +73,7 @@ def api_exception_handler(exc: Exception, context: dict[str, Any]) -> Response:
             exc_info=(type(exc), exc, exc.__traceback__),
             extra={
                 "exception_type": type(exc).__name__,
-                "path": getattr(request, "path", ""),
+                "path": redact_request_path(getattr(request, "path", "")),
             },
         )
 
@@ -86,7 +87,7 @@ def api_exception_handler(exc: Exception, context: dict[str, Any]) -> Response:
 def csrf_failure(request, reason=""):
     logger.warning(
         "CSRF 验证失败",
-        extra={"path": request.path, "exception_type": "CsrfFailure"},
+        extra={"path": redact_request_path(request.path), "exception_type": "CsrfFailure"},
     )
     return JsonResponse(
         error_envelope(ErrorCode.CSRF_FAILED, request=request),

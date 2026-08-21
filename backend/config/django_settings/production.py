@@ -21,6 +21,8 @@ WEB_IMPORT_IDEMPOTENCY_HMAC_KEY = require_env("WEB_IMPORT_IDEMPOTENCY_HMAC_KEY")
 SUBJECT_ENRICHMENT_IDEMPOTENCY_HMAC_KEY = require_env("SUBJECT_ENRICHMENT_IDEMPOTENCY_HMAC_KEY")
 KEYWORD_GENERATION_IDEMPOTENCY_HMAC_KEY = require_env("KEYWORD_GENERATION_IDEMPOTENCY_HMAC_KEY")
 DISTILLATION_IDEMPOTENCY_HMAC_KEY = require_env("DISTILLATION_IDEMPOTENCY_HMAC_KEY")
+ARTICLE_IDEMPOTENCY_HMAC_KEY = require_env("ARTICLE_IDEMPOTENCY_HMAC_KEY")
+REPORT_SHARE_HMAC_KEY = require_env("REPORT_SHARE_HMAC_KEY")
 FIELD_ENCRYPTION_MASTER_KEY = require_env("FIELD_ENCRYPTION_MASTER_KEY")
 API_CREDENTIAL_ENVIRONMENT = require_env("API_CREDENTIAL_ENVIRONMENT").lower()
 if API_CREDENTIAL_ENVIRONMENT not in {"staging", "production"}:
@@ -53,6 +55,8 @@ if FIELD_ENCRYPTION_MASTER_KEY in {
     KEYWORD_GENERATION_IDEMPOTENCY_HMAC_KEY,
     DISTILLATION_IDEMPOTENCY_HMAC_KEY,
     QUESTION_GENERATION_IDEMPOTENCY_HMAC_KEY,
+    ARTICLE_IDEMPOTENCY_HMAC_KEY,
+    REPORT_SHARE_HMAC_KEY,
 }:
     raise ImproperlyConfigured("FIELD_ENCRYPTION_MASTER_KEY must be independent.")
 if len(SMS_VERIFICATION_HMAC_KEY) < 50 or SMS_VERIFICATION_HMAC_KEY.lower() in weak_secret_markers:
@@ -201,6 +205,36 @@ if QUESTION_GENERATION_IDEMPOTENCY_HMAC_KEY in {
 }:
     raise ImproperlyConfigured("QUESTION_GENERATION_IDEMPOTENCY_HMAC_KEY must be independent.")
 
+for secret_name, secret_value in (
+    ("ARTICLE_IDEMPOTENCY_HMAC_KEY", ARTICLE_IDEMPOTENCY_HMAC_KEY),
+    ("REPORT_SHARE_HMAC_KEY", REPORT_SHARE_HMAC_KEY),
+):
+    lowered_secret = secret_value.lower()
+    if (
+        len(secret_value) < 50
+        or lowered_secret in weak_secret_markers
+        or "not-for-production" in lowered_secret
+        or "local-test" in lowered_secret
+        or "replace-with" in lowered_secret
+    ):
+        raise ImproperlyConfigured(f"{secret_name} is too weak for production.")
+    if secret_value in {
+        SECRET_KEY,
+        SMS_VERIFICATION_HMAC_KEY,
+        QUOTA_IDEMPOTENCY_HMAC_KEY,
+        GEO_DETECTION_IDEMPOTENCY_HMAC_KEY,
+        PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY,
+        FILE_IDEMPOTENCY_HMAC_KEY,
+        WEB_IMPORT_IDEMPOTENCY_HMAC_KEY,
+        SUBJECT_ENRICHMENT_IDEMPOTENCY_HMAC_KEY,
+        KEYWORD_GENERATION_IDEMPOTENCY_HMAC_KEY,
+        DISTILLATION_IDEMPOTENCY_HMAC_KEY,
+        QUESTION_GENERATION_IDEMPOTENCY_HMAC_KEY,
+    }:
+        raise ImproperlyConfigured(f"{secret_name} must be independent.")
+if ARTICLE_IDEMPOTENCY_HMAC_KEY == REPORT_SHARE_HMAC_KEY:
+    raise ImproperlyConfigured("Stage 2 HMAC keys must be independent.")
+
 WEB_IMPORT_ENABLED = env_bool("WEB_IMPORT_ENABLED", False)
 WEB_IMPORT_NETWORK_POLICY_ENFORCED = env_bool("WEB_IMPORT_NETWORK_POLICY_ENFORCED", False)
 if WEB_IMPORT_ENABLED and not WEB_IMPORT_NETWORK_POLICY_ENFORCED:
@@ -289,6 +323,14 @@ for forbidden_variable in ("DATABASE_URL", "REDIS_URL"):
         raise ImproperlyConfigured(
             "QUESTION_GENERATION_IDEMPOTENCY_HMAC_KEY must not reuse "
             f"{forbidden_variable} credentials."
+        )
+    if ARTICLE_IDEMPOTENCY_HMAC_KEY in {configured_url, configured_password}:
+        raise ImproperlyConfigured(
+            f"ARTICLE_IDEMPOTENCY_HMAC_KEY must not reuse {forbidden_variable} credentials."
+        )
+    if REPORT_SHARE_HMAC_KEY in {configured_url, configured_password}:
+        raise ImproperlyConfigured(
+            f"REPORT_SHARE_HMAC_KEY must not reuse {forbidden_variable} credentials."
         )
     if FIELD_ENCRYPTION_MASTER_KEY in {configured_url, configured_password}:
         raise ImproperlyConfigured(

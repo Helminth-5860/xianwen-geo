@@ -1,7 +1,11 @@
+import re
 from collections.abc import Mapping
 from typing import Any
 
 REDACTED = "[REDACTED]"
+_PUBLIC_SHARE_PATH = re.compile(
+    r"(?P<prefix>/public/report-shares/)[^/]+(?P<suffix>(?:/unlock|/pdf)?/?$)"
+)
 
 SENSITIVE_FIELD_NAMES = {
     "authorization",
@@ -40,3 +44,11 @@ def redact_sensitive_data(value: Any) -> Any:
     if isinstance(value, tuple):
         return tuple(redact_sensitive_data(item) for item in value)
     return value
+
+
+def redact_request_path(path: object) -> str:
+    """Remove one-time report-share tokens before application logging."""
+
+    return _PUBLIC_SHARE_PATH.sub(
+        lambda match: f"{match.group('prefix')}{REDACTED}{match.group('suffix')}", str(path)
+    )

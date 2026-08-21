@@ -1,0 +1,138 @@
+from django.urls import path
+
+from .views import (
+    ArticleChannelAdaptationsView,
+    ArticleDetailView,
+    ArticleDraftView,
+    ArticleExportView,
+    ArticleFullOptimizeView,
+    ArticleGenerateView,
+    ArticleModerationAppealView,
+    ArticleModerationView,
+    ArticleOptimizeView,
+    ArticleQualityCheckView,
+    ArticleQualityView,
+    ArticleTypeListView,
+    ChannelAdaptationView,
+    ComparisonChooseView,
+    ComparisonView,
+    GenerationJobView,
+    OutlineGenerateView,
+    OutlineView,
+    PublicationCheckDetailView,
+    PublicationChecksView,
+    PublishingChannelListView,
+    SourcePackConfirmView,
+    SourcePackCreateView,
+    SourcePackDetailView,
+    SourcePackSearchView,
+    SubjectArticleListCreateView,
+    SubjectPublicationChecksView,
+)
+
+urlpatterns = [
+    path("article-types", ArticleTypeListView.as_view(), name="article-types"),
+    path(
+        "articles/source-packs", SourcePackCreateView.as_view(), name="article-source-pack-create"
+    ),
+    path(
+        "articles/source-packs/<uuid:pack_id>",
+        SourcePackDetailView.as_view(),
+        name="article-source-pack",
+    ),
+    path(
+        "articles/source-packs/<uuid:pack_id>/search",
+        SourcePackSearchView.as_view(),
+        name="article-source-pack-search",
+    ),
+    path(
+        "articles/source-packs/<uuid:pack_id>/confirm",
+        SourcePackConfirmView.as_view(),
+        name="article-source-pack-confirm",
+    ),
+    path(
+        "subjects/<uuid:subject_id>/articles",
+        SubjectArticleListCreateView.as_view(),
+        name="subject-articles",
+    ),
+    path("articles/<uuid:article_id>", ArticleDetailView.as_view(), name="article-detail"),
+    path("articles/<uuid:article_id>/draft", ArticleDraftView.as_view(), name="article-draft"),
+    path(
+        "articles/<uuid:article_id>/outline/generate",
+        OutlineGenerateView.as_view(),
+        name="article-outline-generate",
+    ),
+    path("articles/<uuid:article_id>/outline", OutlineView.as_view(), name="article-outline"),
+    path(
+        "articles/<uuid:article_id>/generate",
+        ArticleGenerateView.as_view(),
+        name="article-generate",
+    ),
+    path(
+        "articles/<uuid:article_id>/quality-check",
+        ArticleQualityCheckView.as_view(),
+        name="article-quality-check",
+    ),
+    path(
+        "articles/<uuid:article_id>/quality", ArticleQualityView.as_view(), name="article-quality"
+    ),
+    path(
+        "articles/<uuid:article_id>/optimize/local",
+        ArticleOptimizeView.as_view(),
+        name="article-optimize-local",
+    ),
+    path(
+        "articles/<uuid:article_id>/optimize/full",
+        ArticleFullOptimizeView.as_view(),
+        name="article-optimize-full",
+    ),
+    path(
+        "article-comparisons/<uuid:comparison_id>",
+        ComparisonView.as_view(),
+        name="article-comparison",
+    ),
+    path(
+        "article-comparisons/<uuid:comparison_id>/choose",
+        ComparisonChooseView.as_view(),
+        name="article-comparison-choose",
+    ),
+    path(
+        "articles/<uuid:article_id>/moderation",
+        ArticleModerationView.as_view(),
+        name="article-moderation",
+    ),
+    path(
+        "articles/<uuid:article_id>/moderation/appeal",
+        ArticleModerationAppealView.as_view(),
+        name="article-moderation-appeal",
+    ),
+    path("article-jobs/<uuid:job_id>", GenerationJobView.as_view(), name="article-job"),
+    path("publishing-channels", PublishingChannelListView.as_view(), name="publishing-channels"),
+    path(
+        "articles/<uuid:article_id>/channel-adaptations",
+        ArticleChannelAdaptationsView.as_view(),
+        name="article-channel-adaptations",
+    ),
+    path(
+        "channel-adaptation-jobs/<uuid:job_id>",
+        GenerationJobView.as_view(),
+        name="channel-adaptation-job",
+    ),
+    path(
+        "channel-adaptations/<uuid:adaptation_id>",
+        ChannelAdaptationView.as_view(),
+        name="channel-adaptation",
+    ),
+    path("publication-checks", PublicationChecksView.as_view(), name="publication-checks"),
+    path(
+        "publication-checks/<uuid:check_id>",
+        PublicationCheckDetailView.as_view(),
+        name="publication-check",
+    ),
+    path(
+        "subjects/<uuid:subject_id>/publication-checks",
+        SubjectPublicationChecksView.as_view(),
+        name="subject-publication-checks",
+    ),
+    path("articles/<uuid:article_id>/exports", ArticleExportView.as_view(), name="article-export"),
+]

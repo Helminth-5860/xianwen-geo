@@ -26,6 +26,8 @@ REQUIRED_ENVIRONMENT = {
     "KEYWORD_GENERATION_IDEMPOTENCY_HMAC_KEY": "k" * 64,
     "DISTILLATION_IDEMPOTENCY_HMAC_KEY": "d" * 64,
     "QUESTION_GENERATION_IDEMPOTENCY_HMAC_KEY": "u" * 64,
+    "ARTICLE_IDEMPOTENCY_HMAC_KEY": "a" * 64,
+    "REPORT_SHARE_HMAC_KEY": "r" * 64,
     "FIELD_ENCRYPTION_MASTER_KEY": FERNET_TEST_KEY,
     "API_CREDENTIAL_ENVIRONMENT": "production",
     "SMS_PROVIDER": "unconfigured",
@@ -65,6 +67,8 @@ def import_settings(overrides: dict[str, str] | None = None, missing: str | None
             "DISTILLATION_PROVIDER",
             "QUESTION_GENERATION_IDEMPOTENCY_HMAC_KEY",
             "QUESTION_GENERATION_PROVIDER",
+            "ARTICLE_IDEMPOTENCY_HMAC_KEY",
+            "REPORT_SHARE_HMAC_KEY",
             "FIELD_ENCRYPTION_MASTER_KEY",
             "API_CREDENTIAL_ENVIRONMENT",
             "SMS_PROVIDER",
@@ -108,6 +112,8 @@ def import_settings(overrides: dict[str, str] | None = None, missing: str | None
         "SUBJECT_ENRICHMENT_IDEMPOTENCY_HMAC_KEY",
         "KEYWORD_GENERATION_IDEMPOTENCY_HMAC_KEY",
         "DISTILLATION_IDEMPOTENCY_HMAC_KEY",
+        "ARTICLE_IDEMPOTENCY_HMAC_KEY",
+        "REPORT_SHARE_HMAC_KEY",
         "FIELD_ENCRYPTION_MASTER_KEY",
         "API_CREDENTIAL_ENVIRONMENT",
         "DATABASE_URL",
@@ -268,6 +274,18 @@ def test_production_missing_required_environment_fails_fast(missing):
         (
             {"QUESTION_GENERATION_PROVIDER": "deepseek"},
             "Only unavailable question generation provider is supported",
+        ),
+        (
+            {"ARTICLE_IDEMPOTENCY_HMAC_KEY": "weak"},
+            "ARTICLE_IDEMPOTENCY_HMAC_KEY is too weak",
+        ),
+        (
+            {"REPORT_SHARE_HMAC_KEY": "weak"},
+            "REPORT_SHARE_HMAC_KEY is too weak",
+        ),
+        (
+            {"REPORT_SHARE_HMAC_KEY": "a" * 64},
+            "Stage 2 HMAC keys must be independent",
         ),
     ],
 )

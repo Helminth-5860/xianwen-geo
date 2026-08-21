@@ -2,13 +2,16 @@ from __future__ import annotations
 
 import logging
 
+from django.conf import settings
 from django.db import transaction
 from django.http import Http404
 from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_protect
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.status import (
+    HTTP_201_CREATED,
     HTTP_202_ACCEPTED,
     HTTP_204_NO_CONTENT,
     HTTP_403_FORBIDDEN,
@@ -27,7 +30,7 @@ from apps.subjects.subject_services import subject_for_user_or_404
 
 from .assistant import assistant_context_payload, respond_to_assistant
 from .exceptions import AssistantError, GeoDetectionError, StrategyError
-from .models import GeoDetectionQuestionSnapshot, GeoReport, ReportExport, StrategyNote
+from .models import GeoDetectionQuestionSnapshot, GeoReport, ReportExport, ReportShare, StrategyNote
 from .reports import (
     comparison,
     create_export,
@@ -46,9 +49,12 @@ from .serializers import (
     GeoDetectionSelectionSerializer,
     GeoRetestSerializer,
     ReportExportSerializer,
+    ReportShareCreateSerializer,
+    ReportShareUnlockSerializer,
     StrategyCreateSerializer,
     StrategyNoteDeleteSerializer,
     StrategyNoteSerializer,
+    WhiteLabelSerializer,
 )
 from .services import (
     cancel_detection,
@@ -60,6 +66,17 @@ from .services import (
     job_payload,
     model_progress_payload,
     models_for_user,
+)
+from .sharing import (
+    ShareError,
+    close_report_share,
+    create_report_share,
+    public_share_payload,
+    public_share_pdf,
+    save_white_label,
+    share_payload,
+    unlock_report_share,
+    white_label_payload,
 )
 from .strategy import (
     create_strategy_report,
@@ -681,3 +698,142 @@ class AssistantRespondView(APIView):
                 }
             )
         )
+
+
+def _share_error(exc: ShareError, request):
+    code = (
+        ErrorCode.PERMISSION_DENIED
+        if exc.status in {403, 410}
+        else ErrorCode.RATE_LIMITED
+        if exc.status == 429
+        else ErrorCode.VALIDATION_ERROR
+        if exc.status == 422
+        else ErrorCode.SERVICE_TEMPORARILY_UNAVAILABLE
+    )
+    return error_response(
+        code,
+        status_code=exc.status,
+        request=request,
+        message=exc.code,
+        details={"share_code": exc.code},
+    )
+
+
+class SubjectWhiteLabelView(APIView):
+    permission_classes = [IsAvailableAuthenticatedUser]
+
+    def get(self, request, subject_id):
+        subject = subject_for_user_or_404(user=request.user, subject_id=subject_id)
+        return _no_store(Response(white_label_payload(user=request.user, subject=subject)))
+
+    @method_decorator(csrf_protect)
+    def put(self, request, subject_id):
+        serializer = WhiteLabelSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            save_white_label(user=request.user, subject_id=subject_id, **serializer.validated_data)
+        except ShareError as exc:
+            return _share_error(exc, request)
+        subject = subject_for_user_or_404(user=request.user, subject_id=subject_id)
+        return _no_store(Response(white_label_payload(user=request.user, subject=subject)))
+
+
+class GeoReportSharesView(APIView):
+    permission_classes = [IsAvailableAuthenticatedUser]
+
+    def get(self, request, report_id):
+        report = report_for_user_or_404(user=request.user, report_id=report_id)
+        page = max(1, int(request.query_params.get("page", "1")))
+        page_size = min(100, max(1, int(request.query_params.get("page_size", "20"))))
+        query = ReportShare.objects.filter(user=request.user, report=report)
+        count = query.count()
+        rows = query[(page - 1) * page_size : page * page_size]
+        return _no_store(
+            Response(
+                {
+                    "items": [share_payload(row) for row in rows],
+                    "pagination": {
+                        "page": page,
+                        "page_size": page_size,
+                        "count": count,
+                        "total_pages": (count + page_size - 1) // page_size,
+                    },
+                }
+            )
+        )
+
+    @method_decorator(csrf_protect)
+    def post(self, request, report_id):
+        serializer = ReportShareCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            share, token = create_report_share(
+                user=request.user, report_id=report_id, **serializer.validated_data
+            )
+        except ShareError as exc:
+            return _share_error(exc, request)
+        payload = share_payload(share)
+        payload["url"] = f"/public/report-shares/{token}"
+        payload["token_returned_once"] = True
+        return _no_store(Response(payload, status=HTTP_201_CREATED))
+
+
+class ReportShareCloseView(APIView):
+    permission_classes = [IsAvailableAuthenticatedUser]
+
+    @method_decorator(csrf_protect)
+    def delete(self, request, share_id):
+        share = close_report_share(user=request.user, share_id=share_id)
+        return _no_store(Response(share_payload(share)))
+
+
+class PublicReportShareView(APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def get(self, request, token):
+        try:
+            _, payload = public_share_payload(token=token, request=request)
+        except ShareError as exc:
+            return _share_error(exc, request)
+        return _no_store(Response(payload))
+
+
+class PublicReportShareUnlockView(APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def post(self, request, token):
+        serializer = ReportShareUnlockSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            share, signed = unlock_report_share(
+                token=token, request=request, **serializer.validated_data
+            )
+        except ShareError as exc:
+            return _share_error(exc, request)
+        response = _no_store(
+            Response({"unlocked": True, "expires_in": settings.REPORT_SHARE_SESSION_TTL_SECONDS})
+        )
+        response.set_cookie(
+            f"xw_report_share_{share.pk.hex}",
+            signed,
+            max_age=settings.REPORT_SHARE_SESSION_TTL_SECONDS,
+            httponly=True,
+            secure=settings.SESSION_COOKIE_SECURE,
+            samesite="Lax",
+            path=f"/api/v1/public/report-shares/{token}",
+        )
+        return response
+
+
+class PublicReportSharePdfView(APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def get(self, request, token):
+        try:
+            url = public_share_pdf(token=token, request=request)
+        except ShareError as exc:
+            return _share_error(exc, request)
+        return _no_store(Response({"download_url": url}))

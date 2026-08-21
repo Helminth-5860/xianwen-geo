@@ -94,3 +94,33 @@ class AssistantRespondSerializer(StrictSerializer):
         if len(values) > 12:
             raise serializers.ValidationError("messages must contain at most 12 items")
         return values
+
+
+class WhiteLabelSerializer(StrictSerializer):
+    brand_name = serializers.CharField(max_length=100)
+    logo_document_version_id = serializers.UUIDField(allow_null=True, required=False, default=None)
+    cover_document_version_id = serializers.UUIDField(allow_null=True, required=False, default=None)
+    primary_color = serializers.RegexField(r"^#[0-9a-fA-F]{6}$", max_length=7)
+    header_text = serializers.CharField(max_length=500, allow_blank=True, default="")
+    footer_text = serializers.CharField(max_length=500, allow_blank=True, default="")
+    contact = serializers.CharField(max_length=500, allow_blank=True, default="")
+    statement = serializers.CharField(max_length=5000, allow_blank=True, default="")
+    expected_version = serializers.IntegerField(min_value=0)
+
+
+class ReportShareCreateSerializer(StrictSerializer):
+    password = serializers.CharField(
+        min_length=8,
+        max_length=128,
+        allow_blank=True,
+        required=False,
+        default="",
+        trim_whitespace=False,
+    )
+    expires_in_days = serializers.IntegerField(
+        min_value=1, required=False, allow_null=True, default=None
+    )
+
+
+class ReportShareUnlockSerializer(StrictSerializer):
+    password = serializers.CharField(max_length=128, trim_whitespace=False)
