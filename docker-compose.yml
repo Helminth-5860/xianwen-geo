@@ -67,6 +67,7 @@ services:
       GEO_DETECTION_INTERNAL_MAX_RETRIES: ${GEO_DETECTION_INTERNAL_MAX_RETRIES:-3}
       PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY: ${PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY:?set a random local plan-change HMAC key}
       ARTICLE_IDEMPOTENCY_HMAC_KEY: ${ARTICLE_IDEMPOTENCY_HMAC_KEY:-local-test-article-idempotency-key-not-for-production}
+      IMAGE_IDEMPOTENCY_HMAC_KEY: ${IMAGE_IDEMPOTENCY_HMAC_KEY:-local-test-image-idempotency-key-not-for-production}
       REPORT_SHARE_HMAC_KEY: ${REPORT_SHARE_HMAC_KEY:-local-test-report-share-hmac-key-not-for-production}
       WEB_IMPORT_ENABLED: ${WEB_IMPORT_ENABLED:-true}
       WEB_IMPORT_NETWORK_POLICY_ENFORCED: ${WEB_IMPORT_NETWORK_POLICY_ENFORCED:-true}
@@ -157,6 +158,7 @@ services:
       GEO_DETECTION_INTERNAL_MAX_RETRIES: ${GEO_DETECTION_INTERNAL_MAX_RETRIES:-3}
       PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY: ${PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY:?set a random local plan-change HMAC key}
       ARTICLE_IDEMPOTENCY_HMAC_KEY: ${ARTICLE_IDEMPOTENCY_HMAC_KEY:-local-test-article-idempotency-key-not-for-production}
+      IMAGE_IDEMPOTENCY_HMAC_KEY: ${IMAGE_IDEMPOTENCY_HMAC_KEY:-local-test-image-idempotency-key-not-for-production}
       REPORT_SHARE_HMAC_KEY: ${REPORT_SHARE_HMAC_KEY:-local-test-report-share-hmac-key-not-for-production}
       WEB_IMPORT_ENABLED: ${WEB_IMPORT_ENABLED:-true}
       WEB_IMPORT_NETWORK_POLICY_ENFORCED: ${WEB_IMPORT_NETWORK_POLICY_ENFORCED:-true}
@@ -230,6 +232,7 @@ services:
       GEO_DETECTION_INTERNAL_MAX_RETRIES: ${GEO_DETECTION_INTERNAL_MAX_RETRIES:-3}
       PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY: ${PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY:?set a random local plan-change HMAC key}
       ARTICLE_IDEMPOTENCY_HMAC_KEY: ${ARTICLE_IDEMPOTENCY_HMAC_KEY:-local-test-article-idempotency-key-not-for-production}
+      IMAGE_IDEMPOTENCY_HMAC_KEY: ${IMAGE_IDEMPOTENCY_HMAC_KEY:-local-test-image-idempotency-key-not-for-production}
       REPORT_SHARE_HMAC_KEY: ${REPORT_SHARE_HMAC_KEY:-local-test-report-share-hmac-key-not-for-production}
       WEB_IMPORT_ENABLED: ${WEB_IMPORT_ENABLED:-true}
       WEB_IMPORT_NETWORK_POLICY_ENFORCED: ${WEB_IMPORT_NETWORK_POLICY_ENFORCED:-true}
@@ -278,6 +281,38 @@ services:
     security_opt: ["no-new-privileges:true"]
     pids_limit: 128
     mem_limit: 512m
+    cpus: 1.0
+    depends_on:
+      api:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  image-generation-worker:
+    extends:
+      service: celery
+    command:
+      [
+        "celery",
+        "-A",
+        "config",
+        "worker",
+        "--loglevel=INFO",
+        "--queues=image_generation",
+        "--concurrency=1",
+        "--prefetch-multiplier=1",
+        "--time-limit=180",
+        "--soft-time-limit=170",
+      ]
+    privileged: false
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=128m
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 128
+    mem_limit: 1g
     cpus: 1.0
     depends_on:
       api:

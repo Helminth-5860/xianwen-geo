@@ -6,6 +6,7 @@ from django.conf import settings
 from django.db import models
 
 from .catalog import BUILTIN_MODEL_KEYS, BUILTIN_PROVIDER_KEYS
+from .contracts import AIModelCapability
 
 
 class AIProvider(models.Model):  # noqa: DJ008
@@ -179,6 +180,68 @@ class AIModelRuntimeConfig(models.Model):  # noqa: DJ008
         return self.display_name_override or self.model.canonical_display_name
 
 
+class AICapabilityRuntimeConfig(models.Model):  # noqa: DJ008
+    """Runtime facts that must not fall back to a model's detection configuration."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    model = models.ForeignKey(
+        AIModel, on_delete=models.PROTECT, related_name="capability_runtime_configs"
+    )
+    capability = models.CharField(
+        max_length=64,
+        choices=tuple((item.value, item.value) for item in AIModelCapability),
+    )
+    provider_model_id = models.CharField(max_length=255, blank=True)
+    api_version = models.CharField(max_length=100, blank=True)
+    enabled = models.BooleanField(default=False)
+    paused = models.BooleanField(default=False)
+    pause_reason = models.CharField(max_length=200, blank=True)
+    timeout_seconds = models.PositiveSmallIntegerField(default=120)
+    max_retries = models.PositiveSmallIntegerField(default=2)
+    retry_base_seconds = models.PositiveIntegerField(default=30)
+    version = models.PositiveBigIntegerField(default=1)
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="updated_ai_capability_runtime_configs",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "ai_capability_runtime_configs"
+        ordering = ("model__canonical_order", "capability", "id")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("model", "capability"), name="ai_cap_runtime_model_capability_unique"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(timeout_seconds__gte=1, timeout_seconds__lte=600),
+                name="ai_cap_runtime_timeout_range",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(max_retries__gte=0, max_retries__lte=10),
+                name="ai_cap_runtime_retries_range",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(retry_base_seconds__gte=1, retry_base_seconds__lte=3600),
+                name="ai_cap_runtime_retry_base_range",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(version__gte=1), name="ai_cap_runtime_version_gte_1"
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(paused=False, pause_reason="")
+                    | models.Q(paused=True) & ~models.Q(pause_reason="")
+                ),
+                name="ai_cap_runtime_pause_reason",
+            ),
+        ]
+
+
 class APICredential(models.Model):  # noqa: DJ008
     class Environment(models.TextChoices):
         STAGING = "staging", "Staging"
@@ -249,6 +312,44 @@ class APICredential(models.Model):  # noqa: DJ008
                     & models.Q(replaced_at__isnull=False)
                 ),
                 name="ai_credential_secret_state_shape",
+            ),
+        ]
+
+
+class APICredentialCapabilityBinding(models.Model):  # noqa: DJ008
+    """Explicitly authorizes one provider credential pool for one capability."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    provider = models.ForeignKey(
+        AIProvider, on_delete=models.PROTECT, related_name="credential_capability_bindings"
+    )
+    capability = models.CharField(
+        max_length=64,
+        choices=tuple((item.value, item.value) for item in AIModelCapability),
+    )
+    environment = models.CharField(max_length=32, choices=APICredential.Environment.choices)
+    enabled = models.BooleanField(default=False)
+    version = models.PositiveBigIntegerField(default=1)
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="updated_ai_credential_capability_bindings",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "api_credential_capability_bindings"
+        ordering = ("provider__provider_key", "capability", "environment", "id")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("provider", "capability", "environment"),
+                name="ai_credential_capability_binding_unique",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(version__gte=1), name="ai_credential_binding_version_gte_1"
             ),
         ]
 

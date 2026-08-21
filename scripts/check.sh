@@ -145,6 +145,7 @@ check_docker() {
     QUOTA_IDEMPOTENCY_HMAC_KEY=ci-only-quota-hmac-key-with-more-than-fifty-characters-000000 \
     GEO_DETECTION_IDEMPOTENCY_HMAC_KEY=ci-only-geo-detection-hmac-key-with-more-than-fifty-characters-000000 \
     PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY=ci-only-plan-change-hmac-key-with-more-than-fifty-characters-000000 \
+    IMAGE_IDEMPOTENCY_HMAC_KEY=ci-only-image-hmac-key-with-more-than-fifty-characters-000000 \
     WEB_IMPORT_IDEMPOTENCY_HMAC_KEY=ci-only-web-import-hmac-key-with-more-than-fifty-characters-000000 \
     ALLOWED_HOSTS=localhost,api \
     CSRF_TRUSTED_ORIGINS=http://localhost:3000 \
@@ -168,6 +169,7 @@ check_docker() {
     QUOTA_IDEMPOTENCY_HMAC_KEY=ci-only-quota-hmac-key-with-more-than-fifty-characters-000000 \
     GEO_DETECTION_IDEMPOTENCY_HMAC_KEY=ci-only-geo-detection-hmac-key-with-more-than-fifty-characters-000000 \
     PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY=ci-only-plan-change-hmac-key-with-more-than-fifty-characters-000000 \
+    IMAGE_IDEMPOTENCY_HMAC_KEY=ci-only-image-hmac-key-with-more-than-fifty-characters-000000 \
     WEB_IMPORT_IDEMPOTENCY_HMAC_KEY=ci-only-web-import-hmac-key-with-more-than-fifty-characters-000000 \
     ALLOWED_HOSTS=localhost,api \
     CSRF_TRUSTED_ORIGINS=http://localhost:3000 \
@@ -175,7 +177,7 @@ check_docker() {
     NEXT_PUBLIC_APP_ENV=local \
     NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1 \
     docker compose --env-file "$empty_env" -f "$REPO_ROOT/docker-compose.yml" \
-      build api celery celery-beat frontend
+      build api celery celery-beat image-generation-worker frontend
 }
 
 case "$MODE" in

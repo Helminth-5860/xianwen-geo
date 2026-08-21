@@ -122,12 +122,13 @@ def test_compose_application_services_keep_build_targets():
 
     for service in ("api", "celery", "celery-beat", "frontend"):
         assert "build" in compose["services"][service]
+    assert compose["services"]["image-generation-worker"]["extends"] == {"service": "celery"}
 
 
 def test_compose_gate_builds_only_application_services():
     shell_checks = (REPO_ROOT / "scripts" / "check.sh").read_text(encoding="utf-8")
 
-    assert "build api celery celery-beat frontend" in shell_checks
+    assert "build api celery celery-beat image-generation-worker frontend" in shell_checks
     assert "docker compose up" not in shell_checks
     assert "docker compose push" not in shell_checks
 

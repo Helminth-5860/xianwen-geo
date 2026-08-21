@@ -12,7 +12,12 @@ from .exceptions import (
     AIModelConfigValuesInvalid,
     AIModelConfigVersionConflict,
 )
-from .models import AIModelRuntimeConfig
+from .models import (
+    AICapabilityRuntimeConfig,
+    AIModelRuntimeConfig,
+    APICredential,
+    APICredentialCapabilityBinding,
+)
 
 
 def _normalized_text(value: str, *, maximum: int, required: bool = False) -> str:
@@ -190,3 +195,108 @@ def set_model_paused(
         before=before,
     )
     return config
+
+
+@transaction.atomic
+def update_capability_runtime(*, request, config_id, data) -> AICapabilityRuntimeConfig:
+    config = (
+        AICapabilityRuntimeConfig.objects.select_for_update()
+        .select_related("model__provider")
+        .get(pk=config_id)
+    )
+    expected_version = data.pop("expected_version")
+    if config.version != expected_version:
+        raise AIModelConfigVersionConflict
+    before = {
+        "provider_key": config.model.provider.provider_key,
+        "capability": config.capability,
+        "provider_model_configured": bool(config.provider_model_id),
+        "enabled": config.enabled,
+        "paused": config.paused,
+        "version": config.version,
+    }
+    for field, value in data.items():
+        if field in {"provider_model_id", "api_version", "pause_reason"}:
+            maximum = {"provider_model_id": 255, "api_version": 100, "pause_reason": 200}[field]
+            value = _normalized_text(value, maximum=maximum)
+        setattr(config, field, value)
+    if config.paused and not config.pause_reason:
+        raise AIModelConfigValuesInvalid
+    if not config.paused:
+        config.pause_reason = ""
+    if config.enabled and not config.provider_model_id:
+        raise AIModelConfigValuesInvalid
+    config.version += 1
+    config.updated_by = request.user
+    config.save()
+    record_audit_event(
+        request=request,
+        category="ai_model_config",
+        action_key="ai_capability_runtime.update",
+        outcome="executed",
+        actor=request.user,
+        target_type="ai_capability_runtime",
+        target_id=config.pk,
+        safe_before=before,
+        safe_after={
+            "provider_key": config.model.provider.provider_key,
+            "capability": config.capability,
+            "provider_model_configured": bool(config.provider_model_id),
+            "enabled": config.enabled,
+            "paused": config.paused,
+            "version": config.version,
+        },
+    )
+    return config
+
+
+@transaction.atomic
+def upsert_credential_capability_binding(*, request, provider, data):
+    capability = data["capability"]
+    environment = data["environment"]
+    enabled = data["enabled"]
+    binding = (
+        APICredentialCapabilityBinding.objects.select_for_update()
+        .filter(provider=provider, capability=capability, environment=environment)
+        .first()
+    )
+    before = None
+    if binding is None:
+        if data.get("expected_version") is not None:
+            raise AIModelConfigVersionConflict
+        binding = APICredentialCapabilityBinding(
+            provider=provider, capability=capability, environment=environment
+        )
+    else:
+        if data.get("expected_version") != binding.version:
+            raise AIModelConfigVersionConflict
+        before = {"enabled": binding.enabled, "version": binding.version}
+        binding.version += 1
+    if (
+        enabled
+        and not APICredential.objects.filter(
+            provider=provider, environment=environment, status=APICredential.Status.ACTIVE
+        ).exists()
+    ):
+        raise AIModelConfigStateConflict
+    binding.enabled = enabled
+    binding.updated_by = request.user
+    binding.save()
+    record_audit_event(
+        request=request,
+        category="api_credential",
+        action_key="api_credential.capability_binding.update",
+        outcome="executed",
+        actor=request.user,
+        target_type="api_credential_capability_binding",
+        target_id=binding.pk,
+        safe_before=before or {},
+        safe_after={
+            "provider_key": provider.provider_key,
+            "capability": capability,
+            "environment": environment,
+            "enabled": enabled,
+            "version": binding.version,
+        },
+    )
+    return binding

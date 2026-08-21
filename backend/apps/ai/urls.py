@@ -1,6 +1,8 @@
 from django.urls import path
 
 from .views import (
+    AdminAICapabilityRuntimeDetailView,
+    AdminAICapabilityRuntimeListView,
     AdminAIModelDetailView,
     AdminAIModelDisableView,
     AdminAIModelEnableView,
@@ -12,9 +14,25 @@ from .views import (
     AdminAPICredentialListCreateView,
     AdminAPICredentialRotateView,
     AdminAPICredentialTestView,
+    AdminCredentialCapabilityBindingView,
 )
 
 urlpatterns = [
+    path(
+        "admin/ai-capability-runtimes",
+        AdminAICapabilityRuntimeListView.as_view(),
+        name="admin-ai-capability-runtimes",
+    ),
+    path(
+        "admin/ai-capability-runtimes/<uuid:config_id>",
+        AdminAICapabilityRuntimeDetailView.as_view(),
+        name="admin-ai-capability-runtime",
+    ),
+    path(
+        "admin/api-credential-bindings/<str:provider_key>",
+        AdminCredentialCapabilityBindingView.as_view(),
+        name="admin-api-credential-bindings",
+    ),
     path(
         "admin/api-credentials",
         AdminAPICredentialListCreateView.as_view(),

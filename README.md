@@ -134,7 +134,7 @@ xianwen_geo_v1_dev_package/
 | Redis | 已具备：Redis 7.0，1 GB，1 主 1 副 |
 | 8 个检测模型 API | 已取得凭证；仍需逐一完成接口可用性验收 |
 | DeepSeek 内容生成能力 | 尚未完成开通或验收 |
-| 豆包图片生成能力 | 尚未完成开通或验收 |
+| 豆包图片生成能力 | XW-0710～0717 代码与隔离测试已实现；真实凭据/COS smoke 留作 Stage 3 UAT |
 | 腾讯云 COS | 尚未开通 |
 | 短信服务 | 尚未开通 |
 
@@ -441,6 +441,6 @@ evidence boundaries.
 
 ## Stage 2 内容生成、分发与完整报告分享
 
-文章类型/模板、确认资料包、正文/大纲、固定质量规则、临时优化对比、五种文章导出、独立渠道适配、SSRF-safe 发布链接检测、白标和完整报告快照分享已经形成一个非图片 Macro Wave。图片 `XW-0710`—`XW-0717` 因真实豆包图片 provider/credential 与生产 COS 尚未冻结而保持显式阻塞，不使用占位图伪造交付。
+文章类型/模板、确认资料包、正文/大纲、固定质量规则、临时优化对比、五种文章导出、独立渠道适配、SSRF-safe 发布链接检测、白标和完整报告快照分享构成内容分发波次。图片 `XW-0710`—`XW-0717` 已按独立豆包 ImageGenerations adapter、capability runtime/credential binding、逐图额度、私有存储、审核、主体图库、普通衍生图和 ZIP 下载实现；真实 Stage/Production 凭据与 COS smoke 仍是 Stage 3 UAT gate，不使用占位图伪造交付。
 
 安全、额度、迁移、部署、测试和精确拆分依据见 [docs/56-STAGE2-CONTENT-DISTRIBUTION-WAVE.md](docs/56-STAGE2-CONTENT-DISTRIBUTION-WAVE.md)。专属 PostgreSQL 验证：`scripts/test-stage2-content.ps1` / `scripts/test-stage2-content.sh`。

@@ -24,6 +24,7 @@ REPORT_SHARE_HMAC_KEY = "test-only-report-share-hmac-key-never-use-in-deployment
 PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY = "test-only-plan-change-idempotency-key-never-use-in-deployment"
 FILE_IDEMPOTENCY_HMAC_KEY = "test-only-file-idempotency-key-never-use-in-deployment"
 FILE_STORAGE_PROVIDER = "mock"
+IMAGE_IDEMPOTENCY_HMAC_KEY = "test-only-image-idempotency-key-never-use-in-deployment"
 FILE_SCANNER_PROVIDER = "mock"
 DOCUMENT_OCR_PROVIDER = "mock"
 SUBJECT_ENRICHMENT_IDEMPOTENCY_HMAC_KEY = (

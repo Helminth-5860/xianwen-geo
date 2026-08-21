@@ -5,7 +5,7 @@ from decimal import Decimal
 
 from .contracts import AIModelCapability
 from .errors import AIAdapterError, AIAdapterErrorCategory
-from .models import AIModelRuntimeConfig
+from .models import AICapabilityRuntimeConfig, AIModelRuntimeConfig
 from .registry import AIModelRegistry, model_registry
 
 
@@ -32,6 +32,21 @@ class AIModelRuntimeSnapshot:
     output_cost: Decimal | None
     request_cost: Decimal | None
     paused: bool
+    version: int
+
+
+@dataclass(frozen=True)
+class AICapabilityRuntimeSnapshot:
+    runtime_id: str
+    model_id: str
+    provider_key: str
+    model_key: str
+    capability: AIModelCapability
+    provider_model_id: str
+    api_version: str
+    timeout_seconds: int
+    max_retries: int
+    retry_base_seconds: int
     version: int
 
 
@@ -96,6 +111,48 @@ def list_available_runtime_snapshots() -> tuple[AIModelRuntimeSnapshot, ...]:
         enabled=True, paused=False
     )
     return tuple(_snapshot(row) for row in rows.order_by("sort_order", "model__model_key"))
+
+
+def get_capability_runtime_snapshot(
+    *, provider_key: str, capability: AIModelCapability | str
+) -> AICapabilityRuntimeSnapshot:
+    normalized = AIModelCapability(capability)
+    try:
+        config = AICapabilityRuntimeConfig.objects.select_related("model__provider").get(
+            model__provider__provider_key=provider_key,
+            capability=normalized.value,
+        )
+    except AICapabilityRuntimeConfig.DoesNotExist as exc:
+        raise AIAdapterError(
+            AIAdapterErrorCategory.CONFIGURATION_UNAVAILABLE,
+            stable_code="AI_CAPABILITY_RUNTIME_CONFIG_MISSING",
+            retryable=False,
+        ) from exc
+    if not config.enabled or config.paused:
+        raise AIAdapterError(
+            AIAdapterErrorCategory.MODEL_UNAVAILABLE,
+            stable_code="AI_CAPABILITY_RUNTIME_UNAVAILABLE",
+            retryable=False,
+        )
+    if not config.provider_model_id.strip():
+        raise AIAdapterError(
+            AIAdapterErrorCategory.CONFIGURATION_UNAVAILABLE,
+            stable_code="AI_CAPABILITY_PROVIDER_MODEL_MISSING",
+            retryable=False,
+        )
+    return AICapabilityRuntimeSnapshot(
+        runtime_id=str(config.pk),
+        model_id=str(config.model_id),
+        provider_key=config.model.provider.provider_key,
+        model_key=config.model.model_key,
+        capability=normalized,
+        provider_model_id=config.provider_model_id,
+        api_version=config.api_version,
+        timeout_seconds=config.timeout_seconds,
+        max_retries=config.max_retries,
+        retry_base_seconds=config.retry_base_seconds,
+        version=config.version,
+    )
 
 
 def resolve_detection_adapter(

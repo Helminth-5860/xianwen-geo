@@ -56,6 +56,7 @@ import {
   type SubjectDocument,
 } from "@/lib/documents-client";
 import { listWebSources } from "@/lib/web-sources-client";
+import { ArticleImagesWorkspace } from "@/components/article-images-workspace";
 
 export const ARTICLE_POLL_INTERVAL_MS = 1200;
 
@@ -65,6 +66,9 @@ type DocumentOption = SubjectDocument & { confirmedSourceId: string };
 export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
   const [types, setTypes] = useState<ArticleType[]>([]);
   const [documents, setDocuments] = useState<DocumentOption[]>([]);
+  const [imageReferenceDocuments, setImageReferenceDocuments] = useState<
+    Array<{ id: string; label: string }>
+  >([]);
   const [webSources, setWebSources] = useState<Array<{ id: string; label: string }>>([]);
   const [channels, setChannels] = useState<PublishingChannel[]>([]);
   const [selectedType, setSelectedType] = useState("");
@@ -125,6 +129,14 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
             ? [{ ...document, confirmedSourceId: result.current_confirmed_version.id }]
             : [],
         ),
+      );
+      setImageReferenceDocuments(
+        documentData.documents
+          .filter((document) => ["jpeg", "png", "webp"].includes(document.detected_file_kind))
+          .map((document) => ({
+            id: document.document_version_id,
+            label: `${document.display_name} · ${document.detected_file_kind.toUpperCase()}`,
+          })),
       );
       setWebSources(
         webData.results.flatMap((source) =>
@@ -353,12 +365,6 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
           type="info"
           showIcon
           title="文章只使用已确认并冻结的主体、文件和网页资料；不会把未核验互联网内容伪装成引用。"
-        />
-        <Alert
-          type="warning"
-          showIcon
-          title="图片生成暂不在本波开放"
-          description="冻结验收要求真实豆包生成与对象存储交付；当前部署合同仍标记该 provider 未开通/未验收，因此没有用占位图伪造完成。"
         />
         {error && <Alert type="error" showIcon title={error} />}
         {notice && <Alert type="success" showIcon title={notice} />}
@@ -693,6 +699,14 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
               </Space>
             </Card>
           </>
+        )}
+        {article && (
+          <ArticleImagesWorkspace
+            subjectId={subjectId}
+            articleId={article.id}
+            articleTitle={article.title || title}
+            referenceDocuments={imageReferenceDocuments}
+          />
         )}
 
         {!types.length && !error && <Spin description="正在加载文章类型与已确认资料" />}

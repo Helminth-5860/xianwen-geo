@@ -2,7 +2,13 @@ from rest_framework import serializers
 
 from apps.admin_rbac.serializers import StrictSerializer
 
-from .models import AIModelRuntimeConfig, APICredential
+from .contracts import AIModelCapability
+from .models import (
+    AICapabilityRuntimeConfig,
+    AIModelRuntimeConfig,
+    APICredential,
+    APICredentialCapabilityBinding,
+)
 
 
 class AIModelRuntimeConfigSerializer(serializers.ModelSerializer):
@@ -145,3 +151,76 @@ class APICredentialRotateSerializer(StrictSerializer):
 
 class APICredentialTestSerializer(StrictSerializer):
     expected_version = serializers.IntegerField(min_value=1)
+
+
+class AICapabilityRuntimeConfigSerializer(serializers.ModelSerializer):
+    model_id = serializers.UUIDField(source="model.id", read_only=True)
+    model_key = serializers.CharField(source="model.model_key", read_only=True)
+    provider_key = serializers.CharField(source="model.provider.provider_key", read_only=True)
+
+    class Meta:
+        model = AICapabilityRuntimeConfig
+        fields = (
+            "id",
+            "model_id",
+            "model_key",
+            "provider_key",
+            "capability",
+            "provider_model_id",
+            "api_version",
+            "enabled",
+            "paused",
+            "pause_reason",
+            "timeout_seconds",
+            "max_retries",
+            "retry_base_seconds",
+            "version",
+            "created_at",
+            "updated_at",
+        )
+
+
+class AICapabilityRuntimeConfigUpdateSerializer(StrictSerializer):
+    expected_version = serializers.IntegerField(min_value=1)
+    provider_model_id = serializers.CharField(required=False, max_length=255)
+    api_version = serializers.CharField(required=False, allow_blank=True, max_length=100)
+    enabled = serializers.BooleanField(required=False)
+    paused = serializers.BooleanField(required=False)
+    pause_reason = serializers.CharField(required=False, allow_blank=True, max_length=200)
+    timeout_seconds = serializers.IntegerField(required=False, min_value=1, max_value=600)
+    max_retries = serializers.IntegerField(required=False, min_value=0, max_value=10)
+    retry_base_seconds = serializers.IntegerField(required=False, min_value=1, max_value=3600)
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        if set(attrs) == {"expected_version"}:
+            raise serializers.ValidationError("At least one update field is required.")
+        paused = attrs.get("paused")
+        reason = attrs.get("pause_reason", "")
+        if paused is True and not reason.strip():
+            raise serializers.ValidationError("pause_reason is required when paused.")
+        return attrs
+
+
+class CredentialCapabilityBindingSerializer(serializers.ModelSerializer):
+    provider_key = serializers.CharField(source="provider.provider_key", read_only=True)
+
+    class Meta:
+        model = APICredentialCapabilityBinding
+        fields = (
+            "id",
+            "provider_key",
+            "capability",
+            "environment",
+            "enabled",
+            "version",
+            "created_at",
+            "updated_at",
+        )
+
+
+class CredentialCapabilityBindingWriteSerializer(StrictSerializer):
+    capability = serializers.ChoiceField(choices=[item.value for item in AIModelCapability])
+    environment = serializers.ChoiceField(choices=("staging", "production"))
+    enabled = serializers.BooleanField()
+    expected_version = serializers.IntegerField(required=False, min_value=1)

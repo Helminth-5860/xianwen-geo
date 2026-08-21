@@ -460,7 +460,7 @@ Provider abstraction 只接收冻结 request contract 并返回规范化 respons
 - 参考图生图（接口实际支持时）
 - AI 扩图／重构（接口实际支持时）
 
-当前状态：图片生成能力尚未完成开通或验收。需要按能力逐项验收，接口不支持的能力不得用伪实现冒充。
+当前状态：`XW-0710`—`XW-0717` 已实现独立 Ark `POST /api/v3/images/generations` adapter、参考图字段、归一化响应、临时 URL 安全下载与私有存储转存。生产 `provider_model_id`、capability credential binding 均由数据库显式批准且缺失时 fail closed；真实 Stage/Production credential 和 COS smoke 仍留作 Stage 3 UAT。接口不存在的专门能力不得用伪实现冒充。
 
 ### 24.2 请求
 

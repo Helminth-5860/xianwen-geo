@@ -109,7 +109,14 @@ def _connect(target: CanonicalUrl, address: str, deadline: float):
     return raw
 
 
-def _request_once(target: CanonicalUrl, deadline: float):
+def _request_once(
+    target: CanonicalUrl,
+    deadline: float,
+    *,
+    accept: str = "text/html,text/plain;q=0.9",
+    max_response_bytes: int | None = None,
+):
+    byte_limit = max_response_bytes or settings.WEB_IMPORT_MAX_RESPONSE_BYTES
     last_error = None
     for address in resolve_and_validate(target.host, target.port):
         sock = None
@@ -121,7 +128,7 @@ def _request_once(target: CanonicalUrl, deadline: float):
                 f"GET {target.target} HTTP/1.1\r\n"
                 f"Host: {host}\r\n"
                 f"User-Agent: {settings.WEB_IMPORT_USER_AGENT}\r\n"
-                "Accept: text/html,text/plain;q=0.9\r\n"
+                f"Accept: {accept}\r\n"
                 "Accept-Encoding: identity\r\n"
                 "Connection: close\r\n\r\n"
             ).encode("ascii")
@@ -159,7 +166,7 @@ def _request_once(target: CanonicalUrl, deadline: float):
                     declared_size = int(declared)
                 except ValueError as exc:
                     raise WebSourceContentUnsupported from exc
-                if declared_size < 0 or declared_size > settings.WEB_IMPORT_MAX_RESPONSE_BYTES:
+                if declared_size < 0 or declared_size > byte_limit:
                     raise WebSourceContentTooLarge
             else:
                 declared_size = None
@@ -168,13 +175,11 @@ def _request_once(target: CanonicalUrl, deadline: float):
             while True:
                 if deadline - time.monotonic() <= 0:
                     raise WebSourceTransientError
-                chunk = response.read(
-                    min(64 * 1024, settings.WEB_IMPORT_MAX_RESPONSE_BYTES + 1 - total)
-                )
+                chunk = response.read(min(64 * 1024, byte_limit + 1 - total))
                 if not chunk:
                     break
                 total += len(chunk)
-                if total > settings.WEB_IMPORT_MAX_RESPONSE_BYTES:
+                if total > byte_limit:
                     raise WebSourceContentTooLarge
                 chunks.append(chunk)
             if declared_size is not None and total != declared_size:
@@ -228,6 +233,61 @@ def fetch_url(raw_url: str) -> FetchResult:
         raw_type = content_types[0]
         media_type = raw_type.split(";", 1)[0].strip().lower()
         if media_type not in {"text/html", "text/plain"}:
+            raise WebSourceContentUnsupported
+        return FetchResult(
+            request_url=initial.value,
+            final_url=current.value,
+            status=status,
+            content_type=raw_type[:128],
+            body=body,
+            response_sha256=hashlib.sha256(body).hexdigest(),
+            redirect_count=redirect_count,
+            peer_ip=peer,
+        )
+
+
+def fetch_binary_url(
+    raw_url: str,
+    *,
+    allowed_media_types: frozenset[str],
+    max_response_bytes: int,
+) -> FetchResult:
+    initial = canonicalize_url(raw_url)
+    current = initial
+    deadline = time.monotonic() + settings.WEB_IMPORT_TOTAL_TIMEOUT_SECONDS
+    redirect_count = 0
+    while True:
+        if deadline - time.monotonic() <= 0:
+            raise WebSourceTransientError
+        status, headers, body, peer = _request_once(
+            current,
+            deadline,
+            accept=",".join(sorted(allowed_media_types)),
+            max_response_bytes=max_response_bytes,
+        )
+        header_map: dict[str, list[str]] = {}
+        for name, value in headers:
+            header_map.setdefault(name.lower(), []).append(value)
+        if status in {301, 302, 303, 307, 308}:
+            locations = header_map.get("location", [])
+            if len(locations) != 1 or redirect_count >= settings.WEB_IMPORT_MAX_REDIRECTS:
+                raise WebSourceUrlInvalid
+            following = canonicalize_url(locations[0], base=current.value)
+            if current.scheme == "https" and following.scheme != "https":
+                raise WebSourceUrlNotAllowed
+            current = following
+            redirect_count += 1
+            continue
+        if status in {408, 429} or 500 <= status < 600:
+            raise WebSourceTransientError
+        if status != 200:
+            raise WebSourceContentUnsupported
+        content_types = header_map.get("content-type", [])
+        if len(content_types) != 1:
+            raise WebSourceContentUnsupported
+        raw_type = content_types[0]
+        media_type = raw_type.split(";", 1)[0].strip().lower()
+        if media_type not in allowed_media_types:
             raise WebSourceContentUnsupported
         return FetchResult(
             request_url=initial.value,
