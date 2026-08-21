@@ -3685,6 +3685,125 @@ paths:
   /admin/image-styles/{presetId}:
     parameters: [{name: presetId, in: path, required: true, schema: {type: string, format: uuid}}]
     patch: {tags: [Admin, Images], summary: 以 expected_version 更新风格预设, parameters: [{$ref: '#/components/parameters/CsrfToken'}], responses: {'200': {description: 已更新}, '409': {$ref: '#/components/responses/BusinessConflict'}, '422': {$ref: '#/components/responses/ValidationError'}}}
+  /announcements:
+    get:
+      tags: [Me]
+      summary: 获取当前用户可见的已发布公告
+      responses: {'200': {description: 可见公告安全投影, content: {application/json: {schema: {$ref: '#/components/schemas/Stage3ListEnvelope'}}}}, '401': {$ref: '#/components/responses/AuthRequired'}}
+  /feedback:
+    get:
+      tags: [Me]
+      summary: 分页获取本人的反馈
+      parameters: [{$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}]
+      responses: {'200': {description: 本人反馈, content: {application/json: {schema: {$ref: '#/components/schemas/Stage3ObjectEnvelope'}}}}, '401': {$ref: '#/components/responses/AuthRequired'}}
+    post:
+      tags: [Me]
+      summary: 创建本人反馈
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/FeedbackCreateRequest'}}}}
+      responses: {'201': {description: 反馈已创建, content: {application/json: {schema: {$ref: '#/components/schemas/Stage3ObjectEnvelope'}}}}, '403': {$ref: '#/components/responses/CsrfFailed'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '422': {$ref: '#/components/responses/ValidationError'}, '429': {$ref: '#/components/responses/RateLimited'}, '503': {$ref: '#/components/responses/ServiceUnavailable'}}
+  /feedback/{feedbackId}:
+    parameters: [{name: feedbackId, in: path, required: true, schema: {type: string, format: uuid}}]
+    get: {tags: [Me], summary: 获取本人单条反馈, responses: {'200': {description: 本人反馈, content: {application/json: {schema: {$ref: '#/components/schemas/Stage3ObjectEnvelope'}}}}, '401': {$ref: '#/components/responses/AuthRequired'}, '404': {$ref: '#/components/responses/ResourceNotFound'}}}
+  /usage-records:
+    get:
+      tags: [Me]
+      summary: 获取本人用量和不含正文、提示词、供应商原始响应的任务安全投影
+      responses: {'200': {description: 用量和任务安全投影, content: {application/json: {schema: {$ref: '#/components/schemas/Stage3ObjectEnvelope'}}}}, '401': {$ref: '#/components/responses/AuthRequired'}}
+  /support-view-requests/{supportId}/decision:
+    parameters: [{name: supportId, in: path, required: true, schema: {type: string, format: uuid}}]
+    post:
+      tags: [Me]
+      summary: 用户授权、拒绝或撤销后台只读协助查看
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/SupportViewDecisionRequest'}}}}
+      responses: {'200': {description: 决定已记录, content: {application/json: {schema: {$ref: '#/components/schemas/Stage3ObjectEnvelope'}}}}, '403': {$ref: '#/components/responses/CsrfFailed'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {$ref: '#/components/responses/BusinessConflict'}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /admin/operations/dashboard:
+    get: {tags: [Admin], summary: 获取客户、跟进、反馈、审核和任务聚合安全指标, responses: {'200': {description: 运营仪表盘, content: {application/json: {schema: {$ref: '#/components/schemas/Stage3ObjectEnvelope'}}}}, '403': {$ref: '#/components/responses/PermissionDenied'}}}
+  /admin/operations/customers:
+    get:
+      tags: [Admin]
+      summary: 按管理员数据范围分页查询客户运营档案
+      parameters: [{$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}, {name: q, in: query, schema: {type: string}}, {name: account_status, in: query, schema: {type: string}}]
+      responses: {'200': {description: 客户运营档案, content: {application/json: {schema: {$ref: '#/components/schemas/Stage3ObjectEnvelope'}}}}, '403': {$ref: '#/components/responses/PermissionDenied'}}
+  /admin/operations/exports/customers:
+    post:
+      tags: [Admin]
+      summary: 经显式确认导出当前管理员数据范围内的脱敏客户 CSV
+      description: 仅超级管理员级导出权限可用；手机号保持脱敏，单元格防公式注入，最多 10000 行并追加审计。
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/CustomerExportRequest'}}}}
+      responses: {'200': {description: UTF-8 BOM CSV, content: {text/csv: {schema: {type: string}}}}, '403': {$ref: '#/components/responses/PermissionDenied'}, '409': {$ref: '#/components/responses/BusinessConflict'}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /admin/operations/customers/{customerId}:
+    parameters: [{name: customerId, in: path, required: true, schema: {type: string, format: uuid}}]
+    get: {tags: [Admin], summary: 获取数据范围内客户运营档案, responses: {'200': {description: 客户运营档案, content: {application/json: {schema: {$ref: '#/components/schemas/Stage3ObjectEnvelope'}}}}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}}}
+    patch:
+      tags: [Admin]
+      summary: 以 expected_version 更新客户状态、来源、标签和内部备注
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/CustomerProfileUpdateRequest'}}}}
+      responses: {'200': {description: 客户档案已更新, content: {application/json: {schema: {$ref: '#/components/schemas/Stage3ObjectEnvelope'}}}}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {$ref: '#/components/responses/BusinessConflict'}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /admin/operations/customers/{customerId}/contacts:
+    parameters: [{name: customerId, in: path, required: true, schema: {type: string, format: uuid}}]
+    get: {tags: [Admin], summary: 分页获取不可变客户联系记录, parameters: [{$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}], responses: {'200': {description: 联系记录, content: {application/json: {schema: {$ref: '#/components/schemas/Stage3ObjectEnvelope'}}}}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}}}
+    post: {tags: [Admin], summary: 追加不可变客户联系记录并可同时创建跟进, parameters: [{$ref: '#/components/parameters/CsrfToken'}], requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/CustomerContactCreateRequest'}}}}, responses: {'201': {description: 联系记录已追加, content: {application/json: {schema: {$ref: '#/components/schemas/Stage3ObjectEnvelope'}}}}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '422': {$ref: '#/components/responses/ValidationError'}}}
+  /admin/operations/customers/{customerId}/followups:
+    parameters: [{name: customerId, in: path, required: true, schema: {type: string, format: uuid}}]
+    get: {tags: [Admin], summary: 分页获取客户跟进, parameters: [{$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}], responses: {'200': {description: 跟进任务, content: {application/json: {schema: {$ref: '#/components/schemas/Stage3ObjectEnvelope'}}}}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}}}
+    post: {tags: [Admin], summary: 创建客户跟进, parameters: [{$ref: '#/components/parameters/CsrfToken'}], requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/CustomerFollowupCreateRequest'}}}}, responses: {'201': {description: 跟进任务已创建, content: {application/json: {schema: {$ref: '#/components/schemas/Stage3ObjectEnvelope'}}}}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '422': {$ref: '#/components/responses/ValidationError'}}}
+  /admin/operations/followups/{followupId}/action:
+    parameters: [{name: followupId, in: path, required: true, schema: {type: string, format: uuid}}]
+    post: {tags: [Admin], summary: 完成、取消或延期跟进, parameters: [{$ref: '#/components/parameters/CsrfToken'}], requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/FollowupActionRequest'}}}}, responses: {'200': {description: 跟进状态已更新, content: {application/json: {schema: {$ref: '#/components/schemas/Stage3ObjectEnvelope'}}}}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {$ref: '#/components/responses/BusinessConflict'}, '422': {$ref: '#/components/responses/ValidationError'}}}
+  /admin/customer-statuses:
+    get: {tags: [Admin], summary: 获取客户状态字典, responses: {'200': {description: 客户状态字典, content: {application/json: {schema: {$ref: '#/components/schemas/Stage3ListEnvelope'}}}}, '403': {$ref: '#/components/responses/PermissionDenied'}}}
+    post: {tags: [Admin], summary: 创建客户状态（仅可停用，不提供删除）, parameters: [{$ref: '#/components/parameters/CsrfToken'}], requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/CustomerCatalogCreateRequest'}}}}, responses: {'201': {description: 状态已创建}, '403': {$ref: '#/components/responses/PermissionDenied'}, '409': {$ref: '#/components/responses/BusinessConflict'}, '422': {$ref: '#/components/responses/ValidationError'}}}
+  /admin/customer-statuses/{catalogId}:
+    parameters: [{name: catalogId, in: path, required: true, schema: {type: string, format: uuid}}]
+    patch: {tags: [Admin], summary: 以 expected_version 修改或启停客户状态；不提供删除, parameters: [{$ref: '#/components/parameters/CsrfToken'}], requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/CustomerCatalogUpdateRequest'}}}}, responses: {'200': {description: 状态已更新}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {$ref: '#/components/responses/BusinessConflict'}, '422': {$ref: '#/components/responses/ValidationError'}}}
+  /admin/customer-tags:
+    get: {tags: [Admin], summary: 获取客户标签字典, responses: {'200': {description: 客户标签字典, content: {application/json: {schema: {$ref: '#/components/schemas/Stage3ListEnvelope'}}}}, '403': {$ref: '#/components/responses/PermissionDenied'}}}
+    post: {tags: [Admin], summary: 创建客户标签（仅可停用，不提供删除）, parameters: [{$ref: '#/components/parameters/CsrfToken'}], requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/CustomerCatalogCreateRequest'}}}}, responses: {'201': {description: 标签已创建}, '403': {$ref: '#/components/responses/PermissionDenied'}, '409': {$ref: '#/components/responses/BusinessConflict'}, '422': {$ref: '#/components/responses/ValidationError'}}}
+  /admin/customer-tags/{catalogId}:
+    parameters: [{name: catalogId, in: path, required: true, schema: {type: string, format: uuid}}]
+    patch: {tags: [Admin], summary: 以 expected_version 修改或启停客户标签；不提供删除, parameters: [{$ref: '#/components/parameters/CsrfToken'}], requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/CustomerCatalogUpdateRequest'}}}}, responses: {'200': {description: 标签已更新}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {$ref: '#/components/responses/BusinessConflict'}, '422': {$ref: '#/components/responses/ValidationError'}}}
+  /admin/tasks:
+    get: {tags: [Admin], summary: 获取任务中心安全投影；不返回正文、提示词、密钥或供应商原始响应, responses: {'200': {description: 任务安全投影, content: {application/json: {schema: {$ref: '#/components/schemas/Stage3ObjectEnvelope'}}}}, '403': {$ref: '#/components/responses/PermissionDenied'}}}
+  /admin/moderation:
+    get: {tags: [Admin], summary: 获取文章与图片人工审核队列安全投影, responses: {'200': {description: 审核队列, content: {application/json: {schema: {$ref: '#/components/schemas/Stage3ObjectEnvelope'}}}}, '403': {$ref: '#/components/responses/PermissionDenied'}}}
+  /admin/moderation/articles/{articleId}/decision:
+    parameters: [{name: articleId, in: path, required: true, schema: {type: string, format: uuid}}]
+    post: {tags: [Admin, Articles], summary: 记录文章人工审核决定；系统责任仅生成补偿待办，不直接改额度, parameters: [{$ref: '#/components/parameters/CsrfToken'}], requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ModerationDecisionRequest'}}}}, responses: {'200': {description: 审核决定已记录}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {$ref: '#/components/responses/BusinessConflict'}, '422': {$ref: '#/components/responses/ValidationError'}}}
+  /admin/moderation/images/{imageId}/decision:
+    parameters: [{name: imageId, in: path, required: true, schema: {type: string, format: uuid}}]
+    post: {tags: [Admin, Images], summary: 记录图片人工审核决定；系统责任仅生成补偿待办，不直接改额度, parameters: [{$ref: '#/components/parameters/CsrfToken'}], requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ModerationDecisionRequest'}}}}, responses: {'200': {description: 审核决定已记录}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {$ref: '#/components/responses/BusinessConflict'}, '422': {$ref: '#/components/responses/ValidationError'}}}
+  /admin/announcements:
+    get: {tags: [Admin], summary: 分页获取公告, parameters: [{$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}], responses: {'200': {description: 公告列表, content: {application/json: {schema: {$ref: '#/components/schemas/Stage3ObjectEnvelope'}}}}, '403': {$ref: '#/components/responses/PermissionDenied'}}}
+    post: {tags: [Admin], summary: 创建草稿公告, parameters: [{$ref: '#/components/parameters/CsrfToken'}], requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AnnouncementWriteRequest'}}}}, responses: {'201': {description: 公告已创建}, '403': {$ref: '#/components/responses/PermissionDenied'}, '422': {$ref: '#/components/responses/ValidationError'}}}
+  /admin/announcements/{announcementId}/action:
+    parameters: [{name: announcementId, in: path, required: true, schema: {type: string, format: uuid}}]
+    post: {tags: [Admin], summary: 发布或停用公告, parameters: [{$ref: '#/components/parameters/CsrfToken'}], requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AnnouncementActionRequest'}}}}, responses: {'200': {description: 公告状态已更新}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {$ref: '#/components/responses/BusinessConflict'}, '422': {$ref: '#/components/responses/ValidationError'}}}
+  /admin/feedback:
+    get: {tags: [Admin], summary: 按数据范围分页获取用户反馈, parameters: [{$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}, {name: status, in: query, schema: {type: string, enum: [open, replied, closed]}}], responses: {'200': {description: 用户反馈, content: {application/json: {schema: {$ref: '#/components/schemas/Stage3ObjectEnvelope'}}}}, '403': {$ref: '#/components/responses/PermissionDenied'}}}
+  /admin/feedback/{feedbackId}/action:
+    parameters: [{name: feedbackId, in: path, required: true, schema: {type: string, format: uuid}}]
+    post: {tags: [Admin], summary: 回复或关闭用户反馈, parameters: [{$ref: '#/components/parameters/CsrfToken'}], requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/FeedbackActionRequest'}}}}, responses: {'200': {description: 反馈状态已更新}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {$ref: '#/components/responses/BusinessConflict'}, '422': {$ref: '#/components/responses/ValidationError'}}}
+  /admin/users/{customerId}/support-view-request:
+    parameters: [{name: customerId, in: path, required: true, schema: {type: string, format: uuid}}]
+    post: {tags: [Admin], summary: 请求有时限的客户只读协助查看；forced 仅限冻结的高权限路径, parameters: [{$ref: '#/components/parameters/CsrfToken'}], requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/SupportViewCreateRequest'}}}}, responses: {'202': {description: 协助查看请求已创建}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '422': {$ref: '#/components/responses/ValidationError'}}}
+  /admin/support-view-sessions/{supportId}/summary:
+    parameters: [{name: supportId, in: path, required: true, schema: {type: string, format: uuid}}]
+    get: {tags: [Admin], summary: 读取已授权的最小只读客户摘要并追加不可变访问审计, responses: {'200': {description: 不含手机号、正文、提示词、密钥或供应商原始响应的摘要, content: {application/json: {schema: {$ref: '#/components/schemas/Stage3ObjectEnvelope'}}}}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}}}
+  /admin/release-readiness:
+    get: {tags: [Admin, System], summary: 获取 fail-closed 发布就绪安全摘要；外部证据缺失时为 NOT_READY, responses: {'200': {description: 不含密钥和原始配置的发布就绪状态, content: {application/json: {schema: {$ref: '#/components/schemas/ReleaseReadinessEnvelope'}}}}, '403': {$ref: '#/components/responses/PermissionDenied'}}}
+  /admin/system-alerts:
+    get: {tags: [Admin, System], summary: 分页获取去重后的系统告警安全摘要, parameters: [{$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}], responses: {'200': {description: 系统告警, content: {application/json: {schema: {$ref: '#/components/schemas/Stage3ObjectEnvelope'}}}}, '403': {$ref: '#/components/responses/PermissionDenied'}}}
+  /admin/system-alerts/{alertId}/action:
+    parameters: [{name: alertId, in: path, required: true, schema: {type: string, format: uuid}}]
+    post: {tags: [Admin, System], summary: 以 expected_version 确认或解决系统告警并追加审计, parameters: [{$ref: '#/components/parameters/CsrfToken'}], requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/SystemAlertActionRequest'}}}}, responses: {'200': {description: 告警状态已更新}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {$ref: '#/components/responses/BusinessConflict'}, '422': {$ref: '#/components/responses/ValidationError'}}}
+  /admin/backups:
+    get: {tags: [Admin, System], summary: 分页获取备份及恢复验证证据，不暴露存储凭据, parameters: [{$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}], responses: {'200': {description: 备份验证记录, content: {application/json: {schema: {$ref: '#/components/schemas/Stage3ObjectEnvelope'}}}}, '403': {$ref: '#/components/responses/PermissionDenied'}}}
+  /admin/retention-jobs:
+    get: {tags: [Admin, System], summary: 分页获取数据保留任务安全摘要, parameters: [{$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}], responses: {'200': {description: 数据保留任务, content: {application/json: {schema: {$ref: '#/components/schemas/Stage3ObjectEnvelope'}}}}, '403': {$ref: '#/components/responses/PermissionDenied'}}}
 components:
   pathItems:
     AdminStatusAction:
@@ -7754,3 +7873,134 @@ components:
       additionalProperties: false
       required: [subject_id, image_ids]
       properties: {subject_id: {type: string, format: uuid}, image_ids: {type: array, minItems: 1, maxItems: 100, uniqueItems: true, items: {type: string, format: uuid}}}
+    Stage3ObjectEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          required: [data]
+          properties: {data: {type: object, additionalProperties: true}}
+    Stage3ListEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          required: [data]
+          properties: {data: {type: array, items: {type: object, additionalProperties: true}}}
+    ReleaseReadinessEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: object
+              additionalProperties: false
+              required: [status, generated_at, environment, checks, secrets_included]
+              properties:
+                status: {type: string, enum: [READY, NOT_READY]}
+                generated_at: {type: string, format: date-time}
+                environment: {type: string}
+                secrets_included: {type: boolean, const: false}
+                checks:
+                  type: array
+                  items:
+                    type: object
+                    additionalProperties: false
+                    required: [key, status, required, code, safe_summary]
+                    properties:
+                      key: {type: string}
+                      status: {type: string, enum: [READY, NOT_READY]}
+                      required: {type: boolean}
+                      code: {type: string}
+                      safe_summary: {type: object, additionalProperties: true}
+    CustomerProfileUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version]
+      properties:
+        expected_version: {type: integer, minimum: 1}
+        status_id: {type: [string, 'null'], format: uuid}
+        source: {type: string, maxLength: 100}
+        internal_note: {type: string, maxLength: 2000}
+        tag_ids: {type: array, maxItems: 50, uniqueItems: true, items: {type: string, format: uuid}}
+    CustomerContactCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [contacted_at, method, content]
+      properties:
+        contacted_at: {type: string, format: date-time}
+        method: {type: string, enum: [phone, sms, wechat, email, other]}
+        content: {type: string, minLength: 1, maxLength: 4000}
+        next_followup_at: {type: [string, 'null'], format: date-time}
+        followup_note: {type: string, maxLength: 2000}
+    CustomerFollowupCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [due_at, note]
+      properties: {due_at: {type: string, format: date-time}, note: {type: string, minLength: 1, maxLength: 2000}}
+    FollowupActionRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version, action]
+      properties: {expected_version: {type: integer, minimum: 1}, action: {type: string, enum: [complete, cancel, postpone]}, due_at: {type: string, format: date-time}, note: {type: string, maxLength: 2000}}
+    CustomerCatalogCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [key, name]
+      properties: {key: {type: string, pattern: '^[a-z][a-z0-9_.-]{0,63}$'}, name: {type: string, minLength: 1, maxLength: 100}}
+    CustomerCatalogUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version]
+      properties: {expected_version: {type: integer, minimum: 1}, name: {type: string, minLength: 1, maxLength: 100}, state: {type: string, enum: [active, inactive]}}
+    CustomerExportRequest:
+      type: object
+      additionalProperties: false
+      required: [format, confirmation]
+      properties: {format: {type: string, const: csv}, confirmation: {type: string, const: EXPORT_SCOPED_CUSTOMERS}}
+    AnnouncementWriteRequest:
+      type: object
+      additionalProperties: false
+      required: [title, body]
+      properties:
+        title: {type: string, minLength: 1, maxLength: 200}
+        body: {type: string, minLength: 1, maxLength: 20000}
+        audience: {type: string, enum: [all, plan, user], default: all}
+        audience_keys: {type: array, maxItems: 500, uniqueItems: true, items: {type: string, maxLength: 100}}
+        starts_at: {type: [string, 'null'], format: date-time}
+        ends_at: {type: [string, 'null'], format: date-time}
+        pinned: {type: boolean, default: false}
+    AnnouncementActionRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version, action]
+      properties: {expected_version: {type: integer, minimum: 1}, action: {type: string, enum: [publish, disable]}}
+    FeedbackCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [module, description]
+      properties: {subject_id: {type: [string, 'null'], format: uuid}, module: {type: string, pattern: '^[a-z][a-z0-9_.-]{1,63}$'}, description: {type: string, minLength: 2, maxLength: 10000}}
+    FeedbackActionRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version, action]
+      properties: {expected_version: {type: integer, minimum: 1}, action: {type: string, enum: [reply, close]}, reply: {type: string, maxLength: 10000}}
+    SupportViewCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties: {reason: {type: string, minLength: 4, maxLength: 1000}, forced: {type: boolean, default: false}}
+    SupportViewDecisionRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version, decision]
+      properties: {expected_version: {type: integer, minimum: 1}, decision: {type: string, enum: [authorize, reject, revoke]}}
+    ModerationDecisionRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version, decision, responsibility, reason_code]
+      properties: {expected_version: {type: integer, minimum: 1}, decision: {type: string, enum: [approve, reject]}, responsibility: {type: string, enum: [system, user]}, reason_code: {type: string, pattern: '^[A-Z][A-Z0-9_]{2,99}$'}, note: {type: string, maxLength: 1000}}
+    SystemAlertActionRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version, action]
+      properties: {expected_version: {type: integer, minimum: 1}, action: {type: string, enum: [acknowledge, resolve]}}

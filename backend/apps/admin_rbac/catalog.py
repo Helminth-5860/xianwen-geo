@@ -190,6 +190,35 @@ PERMISSION_CATALOG = (
     CatalogPermission(
         "api_credentials.manage", "管理模型 API 密钥", "models", "action", 1130, True
     ),
+    CatalogPermission("menu.admin.operations", "商用运营与发布菜单", "operations", "menu", 1140),
+    CatalogPermission("operations.dashboard.view", "查看运营工作台", "operations", "action", 1150),
+    CatalogPermission(
+        "operations.customers.view", "查看客户运营档案", "operations", "action", 1160
+    ),
+    CatalogPermission(
+        "operations.customers.manage", "管理客户运营档案", "operations", "action", 1170
+    ),
+    CatalogPermission("operations.tasks.view", "查看业务任务中心", "operations", "action", 1180),
+    CatalogPermission("operations.tasks.manage", "执行安全任务操作", "operations", "action", 1190),
+    CatalogPermission(
+        "operations.moderation.view", "查看内容审核队列", "operations", "action", 1200
+    ),
+    CatalogPermission("operations.moderation.manage", "处理内容审核", "operations", "action", 1210),
+    CatalogPermission("operations.announcements.manage", "管理公告", "operations", "action", 1220),
+    CatalogPermission("operations.feedback.manage", "处理用户反馈", "operations", "action", 1230),
+    CatalogPermission("operations.support_view", "发起只读协助查看", "operations", "action", 1240),
+    CatalogPermission("operations.exports", "导出运营数据", "operations", "action", 1250, True),
+    CatalogPermission("release.readiness.view", "查看发布就绪状态", "operations", "action", 1260),
+    CatalogPermission("operations.alerts.view", "查看系统告警", "operations", "action", 1270),
+    CatalogPermission(
+        "operations.alerts.manage", "确认和解决系统告警", "operations", "action", 1280
+    ),
+    CatalogPermission(
+        "operations.backups.view", "查看备份与恢复证据", "operations", "action", 1290
+    ),
+    CatalogPermission(
+        "operations.retention.view", "查看数据保留任务", "operations", "action", 1300
+    ),
 )
 
 CATALOG_BY_KEY = {item.key: item for item in PERMISSION_CATALOG}

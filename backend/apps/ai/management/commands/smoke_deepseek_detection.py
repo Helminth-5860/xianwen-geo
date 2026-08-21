@@ -9,6 +9,7 @@ from ...contracts import AIAdapterRequest
 from ...detection import DetectionPayload
 from ...errors import AIAdapterError
 from ...runtime import resolve_detection_adapter
+from ...smoke import safe_smoke_summary
 
 SMOKE_SYSTEM_PROMPT = "你是一个面向普通用户的中文信息助手。请直接、自然地回答用户问题。"
 SMOKE_QUESTION = "请用一句中文说明什么是云计算。"
@@ -53,14 +54,7 @@ class Command(BaseCommand):
         self.stdout.write(
             self.style.SUCCESS(
                 "DeepSeek smoke PASS "
-                f"model={response.output.provider_model_id} "
-                f"finish={response.finish_reason.value} "
-                f"input_tokens={response.usage.input_tokens} "
-                f"output_tokens={response.usage.output_tokens} "
-                f"latency_ms={response.timing.latency_ms} "
-                f"answer_chars={len(response.output.raw_text)} "
-                f"citations={len(response.output.citations)} "
-                f"web_search_used={response.output.web_search_used} "
+                f"{safe_smoke_summary(provider_key='deepseek', response=response)} "
                 f"degraded={response.output.degraded} "
                 f"provider_request_id={response.provider_request_id or 'none'}"
             )

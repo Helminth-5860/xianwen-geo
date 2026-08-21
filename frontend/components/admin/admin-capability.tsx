@@ -27,6 +27,7 @@ const MENU_ITEMS = [
   ["menu.admin.subject-risk", "/admin/subject-reviews", "\u4e3b\u4f53\u98ce\u9669"],
   ["menu.admin.risk-policies", "/admin/risk-policies", "风险策略"],
   ["menu.admin.plans", "/admin/plans", "套餐"],
+  ["menu.admin.operations", "/admin/operations", "运营与发布"],
 ] as const;
 
 export function AdminCapabilityProvider({ children }: { children: ReactNode }) {
