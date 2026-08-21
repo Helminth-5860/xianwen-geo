@@ -63,6 +63,26 @@ vi.mock("../lib/web-sources-client", () => ({
   listWebSources: (...args: unknown[]) => webApi.listWebSources(...args),
 }));
 
+const imageApi = vi.hoisted(() => ({
+  appealImageModeration: vi.fn(),
+  attachImage: vi.fn(),
+  createImageBatchDownload: vi.fn(),
+  deriveImage: vi.fn(),
+  deriveImageAI: vi.fn(),
+  generateImage: vi.fn(),
+  getImageJob: vi.fn(),
+  getImageRecommendations: vi.fn(),
+  getImageSizes: vi.fn(),
+  getImageStyles: vi.fn(),
+  getSubjectImages: vi.fn(),
+  saveImageToLibrary: vi.fn(),
+}));
+vi.mock("../lib/images-client", () =>
+  Object.fromEntries(
+    Object.entries(imageApi).map(([key, value]) => [key, (...args: unknown[]) => value(...args)]),
+  ),
+);
+
 const shareApi = vi.hoisted(() => ({
   closeReportShare: vi.fn(),
   createReportShare: vi.fn(),
@@ -213,6 +233,7 @@ describe("Stage 2 content production, distribution, and sharing", () => {
       ...Object.values(shareApi),
       ...Object.values(documentApi),
       ...Object.values(webApi),
+      ...Object.values(imageApi),
     ]) {
       mock.mockReset();
     }
@@ -220,6 +241,15 @@ describe("Stage 2 content production, distribution, and sharing", () => {
     articleApi.getPublishingChannels.mockResolvedValue({ items: [channel] });
     documentApi.getSubjectDocuments.mockResolvedValue({ documents: [] });
     webApi.listWebSources.mockResolvedValue({ results: [] });
+    imageApi.getImageSizes.mockResolvedValue([
+      { id: "size-1", name: "横图", aspect_ratio: "16:9" },
+    ]);
+    imageApi.getImageStyles.mockResolvedValue([{ id: "style-1", name: "自然专业" }]);
+    imageApi.getImageRecommendations.mockResolvedValue({ recommendations: [] });
+    imageApi.getSubjectImages.mockResolvedValue({
+      results: [],
+      quota: { available: 3, frozen: 0, consumed: 0 },
+    });
     articleApi.createSourcePack.mockResolvedValue(basePack);
     articleApi.confirmSourcePack.mockResolvedValue({
       ...basePack,
@@ -236,7 +266,6 @@ describe("Stage 2 content production, distribution, and sharing", () => {
     render(<ArticleWorkspace subjectId="subject-1" initialTopic="品牌事实指南" />);
     expect(await screen.findByDisplayValue("品牌事实指南")).toBeTruthy();
     expect(screen.getByText(/不会把未核验互联网内容伪装成引用/)).toBeTruthy();
-    expect(screen.getByText("图片生成暂不在本波开放")).toBeTruthy();
     await userEvent.click(screen.getByRole("button", { name: "核验并冻结资料包" }));
     await waitFor(() =>
       expect(articleApi.confirmSourcePack).toHaveBeenCalledWith(basePack, ["source-1"], []),
@@ -248,6 +277,7 @@ describe("Stage 2 content production, distribution, and sharing", () => {
       source_pack_id: "pack-1",
     });
     expect(await screen.findByText("3. 当前唯一稿与质量建议")).toBeTruthy();
+    expect(screen.getByText("4. GEO 配图生成与主体图库")).toBeTruthy();
     expect(screen.getByText(/当前唯一稿与质量建议/)).toBeTruthy();
   });
 

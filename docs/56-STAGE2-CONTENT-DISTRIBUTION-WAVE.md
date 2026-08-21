@@ -4,7 +4,7 @@
 
 本波实现 `XW-0601`—`XW-0609`、`XW-0701`—`XW-0703`、`XW-0802`—`XW-0803`，并复用已交付的 `XW-0801` 报告导出。它们共享主体版本、已确认来源、文章额度、私有存储和报告快照边界，能够在一个可审计的 migration/topology wave 内完成。
 
-`XW-0710`—`XW-0717` 不在本波伪实现。冻结验收要求真实豆包图片生成、图片额度、审核、主体图库、智能处理和批量下载；`docs/08-AI-MODEL-ADAPTERS.md` 与 `docs/10-DEPLOYMENT.md` 仍把图片 capability/credential 和生产 COS 标记为未开通或未验收，正式 COS 又属于 Stage 3 `XW-1001`。因此图片域是客观 provider/credential Stop Condition，不是按 XW 编号机械拆分。前端明确展示不可用原因，API 不广告不存在的图片生成路由，也不返回占位图。
+本文件记录 PR #43 时的非图片交付边界。后续总指挥已冻结 Ark ImageGenerations、capability credential binding 与 S3-compatible private storage 开发合同，`XW-0710`—`XW-0717` 的实现与验证见 `docs/57-STAGE2-IMAGE-WAVE.md`；真实生产凭据/COS smoke 仍不属于本波。
 
 ## 2. 来源与文章证据
 

@@ -21,6 +21,7 @@ REQUIRED_ENVIRONMENT = {
     "GEO_DETECTION_IDEMPOTENCY_HMAC_KEY": "g" * 64,
     "PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY": "p" * 64,
     "FILE_IDEMPOTENCY_HMAC_KEY": "f" * 64,
+    "IMAGE_IDEMPOTENCY_HMAC_KEY": "i" * 64,
     "WEB_IMPORT_IDEMPOTENCY_HMAC_KEY": "w" * 64,
     "SUBJECT_ENRICHMENT_IDEMPOTENCY_HMAC_KEY": "e" * 64,
     "KEYWORD_GENERATION_IDEMPOTENCY_HMAC_KEY": "k" * 64,
@@ -58,6 +59,7 @@ def import_settings(overrides: dict[str, str] | None = None, missing: str | None
             "GEO_DETECTION_IDEMPOTENCY_HMAC_KEY",
             "PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY",
             "FILE_IDEMPOTENCY_HMAC_KEY",
+            "IMAGE_IDEMPOTENCY_HMAC_KEY",
             "WEB_IMPORT_IDEMPOTENCY_HMAC_KEY",
             "SUBJECT_ENRICHMENT_IDEMPOTENCY_HMAC_KEY",
             "SUBJECT_ENRICHMENT_PROVIDER",
@@ -108,6 +110,7 @@ def import_settings(overrides: dict[str, str] | None = None, missing: str | None
         "GEO_DETECTION_IDEMPOTENCY_HMAC_KEY",
         "PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY",
         "FILE_IDEMPOTENCY_HMAC_KEY",
+        "IMAGE_IDEMPOTENCY_HMAC_KEY",
         "WEB_IMPORT_IDEMPOTENCY_HMAC_KEY",
         "SUBJECT_ENRICHMENT_IDEMPOTENCY_HMAC_KEY",
         "KEYWORD_GENERATION_IDEMPOTENCY_HMAC_KEY",
@@ -163,6 +166,18 @@ def test_production_missing_required_environment_fails_fast(missing):
         (
             {"GEO_DETECTION_IDEMPOTENCY_HMAC_KEY": "q" * 64},
             "GEO_DETECTION_IDEMPOTENCY_HMAC_KEY must not reuse another application secret",
+        ),
+        (
+            {"IMAGE_IDEMPOTENCY_HMAC_KEY": "weak"},
+            "IMAGE_IDEMPOTENCY_HMAC_KEY is too weak",
+        ),
+        (
+            {"IMAGE_IDEMPOTENCY_HMAC_KEY": "f" * 64},
+            "IMAGE_IDEMPOTENCY_HMAC_KEY must not reuse another secret",
+        ),
+        (
+            {"WEB_IMPORT_IDEMPOTENCY_HMAC_KEY": "i" * 64},
+            "WEB_IMPORT_IDEMPOTENCY_HMAC_KEY must not reuse another secret",
         ),
         (
             {"PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY": "weak"},
@@ -389,6 +404,32 @@ def test_production_rejects_quota_hmac_reusing_redis_password():
 
     assert result.returncode != 0
     assert "QUOTA_IDEMPOTENCY_HMAC_KEY must not reuse REDIS_URL credentials" in result.stderr
+
+
+def test_production_rejects_image_hmac_reusing_database_password():
+    reused = "database-password-that-is-more-than-fifty-characters-long-image"
+    result = import_settings(
+        overrides={
+            "IMAGE_IDEMPOTENCY_HMAC_KEY": reused,
+            "DATABASE_URL": f"postgresql://app:{reused}@database:5432/xianwen",
+        }
+    )
+
+    assert result.returncode != 0
+    assert "IMAGE_IDEMPOTENCY_HMAC_KEY must not reuse DATABASE_URL credentials" in result.stderr
+
+
+def test_production_rejects_image_hmac_reusing_redis_password():
+    reused = "redis-password-that-is-more-than-fifty-characters-long-image"
+    result = import_settings(
+        overrides={
+            "IMAGE_IDEMPOTENCY_HMAC_KEY": reused,
+            "REDIS_URL": f"redis://default:{reused}@redis:6379/0",
+        }
+    )
+
+    assert result.returncode != 0
+    assert "IMAGE_IDEMPOTENCY_HMAC_KEY must not reuse REDIS_URL credentials" in result.stderr
 
 
 def test_production_rejects_plan_change_hmac_reusing_database_password():

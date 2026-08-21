@@ -5,6 +5,7 @@ from apps.ai.registry import AIModelRegistry, model_registry
 from .deepseek import register_deepseek_adapter
 from .deepseek_content import register_deepseek_content_adapters
 from .doubao import register_doubao_adapter
+from .doubao_image import register_doubao_image_adapter
 from .glm import register_glm_adapter
 from .hunyuan import register_hunyuan_adapter
 from .kimi import register_kimi_adapter
@@ -17,6 +18,7 @@ def register_real_detection_adapters(registry: AIModelRegistry = model_registry)
     register_deepseek_adapter(registry)
     register_deepseek_content_adapters(registry)
     register_doubao_adapter(registry)
+    register_doubao_image_adapter(registry)
     register_qwen_adapter(registry)
     register_hunyuan_adapter(registry)
     register_wenxin_adapter(registry)

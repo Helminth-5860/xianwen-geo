@@ -79,6 +79,7 @@ INSTALLED_APPS = [
     "apps.documents",
     "apps.web_sources",
     "apps.articles",
+    "apps.images",
 ]
 
 MIDDLEWARE = [
@@ -219,6 +220,16 @@ FILE_VALIDATION_MAX_UNCOMPRESSED_BYTES = positive_env_int(
 FILE_VALIDATION_MAX_ARCHIVE_ENTRY_BYTES = positive_env_int(
     "FILE_VALIDATION_MAX_ARCHIVE_ENTRY_BYTES", 50 * 1024 * 1024
 )
+IMAGE_IDEMPOTENCY_HMAC_KEY = os.getenv(
+    "IMAGE_IDEMPOTENCY_HMAC_KEY",
+    "local-test-image-idempotency-key-not-for-production",
+).strip()
+if len(IMAGE_IDEMPOTENCY_HMAC_KEY) < 32:
+    raise ImproperlyConfigured("IMAGE_IDEMPOTENCY_HMAC_KEY is too weak; minimum length is 32.")
+IMAGE_PROMPT_MAX_LENGTH = positive_env_int("IMAGE_PROMPT_MAX_LENGTH", 4000)
+IMAGE_MAX_BYTES = positive_env_int("IMAGE_MAX_BYTES", 10 * 1024 * 1024)
+IMAGE_MAX_PIXELS = positive_env_int("IMAGE_MAX_PIXELS", 40_000_000)
+IMAGE_BATCH_RETENTION_SECONDS = positive_env_int("IMAGE_BATCH_RETENTION_SECONDS", 86_400)
 FILE_VALIDATION_MAX_COMPRESSION_RATIO = positive_env_int(
     "FILE_VALIDATION_MAX_COMPRESSION_RATIO", 100
 )
@@ -542,4 +553,5 @@ CELERY_TASK_ROUTES = {
     "geo.execute_model_call": {"queue": "geo_detection"},
     "documents.execute_parse_job": {"queue": "file_processing"},
     "web_sources.execute_import": {"queue": "web_fetch"},
+    "images.execute_generation": {"queue": "image_generation"},
 }

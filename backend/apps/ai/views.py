@@ -16,18 +16,34 @@ from .credentials import (
     test_api_credential,
 )
 from .exceptions import AICredentialError, AIModelConfigError
-from .models import AIModelRuntimeConfig, APICredential
+from .models import (
+    AICapabilityRuntimeConfig,
+    AIModelRuntimeConfig,
+    AIProvider,
+    APICredential,
+    APICredentialCapabilityBinding,
+)
 from .serializers import (
+    AICapabilityRuntimeConfigSerializer,
+    AICapabilityRuntimeConfigUpdateSerializer,
     AIModelRuntimeConfigSerializer,
     AIModelRuntimeConfigUpdateSerializer,
     APICredentialCreateSerializer,
     APICredentialRotateSerializer,
     APICredentialSerializer,
     APICredentialTestSerializer,
+    CredentialCapabilityBindingSerializer,
+    CredentialCapabilityBindingWriteSerializer,
     ExpectedAIModelConfigVersionSerializer,
     PauseAIModelSerializer,
 )
-from .services import set_model_enabled, set_model_paused, update_runtime_config
+from .services import (
+    set_model_enabled,
+    set_model_paused,
+    update_capability_runtime,
+    update_runtime_config,
+    upsert_credential_capability_binding,
+)
 
 ERROR_STATUS = {
     "AI_MODEL_CONFIG_VERSION_CONFLICT": HTTP_409_CONFLICT,
@@ -251,3 +267,67 @@ class AdminAPICredentialTestView(APIView):
             "remote_validated": False,
         }
         return _no_store(Response(payload))
+
+
+class AdminAICapabilityRuntimeListView(APIView):
+    permission_classes = [HasAdminPermission]
+    required_permission = "models.list"
+
+    def get(self, request):
+        rows = AICapabilityRuntimeConfig.objects.select_related("model__provider").all()
+        return _no_store(Response(AICapabilityRuntimeConfigSerializer(rows, many=True).data))
+
+
+class AdminAICapabilityRuntimeDetailView(APIView):
+    permission_classes = [HasAdminPermission]
+    required_permissions_by_method = {"GET": "models.list", "PATCH": "models.manage"}
+
+    def _row(self, config_id):
+        try:
+            return AICapabilityRuntimeConfig.objects.select_related("model__provider").get(
+                pk=config_id
+            )
+        except AICapabilityRuntimeConfig.DoesNotExist as exc:
+            raise NotFound from exc
+
+    def get(self, request, config_id):
+        return _no_store(Response(AICapabilityRuntimeConfigSerializer(self._row(config_id)).data))
+
+    @method_decorator(csrf_protect)
+    def patch(self, request, config_id):
+        serializer = AICapabilityRuntimeConfigUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            row = update_capability_runtime(
+                request=request, config_id=config_id, data=dict(serializer.validated_data)
+            )
+        except AICapabilityRuntimeConfig.DoesNotExist as exc:
+            raise NotFound from exc
+        except AIModelConfigError as exc:
+            return _error(exc, request)
+        return _no_store(Response(AICapabilityRuntimeConfigSerializer(row).data))
+
+
+class AdminCredentialCapabilityBindingView(APIView):
+    permission_classes = [HasSuperuserAdminSession]
+
+    def get(self, request, provider_key):
+        rows = APICredentialCapabilityBinding.objects.select_related("provider").filter(
+            provider__provider_key=provider_key
+        )
+        return _no_store(Response(CredentialCapabilityBindingSerializer(rows, many=True).data))
+
+    @method_decorator(csrf_protect)
+    def put(self, request, provider_key):
+        serializer = CredentialCapabilityBindingWriteSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            provider = AIProvider.objects.get(provider_key=provider_key)
+            row = upsert_credential_capability_binding(
+                request=request, provider=provider, data=dict(serializer.validated_data)
+            )
+        except AIProvider.DoesNotExist as exc:
+            raise NotFound from exc
+        except AIModelConfigError as exc:
+            return _error(exc, request)
+        return _no_store(Response(CredentialCapabilityBindingSerializer(row).data))

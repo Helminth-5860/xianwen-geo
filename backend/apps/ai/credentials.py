@@ -10,7 +10,7 @@ from django.utils import timezone
 
 from apps.admin_rbac.audit_services import record_audit_event, validate_safe_json
 
-from .contracts import AdapterCredential
+from .contracts import AdapterCredential, AIModelCapability
 from .credential_crypto import CredentialCryptoError, decrypt_secret, encrypt_secret, mask_secret
 from .exceptions import (
     AICredentialAlreadyExists,
@@ -19,7 +19,12 @@ from .exceptions import (
     AICredentialStateConflict,
     AICredentialVersionConflict,
 )
-from .models import AIProvider, APICredential, APICredentialAudit
+from .models import (
+    AIProvider,
+    APICredential,
+    APICredentialAudit,
+    APICredentialCapabilityBinding,
+)
 
 
 def _validate_secret(value: str) -> str:
@@ -244,4 +249,71 @@ class DatabaseCredentialResolver:
         try:
             return AdapterCredential(decrypt_secret(credential.secret_reference))
         except (CredentialCryptoError, ValueError) as exc:
+            raise AICredentialCryptoFailure from exc
+
+
+@dataclass(frozen=True)
+class CapabilityCredentialSnapshot:
+    binding_id: str
+    binding_version: int
+    credential_id: str
+    credential_version: int
+    provider_key: str
+    capability: str
+    environment: str
+
+
+def capability_credential_snapshot(
+    *, provider_key: str, capability: AIModelCapability | str, environment: str | None = None
+) -> CapabilityCredentialSnapshot:
+    normalized = AIModelCapability(capability).value
+    selected_environment = environment or settings.API_CREDENTIAL_ENVIRONMENT
+    try:
+        binding = APICredentialCapabilityBinding.objects.select_related("provider").get(
+            provider__provider_key=provider_key,
+            capability=normalized,
+            environment=selected_environment,
+            enabled=True,
+        )
+        credential = APICredential.objects.get(
+            provider=binding.provider,
+            environment=selected_environment,
+            status=APICredential.Status.ACTIVE,
+        )
+    except (
+        APICredentialCapabilityBinding.DoesNotExist,
+        APICredential.DoesNotExist,
+    ) as exc:
+        raise AICredentialStateConflict from exc
+    return CapabilityCredentialSnapshot(
+        binding_id=str(binding.pk),
+        binding_version=binding.version,
+        credential_id=str(credential.pk),
+        credential_version=credential.version_no,
+        provider_key=provider_key,
+        capability=normalized,
+        environment=selected_environment,
+    )
+
+
+class CapabilityDatabaseCredentialResolver:
+    def __init__(
+        self,
+        *,
+        capability: AIModelCapability | str,
+        environment: str | None = None,
+    ) -> None:
+        self.capability = AIModelCapability(capability)
+        self.environment = environment or settings.API_CREDENTIAL_ENVIRONMENT
+
+    def resolve(self, provider_key: str) -> AdapterCredential:
+        snapshot = capability_credential_snapshot(
+            provider_key=provider_key,
+            capability=self.capability,
+            environment=self.environment,
+        )
+        try:
+            credential = APICredential.objects.get(pk=snapshot.credential_id)
+            return AdapterCredential(decrypt_secret(credential.secret_reference))
+        except (APICredential.DoesNotExist, CredentialCryptoError, ValueError) as exc:
             raise AICredentialCryptoFailure from exc

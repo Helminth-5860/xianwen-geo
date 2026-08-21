@@ -133,5 +133,5 @@ jobs:
         run: bash scripts/test-ai-credentials.sh
       - name: Run PostgreSQL/Redis GEO detection execution tests
         run: bash scripts/test-geo-detection.sh
-      - name: Run PostgreSQL Stage 2 content and sharing tests
+      - name: Run PostgreSQL Stage 2 content, image, and sharing tests
         run: bash scripts/test-stage2-content.sh
