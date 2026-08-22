@@ -21,7 +21,8 @@ contracts. It must not be used to claim that external release gates have passed.
 `EXTERNAL_GATE` remains mandatory for:
 
 - real Tencent COS private bucket, region, endpoint, lifecycle, CORS, credentials, and smoke;
-- real Tencent SMS credentials, approved templates/signature, delivery test, and administrator MFA;
+- real Tencent SMS credentials, approved templates/signature, delivery test, and administrator
+  security-critical Step-Up capability (business-risk actions and normal administrator password login do not require SMS by default);
 - real DeepSeek, eight detection-provider, and Ark image credentials and HTTPS smoke;
 - Staging/Production PostgreSQL migrations, Redis writes, worker rollout and heartbeats;
 - DNS, TLS, security groups, traffic cutover, production backup creation, isolated restore exercise,
@@ -29,6 +30,9 @@ contracts. It must not be used to claim that external release gates have passed.
 
 The release-readiness response is fail-closed. Missing external evidence returns `NOT_READY`; it
 never synthesizes success and never exposes secrets or raw configuration.
+The stable `sms` readiness check describes the administrator security-critical Step-Up capability.
+Missing real SMS configuration blocks release readiness and protected high-risk operations, not
+ordinary administrator password login or low-risk dashboard reads.
 Each real external smoke must later append a short-lived `release_evidence` row for the exact deploy
 SHA by using `record_release_evidence`. The table is append-only in ORM and PostgreSQL; a configured
 credential without matching, unexpired smoke evidence can never make the release ready.

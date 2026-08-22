@@ -113,11 +113,11 @@
 }
 ```
 
-返回用户状态 `pending`，同时建立登录会话。
+返回用户状态 `approved/active`，同时建立登录会话。
 
 ### 4.2 XW-0103 认证行为
 
-- 注册：验证码消费后创建 pending/active 用户并自动建立 Session；重复手机号此时才返回
+- 注册：验证码消费后创建 approved/active 用户并自动建立 Session；重复手机号此时才返回
   `409 ACCOUNT_ALREADY_EXISTS`。
 - 短信登录：无效验证码和不存在账号统一 `401 AUTH_CREDENTIALS_INVALID`；冻结或注销账号
   返回 `403 ACCOUNT_UNAVAILABLE`。

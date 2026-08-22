@@ -181,6 +181,7 @@ class AdminUserReviewView(APIView):
 class _AdminAccountStatusView(APIView):
     permission_classes = [HasAdminPermission]
     required_permission = "users.freeze"
+    requires_step_up = True
     action = ""
 
     def post(self, request, user_id):

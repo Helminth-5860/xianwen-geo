@@ -13,7 +13,7 @@ from apps.users.models import User
 
 
 class Command(BaseCommand):
-    help = "紧急关闭指定角色或超级管理员的 IP 白名单；不绕过短信 2FA。"
+    help = "紧急关闭指定角色或超级管理员的 IP 白名单；不绕过高风险短信 Step-Up。"
 
     def add_arguments(self, parser):
         target = parser.add_mutually_exclusive_group(required=True)

@@ -79,7 +79,7 @@ def test_new_anonymous_endpoints_require_real_csrf(path):
 
 
 @pytest.mark.django_db
-def test_registration_consumes_code_creates_pending_user_and_logs_in(monkeypatch):
+def test_registration_consumes_code_creates_approved_active_user_and_logs_in(monkeypatch):
     monkeypatch.setattr("apps.users.views.verify_and_consume", lambda *args, **kwargs: True)
     client, token = csrf_client()
     session = client.session
@@ -104,8 +104,10 @@ def test_registration_consumes_code_creates_pending_user_and_logs_in(monkeypatch
     user = User.objects.get()
     assert user.phone == "+8613800138000"
     assert user.nickname == "新用户"
-    assert user.approval_status == User.ApprovalStatus.PENDING
+    assert user.approval_status == User.ApprovalStatus.APPROVED
     assert user.account_status == User.AccountStatus.ACTIVE
+    assert user.approved_at is not None
+    assert user.approved_by is None
     assert user.is_active is True
     assert user.password != STRONG_PASSWORD
     assert user.check_password(STRONG_PASSWORD)
@@ -113,7 +115,7 @@ def test_registration_consumes_code_creates_pending_user_and_logs_in(monkeypatch
         "id": str(user.id),
         "nickname": "新用户",
         "phone_masked": "+86 138****8000",
-        "approval_status": "pending",
+        "approval_status": "approved",
         "account_status": "active",
     }
     assert response.json()["request_id"] == response["X-Request-ID"]

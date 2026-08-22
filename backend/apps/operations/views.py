@@ -756,6 +756,7 @@ class AdminImageModerationDecisionView(APIView):
 class AdminSupportViewCreateView(APIView):
     permission_classes = [HasAdminPermission]
     required_permission = "operations.support_view"
+    requires_step_up = True
 
     @method_decorator(csrf_protect)
     def post(self, request, customer_id):
@@ -835,6 +836,7 @@ class SupportViewDecisionView(APIView):
 class AdminSupportViewSummaryView(APIView):
     permission_classes = [HasAdminPermission]
     required_permission = "operations.support_view"
+    requires_step_up = True
 
     def get(self, request, support_id):
         try:

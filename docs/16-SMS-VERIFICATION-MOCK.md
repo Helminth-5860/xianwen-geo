@@ -34,7 +34,7 @@ POST 到 `sms.tencentcloudapi.com`，client region 来自必填 `SMS_REGION`。
 
 - `register` → `SMS_TEMPLATE_REGISTER`
 - `login` → `SMS_TEMPLATE_LOGIN`
-- `password_reset`、`admin_login_2fa` → `SMS_TEMPLATE_SECURITY`
+- `password_reset`、`admin_step_up` → `SMS_TEMPLATE_SECURITY`
 
 `SMS_TEMPLATE_REVIEW` 和 `SMS_TEMPLATE_PLAN_EXPIRY` 不属于当前
 `send_verification_code` 用途，不进入该调用路径。已审核腾讯模板的参数必须固定为

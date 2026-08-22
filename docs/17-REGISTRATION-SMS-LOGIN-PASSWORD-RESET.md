@@ -22,7 +22,8 @@ XW-0103 在 XW-0101 会话认证和 XW-0102 短信挑战基础上交付：
 两者不存在分布式事务：数据库失败或唯一约束冲突时不恢复验证码，用户需要重新获取。
 手机号已注册仅在有效验证码消费后返回 `409 ACCOUNT_ALREADY_EXISTS`。
 
-新用户使用 UUID，初始为 `approval_status=pending`、`account_status=active`，注册成功后
+新用户使用 UUID；当前 Auth Policy 在 register 验证码成功消费后直接写入
+`approval_status=approved`、`account_status=active` 和 `approved_at`，注册成功后
 通过 Django `login()` 建立最长 12 小时、浏览器关闭失效的 HttpOnly Session。注册不创建
 套餐、额度、试用或主体记录。
 
@@ -40,7 +41,8 @@ Provider 本地不可用在任何计数前返回通用 503，不伪装成发送�
 
 login 验证码原子消费后查询用户。不存在用户不自动创建；无效、过期、重放验证码及不存在
 用户统一返回 `401 AUTH_CREDENTIALS_INVALID`。active/cancel_pending 可登录，frozen/cancelled
-返回 `403 ACCOUNT_UNAVAILABLE`，审核状态不影响登录。
+返回 `403 ACCOUNT_UNAVAILABLE`，审核状态不影响登录。历史 pending/rejected 用户不会被本轮
+自动迁移；审核字段与后台治理继续作为兼容状态和人工风险处置能力保留。
 
 成功调用 Django `login()` 轮换 Session ID，并写入 `LoginEvent(login_method=sms)`；事件写入
 失败时立即 logout，客户端只收到通用 500。

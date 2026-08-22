@@ -43,6 +43,28 @@ export class AuthApiError extends Error {
   }
 }
 
+let adminStepUpHandler: (() => Promise<void>) | null = null;
+
+export function setAdminStepUpHandler(handler: (() => Promise<void>) | null) {
+  adminStepUpHandler = handler;
+}
+
+async function withAdminStepUpRetry<T>(operation: () => Promise<T>): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    if (
+      !(error instanceof AuthApiError) ||
+      !["ADMIN_STEP_UP_REQUIRED", "ADMIN_STEP_UP_EXPIRED"].includes(error.code) ||
+      adminStepUpHandler === null
+    ) {
+      throw error;
+    }
+    await adminStepUpHandler();
+    return operation();
+  }
+}
+
 export async function readEnvelope<T>(response: Response): Promise<T> {
   let payload: SuccessEnvelope<T> | ErrorEnvelope;
   try {
@@ -70,12 +92,14 @@ export async function getCsrfToken(): Promise<string> {
 }
 
 export async function get<T>(path: string): Promise<T> {
-  const response = await fetch(`${publicEnvironment.apiBaseUrl}${path}`, {
-    method: "GET",
-    credentials: "include",
-    headers: { Accept: "application/json" },
+  return withAdminStepUpRetry(async () => {
+    const response = await fetch(`${publicEnvironment.apiBaseUrl}${path}`, {
+      method: "GET",
+      credentials: "include",
+      headers: { Accept: "application/json" },
+    });
+    return readEnvelope<T>(response);
   });
-  return readEnvelope<T>(response);
 }
 
 export async function post<T>(
@@ -83,19 +107,21 @@ export async function post<T>(
   body: Record<string, unknown>,
   extraHeaders: Readonly<Record<string, string>> = {},
 ): Promise<T> {
-  const csrfToken = await getCsrfToken();
-  const response = await fetch(`${publicEnvironment.apiBaseUrl}${path}`, {
-    method: "POST",
-    credentials: "include",
-    headers: {
-      Accept: "application/json",
-      "Content-Type": "application/json",
-      "X-CSRFToken": csrfToken,
-      ...extraHeaders,
-    },
-    body: JSON.stringify(body),
+  return withAdminStepUpRetry(async () => {
+    const csrfToken = await getCsrfToken();
+    const response = await fetch(`${publicEnvironment.apiBaseUrl}${path}`, {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "X-CSRFToken": csrfToken,
+        ...extraHeaders,
+      },
+      body: JSON.stringify(body),
+    });
+    return readEnvelope<T>(response);
   });
-  return readEnvelope<T>(response);
 }
 
 export async function write<T>(
@@ -103,31 +129,35 @@ export async function write<T>(
   path: string,
   body: Record<string, unknown>,
 ) {
-  const csrfToken = await getCsrfToken();
-  const response = await fetch(`${publicEnvironment.apiBaseUrl}${path}`, {
-    method,
-    credentials: "include",
-    headers: {
-      Accept: "application/json",
-      "Content-Type": "application/json",
-      "X-CSRFToken": csrfToken,
-    },
-    body: JSON.stringify(body),
+  return withAdminStepUpRetry(async () => {
+    const csrfToken = await getCsrfToken();
+    const response = await fetch(`${publicEnvironment.apiBaseUrl}${path}`, {
+      method,
+      credentials: "include",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "X-CSRFToken": csrfToken,
+      },
+      body: JSON.stringify(body),
+    });
+    return readEnvelope<T>(response);
   });
-  return readEnvelope<T>(response);
 }
 
 export async function remove<T>(path: string) {
-  const csrfToken = await getCsrfToken();
-  const response = await fetch(`${publicEnvironment.apiBaseUrl}${path}`, {
-    method: "DELETE",
-    credentials: "include",
-    headers: {
-      Accept: "application/json",
-      "X-CSRFToken": csrfToken,
-    },
+  return withAdminStepUpRetry(async () => {
+    const csrfToken = await getCsrfToken();
+    const response = await fetch(`${publicEnvironment.apiBaseUrl}${path}`, {
+      method: "DELETE",
+      credentials: "include",
+      headers: {
+        Accept: "application/json",
+        "X-CSRFToken": csrfToken,
+      },
+    });
+    return readEnvelope<T>(response);
   });
-  return readEnvelope<T>(response);
 }
 export function sendSms(phone: string, purpose: SmsPurpose) {
   return post<{ sent: true; expires_in: number; resend_after: number }>("/auth/sms/send", {

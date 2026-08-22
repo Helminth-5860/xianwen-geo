@@ -8,13 +8,13 @@ import LoginPage, { LOGIN_MODE_OPTIONS } from "../app/login/page";
 import RegisterPage from "../app/register/page";
 
 describe("认证页面", () => {
-  it("渲染注册页必需字段和待审核说明", () => {
+  it("渲染注册页必需字段和验证后自动启用说明", () => {
     const html = renderToStaticMarkup(<RegisterPage />);
     expect(html).toContain("创建账号");
     expect(html).toContain("手机号");
     expect(html).toContain("昵称");
     expect(html).toContain("短信验证码");
-    expect(html).toContain("账号审核通过前");
+    expect(html).toContain("完成短信验证后，账号立即启用");
   });
 
   it("登录页提供密码和短信两种模式", () => {

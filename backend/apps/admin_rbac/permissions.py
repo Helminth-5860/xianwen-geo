@@ -6,6 +6,12 @@ from .catalog import CATALOG_BY_KEY
 from .models import AdminPermission, AdminProfile, AdminRole
 
 
+def _step_up_required(view, method: str) -> bool:
+    return bool(
+        getattr(view, "requires_step_up", False) or method in getattr(view, "step_up_methods", ())
+    )
+
+
 @dataclass(frozen=True)
 class AdminContext:
     profile: AdminProfile
@@ -62,9 +68,16 @@ class HasAdminPermission(BasePermission):
         context = resolve_admin_context(request.user)
         if context is None:
             return False
+        authorized = request.user.is_superuser or required in context.permission_keys
+        if not authorized:
+            return False
         request.admin_security_snapshot = security_snapshot
         request.admin_context = context
-        return request.user.is_superuser or required in context.permission_keys
+        if _step_up_required(view, request.method):
+            from .security import require_admin_step_up
+
+            require_admin_step_up(request, security_snapshot)
+        return True
 
 
 class HasAdminSession(BasePermission):
@@ -81,6 +94,10 @@ class HasAdminSession(BasePermission):
         if context is None:
             return False
         request.admin_context = context
+        if _step_up_required(view, request.method):
+            from .security import require_admin_step_up
+
+            require_admin_step_up(request, snapshot)
         return True
 
 

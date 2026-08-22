@@ -207,6 +207,18 @@ def test_only_superuser_admin_can_manage_credentials():
 
 
 @pytest.mark.django_db
+def test_credential_reads_are_low_risk_but_writes_require_step_up():
+    client = APIClient()
+    authenticate_admin_client(client, superuser(), step_up=False)
+
+    assert client.get("/api/v1/admin/api-credentials").status_code == 200
+    denied = create_deepseek(client)
+    assert denied.status_code == 403
+    assert denied.json()["error"]["code"] == "ADMIN_STEP_UP_REQUIRED"
+    assert APICredential.objects.count() == 0
+
+
+@pytest.mark.django_db
 def test_write_requires_real_csrf():
     client = super_client(csrf=True)
     blocked = create_deepseek(client)

@@ -180,6 +180,12 @@ def test_announcements_feedback_and_support_view_enforce_owner_and_read_only_aud
         format="json",
     )
     assert authorized.status_code == 200
+    without_step_up = authenticate_admin_client(APIClient(), admin, step_up=False)
+    denied_summary = without_step_up.get(
+        f"/api/v1/admin/support-view-sessions/{support_id}/summary"
+    )
+    assert denied_summary.status_code == 403
+    assert denied_summary.json()["error"]["code"] == "ADMIN_STEP_UP_REQUIRED"
     summary = client.get(f"/api/v1/admin/support-view-sessions/{support_id}/summary")
     assert summary.status_code == 200
     assert data(summary)["read_only"] is True
@@ -188,6 +194,22 @@ def test_announcements_feedback_and_support_view_enforce_owner_and_read_only_aud
         support_request_id=support_id, page_key="summary"
     ).exists()
     assert AuditEvent.objects.filter(action_key="support_view.user.authorize").exists()
+
+
+@pytest.mark.django_db
+def test_support_view_request_requires_step_up_before_writing():
+    admin = make_superuser()
+    customer = make_customer()
+    client = authenticate_admin_client(APIClient(), admin, step_up=False)
+
+    denied = client.post(
+        f"/api/v1/admin/users/{customer.pk}/support-view-request",
+        {"reason": "协助定位只读报告", "forced": False},
+        format="json",
+    )
+    assert denied.status_code == 403
+    assert denied.json()["error"]["code"] == "ADMIN_STEP_UP_REQUIRED"
+    assert SupportViewRequest.objects.count() == 0
 
 
 @pytest.mark.django_db
@@ -207,6 +229,8 @@ def test_release_readiness_is_admin_only_fail_closed_and_contains_no_secret_mate
     checks = {item["key"]: item for item in payload["checks"]}
     assert checks["private_storage"]["status"] == "NOT_READY"
     assert checks["sms"]["status"] == "NOT_READY"
+    assert checks["sms"]["safe_summary"]["admin_security_capability"] == "high_risk_step_up"
+    assert checks["sms"]["safe_summary"]["admin_login_sms_required"] is False
     assert checks["workers"]["status"] == "NOT_READY"
     assert checks["backup_recovery"]["status"] == "NOT_READY"
     assert checks["external_gate_evidence"]["status"] == "NOT_READY"

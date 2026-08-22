@@ -338,7 +338,8 @@ def test_open_api_only_requests_approval_then_second_superuser_executes():
     user = customer()
     plan, version = published_plan(requester)
     application = application_for(user, plan, version)
-    response = admin_client(requester).post(
+    requester_client = authenticate_admin_client(APIClient(), requester, step_up=False)
+    response = requester_client.post(
         f"/api/v1/admin/plan-applications/{application.pk}/activate",
         {"expected_version": application.version},
         format="json",
@@ -347,7 +348,8 @@ def test_open_api_only_requests_approval_then_second_superuser_executes():
     approval = ApprovalRequest.objects.get(pk=response.json()["data"]["approval_id"])
     assert approval.action_key == "subscription.open"
     assert not Subscription.objects.exists()
-    approved = admin_client(approver).post(
+    approver_client = authenticate_admin_client(APIClient(), approver, step_up=False)
+    approved = approver_client.post(
         f"/api/v1/admin/approvals/{approval.pk}/approve",
         {"current_password": PASSWORD},
         format="json",

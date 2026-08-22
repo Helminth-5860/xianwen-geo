@@ -353,6 +353,32 @@ RISK_ACTION_CATALOG = (
 )
 RISK_ACTION_BY_KEY = {item.key: item for item in RISK_ACTION_CATALOG}
 
+SMS_STEP_UP_REQUIRED_ACTIONS = frozenset(
+    {
+        "admin.disable",
+        "admin.lock",
+        "admin.role.change",
+        "admin.force_logout",
+        "role.permissions.replace",
+        "role.disable",
+        "role.security.update",
+        "role.ip_allowlist.update",
+        "superuser.ip_allowlist.update",
+        "user.freeze",
+        "quota.grant",
+        "quota.compensate",
+        "quota.manual_deduct",
+        "subject_risk.catalog.publish",
+    }
+)
+
+if not SMS_STEP_UP_REQUIRED_ACTIONS <= RISK_ACTION_BY_KEY.keys():
+    raise RuntimeError("SMS Step-Up action policy contains an unknown risk action")
+
+
+def requires_sms_step_up(action_key: str) -> bool:
+    return action_key in SMS_STEP_UP_REQUIRED_ACTIONS
+
 
 def mode_is_valid(definition: RiskActionDefinition, mode: str) -> bool:
     return (

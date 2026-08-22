@@ -5,7 +5,7 @@ class SmsPurpose(StrEnum):
     REGISTER = "register"
     LOGIN = "login"
     PASSWORD_RESET = "password_reset"
-    ADMIN_LOGIN_2FA = "admin_login_2fa"
+    ADMIN_STEP_UP = "admin_step_up"
 
 
 PUBLIC_SMS_PURPOSES = (

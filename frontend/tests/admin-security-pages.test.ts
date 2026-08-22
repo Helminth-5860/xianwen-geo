@@ -6,12 +6,16 @@ const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf
 
 describe("管理员安全页面源代码边界", () => {
   it("challenge 不进入任何持久化浏览器存储或 URL", () => {
-    const page = read("../app/admin/login/page.tsx");
-    expect(page).toContain("useState<string | null>");
-    expect(page).not.toContain("localStorage");
-    expect(page).not.toContain("sessionStorage");
-    expect(page).not.toContain("URLSearchParams");
-    expect(page).not.toContain("document.cookie");
+    const login = read("../app/admin/login/page.tsx");
+    const stepUp = read("../components/admin/admin-step-up.tsx");
+    expect(login).not.toContain("challengeId");
+    expect(stepUp).toContain('useState("")');
+    for (const source of [login, stepUp]) {
+      expect(source).not.toContain("localStorage");
+      expect(source).not.toContain("sessionStorage");
+      expect(source).not.toContain("URLSearchParams");
+      expect(source).not.toContain("document.cookie");
+    }
   });
 
   it("角色和超级管理员页面提供 current_password、版本与锁出确认", () => {

@@ -83,27 +83,29 @@ def password_challenge(user):
         HTTP_USER_AGENT="xw-0106-postgres",
     )
     assert response.status_code == 200
-    assert response.json()["data"]["requires_2fa"] is True
-    return client, csrf, response.json()["data"]["challenge_id"]
+    assert response.json()["data"]["requires_2fa"] is False
+    csrf = client.get("/api/v1/auth/csrf").json()["data"]["csrf_token"]
+    challenged = client.post(
+        "/api/v1/admin/auth/step-up/challenge",
+        {},
+        format="json",
+        HTTP_X_CSRFTOKEN=csrf,
+        HTTP_USER_AGENT="xw-0106-postgres",
+    )
+    assert challenged.status_code == 201
+    return client, csrf, challenged.json()["data"]["challenge_id"]
 
 
 def send_code(client, csrf, challenge):
     provider = get_sms_provider()
     assert isinstance(provider, MockSmsProvider)
-    response = client.post(
-        "/api/v1/admin/auth/login/sms/send",
-        {"challenge_id": challenge},
-        format="json",
-        HTTP_X_CSRFTOKEN=csrf,
-        HTTP_USER_AGENT="xw-0106-postgres",
-    )
-    assert response.status_code == 200
+    assert challenge
     return provider.outbox[-1].code
 
 
 def verify_code(client, csrf, challenge, code):
     return client.post(
-        "/api/v1/admin/auth/login/sms/verify",
+        "/api/v1/admin/auth/step-up/verify",
         {"challenge_id": challenge, "sms_code": code},
         format="json",
         HTTP_X_CSRFTOKEN=csrf,
@@ -126,12 +128,37 @@ def test_postgresql_redis_superuser_two_factor_is_one_time_and_keys_are_fingerpr
     assert client.get("/api/v1/admin/me", HTTP_USER_AGENT="xw-0106-postgres").status_code == 200
     assert replay.status_code == 401
     keys = [
-        item.decode() for item in get_redis_connection("default").scan_iter("auth:admin-login:*")
+        item.decode() for item in get_redis_connection("default").scan_iter("auth:admin-step-up:*")
     ]
     joined = " ".join(keys)
     assert challenge not in joined
     assert user.phone not in joined
     assert "127.0.0.1" not in joined
+
+
+def test_postgresql_redis_step_up_expiry_and_cooldown_fail_closed():
+    user = make_superuser()
+    provider = get_sms_provider()
+    assert isinstance(provider, MockSmsProvider)
+    client, csrf, challenge = password_challenge(user)
+    code = send_code(client, csrf, challenge)
+    sent_count = len(provider.outbox)
+
+    get_redis_connection("default").delete(AdminChallengeStore.key(challenge))
+    expired = verify_code(client, csrf, challenge, code)
+    assert expired.status_code == 401
+    assert expired.json()["error"]["code"] == "ADMIN_AUTH_CHALLENGE_EXPIRED"
+
+    cooldown = client.post(
+        "/api/v1/admin/auth/step-up/challenge",
+        {},
+        format="json",
+        HTTP_X_CSRFTOKEN=csrf,
+        HTTP_USER_AGENT="xw-0106-postgres",
+    )
+    assert cooldown.status_code == 429
+    assert cooldown.json()["error"]["code"] == "RATE_LIMITED"
+    assert len(provider.outbox) == sent_count
 
 
 def test_postgresql_redis_concurrent_verify_consumes_exactly_once():
@@ -155,9 +182,10 @@ def test_postgresql_redis_concurrent_verify_consumes_exactly_once():
 def test_postgresql_role_change_invalidates_unfinished_challenge():
     _, profile, role = make_admin()
     client, csrf, challenge = password_challenge(profile.user)
+    code = send_code(client, csrf, challenge)
     device_mismatch = client.post(
-        "/api/v1/admin/auth/login/sms/send",
-        {"challenge_id": challenge},
+        "/api/v1/admin/auth/step-up/verify",
+        {"challenge_id": challenge, "sms_code": code},
         format="json",
         HTTP_X_CSRFTOKEN=csrf,
         HTTP_USER_AGENT="different-device",
@@ -167,14 +195,14 @@ def test_postgresql_role_change_invalidates_unfinished_challenge():
     role.save(update_fields=["security_version"])
 
     response = client.post(
-        "/api/v1/admin/auth/login/sms/send",
-        {"challenge_id": challenge},
+        "/api/v1/admin/auth/step-up/verify",
+        {"challenge_id": challenge, "sms_code": code},
         format="json",
         HTTP_X_CSRFTOKEN=csrf,
         HTTP_USER_AGENT="xw-0106-postgres",
     )
-    assert response.status_code == 401
-    assert response.json()["error"]["code"] == "ADMIN_AUTH_CHALLENGE_INVALID"
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "PERMISSION_DENIED"
 
 
 def test_postgresql_role_ip_allowlist_enforces_each_request_and_ipv6():
@@ -185,7 +213,9 @@ def test_postgresql_role_ip_allowlist_enforces_each_request_and_ipv6():
         role=role, network_cidr="2001:db8::/64", ip_version=6, label="IPv6 office"
     )
     allowed = authenticate_admin_client(APIClient(), profile.user, ip_address="2001:db8::8")
-    denied = authenticate_admin_client(APIClient(), profile.user, ip_address="198.51.100.8")
+    denied = authenticate_admin_client(
+        APIClient(), profile.user, ip_address="198.51.100.8", step_up=False
+    )
 
     assert (
         allowed.post(
@@ -380,6 +410,7 @@ def test_admin_password_reset_cannot_bypass_dedicated_admin_login():
     assert ordinary_sms.status_code != 200
     assert SESSION_VERSION_KEY not in client.session
 
+    sms_count_before_admin_login = len(provider.outbox)
     admin_password = client.post(
         "/api/v1/admin/auth/login/password",
         {"phone": user.phone, "password": new_password},
@@ -388,10 +419,9 @@ def test_admin_password_reset_cannot_bypass_dedicated_admin_login():
         HTTP_USER_AGENT="xw-0106-postgres",
     )
     assert admin_password.status_code == 200
-    challenge = admin_password.json()["data"]["challenge_id"]
-    code = send_code(client, csrf, challenge)
-    verified = verify_code(client, csrf, challenge, code)
-    assert verified.status_code == 200
+    assert admin_password.json()["data"]["requires_2fa"] is False
+    assert "challenge_id" not in admin_password.json()["data"]
+    assert len(provider.outbox) == sms_count_before_admin_login
     assert SESSION_VERSION_KEY in client.session
 
 
@@ -477,50 +507,74 @@ def test_admin_challenges_reject_cross_challenge_and_lock_after_five_errors():
 
 def test_admin_challenge_context_versions_ip_and_device_fail_closed():
     mutations = (
-        lambda user: AdminProfile.objects.filter(user=user).update(version=2),
-        lambda user: AdminProfile.objects.filter(user=user).update(
-            admin_status=AdminProfile.Status.LOCKED
+        (
+            lambda user: AdminProfile.objects.filter(user=user).update(version=2),
+            403,
+            "PERMISSION_DENIED",
         ),
-        lambda user: User.objects.filter(pk=user.pk).update(session_version=2),
-        lambda user: (
-            type(user.superuser_security_policy)
-            .objects.filter(user=user)
-            .update(security_version=2)
+        (
+            lambda user: AdminProfile.objects.filter(user=user).update(
+                admin_status=AdminProfile.Status.LOCKED
+            ),
+            401,
+            "AUTH_REQUIRED",
+        ),
+        (
+            lambda user: User.objects.filter(pk=user.pk).update(session_version=2),
+            401,
+            "AUTH_REQUIRED",
+        ),
+        (
+            lambda user: (
+                type(user.superuser_security_policy)
+                .objects.filter(user=user)
+                .update(security_version=2)
+            ),
+            403,
+            "PERMISSION_DENIED",
         ),
     )
-    for index, mutate in enumerate(mutations, start=6):
+    for index, (mutate, expected_status, expected_code) in enumerate(mutations, start=6):
         user = make_superuser(f"1390013900{index}")
         client, csrf, challenge = password_challenge(user)
+        code = send_code(client, csrf, challenge)
         mutate(user)
         response = client.post(
-            "/api/v1/admin/auth/login/sms/send",
-            {"challenge_id": challenge},
+            "/api/v1/admin/auth/step-up/verify",
+            {"challenge_id": challenge, "sms_code": code},
             format="json",
             HTTP_X_CSRFTOKEN=csrf,
             HTTP_USER_AGENT="xw-0106-postgres",
         )
-        assert response.status_code == 401
-        assert response.json()["error"]["code"] == "ADMIN_AUTH_CHALLENGE_INVALID"
+        assert response.status_code == expected_status
+        assert response.json()["error"]["code"] == expected_code
 
     user = make_superuser("13900139010")
     client, csrf, challenge = password_challenge(user)
+    code = send_code(client, csrf, challenge)
     changed_ip = client.post(
-        "/api/v1/admin/auth/login/sms/send",
-        {"challenge_id": challenge},
+        "/api/v1/admin/auth/step-up/verify",
+        {"challenge_id": challenge, "sms_code": code},
         format="json",
         HTTP_X_CSRFTOKEN=csrf,
         HTTP_USER_AGENT="xw-0106-postgres",
         REMOTE_ADDR="192.0.2.9",
     )
-    changed_device = client.post(
-        "/api/v1/admin/auth/login/sms/send",
-        {"challenge_id": challenge},
+    assert changed_ip.status_code == 403
+    assert changed_ip.json()["error"]["code"] == "PERMISSION_DENIED"
+
+    device_user = make_superuser("13900139012")
+    device_client, device_csrf, device_challenge = password_challenge(device_user)
+    device_code = send_code(device_client, device_csrf, device_challenge)
+    changed_device = device_client.post(
+        "/api/v1/admin/auth/step-up/verify",
+        {"challenge_id": device_challenge, "sms_code": device_code},
         format="json",
-        HTTP_X_CSRFTOKEN=csrf,
+        HTTP_X_CSRFTOKEN=device_csrf,
         HTTP_USER_AGENT="different-device",
     )
-    assert changed_ip.status_code == 401
     assert changed_device.status_code == 401
+    assert changed_device.json()["error"]["code"] == "ADMIN_AUTH_CHALLENGE_INVALID"
 
 
 def test_superuser_allowlist_full_api_and_every_request_enforcement(settings):
@@ -612,7 +666,7 @@ def test_superuser_allowlist_full_api_and_every_request_enforcement(settings):
     assert admin.get("/api/v1/admin/me").status_code == 403
 
     allowed = authenticate_admin_client(APIClient(), user, ip_address="127.0.0.1")
-    denied = authenticate_admin_client(APIClient(), user, ip_address="192.0.2.8")
+    denied = authenticate_admin_client(APIClient(), user, ip_address="192.0.2.8", step_up=False)
     assert allowed.get("/api/v1/admin/me", REMOTE_ADDR="127.0.0.1").status_code == 200
     assert denied.get("/api/v1/admin/me", REMOTE_ADDR="192.0.2.8").status_code == 403
 
@@ -644,6 +698,7 @@ def test_superuser_allowlist_full_api_and_every_request_enforcement(settings):
     assert lockout_entry.status_code == 201
     lockout_policy.refresh_from_db()
     challenge_client, challenge_csrf, unfinished = password_challenge(lockout_user)
+    unfinished_code = send_code(challenge_client, challenge_csrf, unfinished)
     lockout_admin = authenticate_admin_client(APIClient(), lockout_user)
     first_lockout = lockout_admin.patch(
         base,
@@ -669,14 +724,14 @@ def test_superuser_allowlist_full_api_and_every_request_enforcement(settings):
     assert confirmed.status_code == 200
     assert lockout_admin.get("/api/v1/admin/me").status_code == 403
     invalidated = challenge_client.post(
-        "/api/v1/admin/auth/login/sms/send",
-        {"challenge_id": unfinished},
+        "/api/v1/admin/auth/step-up/verify",
+        {"challenge_id": unfinished, "sms_code": unfinished_code},
         format="json",
         HTTP_X_CSRFTOKEN=challenge_csrf,
         HTTP_USER_AGENT="xw-0106-postgres",
     )
     assert invalidated.status_code == 401
-    assert invalidated.json()["error"]["code"] == "ADMIN_AUTH_CHALLENGE_INVALID"
+    assert invalidated.json()["error"]["code"] == "AUTH_REQUIRED"
 
     settings.ADMIN_REAUTH_LIMIT_FAILURES = 1
     limited_user = make_superuser("13900139017")
