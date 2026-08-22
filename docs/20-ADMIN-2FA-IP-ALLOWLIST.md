@@ -4,7 +4,7 @@
 
 管理员使用独立的 `/api/v1/admin/auth/*` 入口。普通用户登录入口在有效凭证或有效短信挑战后识别 `is_superuser`、`is_staff` 或既存 `AdminProfile`，阻止管理员身份建立普通 Session；公开短信发送不会接受 `admin_step_up` 用途，也不会向管理员身份实际发送普通登录验证码。
 
-有效管理员提交正确密码并通过账号、AdminProfile、角色和 IP 白名单检查后，直接建立 password Session；登录、进入 dashboard 和普通低风险读取不会创建 challenge 或发送短信。历史 `require_sms_2fa` 字段与安全版本语义兼容保留，但不再作为登录门禁。短信只用于已认证管理员的高风险 Step-Up；local/test 使用随机 Mock outbox，production 未配置真实 Provider 时 Step-Up 失败关闭并返回通用 503，普通密码登录仍可用。本任务没有接入腾讯云短信密钥，也没有绕过、信任设备或万能验证码。
+有效管理员提交正确密码并通过账号、AdminProfile、角色和 IP 白名单检查后，直接建立 password Session；登录、进入 dashboard 和普通低风险读取不会创建 challenge 或发送短信。历史 `require_sms_2fa` 字段与安全版本语义兼容保留，但不再作为登录门禁。短信只用于已认证管理员的安全关键 Step-Up；业务高风险动作不默认发短信，继续执行既有确认、当前密码、双人审批、目标/策略版本检查和追加式审计。local/test 使用随机 Mock outbox，production 未配置真实 Provider 时 Step-Up 失败关闭并返回通用 503，普通密码登录仍可用。本任务没有接入腾讯云短信密钥，也没有绕过、信任设备或万能验证码。
 
 ## Step-Up challenge、proof 与管理员 Session
 
@@ -16,7 +16,9 @@ challenge 只保存在后台 Step-Up React 对话框内存，不进入 URL、loc
 
 ## 角色与超级管理员策略
 
-角色分别维护资料/权限 `version` 与安全 `security_version`。兼容的 `require_sms_2fa`、IP 开关或 CIDR 条目变化会在 PostgreSQL 事务内递增 `security_version`，并使用数据库原子表达式递增受影响普通管理员的 `session_version`。每个超级管理员拥有独立 `SuperuserSecurityPolicy`；其策略变化只撤销自己的旧 Session。所有冻结风险目录动作、管理员/RBAC 状态治理、AI credential/runtime 写入和敏感 support-view 均由后端强制要求 Step-Up。
+角色分别维护资料/权限 `version` 与安全 `security_version`。兼容的 `require_sms_2fa`、IP 开关或 CIDR 条目变化会在 PostgreSQL 事务内递增 `security_version`，并使用数据库原子表达式递增受影响普通管理员的 `session_version`。每个超级管理员拥有独立 `SuperuserSecurityPolicy`；其策略变化只撤销自己的旧 Session。`SMS_STEP_UP_REQUIRED_ACTIONS` 集中冻结需要短信的 Catalog 子集：`admin.disable`、`admin.lock`、`admin.role.change`、`admin.force_logout`、`role.permissions.replace`、`role.disable`、`role.security.update`、`role.ip_allowlist.update`、`superuser.ip_allowlist.update`、`user.freeze`、`quota.grant`、`quota.compensate`、`quota.manual_deduct`、`subject_risk.catalog.publish`。管理员/RBAC 状态治理、AI credential/runtime 写入、credential capability binding 和敏感 support-view 继续由直接 API 权限层强制 Step-Up。
+
+`customer.assignment.change`、用户审核拒绝、套餐及套餐版本日常管理、套餐申请联系/关闭和订阅生命周期动作不在短信集合内；它们仍按冻结 RiskPolicy 执行 confirm/password/two_person、current-password、双人审批、乐观版本检查及审计。审批批准端根据待执行 `action_key` 应用相同集中策略，不会把业务审批重新升级为 blanket SMS gate。
 
 CIDR 使用 Python `ipaddress` 规范化，支持 IPv4/IPv6，主机转换为 `/32` 或 `/128`。拒绝域名、通配符、正则、控制字符和无效 CIDR。条目只做 active/inactive，不提供物理删除；恢复相同 CIDR 复用原记录。启用白名单通常要求至少一个 active 条目。
 

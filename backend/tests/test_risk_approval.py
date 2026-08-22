@@ -8,7 +8,11 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from apps.admin_rbac.models import AdminProfile, ApprovalRequest, AuditEvent, RiskAction, RiskPolicy
-from apps.admin_rbac.risk_catalog import RISK_ACTION_CATALOG, mode_is_valid
+from apps.admin_rbac.risk_catalog import (
+    RISK_ACTION_CATALOG,
+    SMS_STEP_UP_REQUIRED_ACTIONS,
+    mode_is_valid,
+)
 from apps.admin_rbac.risk_services import ApprovalPayloadInvalid, canonical_payload
 from apps.users.models import User
 from tests.admin_session_helpers import authenticate_admin_client
@@ -38,6 +42,51 @@ def test_risk_catalog_seed_sync_and_static_modes_are_consistent():
     call_command("sync_admin_rbac", "--apply")
     call_command("sync_admin_rbac", "--apply")
     assert RiskAction.objects.count() == len(RISK_ACTION_CATALOG)
+
+
+def test_sms_step_up_policy_is_narrow_and_explicit():
+    expected_security_critical = {
+        "admin.disable",
+        "admin.lock",
+        "admin.role.change",
+        "admin.force_logout",
+        "role.permissions.replace",
+        "role.disable",
+        "role.security.update",
+        "role.ip_allowlist.update",
+        "superuser.ip_allowlist.update",
+        "user.freeze",
+        "quota.grant",
+        "quota.compensate",
+        "quota.manual_deduct",
+        "subject_risk.catalog.publish",
+    }
+    business_high_risk = {
+        "customer.assignment.change",
+        "user.review.reject",
+        "plan.create",
+        "plan.update",
+        "plan.version.create",
+        "plan.version.update",
+        "plan.version.publish",
+        "plan.online",
+        "plan.offline",
+        "plan.version.retire",
+        "plan.archive",
+        "plan.copy",
+        "plan_application.contact",
+        "plan_application.close",
+        "subscription.open",
+        "subscription.grant_trial",
+        "subscription.terminate",
+        "subscription.change",
+        "subscription.change.cancel",
+    }
+
+    assert len(RISK_ACTION_CATALOG) == 33
+    assert SMS_STEP_UP_REQUIRED_ACTIONS == expected_security_critical
+    assert len(SMS_STEP_UP_REQUIRED_ACTIONS) == 14
+    assert SMS_STEP_UP_REQUIRED_ACTIONS.isdisjoint(business_high_risk)
 
 
 @pytest.mark.django_db
@@ -96,6 +145,15 @@ def test_canonical_payload_is_stable_bound_and_rejects_sensitive_or_executable_v
 def test_confirm_mode_requires_confirmation_and_executes_with_audit():
     actor = superuser("13900139000")
     target = User.objects.create_user(phone="13800138000", nickname="客户", password=PASSWORD)
+    denied_client = authenticate_admin_client(APIClient(), actor, step_up=False)
+    denied = denied_client.post(
+        f"/api/v1/admin/users/{target.id}/freeze",
+        {"expected_version": target.status_version, "confirmed": True},
+        format="json",
+    )
+    assert denied.status_code == 403
+    assert denied.json()["error"]["code"] == "ADMIN_STEP_UP_REQUIRED"
+
     client = admin_client(actor)
     path = f"/api/v1/admin/users/{target.id}/freeze"
 

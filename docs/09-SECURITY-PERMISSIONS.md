@@ -92,7 +92,7 @@ AND resource.subject_id belongs to current_user
 ### 6.2 管理员
 
 - 管理员通过独立入口使用密码建立后台 Session，登录本身不发送短信。
-- 高风险动作必须在后端验证当前管理员短时 SMS Step-Up proof；普通 dashboard 与低风险读取不触发短信。
+- 安全关键动作必须在后端验证当前管理员短时 SMS Step-Up proof；业务高风险动作继续使用原有确认、当前密码、双人审批和版本检查，不默认触发短信；普通 dashboard 与低风险读取同样不触发短信。
 - Step-Up challenge 与管理员、Session/RBAC/安全版本、IP 和设备摘要绑定，过期、重放或上下文变化均失败关闭。
 
 ### 6.3 密码

@@ -18,7 +18,7 @@ from apps.users.models import User
 from .audit_services import record_audit_event
 from .models import AdminProfile, ApprovalRequest, RiskAction, RiskPolicy, SuperuserSecurityPolicy
 from .permissions import resolve_admin_context
-from .risk_catalog import MODE_STRENGTH, PASSWORD, TWO_PERSON
+from .risk_catalog import MODE_STRENGTH, PASSWORD, TWO_PERSON, requires_sms_step_up
 from .risk_handlers import HandlerContext, handler_spec
 from .security import require_admin_step_up
 from .security_services import _reauth
@@ -255,7 +255,8 @@ def _perform_risk_action_transactional(
     policy = _policy(action_key, lock=True)
     spec = handler_spec(action_key)
     context = _context_with_permission(request.user, spec.permission_key)
-    require_admin_step_up(request)
+    if requires_sms_step_up(action_key):
+        require_admin_step_up(request)
     if spec.superuser_only and not request.user.is_superuser:
         raise PermissionDenied
     actual_version = spec.target_version(request.user, context, target_id, True)
@@ -448,7 +449,8 @@ def approve_request(*, request, approval_id, current_password):
         raise ApprovalSelfNotAllowed
     if not _valid_superuser(request.user):
         raise PermissionDenied
-    require_admin_step_up(request)
+    if requires_sms_step_up(approval.action_key):
+        require_admin_step_up(request)
     _reauth(request.user, current_password, request)
     policy = _policy(approval.action_key, lock=True)
     spec = handler_spec(approval.action_key)

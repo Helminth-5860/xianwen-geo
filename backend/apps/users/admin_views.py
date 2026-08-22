@@ -121,7 +121,6 @@ class AdminUserHistoryView(APIView):
 class AdminUserReviewView(APIView):
     permission_classes = [HasAdminPermission]
     required_permission = "users.review"
-    requires_step_up = True
 
     def post(self, request, user_id):
         scoped_customer_or_404(request.user, request.admin_context, user_id)

@@ -269,7 +269,7 @@ def test_public_api_only_published_and_admin_post_same_path_csrf_audit():
     assert [item["id"] for item in items] == [str(visible.pk)]
     assert {"effective_config", "config_digest", "handler"}.isdisjoint(items[0])
     assert public.get(f"/api/v1/plans/{draft_plan.pk}").status_code == 404
-    client = authenticate_admin_client(APIClient(), user)
+    client = authenticate_admin_client(APIClient(), user, step_up=False)
     payload = {
         "code": "api-plan",
         "name": "API 套餐",
@@ -277,6 +277,11 @@ def test_public_api_only_published_and_admin_post_same_path_csrf_audit():
         "display_price": "18.80",
         "confirmed": True,
     }
+    missing_confirmation = client.post(
+        "/api/v1/admin/plans", payload | {"confirmed": False}, format="json"
+    )
+    assert missing_confirmation.status_code == 422
+    assert missing_confirmation.json()["error"]["code"] == "RISK_CONFIRMATION_REQUIRED"
     assert client.post("/api/v1/admin/plans", payload, format="json").status_code == 200
     assert AuditEvent.objects.filter(action_key="plan.create", outcome="executed").exists()
     blocked = authenticate_admin_client(APIClient(enforce_csrf_checks=True), user).post(
