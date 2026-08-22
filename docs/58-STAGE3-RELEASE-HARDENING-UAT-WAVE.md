@@ -75,6 +75,16 @@ Isolated PostgreSQL/Redis acceptance is run with `scripts/test-stage3-release.ps
 `scripts/test-stage3-release.sh`. These suites may write only to disposable Docker volumes and test
 Redis databases; they are not production rollout commands.
 
+## Canonical worker topology
+
+Release readiness derives its expected queue set from `CELERY_TASK_DEFAULT_QUEUE` and the queues in
+`CELERY_TASK_ROUTES`. The canonical consumers are `celery` for `system_tasks,ai_content`, plus the
+dedicated `geo-detection-worker`, `image-generation-worker`, `file-processing-worker`, and
+`web-fetch-worker`. There is no production task routed to `geo_scoring`; semantic scoring and report
+aggregation use `system_tasks`, so readiness must not require or invent an empty scoring worker.
+Deterministic topology tests require every production-routed queue to have a canonical Compose
+consumer and reject any readiness queue that is not backed by a real route.
+
 本波不得执行真实部署，不得调用真实 Provider，不得写入生产数据。Rollout、rollback、fresh
 backup、migration apply、health/worker gates and invocation of the checked-in rollback/marker tools
 remain deployment-line actions after all `EXTERNAL_GATE` evidence is available.

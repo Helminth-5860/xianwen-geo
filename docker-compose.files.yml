@@ -121,9 +121,6 @@ services:
         condition: service_started
 
   file-processing-worker:
-    extends:
-      file: docker-compose.yml
-      service: celery
     command:
       [
         "celery",
@@ -140,16 +137,6 @@ services:
       # Pytest creates test_<POSTGRES_DB>. The dedicated worker must use that
       # same database so the acceptance suite proves real Celery consumption.
       DATABASE_URL: ${FILE_PROCESSING_DATABASE_URL:-${DATABASE_URL}}
-    user: app
-    read_only: true
-    tmpfs:
-      - /tmp:size=64m,noexec,nosuid,nodev
-    cap_drop: [ALL]
-    security_opt:
-      - no-new-privileges:true
-    pids_limit: 128
-    mem_limit: 768m
-    cpus: 1.0
     networks: [file_processing_internal]
     depends_on:
       postgres:

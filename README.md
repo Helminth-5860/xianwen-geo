@@ -405,6 +405,9 @@ and append-only audit evidence. See
 ## XW-0206 file parsing and user confirmation
 
 Completed private files can be parsed asynchronously by the isolated `file_processing` worker.
+The canonical root Compose defines `file-processing-worker`; release readiness derives its expected
+queue set from the production Celery routes so a routed queue cannot be represented by a fake or
+missing worker expectation.
 Machine output and user-confirmed canonical text form an immutable PostgreSQL version chain;
 tables/warnings remain machine facts, and downstream feature use must re-apply the current
 XW-0204 risk policy. Local/test OCR is a mock only and production fails closed for image OCR.

@@ -563,16 +563,29 @@ CELERY_TASK_ROUTES = {
     "images.execute_generation": {"queue": "image_generation"},
 }
 
+CELERY_PRODUCTION_QUEUES = tuple(
+    dict.fromkeys(
+        (
+            CELERY_TASK_DEFAULT_QUEUE,
+            *(route["queue"] for route in CELERY_TASK_ROUTES.values()),
+        )
+    )
+)
+
 RELEASE_EXPECTED_WORKER_QUEUES = tuple(
     env_list(
         "RELEASE_EXPECTED_WORKER_QUEUES",
-        "geo_detection,geo_scoring,ai_content,image_generation,file_processing,web_fetch,system_tasks",
+        ",".join(CELERY_PRODUCTION_QUEUES),
     )
 )
 if not RELEASE_EXPECTED_WORKER_QUEUES or len(set(RELEASE_EXPECTED_WORKER_QUEUES)) != len(
     RELEASE_EXPECTED_WORKER_QUEUES
 ):
     raise ImproperlyConfigured("RELEASE_EXPECTED_WORKER_QUEUES must be non-empty and unique.")
+if set(RELEASE_EXPECTED_WORKER_QUEUES) != set(CELERY_PRODUCTION_QUEUES):
+    raise ImproperlyConfigured(
+        "RELEASE_EXPECTED_WORKER_QUEUES must exactly match production-routed Celery queues."
+    )
 
 RELEASE_DEPLOY_SHA = os.getenv("RELEASE_DEPLOY_SHA", "").strip().lower()
 RELEASE_EXPECTED_EXTERNAL_EVIDENCE = tuple(

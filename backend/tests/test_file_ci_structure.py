@@ -16,6 +16,8 @@ def test_file_postgres_redis_minio_suite_is_required_by_docker_job():
     shell_script = (REPO_ROOT / "scripts/test-files.sh").read_text(encoding="utf-8")
     powershell_script = (REPO_ROOT / "scripts/test-files.ps1").read_text(encoding="utf-8")
     compose = (REPO_ROOT / "docker-compose.files.yml").read_text(encoding="utf-8")
+    base_compose = yaml.safe_load((REPO_ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
+    file_worker = base_compose["services"]["file-processing-worker"]
     for content in (shell_script, powershell_script):
         assert "xianwen-file-test" in content
         assert "down --volumes --remove-orphans" in content
@@ -29,9 +31,9 @@ def test_file_postgres_redis_minio_suite_is_required_by_docker_job():
     assert "FILE_STORAGE_PROVIDER: s3" in compose
     assert "tests/test_document_parsing_postgres.py" in compose
     assert "--queues=file_processing" in compose
-    assert "read_only: true" in compose
-    assert "no-new-privileges:true" in compose
-    assert "cap_drop: [ALL]" in compose
+    assert file_worker["read_only"] is True
+    assert file_worker["security_opt"] == ["no-new-privileges:true"]
+    assert file_worker["cap_drop"] == ["ALL"]
     assert "file_processing_internal: {internal: true}" in compose
     assert "DOCUMENT_OCR_PROVIDER: mock" in compose
     assert "file-processing-worker" in compose
