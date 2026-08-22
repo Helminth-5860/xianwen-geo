@@ -81,7 +81,7 @@ def config(**overrides) -> TencentSmsConfig:
             SmsPurpose.REGISTER: "100001",
             SmsPurpose.LOGIN: "100002",
             SmsPurpose.PASSWORD_RESET: "100003",
-            SmsPurpose.ADMIN_LOGIN_2FA: "100003",
+            SmsPurpose.ADMIN_STEP_UP: "100003",
         },
     }
     values.update(overrides)
@@ -122,7 +122,7 @@ def test_purpose_template_mapping_is_frozen(purpose):
             SmsPurpose.REGISTER: "SMS_TEMPLATE_REGISTER",
             SmsPurpose.LOGIN: "SMS_TEMPLATE_LOGIN",
             SmsPurpose.PASSWORD_RESET: "SMS_TEMPLATE_SECURITY",
-            SmsPurpose.ADMIN_LOGIN_2FA: "SMS_TEMPLATE_SECURITY",
+            SmsPurpose.ADMIN_STEP_UP: "SMS_TEMPLATE_SECURITY",
         }[purpose]
     )
 

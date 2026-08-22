@@ -14,6 +14,7 @@ from django.db.models import F
 from django_redis import get_redis_connection  # type: ignore[import-untyped]
 from redis.exceptions import NoScriptError, RedisError
 
+from apps.core.exceptions import AdminStepUpExpired, AdminStepUpRequired
 from apps.core.request_ids import validate_request_id
 from apps.users.authentication import SESSION_VERSION_KEY
 from apps.users.models import User
@@ -43,6 +44,7 @@ ADMIN_POLICY_VERSION_KEY = "_xianwen_admin_policy_version"
 ADMIN_AUTH_FACTORS_KEY = "_xianwen_admin_auth_factors"
 ADMIN_IP_FINGERPRINT_KEY = "_xianwen_admin_ip_fingerprint"
 ADMIN_CHALLENGE_BINDING_KEY = "_xianwen_admin_challenge_binding"
+ADMIN_STEP_UP_PROOF_KEY = "_xianwen_admin_step_up_proof"
 
 
 class AdminSecurityUnavailable(Exception):
@@ -229,6 +231,7 @@ def start_admin_session(request, snapshot: AdminSecuritySnapshot, factors: str) 
     )
     request.session[ADMIN_AUTH_FACTORS_KEY] = factors
     request.session[ADMIN_IP_FINGERPRINT_KEY] = snapshot.ip_fingerprint
+    request.session.pop(ADMIN_STEP_UP_PROOF_KEY, None)
     request.session.set_expiry(0)
 
 
@@ -255,14 +258,60 @@ def validate_admin_session(request) -> AdminSecuritySnapshot | None:
         ADMIN_IP_FINGERPRINT_KEY: snapshot.ip_fingerprint,
     }
     factors = request.session.get(ADMIN_AUTH_FACTORS_KEY)
-    required_factors = "password+sms" if snapshot.require_sms_2fa else "password"
     if (
         any(request.session.get(key) != value for key, value in expected.items())
-        or factors != required_factors
+        or factors != "password"
     ):
         clear_admin_session(request)
         return None
     return snapshot
+
+
+def _step_up_context(snapshot: AdminSecuritySnapshot) -> dict[str, object]:
+    return {
+        "user_id": str(snapshot.user.pk),
+        "session_version": snapshot.user.session_version,
+        "profile_id": str(snapshot.profile.pk),
+        "profile_version": snapshot.profile.version,
+        "role_id": str(snapshot.role.pk) if snapshot.role else None,
+        "role_version": snapshot.role.version if snapshot.role else None,
+        "role_security_version": snapshot.role.security_version if snapshot.role else None,
+        "policy_id": str(snapshot.policy.pk) if snapshot.policy else None,
+        "policy_version": snapshot.policy.security_version if snapshot.policy else None,
+        "ip_fingerprint": snapshot.ip_fingerprint,
+        "user_agent_digest": snapshot.user_agent_digest,
+        "security_context_version": 1,
+    }
+
+
+def grant_admin_step_up(request, snapshot: AdminSecuritySnapshot) -> None:
+    request.session[ADMIN_STEP_UP_PROOF_KEY] = {
+        **_step_up_context(snapshot),
+        "verified_at": int(time.time()),
+    }
+
+
+def require_admin_step_up(request, snapshot: AdminSecuritySnapshot | None = None) -> None:
+    proof = request.session.get(ADMIN_STEP_UP_PROOF_KEY)
+    if not isinstance(proof, dict):
+        raise AdminStepUpRequired
+    resolved_snapshot = snapshot or getattr(request, "admin_security_snapshot", None)
+    if resolved_snapshot is None:
+        resolved_snapshot = validate_admin_session(request)
+    if resolved_snapshot is None:
+        request.session.pop(ADMIN_STEP_UP_PROOF_KEY, None)
+        raise AdminStepUpExpired
+    verified_at = proof.get("verified_at")
+    age = int(time.time()) - verified_at if type(verified_at) is int else -1
+    if (
+        age < 0
+        or age > settings.ADMIN_CHALLENGE_TTL_SECONDS
+        or any(
+            proof.get(key) != value for key, value in _step_up_context(resolved_snapshot).items()
+        )
+    ):
+        request.session.pop(ADMIN_STEP_UP_PROOF_KEY, None)
+        raise AdminStepUpExpired
 
 
 CREATE_CHALLENGE_SCRIPT = """
@@ -357,7 +406,7 @@ class AdminChallengeStore:
 
     @staticmethod
     def key(challenge_id: str) -> str:
-        return f"auth:admin-login:v1:challenge:{_hmac('challenge-id', challenge_id)}"
+        return f"auth:admin-step-up:v1:challenge:{_hmac('challenge-id', challenge_id)}"
 
     def create(self, challenge_id: str, payload: dict[str, object]) -> None:
         self.create_script.run(
@@ -389,7 +438,7 @@ class AdminChallengeStore:
         ip_fp: str,
         combination_fp: str,
     ) -> None:
-        prefix = "auth:admin-login:v1"
+        prefix = "auth:admin-step-up:v1"
         result = self.reserve_script.run(
             self.client,
             [
@@ -456,6 +505,7 @@ def _challenge_payload(
         "policy_id": str(snapshot.policy.pk) if snapshot.policy else None,
         "policy_version": snapshot.policy.security_version if snapshot.policy else None,
         "require_sms_2fa": snapshot.require_sms_2fa,
+        "purpose": "admin_step_up",
         "ip_fingerprint": snapshot.ip_fingerprint,
         "user_agent_digest": snapshot.user_agent_digest,
         "security_context_version": 1,
@@ -487,6 +537,7 @@ def _snapshot_matches_payload(
         "policy_id",
         "policy_version",
         "require_sms_2fa",
+        "purpose",
         "ip_fingerprint",
         "user_agent_digest",
         "security_context_version",
@@ -504,6 +555,8 @@ def snapshot_for_challenge(challenge_id: str, request, *, store=None):
     user_id = payload.get("user_id")
     if not isinstance(user_id, str):
         raise AdminChallengeInvalid
+    if not request.user.is_authenticated or str(request.user.pk) != user_id:
+        raise AdminChallengeInvalid
     try:
         user = User.objects.get(pk=user_id)
         snapshot = security_snapshot(user, request)
@@ -517,7 +570,7 @@ def snapshot_for_challenge(challenge_id: str, request, *, store=None):
 def _admin_code_digest(challenge_id: str, user_id: str, generation_id: str, code: str) -> str:
     return _hmac(
         "verification-code-digest",
-        f"{challenge_id}\0{user_id}\0{SmsPurpose.ADMIN_LOGIN_2FA.value}\0{generation_id}\0{code}",
+        f"{challenge_id}\0{user_id}\0{SmsPurpose.ADMIN_STEP_UP.value}\0{generation_id}\0{code}",
     )
 
 
@@ -550,7 +603,7 @@ def send_admin_second_factor(
     try:
         resolved_provider.send_verification_code(
             phone=snapshot.user.phone,
-            purpose=SmsPurpose.ADMIN_LOGIN_2FA,
+            purpose=SmsPurpose.ADMIN_STEP_UP,
             code=code,
             expires_in=settings.ADMIN_CHALLENGE_TTL_SECONDS,
         )

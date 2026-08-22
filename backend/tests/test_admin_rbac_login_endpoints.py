@@ -5,7 +5,6 @@ from django.core.cache import cache
 from rest_framework.test import APIClient
 
 from apps.admin_rbac.models import AdminRole
-from apps.admin_rbac.security import security_snapshot
 from apps.admin_rbac.services import change_admin_status, create_admin
 from apps.users.models import User
 
@@ -24,26 +23,6 @@ def password_login(client, token, phone):
     return client.post(
         "/api/v1/admin/auth/login/password",
         {"phone": phone, "password": PASSWORD},
-        format="json",
-        HTTP_X_CSRFTOKEN=token,
-    )
-
-
-def sms_login(client, token, phone):
-    password_response = password_login(client, token, phone)
-    if password_response.status_code != 200:
-        return password_response
-    challenge_id = password_response.json()["data"]["challenge_id"]
-    sent = client.post(
-        "/api/v1/admin/auth/login/sms/send",
-        {"challenge_id": challenge_id},
-        format="json",
-        HTTP_X_CSRFTOKEN=token,
-    )
-    assert sent.status_code == 200
-    return client.post(
-        "/api/v1/admin/auth/login/sms/verify",
-        {"challenge_id": challenge_id, "sms_code": "438921"},
         format="json",
         HTTP_X_CSRFTOKEN=token,
     )
@@ -130,25 +109,17 @@ def test_disabled_locked_enable_unlock_password_login_http_and_old_sessions():
 
 
 @pytest.mark.django_db
-def test_disabled_locked_enable_unlock_sms_login_http_and_old_sessions(monkeypatch):
+def test_legacy_sms_policy_does_not_change_status_login_and_old_session_rules(monkeypatch):
     actor, profile = admin_fixture()
     profile.role.require_sms_2fa = True
     profile.role.security_version += 1
     profile.role.save(update_fields=["require_sms_2fa", "security_version"])
     monkeypatch.setattr(
         "apps.admin_rbac.security_views.create_admin_challenge",
-        lambda snapshot, request: "challenge",
-    )
-    monkeypatch.setattr(
-        "apps.admin_rbac.security_views.send_admin_second_factor",
-        lambda challenge_id, request: security_snapshot(profile.user, request),
-    )
-    monkeypatch.setattr(
-        "apps.admin_rbac.security_views.verify_admin_second_factor",
-        lambda challenge_id, code, request: security_snapshot(profile.user, request),
+        lambda *args, **kwargs: pytest.fail("password login must not create a challenge"),
     )
     old_client, old_csrf = csrf_client()
-    assert sms_login(old_client, old_csrf, profile.user.phone).status_code == 200
+    assert password_login(old_client, old_csrf, profile.user.phone).status_code == 200
 
     profile = change_admin_status(
         actor_id=actor.id,
@@ -159,7 +130,7 @@ def test_disabled_locked_enable_unlock_sms_login_http_and_old_sessions(monkeypat
     )
     assert old_client.get(ME_PATH).status_code == 401
     disabled_client, disabled_csrf = csrf_client()
-    assert_unavailable(sms_login(disabled_client, disabled_csrf, profile.user.phone))
+    assert_unavailable(password_login(disabled_client, disabled_csrf, profile.user.phone))
 
     profile = change_admin_status(
         actor_id=actor.id,
@@ -169,7 +140,7 @@ def test_disabled_locked_enable_unlock_sms_login_http_and_old_sessions(monkeypat
         request_id=uuid.uuid4(),
     )
     enabled_client, enabled_csrf = csrf_client()
-    assert sms_login(enabled_client, enabled_csrf, profile.user.phone).status_code == 200
+    assert password_login(enabled_client, enabled_csrf, profile.user.phone).status_code == 200
     assert old_client.get(ME_PATH).status_code == 401
 
     profile = change_admin_status(
@@ -181,7 +152,7 @@ def test_disabled_locked_enable_unlock_sms_login_http_and_old_sessions(monkeypat
     )
     assert enabled_client.get(ME_PATH).status_code == 401
     locked_client, locked_csrf = csrf_client()
-    assert_unavailable(sms_login(locked_client, locked_csrf, profile.user.phone))
+    assert_unavailable(password_login(locked_client, locked_csrf, profile.user.phone))
 
     profile = change_admin_status(
         actor_id=actor.id,
@@ -191,5 +162,5 @@ def test_disabled_locked_enable_unlock_sms_login_http_and_old_sessions(monkeypat
         request_id=uuid.uuid4(),
     )
     unlocked_client, unlocked_csrf = csrf_client()
-    assert sms_login(unlocked_client, unlocked_csrf, profile.user.phone).status_code == 200
+    assert password_login(unlocked_client, unlocked_csrf, profile.user.phone).status_code == 200
     assert enabled_client.get(ME_PATH).status_code == 401

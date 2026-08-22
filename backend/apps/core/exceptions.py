@@ -15,6 +15,14 @@ from .responses import error_envelope
 logger = logging.getLogger("xianwen.api")
 
 
+class AdminStepUpRequired(exceptions.PermissionDenied):
+    pass
+
+
+class AdminStepUpExpired(exceptions.PermissionDenied):
+    pass
+
+
 def normalize_validation_errors(detail: Any) -> dict[str, Any]:
     def normalize(value: Any) -> Any:
         if isinstance(value, Mapping):
@@ -35,7 +43,15 @@ def api_exception_handler(exc: Exception, context: dict[str, Any]) -> Response:
     status_code: int
     details: dict[str, Any]
 
-    if isinstance(exc, (exceptions.NotAuthenticated, exceptions.AuthenticationFailed)):
+    if isinstance(exc, AdminStepUpExpired):
+        code = ErrorCode.ADMIN_STEP_UP_EXPIRED
+        status_code = status.HTTP_403_FORBIDDEN
+        details = {}
+    elif isinstance(exc, AdminStepUpRequired):
+        code = ErrorCode.ADMIN_STEP_UP_REQUIRED
+        status_code = status.HTTP_403_FORBIDDEN
+        details = {}
+    elif isinstance(exc, (exceptions.NotAuthenticated, exceptions.AuthenticationFailed)):
         code = ErrorCode.AUTH_REQUIRED
         status_code = status.HTTP_401_UNAUTHORIZED
         details = {}

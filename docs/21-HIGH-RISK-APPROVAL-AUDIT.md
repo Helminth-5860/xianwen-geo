@@ -8,6 +8,11 @@
 
 ## 三种模式
 
+所有目录内动作在进入以下风险模式前，都必须先通过当前管理员 Session 绑定的 5 分钟短信
+Step-Up proof。proof 缺失或过期返回稳定错误并且不执行 Handler；双人审批的发起人与执行
+审批的超级管理员都受相同门禁。现有 confirm/password/two_person 数据值保持不变，避免
+RiskPolicy 与历史审批记录的 schema/API 破坏；password 模式仍保留当前密码再验证作为纵深防御。
+
 - confirm：调用方显式传入 confirmed=true，在一个 PostgreSQL 事务中锁定策略和目标、执行领域服务并写入 AuditEvent。
 - password：除目标版本外要求当前登录密码再验证。密码只存在于调用栈，不进入审批、审计、日志或前端持久化。
 - two_person：原业务端点只创建 ApprovalRequest 并返回 202；必须存在另一名当前有效超级管理员。批准者不得是发起人，并需再次输入自己的当前密码。

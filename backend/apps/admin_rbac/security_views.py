@@ -49,6 +49,7 @@ from .security import (
     SecurityPolicyVersionConflict,
     clear_admin_session,
     create_admin_challenge,
+    grant_admin_step_up,
     record_security_event,
     security_snapshot,
     send_admin_second_factor,
@@ -56,7 +57,6 @@ from .security import (
     verify_admin_second_factor,
 )
 from .serializers import (
-    AdminChallengeSerializer,
     AdminChallengeVerifySerializer,
     AdminPasswordLoginSerializer,
     IpAllowlistCreateSerializer,
@@ -178,22 +178,6 @@ class AdminPasswordLoginView(APIView):
         record_security_event(
             request=request, event_type="password_step_succeeded", subject=user, snapshot=snapshot
         )
-        if snapshot.require_sms_2fa:
-            try:
-                challenge_id = create_admin_challenge(snapshot, request)
-            except AdminSecurityUnavailable:
-                return _admin_failure(
-                    ErrorCode.SERVICE_TEMPORARILY_UNAVAILABLE,
-                    HTTP_503_SERVICE_UNAVAILABLE,
-                    request,
-                )
-            return Response(
-                {
-                    "requires_2fa": True,
-                    "challenge_id": challenge_id,
-                    "expires_in": settings.ADMIN_CHALLENGE_TTL_SECONDS,
-                }
-            )
         start_admin_session(request, snapshot, "password")
         record_password_login_event(
             normalized_phone=phone,
@@ -209,18 +193,18 @@ class AdminPasswordLoginView(APIView):
 
 
 @method_decorator(csrf_protect, name="dispatch")
-class AdminSmsSendView(APIView):
-    authentication_classes = []
-    permission_classes = [AllowAny]
+class AdminStepUpChallengeView(APIView):
+    permission_classes = [HasAdminSession]
 
     def post(self, request):
-        serializer = AdminChallengeSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
         try:
-            snapshot = send_admin_second_factor(serializer.validated_data["challenge_id"], request)
+            snapshot = request.admin_security_snapshot
+            challenge_id = create_admin_challenge(snapshot, request)
+            send_admin_second_factor(challenge_id, request)
             record_security_event(
                 request=request,
-                event_type="second_factor_sent",
+                event_type="step_up_challenge_sent",
+                actor=request.user,
                 subject=snapshot.user,
                 snapshot=snapshot,
             )
@@ -235,14 +219,19 @@ class AdminSmsSendView(APIView):
         ) as exc:
             return _challenge_error(exc, request)
         return Response(
-            {"sent": True, "expires_in": settings.ADMIN_CHALLENGE_TTL_SECONDS, "resend_after": 60}
+            {
+                "challenge_id": challenge_id,
+                "sent": True,
+                "expires_in": settings.ADMIN_CHALLENGE_TTL_SECONDS,
+                "resend_after": settings.SMS_RESEND_COOLDOWN_SECONDS,
+            },
+            status=HTTP_201_CREATED,
         )
 
 
 @method_decorator(csrf_protect, name="dispatch")
-class AdminSmsVerifyView(APIView):
-    authentication_classes = []
-    permission_classes = [AllowAny]
+class AdminStepUpVerifyView(APIView):
+    permission_classes = [HasAdminSession]
 
     def post(self, request):
         serializer = AdminChallengeVerifySerializer(data=request.data)
@@ -269,30 +258,20 @@ class AdminSmsVerifyView(APIView):
             record_security_event(
                 request=request,
                 event_type=event_type,
+                actor=request.user,
+                subject=request.user,
                 failure_reason="challenge_invalid",
             )
             return _challenge_error(exc, request)
-        start_admin_session(request, snapshot, "password+sms")
-        record_password_login_event(
-            normalized_phone=snapshot.user.phone,
-            user=snapshot.user,
-            success=True,
-            failure_reason="",
-            request=request,
-        )
+        grant_admin_step_up(request, snapshot)
         record_security_event(
             request=request,
-            event_type="second_factor_succeeded",
+            event_type="admin_step_up_succeeded",
+            actor=request.user,
             subject=snapshot.user,
             snapshot=snapshot,
         )
-        record_security_event(
-            request=request,
-            event_type="admin_login_succeeded",
-            subject=snapshot.user,
-            snapshot=snapshot,
-        )
-        return Response(CurrentUserSerializer(snapshot.user).data)
+        return Response({"verified": True, "expires_in": settings.ADMIN_CHALLENGE_TTL_SECONDS})
 
 
 @method_decorator(csrf_protect, name="dispatch")

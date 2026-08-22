@@ -33,13 +33,13 @@ export default function RegisterPage() {
     setError("");
     setSubmitting(true);
     try {
-      const user = await registerAccount({
+      await registerAccount({
         phone: values.phone,
         nickname: values.nickname.trim(),
         smsCode: values.smsCode,
         password: values.password,
       });
-      router.push(user.approval_status === "pending" ? "/?account=pending" : "/");
+      router.push("/");
     } catch (reason) {
       setError(userMessage(reason));
     } finally {
@@ -51,7 +51,7 @@ export default function RegisterPage() {
     <AuthShell
       eyebrow="创建账号"
       title="开始建立你的 GEO 工作台"
-      description="注册后即可登录并填写资料。账号审核通过前，不会开放付费或 AI 功能。"
+      description="完成短信验证后，账号立即启用并进入 GEO 工作台。"
       footer={
         <Text>
           已有账号？<Link href="/login">立即登录</Link>

@@ -106,6 +106,7 @@ class AdminAIModelRuntimeConfigListView(AdminAIModelListView):
 class AdminAIModelRuntimeConfigDetailView(APIView):
     permission_classes = [HasAdminPermission]
     required_permissions_by_method = {"GET": "models.list", "PATCH": "models.manage"}
+    step_up_methods = {"PATCH"}
 
     def get(self, request, model_id):
         return _no_store(Response(AIModelRuntimeConfigSerializer(_config_or_404(model_id)).data))
@@ -128,6 +129,7 @@ class AdminAIModelRuntimeConfigDetailView(APIView):
 class AdminAIModelEnabledView(APIView):
     permission_classes = [HasAdminPermission]
     required_permission = "models.manage"
+    requires_step_up = True
     enabled = False
 
     @method_decorator(csrf_protect)
@@ -159,6 +161,7 @@ class AdminAIModelDisableView(AdminAIModelEnabledView):
 class AdminAIModelPausedView(APIView):
     permission_classes = [HasAdminPermission]
     required_permission = "models.manage"
+    requires_step_up = True
     paused = False
 
     @method_decorator(csrf_protect)
@@ -193,6 +196,7 @@ class AdminAIModelUnpauseView(AdminAIModelPausedView):
 
 class AdminAPICredentialListCreateView(APIView):
     permission_classes = [HasSuperuserAdminSession]
+    step_up_methods = {"POST"}
 
     def get(self, request):
         return _no_store(
@@ -217,6 +221,7 @@ class AdminAPICredentialListCreateView(APIView):
 
 class AdminAPICredentialRotateView(APIView):
     permission_classes = [HasSuperuserAdminSession]
+    requires_step_up = True
 
     @method_decorator(csrf_protect)
     def post(self, request, credential_id):
@@ -238,6 +243,7 @@ class AdminAPICredentialRotateView(APIView):
 
 class AdminAPICredentialTestView(APIView):
     permission_classes = [HasSuperuserAdminSession]
+    requires_step_up = True
 
     @method_decorator(csrf_protect)
     def post(self, request, credential_id):
@@ -281,6 +287,7 @@ class AdminAICapabilityRuntimeListView(APIView):
 class AdminAICapabilityRuntimeDetailView(APIView):
     permission_classes = [HasAdminPermission]
     required_permissions_by_method = {"GET": "models.list", "PATCH": "models.manage"}
+    step_up_methods = {"PATCH"}
 
     def _row(self, config_id):
         try:
@@ -310,6 +317,7 @@ class AdminAICapabilityRuntimeDetailView(APIView):
 
 class AdminCredentialCapabilityBindingView(APIView):
     permission_classes = [HasSuperuserAdminSession]
+    step_up_methods = {"PUT"}
 
     def get(self, request, provider_key):
         rows = APICredentialCapabilityBinding.objects.select_related("provider").filter(

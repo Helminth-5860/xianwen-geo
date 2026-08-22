@@ -16,8 +16,8 @@ from .security_views import (
     AdminForceLogoutView,
     AdminLogoutView,
     AdminPasswordLoginView,
-    AdminSmsSendView,
-    AdminSmsVerifyView,
+    AdminStepUpChallengeView,
+    AdminStepUpVerifyView,
     RoleIpAllowlistDetailView,
     RoleIpAllowlistView,
     RoleSecurityView,
@@ -43,8 +43,16 @@ urlpatterns = [
     path(
         "admin/auth/login/password", AdminPasswordLoginView.as_view(), name="admin-password-login"
     ),
-    path("admin/auth/login/sms/send", AdminSmsSendView.as_view(), name="admin-sms-send"),
-    path("admin/auth/login/sms/verify", AdminSmsVerifyView.as_view(), name="admin-sms-verify"),
+    path(
+        "admin/auth/step-up/challenge",
+        AdminStepUpChallengeView.as_view(),
+        name="admin-step-up-challenge",
+    ),
+    path(
+        "admin/auth/step-up/verify",
+        AdminStepUpVerifyView.as_view(),
+        name="admin-step-up-verify",
+    ),
     path("admin/auth/logout", AdminLogoutView.as_view(), name="admin-logout"),
     path("admin/me", AdminMeView.as_view(), name="admin-me"),
     path("admin/admins", AdminListCreateView.as_view(), name="admin-list"),

@@ -127,6 +127,7 @@ class RiskPolicyListView(APIView):
 class RiskPolicyDetailView(APIView):
     required_permission = "risk_policy.update"
     permission_classes = [HasAdminPermission]
+    requires_step_up = True
 
     def patch(self, request, action_key):
         serializer = RiskPolicyUpdateSerializer(data=request.data)
@@ -175,6 +176,7 @@ class ApprovalDetailView(APIView):
 class ApprovalApproveView(APIView):
     required_permission = "approvals.approve"
     permission_classes = [HasAdminPermission]
+    requires_step_up = True
 
     def post(self, request, approval_id):
         serializer = ApprovalApproveSerializer(data=request.data)

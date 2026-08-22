@@ -56,11 +56,11 @@ export default function RoleSecurityPage() {
       <Card>
         <Space direction="vertical" size="large" style={{ width: "100%" }}>
           <Button href={`/admin/roles/${id}`}>返回角色</Button>
-          <Typography.Title level={2}>角色登录安全策略</Typography.Title>
+          <Typography.Title level={2}>角色安全与 Step-Up 策略</Typography.Title>
           <Alert
             type="info"
             showIcon
-            message="安全策略变化会撤销该角色全部旧管理员会话和未完成验证。"
+            message="高风险操作统一要求短信 Step-Up；安全策略变化会撤销该角色全部旧管理员会话和未完成验证。"
           />
           {error && <Alert type="error" showIcon message={error} />}
           {notice && <Alert type="warning" showIcon message={notice} />}
@@ -87,7 +87,7 @@ export default function RoleSecurityPage() {
           >
             <Form.Item
               name="require_sms_2fa"
-              label="每次登录强制短信二次验证"
+              label="历史短信策略标记（兼容保留，不再作为登录门禁）"
               valuePropName="checked"
             >
               <Switch />

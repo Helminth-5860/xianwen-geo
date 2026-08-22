@@ -91,9 +91,9 @@ AND resource.subject_id belongs to current_user
 
 ### 6.2 管理员
 
-- 超级管理员每次登录必须密码＋短信验证码。
-- 其他管理员按角色配置是否强制 2FA。
-- 新设备登录建议重新短信验证。
+- 管理员通过独立入口使用密码建立后台 Session，登录本身不发送短信。
+- 高风险动作必须在后端验证当前管理员短时 SMS Step-Up proof；普通 dashboard 与低风险读取不触发短信。
+- Step-Up challenge 与管理员、Session/RBAC/安全版本、IP 和设备摘要绑定，过期、重放或上下文变化均失败关闭。
 
 ### 6.3 密码
 
@@ -391,4 +391,3 @@ CSP 需兼容 Next.js 静态资源并尽量使用 nonce，避免宽泛 `unsafe-i
 - 管理员双人审批绕过测试
 - 用户视角只读绕过测试
 - 备份恢复演练
-

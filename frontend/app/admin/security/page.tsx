@@ -52,7 +52,7 @@ export default function SuperuserSecurityPage() {
           <Alert
             type="info"
             showIcon
-            message="短信二次验证永久开启，不能关闭；IP 白名单默认关闭。"
+            message="普通登录只校验密码；高风险操作的短信 Step-Up 永久启用，IP 白名单默认关闭。"
           />
           {error && <Alert type="error" showIcon message={error} />}
           <Form

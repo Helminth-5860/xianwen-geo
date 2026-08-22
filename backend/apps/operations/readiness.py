@@ -115,7 +115,12 @@ def _sms_check() -> ReadinessCheck:
         "sms",
         ready,
         "TENCENT_SMS_NOT_CONFIGURED",
-        {"provider": settings.SMS_PROVIDER, "real_send_enabled": settings.ENABLE_REAL_SMS},
+        {
+            "provider": settings.SMS_PROVIDER,
+            "real_send_enabled": settings.ENABLE_REAL_SMS,
+            "admin_security_capability": "high_risk_step_up",
+            "admin_login_sms_required": False,
+        },
     )
 
 

@@ -64,7 +64,7 @@ xianwen_geo_v1_dev_package/
 建立一个通过网站使用的商业化 GEO 智能体系统，形成以下闭环：
 
 ```text
-注册与审核
+注册验证与自动启用
 → 创建主体
 → 完善主体资料
 → 生成关键词
@@ -260,7 +260,7 @@ own/role/all 客户范围、管理员 Session 即时撤销和防 ABA 的客户�
 RBAC 的 0002 Seed 迁移反向操作为 `RunPython.noop`：单独回退不会恢复普通 staff，也不会删除 Permission Seed/Profile；完整回退 0001 会删除 RBAC 表及证据。生产逆向迁移前必须审查、备份，优先采用前向修复或备份恢复，且不得连接腾讯云数据库进行验证。
 ## 19. 管理员 2FA 与 IP 白名单（XW-0106）
 
-XW-0106 增加独立管理员密码/短信登录、不可持久化的 Redis 两阶段 challenge、管理员安全 Session 上下文、角色及超级管理员 IPv4/IPv6 白名单、追加式安全事件、全部设备强制退出和服务器控制台紧急恢复。管理员身份不能从普通登录入口绕过；超级管理员短信 2FA 永久强制，production 未配置真实短信 Provider 时失败关闭。实现、迁移回滚限制和 PostgreSQL/Redis 专属验收见 `docs/20-ADMIN-2FA-IP-ALLOWLIST.md`。
+XW-0106 的 Redis challenge、管理员安全 Session 上下文、角色及超级管理员 IPv4/IPv6 白名单、追加式安全事件、全部设备强制退出和服务器控制台紧急恢复继续保留。当前策略为独立管理员密码登录直接建立 Session，短信只在已认证管理员执行高风险操作时授予短时 server-side Step-Up proof；管理员身份仍不能从普通登录入口绕过，production 未配置真实短信 Provider 时高风险 Step-Up 与 release readiness 失败关闭，但普通密码登录不受阻。实现、迁移回滚限制和 PostgreSQL/Redis 专属验收见 `docs/20-ADMIN-2FA-IP-ALLOWLIST.md`。
 
 ## 20. 高风险审批与统一安全审计（XW-0107）
 

@@ -3,9 +3,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   AuthApiError,
   loginWithSms,
+  post,
   registerAccount,
   resetPassword,
   sendSms,
+  setAdminStepUpHandler,
 } from "../lib/auth-client";
 
 function jsonResponse(body: unknown, status = 200) {
@@ -15,7 +17,10 @@ function jsonResponse(body: unknown, status = 200) {
   });
 }
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  setAdminStepUpHandler(null);
+  vi.restoreAllMocks();
+});
 
 describe("集中认证客户端", () => {
   it("所有写请求先获取 CSRF，并统一携带 Cookie 和 X-CSRFToken", async () => {
@@ -56,7 +61,7 @@ describe("集中认证客户端", () => {
             id: "5d8fc11d-e52d-49db-93c0-eea241dd99e6",
             nickname: "测试用户",
             phone_masked: "+86 138****8000",
-            approval_status: "pending",
+            approval_status: "approved",
             account_status: "active",
           },
           request_id: "r2",
@@ -131,5 +136,37 @@ describe("集中认证客户端", () => {
       sms_code: "438921",
       new_password: "New-Correct-Horse-2027!",
     });
+  });
+
+  it("高风险稳定错误触发一次 Step-Up 后仅重试原写请求一次", async () => {
+    const stepUp = vi.fn().mockResolvedValue(undefined);
+    setAdminStepUpHandler(stepUp);
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        jsonResponse({ success: true, data: { csrf_token: "csrf-first" }, request_id: "r1" }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse(
+          {
+            success: false,
+            error: { code: "ADMIN_STEP_UP_REQUIRED", message: "需要安全验证", details: {} },
+            request_id: "r2",
+          },
+          403,
+        ),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({ success: true, data: { csrf_token: "csrf-retry" }, request_id: "r3" }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({ success: true, data: { changed: true }, request_id: "r4" }),
+      );
+
+    await expect(post<{ changed: true }>("/admin/protected", {})).resolves.toEqual({
+      changed: true,
+    });
+    expect(stepUp).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(2);
   });
 });

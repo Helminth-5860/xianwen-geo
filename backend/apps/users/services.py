@@ -3,6 +3,7 @@ from functools import lru_cache
 
 from django.contrib.auth.hashers import check_password, make_password
 from django.db import IntegrityError, transaction
+from django.utils import timezone
 
 from apps.core.request_ids import validate_request_id
 
@@ -146,8 +147,9 @@ def create_registered_user(*, phone: str, nickname: str, password: str) -> User:
                 phone=phone,
                 nickname=nickname,
                 password=password,
-                approval_status=User.ApprovalStatus.PENDING,
+                approval_status=User.ApprovalStatus.APPROVED,
                 account_status=User.AccountStatus.ACTIVE,
+                approved_at=timezone.now(),
                 is_active=True,
             )
     except IntegrityError as exc:

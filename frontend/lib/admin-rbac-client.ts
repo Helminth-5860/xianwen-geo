@@ -125,9 +125,10 @@ export const disableRole = (id: string, expectedVersion: number, credentials: Ri
     ...credentials,
   });
 export const getPermissions = () => get<CatalogPermission[]>("/admin/permissions");
-export type AdminLoginPasswordResult =
-  | Readonly<{ requires_2fa: true; challenge_id: string; expires_in: number }>
-  | Readonly<{ requires_2fa: false; user: import("./auth-client").AccountUser }>;
+export type AdminLoginPasswordResult = Readonly<{
+  requires_2fa: false;
+  user: import("./auth-client").AccountUser;
+}>;
 
 export type IpAllowlistEntry = Readonly<{
   id: string;
@@ -155,12 +156,13 @@ export const adminLoginWithPassword = (normalizedPhone: string, password: string
     phone: normalizedPhone,
     password,
   });
-export const sendAdminLoginSms = (challengeId: string) =>
-  post<{ sent: true; expires_in: number; resend_after: number }>("/admin/auth/login/sms/send", {
-    challenge_id: challengeId,
-  });
-export const verifyAdminLoginSms = (challengeId: string, smsCode: string) =>
-  post<import("./auth-client").AccountUser>("/admin/auth/login/sms/verify", {
+export const createAdminStepUpChallenge = () =>
+  post<{ challenge_id: string; sent: true; expires_in: number; resend_after: number }>(
+    "/admin/auth/step-up/challenge",
+    {},
+  );
+export const verifyAdminStepUp = (challengeId: string, smsCode: string) =>
+  post<{ verified: true; expires_in: number }>("/admin/auth/step-up/verify", {
     challenge_id: challengeId,
     sms_code: smsCode,
   });

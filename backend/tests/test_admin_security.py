@@ -13,6 +13,8 @@ from apps.admin_rbac.models import (
 )
 from apps.admin_rbac.security import (
     ADMIN_AUTHENTICATED_KEY,
+    ADMIN_STEP_UP_PROOF_KEY,
+    AdminChallengeInvalid,
     AdminIpNotAllowed,
     normalize_network,
     security_snapshot,
@@ -53,11 +55,15 @@ def ordinary_admin(*, require_sms_2fa=False):
 
 
 @pytest.mark.django_db
-def test_superuser_password_step_always_requires_sms_without_django_login(monkeypatch):
+def test_superuser_password_login_establishes_session_without_sms(monkeypatch):
     user = superuser()
     monkeypatch.setattr(
         "apps.admin_rbac.security_views.create_admin_challenge",
-        lambda snapshot, request: "opaque-challenge",
+        lambda *args, **kwargs: pytest.fail("normal login must not create an SMS challenge"),
+    )
+    monkeypatch.setattr(
+        "apps.admin_rbac.security_views.send_admin_second_factor",
+        lambda *args, **kwargs: pytest.fail("normal login must not send SMS"),
     )
     client, csrf = csrf_client()
 
@@ -69,17 +75,15 @@ def test_superuser_password_step_always_requires_sms_without_django_login(monkey
     )
 
     assert response.status_code == 200
-    assert response.json()["data"] == {
-        "requires_2fa": True,
-        "challenge_id": "opaque-challenge",
-        "expires_in": 300,
-    }
-    assert SESSION_KEY not in client.session
-    assert ADMIN_AUTHENTICATED_KEY not in client.session
+    assert response.json()["data"]["requires_2fa"] is False
+    assert response.json()["data"]["user"]["id"] == str(user.pk)
+    assert SESSION_KEY in client.session
+    assert client.session[ADMIN_AUTHENTICATED_KEY] is True
+    assert ADMIN_STEP_UP_PROOF_KEY not in client.session
 
 
 @pytest.mark.django_db
-def test_ordinary_role_2fa_switch_controls_password_completion(monkeypatch):
+def test_legacy_role_2fa_switch_does_not_gate_password_login(monkeypatch):
     _, profile, role = ordinary_admin(require_sms_2fa=False)
     client, csrf = csrf_client()
     complete = client.post(
@@ -97,7 +101,7 @@ def test_ordinary_role_2fa_switch_controls_password_completion(monkeypatch):
     role.save(update_fields=["require_sms_2fa", "security_version"])
     monkeypatch.setattr(
         "apps.admin_rbac.security_views.create_admin_challenge",
-        lambda snapshot, request: "next-challenge",
+        lambda *args, **kwargs: pytest.fail("normal login must not create an SMS challenge"),
     )
     second, csrf2 = csrf_client()
     challenged = second.post(
@@ -107,8 +111,112 @@ def test_ordinary_role_2fa_switch_controls_password_completion(monkeypatch):
         HTTP_X_CSRFTOKEN=csrf2,
     )
     assert challenged.status_code == 200
-    assert challenged.json()["data"]["requires_2fa"] is True
-    assert SESSION_KEY not in second.session
+    assert challenged.json()["data"]["requires_2fa"] is False
+    assert SESSION_KEY in second.session
+    assert second.session[ADMIN_AUTHENTICATED_KEY] is True
+
+
+@pytest.mark.django_db
+def test_high_risk_action_requires_authenticated_sms_step_up_and_low_risk_read_does_not_send(
+    monkeypatch,
+):
+    actor = superuser()
+    role = AdminRole.objects.create(name="Step-Up 角色", data_scope=AdminRole.DataScope.ALL)
+    client = authenticate_admin_client(APIClient(), actor, step_up=False)
+    sent = []
+
+    assert client.get("/api/v1/admin/me").status_code == 200
+    denied = client.patch(
+        f"/api/v1/admin/roles/{role.id}/security",
+        {
+            "current_password": PASSWORD,
+            "expected_security_version": role.security_version,
+            "require_sms_2fa": True,
+        },
+        format="json",
+    )
+    assert denied.status_code == 403
+    assert denied.json()["error"]["code"] == "ADMIN_STEP_UP_REQUIRED"
+    assert sent == []
+
+    monkeypatch.setattr(
+        "apps.admin_rbac.security_views.create_admin_challenge",
+        lambda snapshot, request: "opaque-step-up-challenge",
+    )
+
+    def send(challenge_id, request):
+        sent.append(challenge_id)
+        return request.admin_security_snapshot
+
+    monkeypatch.setattr("apps.admin_rbac.security_views.send_admin_second_factor", send)
+    challenge = client.post("/api/v1/admin/auth/step-up/challenge", {}, format="json")
+    assert challenge.status_code == 201
+    assert challenge.json()["data"]["challenge_id"] == "opaque-step-up-challenge"
+    assert sent == ["opaque-step-up-challenge"]
+
+    monkeypatch.setattr(
+        "apps.admin_rbac.security_views.verify_admin_second_factor",
+        lambda challenge_id, code, request: request.admin_security_snapshot,
+    )
+    verified = client.post(
+        "/api/v1/admin/auth/step-up/verify",
+        {"challenge_id": "opaque-step-up-challenge", "sms_code": "618294"},
+        format="json",
+    )
+    assert verified.status_code == 200
+    assert verified.json()["data"] == {"verified": True, "expires_in": 300}
+    assert ADMIN_STEP_UP_PROOF_KEY in client.session
+    assert AdminSecurityEvent.objects.filter(event_type="step_up_challenge_sent").exists()
+    assert AdminSecurityEvent.objects.filter(event_type="admin_step_up_succeeded").exists()
+
+    performed = client.patch(
+        f"/api/v1/admin/roles/{role.id}/security",
+        {
+            "current_password": PASSWORD,
+            "expected_security_version": role.security_version,
+            "require_sms_2fa": True,
+        },
+        format="json",
+    )
+    assert performed.status_code == 200
+
+
+@pytest.mark.django_db
+def test_step_up_wrong_code_and_expired_proof_fail_closed(monkeypatch):
+    actor = superuser()
+    role = AdminRole.objects.create(name="过期 Step-Up", data_scope=AdminRole.DataScope.ALL)
+    client = authenticate_admin_client(APIClient(), actor)
+    session = client.session
+    proof = session[ADMIN_STEP_UP_PROOF_KEY]
+    proof["verified_at"] = 1
+    session[ADMIN_STEP_UP_PROOF_KEY] = proof
+    session.save()
+
+    expired = client.patch(
+        f"/api/v1/admin/roles/{role.id}/security",
+        {
+            "current_password": PASSWORD,
+            "expected_security_version": role.security_version,
+            "require_sms_2fa": True,
+        },
+        format="json",
+    )
+    assert expired.status_code == 403
+    assert expired.json()["error"]["code"] == "ADMIN_STEP_UP_EXPIRED"
+
+    client = authenticate_admin_client(APIClient(), actor, step_up=False)
+    monkeypatch.setattr(
+        "apps.admin_rbac.security_views.verify_admin_second_factor",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AdminChallengeInvalid()),
+    )
+    wrong = client.post(
+        "/api/v1/admin/auth/step-up/verify",
+        {"challenge_id": "opaque", "sms_code": "000000"},
+        format="json",
+    )
+    assert wrong.status_code == 401
+    assert wrong.json()["error"]["code"] == "ADMIN_AUTH_CHALLENGE_INVALID"
+    assert ADMIN_STEP_UP_PROOF_KEY not in client.session
 
 
 @pytest.mark.django_db
@@ -258,7 +366,7 @@ def test_superuser_policy_is_created_and_normal_admin_cannot_read_security_pages
 
 
 @pytest.mark.django_db
-def test_invalid_cidr_is_stable_422_and_redis_failure_closes_admin_login(monkeypatch):
+def test_invalid_cidr_is_stable_422_and_redis_failure_closes_step_up(monkeypatch):
     actor = superuser()
     admin = authenticate_admin_client(APIClient(), actor)
     role = AdminRole.objects.create(name="CIDR", data_scope=AdminRole.DataScope.ALL)
@@ -281,13 +389,8 @@ def test_invalid_cidr_is_stable_422_and_redis_failure_closes_admin_login(monkeyp
         "apps.admin_rbac.security_views.create_admin_challenge",
         lambda snapshot, request: (_ for _ in ()).throw(AdminSecurityUnavailable()),
     )
-    client, csrf = csrf_client()
-    unavailable = client.post(
-        "/api/v1/admin/auth/login/password",
-        {"phone": actor.phone, "password": PASSWORD},
-        format="json",
-        HTTP_X_CSRFTOKEN=csrf,
-    )
+    client = authenticate_admin_client(APIClient(), actor, step_up=False)
+    unavailable = client.post("/api/v1/admin/auth/step-up/challenge", {}, format="json")
     assert unavailable.status_code == 503
     assert unavailable.json()["error"]["code"] == "SERVICE_TEMPORARILY_UNAVAILABLE"
 

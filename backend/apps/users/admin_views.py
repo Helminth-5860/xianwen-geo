@@ -121,6 +121,7 @@ class AdminUserHistoryView(APIView):
 class AdminUserReviewView(APIView):
     permission_classes = [HasAdminPermission]
     required_permission = "users.review"
+    requires_step_up = True
 
     def post(self, request, user_id):
         scoped_customer_or_404(request.user, request.admin_context, user_id)
@@ -181,6 +182,7 @@ class AdminUserReviewView(APIView):
 class _AdminAccountStatusView(APIView):
     permission_classes = [HasAdminPermission]
     required_permission = "users.freeze"
+    requires_step_up = True
     action = ""
 
     def post(self, request, user_id):

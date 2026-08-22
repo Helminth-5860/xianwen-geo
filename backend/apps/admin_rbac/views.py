@@ -96,6 +96,7 @@ class AdminMeView(APIView):
 class AdminListCreateView(APIView):
     required_permission = "admins.list"
     permission_classes = [HasAdminPermission]
+    step_up_methods = {"POST"}
 
     def get(self, request):
         queryset = AdminProfile.objects.select_related("user", "role").order_by("created_at", "id")
@@ -126,6 +127,7 @@ class AdminListCreateView(APIView):
 class AdminDetailView(APIView):
     required_permission = "admins.view"
     permission_classes = [HasAdminPermission]
+    step_up_methods = {"PATCH"}
 
     def _get(self, profile_id):
         try:
@@ -193,6 +195,7 @@ class AdminRoleChangeView(APIView):
 class AdminStatusView(APIView):
     required_permission = "admins.disable"
     permission_classes = [HasAdminPermission]
+    requires_step_up = True
     action = ""
 
     @method_decorator(csrf_protect)
@@ -243,6 +246,7 @@ class AdminStatusView(APIView):
 class RoleListCreateView(APIView):
     required_permission = "roles.list"
     permission_classes = [HasAdminPermission]
+    step_up_methods = {"POST"}
 
     def get(self, request):
         return Response(_page(AdminRole.objects.all(), RoleSerializer, request))
@@ -263,6 +267,7 @@ class RoleListCreateView(APIView):
 class RoleDetailView(APIView):
     required_permission = "roles.view"
     permission_classes = [HasAdminPermission]
+    step_up_methods = {"PATCH"}
 
     def _get(self, role_id):
         try:

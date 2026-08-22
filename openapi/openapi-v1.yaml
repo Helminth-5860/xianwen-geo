@@ -104,7 +104,8 @@ paths:
       summary: 手机号、昵称、短信验证码和密码注册
       description: |
         使用 register 用途验证码。验证码先在 Redis 原子消费，再执行 PostgreSQL 事务；
-        两者不存在分布式事务。注册成功后建立 12 小时浏览器会话，账号初始为待审核。
+        两者不存在分布式事务。注册成功后账号直接进入 approved/active，并建立 12 小时浏览器会话；
+        不需要管理员审批首次登录。历史 pending/rejected 状态继续兼容保留。
         手机号是否已注册仅在验证码成功消费后通过 ACCOUNT_ALREADY_EXISTS 返回。
       parameters:
         - $ref: '#/components/parameters/CsrfToken'
@@ -2516,43 +2517,38 @@ paths:
     post:
       tags: [Admin]
       security: []
-      summary: 管理员密码认证；按策略返回完整会话或临时二次验证 challenge
+      summary: 管理员密码认证并直接建立后台 Session；不会创建或发送短信 challenge
       parameters: [{$ref: '#/components/parameters/CsrfToken'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AdminPasswordLoginRequest'}}}}
       responses:
-        '200': {description: 管理员认证步骤成功, content: {application/json: {schema: {$ref: '#/components/schemas/AdminPasswordLoginEnvelope'}}}}
+        '200': {description: 管理员密码 Session 已建立，requires_2fa 固定为 false 以兼容旧客户端, content: {application/json: {schema: {$ref: '#/components/schemas/AdminPasswordLoginEnvelope'}}}}
         '401': {$ref: '#/components/responses/AuthRequired'}
         '403': {description: CSRF 失败、管理员入口限制或 IP 不允许}
         '422': {$ref: '#/components/responses/ValidationError'}
         '429': {$ref: '#/components/responses/RateLimited'}
         '503': {$ref: '#/components/responses/ServiceUnavailable'}
         '500': {$ref: '#/components/responses/InternalError'}
-  /admin/auth/login/sms/send:
+  /admin/auth/step-up/challenge:
     post:
       tags: [Admin]
-      security: []
-      summary: 为有效管理员登录 challenge 发送短信验证码
+      summary: 已认证管理员显式请求高风险操作 Step-Up challenge 并发送短信验证码
       parameters: [{$ref: '#/components/parameters/CsrfToken'}]
-      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AdminChallengeRequest'}}}}
       responses:
-        '200': {description: 短信发送已受理}
-        '401': {description: challenge 无效、过期或上下文不匹配}
-        '403': {$ref: '#/components/responses/CsrfFailed'}
-        '422': {$ref: '#/components/responses/ValidationError'}
+        '201': {description: Step-Up challenge 已创建且短信发送已受理, content: {application/json: {schema: {$ref: '#/components/schemas/AdminStepUpChallengeEnvelope'}}}}
+        '403': {description: CSRF 失败或管理员 Session 无效}
         '429': {$ref: '#/components/responses/RateLimited'}
         '503': {$ref: '#/components/responses/ServiceUnavailable'}
         '500': {$ref: '#/components/responses/InternalError'}
-  /admin/auth/login/sms/verify:
+  /admin/auth/step-up/verify:
     post:
       tags: [Admin]
-      security: []
-      summary: 验证管理员登录 challenge 并建立完整 Session
+      summary: 验证一次性短信码并向当前管理员 server-side Session 授予 5 分钟 Step-Up proof
       parameters: [{$ref: '#/components/parameters/CsrfToken'}]
-      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AdminChallengeVerifyRequest'}}}}
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AdminStepUpVerifyRequest'}}}}
       responses:
-        '200': {description: 管理员完整 Session 已建立}
+        '200': {description: Step-Up proof 已写入当前 server-side Session}
         '401': {description: challenge 或验证码无效、过期、已消费或上下文不匹配}
-        '403': {$ref: '#/components/responses/CsrfFailed'}
+        '403': {description: CSRF 失败或管理员 Session 无效}
         '422': {$ref: '#/components/responses/ValidationError'}
         '503': {$ref: '#/components/responses/ServiceUnavailable'}
         '500': {$ref: '#/components/responses/InternalError'}
@@ -4132,6 +4128,8 @@ components:
         - ADMIN_LOGIN_REQUIRED
         - ADMIN_AUTH_CHALLENGE_INVALID
         - ADMIN_AUTH_CHALLENGE_EXPIRED
+        - ADMIN_STEP_UP_REQUIRED
+        - ADMIN_STEP_UP_EXPIRED
         - ADMIN_IP_NOT_ALLOWED
         - ADMIN_REAUTH_FAILED
         - SECURITY_POLICY_VERSION_CONFLICT
@@ -5706,26 +5704,33 @@ components:
           properties:
             data:
               type: object
-              required: [requires_2fa]
+              required: [requires_2fa, user]
               properties:
-                requires_2fa: {type: boolean}
-                challenge_id: {type: string, description: 仅用于本次管理员二次验证的临时标识}
-                expires_in: {type: integer, const: 300}
-    AdminChallengeRequest:
+                requires_2fa: {type: boolean, const: false, description: 兼容字段；管理员登录不再要求短信}
+                user: {$ref: '#/components/schemas/User'}
+    AdminStepUpVerifyRequest:
       type: object
       additionalProperties: false
-      required: [challenge_id]
-      properties: {challenge_id: {type: string, writeOnly: true}}
-    AdminChallengeVerifyRequest:
+      required: [challenge_id, sms_code]
+      properties:
+        challenge_id: {type: string, writeOnly: true}
+        sms_code:
+          type: string
+          pattern: '^[0-9]{6}$'
+          writeOnly: true
+    AdminStepUpChallengeEnvelope:
       allOf:
-        - $ref: '#/components/schemas/AdminChallengeRequest'
+        - $ref: '#/components/schemas/EnvelopeBase'
         - type: object
-          required: [sms_code]
           properties:
-            sms_code:
-              type: string
-              pattern: '^[0-9]{6}$'
-              writeOnly: true
+            data:
+              type: object
+              required: [challenge_id, sent, expires_in, resend_after]
+              properties:
+                challenge_id: {type: string}
+                sent: {type: boolean, const: true}
+                expires_in: {type: integer, const: 300}
+                resend_after: {type: integer, const: 60}
     SecurityMutationBase:
       type: object
       additionalProperties: false

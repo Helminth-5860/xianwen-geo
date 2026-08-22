@@ -9,8 +9,6 @@ const mocks = vi.hoisted(() => ({
   loginWithPassword: vi.fn(),
   loginWithSms: vi.fn(),
   adminLoginWithPassword: vi.fn(),
-  sendAdminLoginSms: vi.fn(),
-  verifyAdminLoginSms: vi.fn(),
   getRoleSecurity: vi.fn(),
   updateRoleSecurity: vi.fn(),
   getRoleIpAllowlist: vi.fn(),
@@ -44,8 +42,6 @@ vi.mock("@/lib/auth-client", async (importOriginal) => {
 });
 vi.mock("@/lib/admin-rbac-client", () => ({
   adminLoginWithPassword: mocks.adminLoginWithPassword,
-  sendAdminLoginSms: mocks.sendAdminLoginSms,
-  verifyAdminLoginSms: mocks.verifyAdminLoginSms,
   getRoleSecurity: mocks.getRoleSecurity,
   updateRoleSecurity: mocks.updateRoleSecurity,
   getRoleIpAllowlist: mocks.getRoleIpAllowlist,
@@ -170,31 +166,20 @@ describe("普通登录与 challenge 内存边界", () => {
     expect(screen.queryByText(/管理员角色|白名单配置|是否开启 2FA/)).toBeNull();
   });
 
-  it("卸载重挂后 challenge 丢失且不进入 URL 或浏览器存储", async () => {
+  it("管理员密码登录不创建 challenge 且不写浏览器存储", async () => {
     mocks.adminLoginWithPassword.mockResolvedValueOnce({
-      requires_2fa: true,
-      challenge_id: "memory-only",
-      expires_in: 300,
-    });
-    mocks.sendAdminLoginSms.mockResolvedValueOnce({
-      sent: true,
-      expires_in: 300,
-      resend_after: 60,
+      requires_2fa: false,
+      user: {},
     });
     const user = userEvent.setup();
-    const view = render(<AdminLoginPage />);
+    render(<AdminLoginPage />);
     await user.type(screen.getByLabelText("手机号"), "13900139000");
     await user.type(screen.getByLabelText("密码"), "Safe-password");
-    await user.click(screen.getByRole("button", { name: /继续\s*安全\s*验证/ }));
-    expect(await screen.findByLabelText("短信验证码")).toBeTruthy();
-    expect(location.href).not.toContain("memory-only");
+    await user.click(screen.getByRole("button", { name: /登录后台/ }));
+    await waitFor(() => expect(mocks.push).toHaveBeenCalledWith("/admin"));
+    expect(screen.queryByLabelText("短信验证码")).toBeNull();
     expect(localStorage.length).toBe(0);
     expect(sessionStorage.length).toBe(0);
-    expect(document.cookie).not.toContain("memory-only");
-    view.unmount();
-    render(<AdminLoginPage />);
-    expect(screen.getByLabelText("密码")).toBeTruthy();
-    expect(screen.queryByLabelText("短信验证码")).toBeNull();
   });
 });
 
@@ -216,10 +201,12 @@ describe("角色安全策略", () => {
     mocks.updateRoleIpAllowlistEntry.mockResolvedValue({ entry, security_version: 3 });
     const user = userEvent.setup();
     render(<RoleSecurityPage />);
-    await screen.findByText("角色登录安全策略");
+    await screen.findByText("角色安全与 Step-Up 策略");
     await user.click(screen.getByRole("button", { name: /保存\s*安全\s*策略/ }));
     expect(mocks.updateRoleSecurity).not.toHaveBeenCalled();
-    await user.click(screen.getByRole("switch", { name: "每次登录强制短信二次验证" }));
+    await user.click(
+      screen.getByRole("switch", { name: "历史短信策略标记（兼容保留，不再作为登录门禁）" }),
+    );
     await user.click(screen.getByRole("switch", { name: "启用 IP 白名单" }));
     await user.click(screen.getByRole("button", { name: /保存\s*安全\s*策略/ }));
     expect(screen.getByLabelText("当前超级管理员密码").getAttribute("aria-invalid")).toBe("true");
@@ -263,7 +250,7 @@ describe("角色安全策略", () => {
     );
     const user = userEvent.setup();
     render(<RoleSecurityPage />);
-    await screen.findByText("角色登录安全策略");
+    await screen.findByText("角色安全与 Step-Up 策略");
     await user.type(screen.getByLabelText("当前超级管理员密码"), "Safe-password");
     await user.click(screen.getByRole("button", { name: /保存\s*安全\s*策略/ }));
     expect(await screen.findByText(message as string)).toBeTruthy();
