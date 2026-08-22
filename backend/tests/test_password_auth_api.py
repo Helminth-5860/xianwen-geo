@@ -97,6 +97,9 @@ def test_successful_password_login_rotates_session_and_sets_browser_cookie(user)
         "phone_masked": "+86 138****8000",
         "approval_status": "pending",
         "account_status": "active",
+        "commercial_identity": "END_USER",
+        "home_route": "/workspace",
+        "tenant": None,
     }
     session_cookie = response.cookies["xianwen_session"]
     assert session_cookie.value != previous_session_key
@@ -237,6 +240,9 @@ def test_me_requires_session_and_returns_minimum_user_data(user):
         "phone_masked",
         "approval_status",
         "account_status",
+        "commercial_identity",
+        "home_route",
+        "tenant",
     }
     assert user.phone not in response.content.decode()
 

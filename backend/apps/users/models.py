@@ -8,6 +8,46 @@ from .managers import UserManager
 from .phone_numbers import normalize_phone
 
 
+class Tenant(models.Model):  # noqa: DJ008
+    class Status(models.TextChoices):
+        ACTIVE = "active", "启用"
+        INACTIVE = "inactive", "停用"
+
+    LEGACY_DEFAULT_ID = uuid.UUID("00000000-0000-4000-8000-000000000001")
+    LEGACY_DEFAULT_KEY = "legacy-default"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    key = models.SlugField(max_length=80, unique=True)
+    display_name = models.CharField(max_length=120)
+    brand_name = models.CharField(max_length=120, blank=True)
+    logo_reference = models.CharField(max_length=500, blank=True)
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.ACTIVE)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "tenants"
+        ordering = ("display_name", "id")
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(status__in=("active", "inactive")),
+                name="tenant_valid_status",
+            )
+        ]
+
+    @classmethod
+    def legacy_default(cls):
+        tenant, _ = cls.objects.get_or_create(
+            id=cls.LEGACY_DEFAULT_ID,
+            defaults={
+                "key": cls.LEGACY_DEFAULT_KEY,
+                "display_name": "默认租户",
+                "brand_name": "显问 GEO",
+            },
+        )
+        return tenant
+
+
 class User(AbstractBaseUser, PermissionsMixin):
     class ApprovalStatus(models.TextChoices):
         PENDING = "pending", "待审核"
@@ -28,6 +68,13 @@ class User(AbstractBaseUser, PermissionsMixin):
     )
 
     id: models.UUIDField = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="users",
+    )
     phone: models.CharField = models.CharField(max_length=14, unique=True)
     nickname: models.CharField = models.CharField(max_length=50)
     approval_status: models.CharField = models.CharField(

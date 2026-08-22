@@ -43,7 +43,9 @@ export default function LoginPage() {
         mode === "password"
           ? await loginWithPassword(values.phone, values.password || "")
           : await loginWithSms(values.phone, values.smsCode || "");
-      router.push(user.approval_status === "pending" ? "/?account=pending" : "/");
+      router.push(
+        user.approval_status === "pending" ? "/workspace?account=pending" : user.home_route,
+      );
     } catch (reason) {
       setAdminLoginRequired(
         reason instanceof AuthApiError && reason.code === "ADMIN_LOGIN_REQUIRED",

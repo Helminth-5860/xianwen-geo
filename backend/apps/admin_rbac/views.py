@@ -1,6 +1,7 @@
 from math import ceil
 
 from django.db import IntegrityError
+from django.db.models import Count
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_protect
 from rest_framework.exceptions import NotFound
@@ -9,9 +10,10 @@ from rest_framework.status import HTTP_201_CREATED, HTTP_202_ACCEPTED, HTTP_409_
 from rest_framework.views import APIView
 
 from apps.core.responses import error_response
+from apps.users.models import Tenant
 
 from .models import AdminPermission, AdminProfile, AdminRole, CustomerAssignment
-from .permissions import HasAdminPermission
+from .permissions import HasAdminPermission, HasSuperuserAdminSession
 from .risk_services import RiskError, perform_risk_action
 from .risk_views import risk_error_response
 from .scopes import scoped_customer_or_404
@@ -28,6 +30,7 @@ from .serializers import (
     RolePermissionsReplaceSerializer,
     RoleSerializer,
     RoleUpdateSerializer,
+    TenantSerializer,
     VersionSerializer,
 )
 from .services import (
@@ -86,10 +89,50 @@ class AdminMeView(APIView):
                 "data_scope": context.profile.role.data_scope
                 if context.profile.role
                 else AdminRole.DataScope.ALL,
+                "commercial_identity": context.identity.value,
+                "tenant_id": str(context.tenant_id) if context.tenant_id else None,
                 "permission_keys": sorted(context.permission_keys),
                 "menu_keys": sorted(context.menu_keys),
             }
         )
+
+
+@method_decorator(csrf_protect, name="dispatch")
+class TenantListCreateView(APIView):
+    permission_classes = [HasSuperuserAdminSession]
+    step_up_methods = {"POST"}
+
+    def get(self, request):
+        queryset = Tenant.objects.annotate(user_count=Count("users")).order_by("display_name", "id")
+        return Response(TenantSerializer(queryset, many=True).data)
+
+    def post(self, request):
+        serializer = TenantSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        tenant = serializer.save()
+        return Response(TenantSerializer(tenant).data, status=HTTP_201_CREATED)
+
+
+@method_decorator(csrf_protect, name="dispatch")
+class TenantDetailView(APIView):
+    permission_classes = [HasSuperuserAdminSession]
+    step_up_methods = {"PATCH"}
+
+    def _get(self, tenant_id):
+        try:
+            return Tenant.objects.annotate(user_count=Count("users")).get(pk=tenant_id)
+        except Tenant.DoesNotExist as exc:
+            raise NotFound from exc
+
+    def get(self, request, tenant_id):
+        return Response(TenantSerializer(self._get(tenant_id)).data)
+
+    def patch(self, request, tenant_id):
+        tenant = self._get(tenant_id)
+        serializer = TenantSerializer(tenant, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
 
 
 @method_decorator(csrf_protect, name="dispatch")

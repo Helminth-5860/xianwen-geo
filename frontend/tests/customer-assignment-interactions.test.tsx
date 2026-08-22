@@ -34,6 +34,8 @@ const admin = {
   version: 1,
   logout_version: 1,
   role: null,
+  tenant_id: null,
+  tenant_name: null,
 };
 
 beforeAll(() => {

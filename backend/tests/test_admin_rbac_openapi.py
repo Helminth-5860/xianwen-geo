@@ -13,6 +13,8 @@ def test_xw0105_paths_are_documented():
     paths = SPEC["paths"]
     expected = {
         "/admin/me",
+        "/admin/tenants",
+        "/admin/tenants/{tenantId}",
         "/admin/admins",
         "/admin/admins/{adminId}",
         "/admin/admins/{adminId}/disable",

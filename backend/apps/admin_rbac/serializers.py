@@ -2,7 +2,7 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
-from apps.users.models import User
+from apps.users.models import Tenant, User
 from apps.users.phone_numbers import mask_phone, normalize_phone
 from apps.users.validators import validate_nickname, validate_safe_plain_text
 
@@ -115,6 +115,8 @@ class AdminProfileSerializer(serializers.ModelSerializer):
     is_superuser = serializers.BooleanField(source="user.is_superuser")
     role = RoleSerializer()
     logout_version = serializers.IntegerField(source="user.session_version")
+    tenant_id = serializers.UUIDField(source="user.tenant_id", allow_null=True)
+    tenant_name = serializers.CharField(source="user.tenant.display_name", allow_null=True)
 
     class Meta:
         model = AdminProfile
@@ -127,6 +129,8 @@ class AdminProfileSerializer(serializers.ModelSerializer):
             "admin_status",
             "version",
             "role",
+            "tenant_id",
+            "tenant_name",
             "logout_version",
             "created_at",
             "updated_at",
@@ -141,6 +145,7 @@ class AdminCreateSerializer(serializers.Serializer):
     nickname = serializers.CharField(max_length=50, trim_whitespace=False)
     password = serializers.CharField(max_length=128, write_only=True, trim_whitespace=False)
     role_id = serializers.UUIDField()
+    tenant_id = serializers.UUIDField(required=False)
 
     def validate_phone(self, value):
         return normalize_phone(value)
@@ -155,6 +160,29 @@ class AdminCreateSerializer(serializers.Serializer):
         except DjangoValidationError as exc:
             raise serializers.ValidationError({"password": exc.messages}) from exc
         return attrs
+
+
+class TenantSerializer(serializers.ModelSerializer):
+    user_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Tenant
+        fields = (
+            "id",
+            "key",
+            "display_name",
+            "brand_name",
+            "logo_reference",
+            "status",
+            "user_count",
+            "created_at",
+            "updated_at",
+        )
+        read_only_fields = ("id", "created_at", "updated_at")
+
+    def get_user_count(self, tenant):
+        annotated = getattr(tenant, "user_count", None)
+        return annotated if annotated is not None else tenant.users.count()
 
 
 class AdminUpdateSerializer(StrictSerializer):

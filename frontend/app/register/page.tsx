@@ -33,13 +33,13 @@ export default function RegisterPage() {
     setError("");
     setSubmitting(true);
     try {
-      await registerAccount({
+      const user = await registerAccount({
         phone: values.phone,
         nickname: values.nickname.trim(),
         smsCode: values.smsCode,
         password: values.password,
       });
-      router.push("/");
+      router.push(user.home_route);
     } catch (reason) {
       setError(userMessage(reason));
     } finally {

@@ -169,7 +169,7 @@ describe("普通登录与 challenge 内存边界", () => {
   it("管理员密码登录不创建 challenge 且不写浏览器存储", async () => {
     mocks.adminLoginWithPassword.mockResolvedValueOnce({
       requires_2fa: false,
-      user: {},
+      user: { home_route: "/admin" },
     });
     const user = userEvent.setup();
     render(<AdminLoginPage />);

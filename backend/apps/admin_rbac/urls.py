@@ -36,6 +36,8 @@ from .views import (
     RoleDisableView,
     RoleListCreateView,
     RolePermissionsView,
+    TenantDetailView,
+    TenantListCreateView,
     status_view,
 )
 
@@ -55,6 +57,8 @@ urlpatterns = [
     ),
     path("admin/auth/logout", AdminLogoutView.as_view(), name="admin-logout"),
     path("admin/me", AdminMeView.as_view(), name="admin-me"),
+    path("admin/tenants", TenantListCreateView.as_view(), name="tenant-list"),
+    path("admin/tenants/<uuid:tenant_id>", TenantDetailView.as_view(), name="tenant-detail"),
     path("admin/admins", AdminListCreateView.as_view(), name="admin-list"),
     path("admin/admins/<uuid:profile_id>", AdminDetailView.as_view(), name="admin-detail"),
     path(

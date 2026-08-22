@@ -7,8 +7,10 @@ import {
   createAdmin,
   getAdmins,
   getRoles,
+  getTenants,
   type AdminProfile,
   type Role,
+  type Tenant,
 } from "@/lib/admin-rbac-client";
 import { useAdminCapabilities } from "@/components/admin/admin-capability";
 import { userMessage } from "@/lib/auth-client";
@@ -17,13 +19,19 @@ export default function AdminAccountsPage() {
   const capabilities = useAdminCapabilities();
   const [admins, setAdmins] = useState<AdminProfile[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
+  const [tenants, setTenants] = useState<Tenant[]>([]);
   const [open, setOpen] = useState(false);
   const [error, setError] = useState("");
   const load = useCallback(async () => {
     try {
-      const [adminPage, rolePage] = await Promise.all([getAdmins(), getRoles()]);
+      const [adminPage, rolePage, tenantPage] = await Promise.all([
+        getAdmins(),
+        getRoles(),
+        getTenants(),
+      ]);
       setAdmins(adminPage.results);
       setRoles(rolePage.results.filter((item) => item.status === "active"));
+      setTenants(tenantPage.filter((item) => item.status === "active"));
     } catch (reason) {
       setError(userMessage(reason));
     }
@@ -48,6 +56,7 @@ export default function AdminAccountsPage() {
               { title: "昵称", dataIndex: "nickname" },
               { title: "手机号", dataIndex: "phone_masked" },
               { title: "角色", render: (_, item) => item.role?.name || "超级管理员" },
+              { title: "租户", render: (_, item) => item.tenant_name || "平台" },
               {
                 title: "状态",
                 render: (_, item) => <Tag>{item.admin_status}</Tag>,
@@ -93,6 +102,11 @@ export default function AdminAccountsPage() {
           </Form.Item>
           <Form.Item name="role_id" label="角色" rules={[{ required: true }]}>
             <Select options={roles.map((item) => ({ value: item.id, label: item.name }))} />
+          </Form.Item>
+          <Form.Item name="tenant_id" label="租户" rules={[{ required: true }]}>
+            <Select
+              options={tenants.map((item) => ({ value: item.id, label: item.display_name }))}
+            />
           </Form.Item>
           <Button type="primary" htmlType="submit">
             确认创建

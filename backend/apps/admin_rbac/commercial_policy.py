@@ -1,0 +1,62 @@
+"""Commercial access defaults.
+
+These permissions make tenant operational pages usable without bespoke role setup.
+Security-critical mutations stay outside this set and continue to require an
+explicit RBAC permission and, where configured by the view, SMS Step-Up.
+"""
+
+TENANT_ADMIN_BASELINE_PERMISSIONS = frozenset(
+    {
+        "menu.admin.dashboard",
+        "menu.admin.users",
+        "menu.admin.plans",
+        "menu.admin.plan-applications",
+        "menu.admin.subscriptions",
+        "menu.admin.quotas",
+        "menu.admin.subject-types",
+        "menu.admin.subject-risk",
+        "menu.admin.question-categories",
+        "menu.admin.operations",
+        "admin.dashboard.view",
+        "users.list",
+        "users.view",
+        "users.history.view",
+        "users.assign",
+        "notifications.view",
+        "plans.list",
+        "plans.view",
+        "plan_versions.list",
+        "plan_versions.view",
+        "plan_limits.view",
+        "plan_applications.list",
+        "plan_applications.view",
+        "plan_applications.contact",
+        "plan_applications.close",
+        "subscriptions.list",
+        "subscriptions.view",
+        "subscriptions.open",
+        "subscriptions.grant_trial",
+        "subscriptions.change",
+        "quotas.list",
+        "quotas.ledger.view",
+        "subject_types.list",
+        "subject_types.view",
+        "subject_fields.list",
+        "subject_risk.catalog.view",
+        "subject_reviews.list",
+        "subject_reviews.view",
+        "subject_reviews.review",
+        "question_categories.list",
+        "question_tags.list",
+        "operations.dashboard.view",
+        "operations.customers.view",
+        "operations.customers.manage",
+        "operations.tasks.view",
+        "operations.tasks.manage",
+        "operations.moderation.view",
+        "operations.moderation.manage",
+        "operations.announcements.manage",
+        "operations.feedback.manage",
+        "operations.alerts.view",
+    }
+)

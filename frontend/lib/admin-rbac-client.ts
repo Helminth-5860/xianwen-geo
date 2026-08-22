@@ -20,6 +20,8 @@ export type AdminProfile = Readonly<{
   version: number;
   logout_version: number;
   role: Role | null;
+  tenant_id: string | null;
+  tenant_name: string | null;
 }>;
 
 export type AdminContext = AdminProfile &
@@ -28,6 +30,8 @@ export type AdminContext = AdminProfile &
     data_scope: "own" | "role" | "all";
     permission_keys: string[];
     menu_keys: string[];
+    commercial_identity: "PLATFORM_SUPER_ADMIN" | "TENANT_ADMIN";
+    tenant_id: string | null;
   }>;
 
 export type CatalogPermission = Readonly<{
@@ -40,6 +44,19 @@ export type CatalogPermission = Readonly<{
 }>;
 
 export const getAdminContext = () => get<AdminContext>("/admin/me");
+export type Tenant = Readonly<{
+  id: string;
+  key: string;
+  display_name: string;
+  brand_name: string;
+  logo_reference: string;
+  status: "active" | "inactive";
+  user_count: number;
+}>;
+export const getTenants = () => get<Tenant[]>("/admin/tenants");
+export const createTenant = (body: Record<string, unknown>) => post<Tenant>("/admin/tenants", body);
+export const updateTenant = (id: string, body: Record<string, unknown>) =>
+  write<Tenant>("PATCH", `/admin/tenants/${id}`, body);
 export const getAdmins = () => get<PageData<AdminProfile>>("/admin/admins");
 export const getAdmin = (id: string) => get<AdminProfile>(`/admin/admins/${id}`);
 export const createAdmin = (body: Record<string, unknown>) =>
