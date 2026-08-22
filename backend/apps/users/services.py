@@ -7,7 +7,7 @@ from django.utils import timezone
 
 from apps.core.request_ids import validate_request_id
 
-from .models import LoginEvent, User
+from .models import LoginEvent, Tenant, User
 from .phone_numbers import phone_fingerprint
 from .rate_limits import LoginRateLimiter, LoginRateLimitKeys
 from .sms.purposes import SmsPurpose, parse_sms_purpose
@@ -147,6 +147,7 @@ def create_registered_user(*, phone: str, nickname: str, password: str) -> User:
                 phone=phone,
                 nickname=nickname,
                 password=password,
+                tenant=Tenant.legacy_default(),
                 approval_status=User.ApprovalStatus.APPROVED,
                 account_status=User.AccountStatus.ACTIVE,
                 approved_at=timezone.now(),

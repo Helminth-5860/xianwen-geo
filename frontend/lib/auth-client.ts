@@ -7,6 +7,15 @@ export type AccountUser = Readonly<{
   approval_status: "pending" | "approved" | "rejected";
   account_status: "active" | "frozen" | "cancel_pending" | "cancelled";
   approval_reason?: string;
+  commercial_identity: "PLATFORM_SUPER_ADMIN" | "TENANT_ADMIN" | "END_USER";
+  home_route: "/admin" | "/workspace";
+  tenant: Readonly<{
+    id: string;
+    key: string;
+    display_name: string;
+    brand_name: string;
+    logo_reference: string;
+  }> | null;
 }>;
 
 export type SmsPurpose = "register" | "login" | "password_reset";

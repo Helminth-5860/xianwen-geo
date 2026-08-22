@@ -22,6 +22,9 @@ const baseContext: AdminContext = {
   data_scope: "all",
   permission_keys: [],
   menu_keys: ["menu.admin.users"],
+  commercial_identity: "TENANT_ADMIN",
+  tenant_id: null,
+  tenant_name: null,
 };
 
 function renderActions(permissionKeys: string[], accountStatus: "active" | "frozen" = "active") {

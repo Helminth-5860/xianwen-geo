@@ -11,7 +11,11 @@ export default function AdminDashboardPage() {
       <Card>
         <Typography.Title level={2}>后台工作台</Typography.Title>
         <Typography.Text>
-          {context?.nickname}，当前客户数据范围为 {context?.data_scope}。
+          {context?.nickname}，当前身份为 {context?.commercial_identity}；数据范围为
+          {context?.commercial_identity === "PLATFORM_SUPER_ADMIN"
+            ? "全平台"
+            : context?.tenant_name || "当前租户"}
+          。
         </Typography.Text>
       </Card>
     </main>

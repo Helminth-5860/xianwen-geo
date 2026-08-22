@@ -65,6 +65,9 @@ const context: AdminContext = {
     "subject_fields.update",
   ],
   menu_keys: ["menu.admin.subject-types"],
+  commercial_identity: "TENANT_ADMIN",
+  tenant_id: null,
+  tenant_name: null,
 };
 
 const fields: SubjectFieldConfig[] = [

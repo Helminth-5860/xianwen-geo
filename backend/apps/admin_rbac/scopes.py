@@ -9,16 +9,17 @@ def scoped_customers(user, context):
     queryset = User.objects.filter(is_staff=False, is_superuser=False)
     if user.is_superuser:
         return queryset
-    role = context.profile.role
-    if role is None:
-        return queryset.none()
-    if role.data_scope == AdminRole.DataScope.ALL:
-        return queryset
-    if role.data_scope == AdminRole.DataScope.OWN:
-        return queryset.filter(customer_assignment__owner_admin=context.profile)
-    return queryset.filter(
-        customer_assignment__owner_admin__role=role,
-    )
+    tenant_id = getattr(context, "tenant_id", None)
+    if tenant_id is None:
+        role = context.profile.role
+        if role is None:
+            return queryset.none()
+        if role.data_scope == AdminRole.DataScope.ALL:
+            return queryset
+        if role.data_scope == AdminRole.DataScope.OWN:
+            return queryset.filter(customer_assignment__owner_admin=context.profile)
+        return queryset.filter(customer_assignment__owner_admin__role=role)
+    return queryset.filter(tenant_id=tenant_id)
 
 
 def scoped_customer_or_404(user, context, customer_id):

@@ -2,6 +2,7 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
+from .commercial import commercial_home_route, commercial_identity, tenant_branding
 from .models import Notification, User, UserStatusEvent
 from .phone_numbers import mask_phone, normalize_phone
 from .sms.purposes import PUBLIC_SMS_PURPOSES
@@ -85,6 +86,9 @@ class PasswordResetSerializer(SmsCodeSerializer):
 class CurrentUserSerializer(serializers.ModelSerializer):
     phone_masked = serializers.SerializerMethodField()
     approval_reason = serializers.SerializerMethodField()
+    commercial_identity = serializers.SerializerMethodField()
+    home_route = serializers.SerializerMethodField()
+    tenant = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -95,6 +99,9 @@ class CurrentUserSerializer(serializers.ModelSerializer):
             "approval_status",
             "account_status",
             "approval_reason",
+            "commercial_identity",
+            "home_route",
+            "tenant",
         )
 
     def get_phone_masked(self, user: User) -> str:
@@ -104,6 +111,16 @@ class CurrentUserSerializer(serializers.ModelSerializer):
         if user.approval_status == User.ApprovalStatus.REJECTED:
             return user.approval_reason
         return None
+
+    def get_commercial_identity(self, user: User) -> str:
+        return commercial_identity(user).value
+
+    def get_home_route(self, user: User) -> str:
+        return commercial_home_route(user)
+
+    def get_tenant(self, user: User) -> dict[str, str] | None:
+        tenant = user.tenant if user.tenant_id else None
+        return tenant_branding(tenant)
 
     def to_representation(self, instance):
         representation = super().to_representation(instance)

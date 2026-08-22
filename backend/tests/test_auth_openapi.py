@@ -43,6 +43,9 @@ def test_openapi_documents_session_csrf_and_minimum_user_data():
         "approval_status",
         "account_status",
         "approval_reason",
+        "commercial_identity",
+        "home_route",
+        "tenant",
     }
     assert set(components["schemas"]["User"]["required"]) == {
         "id",
@@ -50,6 +53,9 @@ def test_openapi_documents_session_csrf_and_minimum_user_data():
         "nickname",
         "approval_status",
         "account_status",
+        "commercial_identity",
+        "home_route",
+        "tenant",
     }
 
 

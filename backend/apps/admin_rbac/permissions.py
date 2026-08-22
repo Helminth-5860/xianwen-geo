@@ -2,7 +2,10 @@ from dataclasses import dataclass
 
 from rest_framework.permissions import BasePermission
 
+from apps.users.commercial import CommercialIdentity, commercial_identity
+
 from .catalog import CATALOG_BY_KEY
+from .commercial_policy import TENANT_ADMIN_BASELINE_PERMISSIONS
 from .models import AdminPermission, AdminProfile, AdminRole
 
 
@@ -15,6 +18,8 @@ def _step_up_required(view, method: str) -> bool:
 @dataclass(frozen=True)
 class AdminContext:
     profile: AdminProfile
+    identity: CommercialIdentity
+    tenant_id: object | None
     permission_keys: frozenset[str]
     menu_keys: frozenset[str]
 
@@ -28,26 +33,41 @@ def resolve_admin_context(user) -> AdminContext | None:
         return None
     if profile.admin_status != AdminProfile.Status.ACTIVE:
         return None
-    if user.is_superuser:
+    identity = commercial_identity(user)
+    if identity == CommercialIdentity.PLATFORM_SUPER_ADMIN:
         if not user.is_staff or profile.role_id is not None:
             return None
         active = AdminPermission.objects.filter(status=AdminPermission.Status.ACTIVE)
-    else:
+    elif identity == CommercialIdentity.TENANT_ADMIN:
         role = profile.role
         if not user.is_staff or role is None or role.status != AdminRole.Status.ACTIVE:
             return None
-        active = AdminPermission.objects.filter(
+        explicit = AdminPermission.objects.filter(
             status=AdminPermission.Status.ACTIVE,
             role_links__role=role,
             superuser_only=False,
         )
+        baseline = AdminPermission.objects.filter(
+            status=AdminPermission.Status.ACTIVE,
+            key__in=TENANT_ADMIN_BASELINE_PERMISSIONS,
+            superuser_only=False,
+        )
+        active = (explicit | baseline).distinct()
+    else:
+        return None
     keys = frozenset(active.values_list("key", flat=True))
     menu_keys = frozenset(
         active.filter(permission_type=AdminPermission.PermissionType.MENU).values_list(
             "key", flat=True
         )
     )
-    return AdminContext(profile=profile, permission_keys=keys, menu_keys=menu_keys)
+    return AdminContext(
+        profile=profile,
+        identity=identity,
+        tenant_id=user.tenant_id,
+        permission_keys=keys,
+        menu_keys=menu_keys,
+    )
 
 
 class HasAdminPermission(BasePermission):

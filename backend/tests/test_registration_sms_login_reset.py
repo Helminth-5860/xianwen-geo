@@ -117,6 +117,15 @@ def test_registration_consumes_code_creates_approved_active_user_and_logs_in(mon
         "phone_masked": "+86 138****8000",
         "approval_status": "approved",
         "account_status": "active",
+        "commercial_identity": "END_USER",
+        "home_route": "/workspace",
+        "tenant": {
+            "id": "00000000-0000-4000-8000-000000000001",
+            "key": "legacy-default",
+            "display_name": "默认租户",
+            "brand_name": "显问 GEO",
+            "logo_reference": "",
+        },
     }
     assert response.json()["request_id"] == response["X-Request-ID"]
     assert response.cookies["xianwen_session"].value != old_session_key

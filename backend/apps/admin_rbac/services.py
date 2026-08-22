@@ -1,9 +1,12 @@
+from typing import cast
+from uuid import UUID
+
 from django.db import IntegrityError, transaction
 from django.db.models import F
 from django.utils import timezone
 from rest_framework.exceptions import NotFound, PermissionDenied
 
-from apps.users.models import User
+from apps.users.models import Tenant, User
 from apps.users.validators import validate_nickname, validate_safe_plain_text
 
 from .catalog import CATALOG_BY_KEY
@@ -219,13 +222,19 @@ def disable_role(*, actor_id, role_id, expected_version, request_id):
 
 
 @transaction.atomic
-def create_admin(*, actor_id, phone, nickname, password, role_id, request_id):
+def create_admin(*, actor_id, phone, nickname, password, role_id, request_id, tenant_id=None):
     actor, _ = _locked_superuser(actor_id)
     role = _active_role(role_id)
+    tenant = (
+        Tenant.objects.get(pk=tenant_id, status=Tenant.Status.ACTIVE)
+        if tenant_id is not None
+        else None
+    )
     user = User.objects.create_user(
         phone=phone,
         password=password,
         nickname=validate_nickname(nickname),
+        tenant=tenant,
         is_staff=True,
         is_superuser=False,
         approval_status=User.ApprovalStatus.APPROVED,
@@ -350,10 +359,13 @@ def assign_customer(
     *, actor, context, customer, owner_admin_id, expected_version, reason, request_id
 ):
     role = context.profile.role
+    context_tenant_id = cast(UUID | None, getattr(context, "tenant_id", None))
     if not actor.is_superuser and (
         "users.assign" not in context.permission_keys
-        or role is None
-        or role.data_scope != AdminRole.DataScope.ALL
+        or (
+            context_tenant_id is None
+            and (role is None or role.data_scope != AdminRole.DataScope.ALL)
+        )
     ):
         raise PermissionDenied
     clean_reason = validate_safe_plain_text(
@@ -364,14 +376,16 @@ def assign_customer(
     owner = None
     if owner_admin_id is not None:
         try:
-            owner = (
-                AdminProfile.objects.select_for_update()
-                .select_related("user")
-                .get(
-                    pk=owner_admin_id,
-                    admin_status=AdminProfile.Status.ACTIVE,
-                    user__is_active=True,
-                )
+            owner_queryset = AdminProfile.objects.select_for_update().select_related("user")
+            if not actor.is_superuser:
+                if context_tenant_id is None:
+                    owner_queryset = owner_queryset.filter(user__tenant__isnull=True)
+                else:
+                    owner_queryset = owner_queryset.filter(user__tenant_id=context_tenant_id)
+            owner = owner_queryset.get(
+                pk=owner_admin_id,
+                admin_status=AdminProfile.Status.ACTIVE,
+                user__is_active=True,
             )
         except AdminProfile.DoesNotExist as exc:
             raise NotFound from exc

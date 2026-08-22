@@ -44,6 +44,11 @@ export function AdminCapabilityProvider({ children }: { children: ReactNode }) {
     <AdminCapabilityContext.Provider value={context}>
       <nav aria-label="后台菜单">
         <Space wrap>
+          {context.commercial_identity === "PLATFORM_SUPER_ADMIN" && (
+            <Link href="/admin/tenants">
+              <Button type="text">租户</Button>
+            </Link>
+          )}
           {MENU_ITEMS.filter(([key]) => context.menu_keys.includes(key)).map(([, href, label]) => (
             <Link key={href} href={href}>
               <Button type="text">{label}</Button>

@@ -16,8 +16,8 @@ export default function AdminLoginPage() {
     setBusy(true);
     setError("");
     try {
-      await adminLoginWithPassword(values.phone, values.password);
-      router.push("/admin");
+      const result = await adminLoginWithPassword(values.phone, values.password);
+      router.push(result.user.home_route);
     } catch (reason) {
       setError(userMessage(reason));
     } finally {

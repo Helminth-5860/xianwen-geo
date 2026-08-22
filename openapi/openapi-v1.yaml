@@ -2569,6 +2569,38 @@ paths:
       responses:
         '200': {description: 管理员上下文, content: {application/json: {schema: {$ref: '#/components/schemas/AdminContextEnvelope'}}}}
         '403': {$ref: '#/components/responses/PermissionDenied'}
+  /admin/tenants:
+    get:
+      tags: [Admin]
+      summary: 平台超级管理员查看租户
+      responses:
+        '200': {description: 租户列表}
+        '403': {$ref: '#/components/responses/PermissionDenied'}
+    post:
+      tags: [Admin]
+      summary: 平台超级管理员创建租户（需要 SMS Step-Up）
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/TenantWriteRequest'}}}}
+      responses:
+        '201': {description: 已创建}
+        '403': {$ref: '#/components/responses/PermissionDenied'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /admin/tenants/{tenantId}:
+    parameters:
+      - in: path
+        name: tenantId
+        required: true
+        schema: {type: string, format: uuid}
+    get:
+      tags: [Admin]
+      summary: 平台超级管理员查看租户详情
+      responses: {'200': {description: 租户详情}, '404': {$ref: '#/components/responses/ResourceNotFound'}}
+    patch:
+      tags: [Admin]
+      summary: 平台超级管理员更新租户品牌（需要 SMS Step-Up）
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/TenantWriteRequest'}}}}
+      responses: {'200': {description: 已更新}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}}
   /admin/admins:
     get:
       tags: [Admin]
@@ -4351,7 +4383,8 @@ components:
                 logged_out: {type: boolean, const: true}
     User:
       type: object
-      required: [id, phone_masked, nickname, approval_status, account_status]
+      required:
+        [id, phone_masked, nickname, approval_status, account_status, commercial_identity, home_route, tenant]
       properties:
         id: {type: string, format: uuid}
         phone_masked: {type: string}
@@ -4361,6 +4394,26 @@ components:
         account_status:
           $ref: '#/components/schemas/AccountStatus'
         approval_reason: {type: [string, 'null'], maxLength: 500}
+        commercial_identity:
+          type: string
+          enum: [PLATFORM_SUPER_ADMIN, TENANT_ADMIN, END_USER]
+        home_route:
+          type: string
+          enum: [/admin, /workspace]
+        tenant:
+          oneOf:
+            - $ref: '#/components/schemas/TenantBranding'
+            - type: 'null'
+    TenantBranding:
+      type: object
+      additionalProperties: false
+      required: [id, key, display_name, brand_name, logo_reference]
+      properties:
+        id: {type: string, format: uuid}
+        key: {type: string, maxLength: 80}
+        display_name: {type: string, maxLength: 120}
+        brand_name: {type: string, maxLength: 120}
+        logo_reference: {type: string, maxLength: 500}
     UserEnvelope:
       allOf:
         - $ref: '#/components/schemas/EnvelopeBase'
@@ -5793,6 +5846,8 @@ components:
         version: {type: integer, minimum: 1}
         logout_version: {type: integer, minimum: 1}
         role: {$ref: '#/components/schemas/AdminRoleSummary'}
+        tenant_id: {type: [string, 'null'], format: uuid}
+        tenant_name: {type: [string, 'null']}
     AdminContextEnvelope:
       allOf:
         - $ref: '#/components/schemas/EnvelopeBase'
@@ -5805,8 +5860,19 @@ components:
                   properties:
                     admin_version: {type: integer, minimum: 1}
                     data_scope: {type: string, enum: [own, role, all]}
+                    commercial_identity: {type: string, enum: [PLATFORM_SUPER_ADMIN, TENANT_ADMIN]}
+                    tenant_id: {type: [string, 'null'], format: uuid}
                     permission_keys: {type: array, items: {type: string}}
                     menu_keys: {type: array, items: {type: string}}
+    TenantWriteRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        key: {type: string, maxLength: 80}
+        display_name: {type: string, maxLength: 120}
+        brand_name: {type: string, maxLength: 120}
+        logo_reference: {type: string, maxLength: 500}
+        status: {type: string, enum: [active, inactive]}
     AdminCreateRequest:
       type: object
       additionalProperties: false
@@ -5816,6 +5882,7 @@ components:
         nickname: {type: string, maxLength: 50}
         password: {type: string, format: password, writeOnly: true}
         role_id: {type: string, format: uuid}
+        tenant_id: {type: string, format: uuid}
     AdminUpdateRequest:
       type: object
       additionalProperties: false

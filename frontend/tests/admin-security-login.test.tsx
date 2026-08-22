@@ -41,7 +41,7 @@ describe("管理员密码登录", () => {
   it("密码有效时直接建立后台会话且不展示短信步骤", async () => {
     adminLoginWithPassword.mockResolvedValueOnce({
       requires_2fa: false,
-      user: {},
+      user: { home_route: "/admin" },
     });
     render(<AdminLoginPage />);
 
