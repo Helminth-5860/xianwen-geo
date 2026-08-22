@@ -72,3 +72,13 @@ def test_file_processing_worker_is_dedicated_hardened_and_unpublished():
         "S3_SECRET_KEY",
         "CLAMAV_HOST",
     } <= set(worker["environment"])
+
+
+def test_file_saga_overlay_does_not_duplicate_worker_security_options():
+    base = yaml.safe_load((REPO_ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
+    overlay = yaml.safe_load((REPO_ROOT / "docker-compose.files.yml").read_text(encoding="utf-8"))
+    base_options = set(base["services"]["file-processing-worker"].get("security_opt", ()))
+    overlay_options = set(overlay["services"]["file-processing-worker"].get("security_opt", ()))
+
+    assert base_options == {"no-new-privileges:true"}
+    assert base_options.isdisjoint(overlay_options)
