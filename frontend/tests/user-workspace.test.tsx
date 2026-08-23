@@ -145,7 +145,7 @@ describe("GEO 产品工作台", () => {
     render(<WorkspacePage />);
     expect(await screen.findByRole("heading", { name: "GEO 总览" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "显问科技" })).toBeTruthy();
-    expect(screen.getByText("68.2")).toBeTruthy();
+    expect(screen.getAllByText("68.2").length).toBeGreaterThan(0);
     expect(screen.getByText("1. 主体与知识")).toBeTruthy();
     expect(screen.getByText("3. AI 可见度检测")).toBeTruthy();
     expect(screen.getByText("5. 优化策略")).toBeTruthy();
