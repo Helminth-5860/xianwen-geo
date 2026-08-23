@@ -96,7 +96,8 @@ export default function WorkspacePage() {
   }, [router]);
 
   const latestReport = reports[0] ?? null;
-  const subjectName = currentSubject?.official_name || currentSubject?.subject_type.name || "当前主体";
+  const subjectName =
+    currentSubject?.official_name || currentSubject?.subject_type.name || "当前主体";
   const questionReady = Boolean(questionBank?.current_question_bank_version_no);
 
   const workflow = useMemo<WorkflowItem[]>(() => {
@@ -115,7 +116,9 @@ export default function WorkspacePage() {
       {
         title: "2. 关键词与问题",
         description: "形成关键词、蒸馏结果和用户真实问题库，作为检测输入。",
-        status: questionReady ? `问题库 v${questionBank?.current_question_bank_version_no}` : "待完成问题库",
+        status: questionReady
+          ? `问题库 v${questionBank?.current_question_bank_version_no}`
+          : "待完成问题库",
         href: `/subjects/${currentSubject.id}/keywords`,
         icon: TagsOutlined,
         tone: questionReady ? "done" : subjectReady ? "ready" : "waiting",
@@ -155,7 +158,11 @@ export default function WorkspacePage() {
       {
         title: "7. 复测验证",
         description: "内容与主体发生变化后重新检测，验证 GEO 指标是否真实提升。",
-        status: currentSubject.retest_required ? "主体变更，建议复测" : latestReport ? "可按需复测" : "等待首次检测",
+        status: currentSubject.retest_required
+          ? "主体变更，建议复测"
+          : latestReport
+            ? "可按需复测"
+            : "等待首次检测",
         href: latestReport ? `/geo/reports/${latestReport.id}` : "/geo/detections",
         icon: ClockCircleOutlined,
         tone: currentSubject.retest_required ? "attention" : latestReport ? "ready" : "waiting",
@@ -205,7 +212,9 @@ export default function WorkspacePage() {
               description={
                 <Space direction="vertical" size={4}>
                   <Text strong>还没有当前 GEO 主体</Text>
-                  <Text type="secondary">先建立品牌或企业主体，后续关键词、检测、报告和内容都会自动围绕该主体展开。</Text>
+                  <Text type="secondary">
+                    先建立品牌或企业主体，后续关键词、检测、报告和内容都会自动围绕该主体展开。
+                  </Text>
                 </Space>
               }
             >
@@ -223,9 +232,15 @@ export default function WorkspacePage() {
               </div>
               <Space wrap>
                 <Tag color={currentSubject.status === "active" ? "green" : "default"}>
-                  {currentSubject.status === "active" ? "已激活" : currentSubject.status === "draft" ? "草稿" : "已归档"}
+                  {currentSubject.status === "active"
+                    ? "已激活"
+                    : currentSubject.status === "draft"
+                      ? "草稿"
+                      : "已归档"}
                 </Tag>
-                {currentSubject.current_version_no !== null && <Tag>主体 v{currentSubject.current_version_no}</Tag>}
+                {currentSubject.current_version_no !== null && (
+                  <Tag>主体 v{currentSubject.current_version_no}</Tag>
+                )}
                 {currentSubject.retest_required && <Tag color="orange">需要复测</Tag>}
               </Space>
             </section>
@@ -233,22 +248,34 @@ export default function WorkspacePage() {
             <section className="geo-metric-grid" aria-label="GEO 核心指标">
               <Card>
                 <Text type="secondary">GEO Score</Text>
-                <div className="geo-metric-grid__value">{metricValue(latestReport?.summary.geo.score)}</div>
-                <Text type="secondary">{latestReport ? `等级 ${latestReport.summary.geo.grade || "—"}` : "尚未完成首次检测"}</Text>
+                <div className="geo-metric-grid__value">
+                  {metricValue(latestReport?.summary.geo.score)}
+                </div>
+                <Text type="secondary">
+                  {latestReport
+                    ? `等级 ${latestReport.summary.geo.grade || "—"}`
+                    : "尚未完成首次检测"}
+                </Text>
               </Card>
               <Card>
                 <Text type="secondary">AI 曝光指数</Text>
-                <div className="geo-metric-grid__value">{metricValue(latestReport?.summary.exposure.exposure_index)}</div>
+                <div className="geo-metric-grid__value">
+                  {metricValue(latestReport?.summary.exposure.exposure_index)}
+                </div>
                 <Text type="secondary">跨模型综合曝光表现</Text>
               </Card>
               <Card>
                 <Text type="secondary">品牌提及</Text>
-                <div className="geo-metric-grid__value">{metricValue(latestReport?.summary.exposure.mention_rate_score)}</div>
+                <div className="geo-metric-grid__value">
+                  {metricValue(latestReport?.summary.exposure.mention_rate_score)}
+                </div>
                 <Text type="secondary">AI 回答中的品牌出现表现</Text>
               </Card>
               <Card>
                 <Text type="secondary">推荐表现</Text>
-                <div className="geo-metric-grid__value">{metricValue(latestReport?.summary.exposure.recommendation_rate_score)}</div>
+                <div className="geo-metric-grid__value">
+                  {metricValue(latestReport?.summary.exposure.recommendation_rate_score)}
+                </div>
                 <Text type="secondary">AI 回答中的推荐倾向表现</Text>
               </Card>
             </section>
@@ -259,8 +286,14 @@ export default function WorkspacePage() {
                   {workflow.map((item) => {
                     const Icon = item.icon;
                     return (
-                      <a key={item.title} href={item.href} className={`geo-workflow-item geo-workflow-item--${item.tone}`}>
-                        <span className="geo-workflow-item__icon"><Icon /></span>
+                      <a
+                        key={item.title}
+                        href={item.href}
+                        className={`geo-workflow-item geo-workflow-item--${item.tone}`}
+                      >
+                        <span className="geo-workflow-item__icon">
+                          <Icon />
+                        </span>
                         <span className="geo-workflow-item__content">
                           <Text strong>{item.title}</Text>
                           <Text type="secondary">{item.description}</Text>
@@ -276,13 +309,33 @@ export default function WorkspacePage() {
               <Space direction="vertical" size="middle" style={{ width: "100%" }}>
                 <Card title="当前优先事项">
                   {currentSubject.retest_required ? (
-                    <Alert type="warning" showIcon message="主体资料已变化" description="现有检测结果可能已经不能完整代表当前主体，建议查看最新报告后安排复测。" />
+                    <Alert
+                      type="warning"
+                      showIcon
+                      message="主体资料已变化"
+                      description="现有检测结果可能已经不能完整代表当前主体，建议查看最新报告后安排复测。"
+                    />
                   ) : !questionReady ? (
-                    <Alert type="info" showIcon message="先完成关键词与问题库" description="GEO 检测必须基于正式的问题库版本，先把用户真实问题确定下来。" />
+                    <Alert
+                      type="info"
+                      showIcon
+                      message="先完成关键词与问题库"
+                      description="GEO 检测必须基于正式的问题库版本，先把用户真实问题确定下来。"
+                    />
                   ) : !latestReport ? (
-                    <Alert type="info" showIcon message="可以开始首次 GEO 检测" description="问题库已具备，可以选择模型并执行 AI 可见度检测。" />
+                    <Alert
+                      type="info"
+                      showIcon
+                      message="可以开始首次 GEO 检测"
+                      description="问题库已具备，可以选择模型并执行 AI 可见度检测。"
+                    />
                   ) : (
-                    <Alert type="success" showIcon message="已有 GEO 基线" description="继续查看报告、生成优化策略并执行内容；完成后再用复测验证变化。" />
+                    <Alert
+                      type="success"
+                      showIcon
+                      message="已有 GEO 基线"
+                      description="继续查看报告、生成优化策略并执行内容；完成后再用复测验证变化。"
+                    />
                   )}
                   <Button type="primary" href={primaryAction.href} style={{ marginTop: 16 }}>
                     {primaryAction.label}
@@ -291,19 +344,29 @@ export default function WorkspacePage() {
 
                 <Card title="最近 GEO 报告">
                   {reports.length === 0 ? (
-                    <Text type="secondary">暂无检测报告。完成首次 AI 可见度检测后，这里会显示真实 GEO 数据。</Text>
+                    <Text type="secondary">
+                      暂无检测报告。完成首次 AI 可见度检测后，这里会显示真实 GEO 数据。
+                    </Text>
                   ) : (
                     <Space direction="vertical" size="middle" style={{ width: "100%" }}>
                       {reports.slice(0, 4).map((report) => (
-                        <a key={report.id} href={`/geo/reports/${report.id}`} className="geo-report-row">
+                        <a
+                          key={report.id}
+                          href={`/geo/reports/${report.id}`}
+                          className="geo-report-row"
+                        >
                           <span>
                             <Text strong>GEO Score {metricValue(report.summary.geo.score)}</Text>
-                            <Text type="secondary">{new Date(report.generated_at).toLocaleString("zh-CN")}</Text>
+                            <Text type="secondary">
+                              {new Date(report.generated_at).toLocaleString("zh-CN")}
+                            </Text>
                           </span>
                           <ArrowRightOutlined />
                         </a>
                       ))}
-                      <Button href="/geo/reports" block>查看全部报告</Button>
+                      <Button href="/geo/reports" block>
+                        查看全部报告
+                      </Button>
                     </Space>
                   )}
                 </Card>
