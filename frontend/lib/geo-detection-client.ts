@@ -1,12 +1,7 @@
 import { get, post } from "./auth-client";
 
 export type DetectionStatus =
-  | "queued"
-  | "running"
-  | "partial"
-  | "succeeded"
-  | "failed"
-  | "cancelled";
+  "queued" | "running" | "partial" | "succeeded" | "failed" | "cancelled";
 
 export type GeoDetectionJob = Readonly<{
   id: string;
