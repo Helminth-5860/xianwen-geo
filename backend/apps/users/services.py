@@ -7,7 +7,7 @@ from django.utils import timezone
 
 from apps.core.request_ids import validate_request_id
 
-from .models import LoginEvent, Tenant, User
+from .models import LoginEvent, User
 from .phone_numbers import phone_fingerprint
 from .rate_limits import LoginRateLimiter, LoginRateLimitKeys
 from .sms.purposes import SmsPurpose, parse_sms_purpose
@@ -138,21 +138,35 @@ def should_deliver_sms(normalized_phone: str, purpose: SmsPurpose | str) -> bool
     return True
 
 
-def create_registered_user(*, phone: str, nickname: str, password: str) -> User:
+def create_registered_user(
+    *, phone: str, nickname: str, password: str, registration_ref: str
+) -> User:
     if User.objects.filter(phone=phone).exists():
         raise AccountAlreadyExists
     try:
         with transaction.atomic():
-            return User.objects.create_user(
+            from apps.admin_rbac.models import CustomerAssignment
+            from apps.admin_rbac.registration_links import resolve_registration_admin
+
+            owner = resolve_registration_admin(registration_ref, for_update=True)
+            user = User.objects.create_user(
                 phone=phone,
                 nickname=nickname,
                 password=password,
-                tenant=Tenant.legacy_default(),
+                tenant=owner.user.tenant,
                 approval_status=User.ApprovalStatus.APPROVED,
                 account_status=User.AccountStatus.ACTIVE,
                 approved_at=timezone.now(),
                 is_active=True,
             )
+            assignment = CustomerAssignment(
+                customer=user,
+                owner_admin=owner,
+                assigned_at=timezone.now(),
+            )
+            assignment.full_clean()
+            assignment.save()
+            return user
     except IntegrityError as exc:
         raise AccountAlreadyExists from exc
 

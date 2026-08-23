@@ -40,7 +40,7 @@ export function UserWorkspaceNavigation() {
     };
   }, [hidden, pathname]);
 
-  if (hidden || !user) return null;
+  if (hidden || !user || user.commercial_identity !== "USER") return null;
 
   return (
     <header className="workspace-navigation">

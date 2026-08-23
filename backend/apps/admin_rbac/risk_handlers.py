@@ -128,8 +128,10 @@ def _customer_assignment_version(user, context, target_id, lock):
     query = CustomerAssignment.objects.all()
     if lock:
         query = query.select_for_update()
-    assignment = query.filter(customer=customer).first()
-    return assignment.version if assignment else 0
+    try:
+        return query.get(customer=customer).version
+    except CustomerAssignment.DoesNotExist as exc:
+        raise NotFound from exc
 
 
 def _user_status_version(user, context, target_id, lock):
@@ -481,7 +483,7 @@ HANDLER_SPECS = {
     ),
     "customer.assignment.change": HandlerSpec(
         "users.assign",
-        False,
+        True,
         CustomerAssignmentPayloadSerializer,
         _customer_assignment_version,
         handle_customer_assignment,

@@ -39,7 +39,7 @@ const user = {
   phone_masked: "+86 138****0001",
   approval_status: "approved" as const,
   account_status: "active" as const,
-  commercial_identity: "END_USER" as const,
+  commercial_identity: "USER" as const,
   home_route: "/workspace" as const,
   tenant: {
     id: "tenant-1",

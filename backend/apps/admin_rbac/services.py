@@ -1,7 +1,4 @@
-from typing import cast
-from uuid import UUID
-
-from django.db import IntegrityError, transaction
+from django.db import transaction
 from django.db.models import F
 from django.utils import timezone
 from rest_framework.exceptions import NotFound, PermissionDenied
@@ -321,10 +318,7 @@ def change_admin_status(*, actor_id, profile_id, action, expected_version, reque
     new_status = transitions.get((action, profile.admin_status))
     if new_status is None:
         raise AdminStateConflict
-    if (
-        action == "disable"
-        and profile.customer_assignments.filter(owner_admin__isnull=False).exists()
-    ):
+    if action == "disable" and profile.customer_assignments.exists():
         raise AdminHasAssignedCustomers
     if profile.user.is_superuser and new_status != AdminProfile.Status.ACTIVE:
         active_count = sum(
@@ -358,67 +352,45 @@ def change_admin_status(*, actor_id, profile_id, action, expected_version, reque
 def assign_customer(
     *, actor, context, customer, owner_admin_id, expected_version, reason, request_id
 ):
-    role = context.profile.role
-    context_tenant_id = cast(UUID | None, getattr(context, "tenant_id", None))
-    if not actor.is_superuser and (
-        "users.assign" not in context.permission_keys
-        or (
-            context_tenant_id is None
-            and (role is None or role.data_scope != AdminRole.DataScope.ALL)
-        )
-    ):
+    if not actor.is_superuser:
         raise PermissionDenied
     clean_reason = validate_safe_plain_text(
         reason, field_label="归属变更原因", max_length=200, required=False
     )
     if customer.is_staff or customer.is_superuser:
         raise NotFound
-    owner = None
-    if owner_admin_id is not None:
-        try:
-            owner_queryset = AdminProfile.objects.select_for_update().select_related("user")
-            if not actor.is_superuser:
-                if context_tenant_id is None:
-                    owner_queryset = owner_queryset.filter(user__tenant__isnull=True)
-                else:
-                    owner_queryset = owner_queryset.filter(user__tenant_id=context_tenant_id)
-            owner = owner_queryset.get(
+    try:
+        owner = (
+            AdminProfile.objects.select_for_update()
+            .select_related("user", "role")
+            .get(
                 pk=owner_admin_id,
                 admin_status=AdminProfile.Status.ACTIVE,
                 user__is_active=True,
+                user__is_staff=True,
+                user__is_superuser=False,
+                role__isnull=False,
+                role__status=AdminRole.Status.ACTIVE,
             )
-        except AdminProfile.DoesNotExist as exc:
-            raise NotFound from exc
-        if not owner.user.is_superuser and (
-            not owner.user.is_staff
-            or owner.role is None
-            or owner.role.status != AdminRole.Status.ACTIVE
-        ):
-            raise NotFound
+        )
+    except AdminProfile.DoesNotExist as exc:
+        raise NotFound from exc
     try:
         assignment = CustomerAssignment.objects.select_for_update().get(customer=customer)
-    except CustomerAssignment.DoesNotExist:
-        if expected_version != 0:
-            raise AssignmentVersionConflict from None
-        try:
-            assignment = CustomerAssignment.objects.create(
-                customer=customer, owner_admin=owner, assigned_by=actor, assigned_at=timezone.now()
-            )
-        except IntegrityError as exc:
-            raise AssignmentVersionConflict from exc
-        before: dict[str, object] = {"version": 0, "assigned": False}
-    else:
-        if assignment.version != expected_version:
-            raise AssignmentVersionConflict from None
-        before = {
-            "version": assignment.version,
-            "owner_admin_id": str(assignment.owner_admin_id) if assignment.owner_admin_id else None,
-        }
-        assignment.owner_admin = owner
-        assignment.assigned_by = actor
-        assignment.assigned_at = timezone.now()
-        assignment.version += 1
-        assignment.save()
+    except CustomerAssignment.DoesNotExist as exc:
+        raise NotFound from exc
+    if assignment.version != expected_version:
+        raise AssignmentVersionConflict from None
+    before = {
+        "version": assignment.version,
+        "owner_admin_id": str(assignment.owner_admin_id),
+    }
+    assignment.owner_admin = owner
+    assignment.assigned_by = actor
+    assignment.assigned_at = timezone.now()
+    assignment.version += 1
+    assignment.full_clean()
+    assignment.save()
     _event(
         actor=actor,
         target=assignment,
@@ -427,7 +399,7 @@ def assign_customer(
         before=before,
         after={
             "version": assignment.version,
-            "owner_admin_id": str(owner.pk) if owner else None,
+            "owner_admin_id": str(owner.pk),
             "reason_provided": bool(clean_reason),
         },
         request_id=request_id,

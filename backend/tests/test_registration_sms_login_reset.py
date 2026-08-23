@@ -5,9 +5,11 @@ from django.core.cache import cache
 from django.db import DatabaseError
 from rest_framework.test import APIClient
 
+from apps.admin_rbac.registration_links import issue_registration_ref
 from apps.users.authentication import SESSION_VERSION_KEY
-from apps.users.models import LoginEvent, User
+from apps.users.models import LoginEvent, Tenant, User
 from apps.users.sms.exceptions import SmsServiceUnavailable
+from tests.customer_ownership_helpers import assign_test_customer, create_test_admin
 
 CSRF_PATH = "/api/v1/auth/csrf"
 REGISTER_PATH = "/api/v1/auth/register"
@@ -55,6 +57,11 @@ def password_login(client, token, phone="13800138000", password=STRONG_PASSWORD)
     )
 
 
+def valid_registration_ref():
+    owner = create_test_admin(tenant=Tenant.legacy_default())
+    return issue_registration_ref(owner)
+
+
 @pytest.mark.django_db
 @pytest.mark.parametrize("path", [REGISTER_PATH, SMS_LOGIN_PATH, PASSWORD_RESET_PATH])
 def test_new_anonymous_endpoints_require_real_csrf(path):
@@ -80,6 +87,8 @@ def test_new_anonymous_endpoints_require_real_csrf(path):
 
 @pytest.mark.django_db
 def test_registration_consumes_code_creates_approved_active_user_and_logs_in(monkeypatch):
+    owner = create_test_admin(tenant=Tenant.legacy_default())
+    registration_ref = issue_registration_ref(owner)
     monkeypatch.setattr("apps.users.views.verify_and_consume", lambda *args, **kwargs: True)
     client, token = csrf_client()
     session = client.session
@@ -97,11 +106,12 @@ def test_registration_consumes_code_creates_approved_active_user_and_logs_in(mon
             "nickname": "  新用户  ",
             "sms_code": "438921",
             "password": STRONG_PASSWORD,
+            "ref": registration_ref,
         },
     )
 
     assert response.status_code == 201
-    user = User.objects.get()
+    user = User.objects.get(phone="+8613800138000")
     assert user.phone == "+8613800138000"
     assert user.nickname == "新用户"
     assert user.approval_status == User.ApprovalStatus.APPROVED
@@ -117,7 +127,7 @@ def test_registration_consumes_code_creates_approved_active_user_and_logs_in(mon
         "phone_masked": "+86 138****8000",
         "approval_status": "approved",
         "account_status": "active",
-        "commercial_identity": "END_USER",
+        "commercial_identity": "USER",
         "home_route": "/workspace",
         "tenant": {
             "id": "00000000-0000-4000-8000-000000000001",
@@ -137,6 +147,7 @@ def test_registration_consumes_code_creates_approved_active_user_and_logs_in(mon
 @pytest.mark.django_db
 def test_duplicate_phone_is_only_revealed_after_valid_code(monkeypatch):
     create_user()
+    registration_ref = valid_registration_ref()
     client, token = csrf_client()
     monkeypatch.setattr("apps.users.views.verify_and_consume", lambda *args, **kwargs: False)
     invalid = post_with_csrf(
@@ -148,6 +159,7 @@ def test_duplicate_phone_is_only_revealed_after_valid_code(monkeypatch):
             "nickname": "重复用户",
             "sms_code": "000000",
             "password": STRONG_PASSWORD,
+            "ref": registration_ref,
         },
     )
     assert invalid.status_code == 422
@@ -163,6 +175,7 @@ def test_duplicate_phone_is_only_revealed_after_valid_code(monkeypatch):
             "nickname": "重复用户",
             "sms_code": "438921",
             "password": STRONG_PASSWORD,
+            "ref": registration_ref,
         },
     )
     assert conflict.status_code == 409
@@ -171,7 +184,7 @@ def test_duplicate_phone_is_only_revealed_after_valid_code(monkeypatch):
         "message": "该手机号已注册，请登录或找回密码",
         "details": {},
     }
-    assert User.objects.count() == 1
+    assert User.objects.filter(is_staff=False, is_superuser=False).count() == 1
 
 
 @pytest.mark.django_db
@@ -185,6 +198,7 @@ def test_registration_rejects_invalid_nickname_without_consuming_code(monkeypatc
         return True
 
     monkeypatch.setattr("apps.users.views.verify_and_consume", consume)
+    registration_ref = valid_registration_ref()
     client, token = csrf_client()
     response = post_with_csrf(
         client,
@@ -195,12 +209,13 @@ def test_registration_rejects_invalid_nickname_without_consuming_code(monkeypatc
             "nickname": nickname,
             "sms_code": "438921",
             "password": STRONG_PASSWORD,
+            "ref": registration_ref,
         },
     )
 
     assert response.status_code == 422
     assert consumed is False
-    assert User.objects.count() == 0
+    assert User.objects.filter(is_staff=False, is_superuser=False).count() == 0
 
 
 @pytest.mark.django_db
@@ -218,6 +233,7 @@ def test_registration_database_failure_does_not_retry_consumption(monkeypatch):
         lambda **kwargs: (_ for _ in ()).throw(DatabaseError("private database detail")),
     )
     client, token = csrf_client()
+    registration_ref = valid_registration_ref()
     client.raise_request_exception = False
     response = post_with_csrf(
         client,
@@ -228,6 +244,7 @@ def test_registration_database_failure_does_not_retry_consumption(monkeypatch):
             "nickname": "失败用户",
             "sms_code": "438921",
             "password": STRONG_PASSWORD,
+            "ref": registration_ref,
         },
     )
 
@@ -253,6 +270,7 @@ def test_sms_login_respects_account_but_not_approval_status(
     monkeypatch, approval_status, account_status, expected_status
 ):
     user = create_user(approval_status=approval_status, account_status=account_status)
+    assign_test_customer(user)
     monkeypatch.setattr("apps.users.views.verify_and_consume", lambda *args, **kwargs: True)
     client, token = csrf_client()
     response = post_with_csrf(
@@ -306,7 +324,7 @@ def test_invalid_sms_code_and_unknown_user_have_same_external_response(monkeypat
 
 @pytest.mark.django_db
 def test_sms_login_event_failure_revokes_new_session(monkeypatch):
-    create_user()
+    assign_test_customer(create_user())
     monkeypatch.setattr("apps.users.views.verify_and_consume", lambda *args, **kwargs: True)
     monkeypatch.setattr(
         "apps.users.views.record_login_event",
@@ -328,6 +346,7 @@ def test_sms_login_event_failure_revokes_new_session(monkeypatch):
 @pytest.mark.django_db
 def test_password_reset_invalidates_two_existing_sessions(monkeypatch):
     user = create_user()
+    assign_test_customer(user)
     first, first_token = csrf_client()
     second, second_token = csrf_client()
     assert password_login(first, first_token).status_code == 200
@@ -419,6 +438,7 @@ def test_submission_failure_limits_are_isolated_and_only_count_invalid_credentia
     monkeypatch.setattr("apps.users.views.verify_and_consume", lambda *args, **kwargs: False)
     client, token = csrf_client()
     payload = {"phone": "13800138000", "sms_code": "000000"}
+    registration_ref = valid_registration_ref()
 
     first = post_with_csrf(client, SMS_LOGIN_PATH, token, payload)
     second = post_with_csrf(client, SMS_LOGIN_PATH, token, payload)
@@ -426,7 +446,12 @@ def test_submission_failure_limits_are_isolated_and_only_count_invalid_credentia
         client,
         REGISTER_PATH,
         token,
-        {**payload, "nickname": "隔离用户", "password": STRONG_PASSWORD},
+        {
+            **payload,
+            "nickname": "隔离用户",
+            "password": STRONG_PASSWORD,
+            "ref": registration_ref,
+        },
     )
     malformed = post_with_csrf(
         client,
@@ -470,7 +495,7 @@ def test_service_unavailable_does_not_consume_submission_failure_limit(monkeypat
 
 @pytest.mark.django_db
 def test_success_clears_combination_submission_failures(monkeypatch, settings):
-    create_user()
+    assign_test_customer(create_user())
     settings.LOGIN_RATE_LIMIT_COMBINATION_FAILURES = 2
     settings.LOGIN_RATE_LIMIT_PHONE_FAILURES = 20
     settings.LOGIN_RATE_LIMIT_IP_FAILURES = 20
@@ -495,7 +520,8 @@ def test_auth_responses_and_logs_do_not_expose_secrets(monkeypatch, caplog):
     create_user()
     monkeypatch.setattr("apps.users.views.verify_and_consume", lambda *args, **kwargs: False)
     client, token = csrf_client()
-    secrets = ["438921", "13800138000", STRONG_PASSWORD, token]
+    registration_ref = valid_registration_ref()
+    secrets = ["438921", "13800138000", STRONG_PASSWORD, token, registration_ref]
     with caplog.at_level(logging.INFO):
         response = post_with_csrf(
             client,
@@ -506,6 +532,7 @@ def test_auth_responses_and_logs_do_not_expose_secrets(monkeypatch, caplog):
                 "nickname": "安全用户",
                 "sms_code": "438921",
                 "password": STRONG_PASSWORD,
+                "ref": registration_ref,
             },
         )
     combined = response.content.decode() + caplog.text

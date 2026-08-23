@@ -101,12 +101,14 @@ paths:
     post:
       tags: [Auth]
       security: []
-      summary: 手机号、昵称、短信验证码和密码注册
+      summary: 通过代理专属 ref、手机号、昵称、短信验证码和密码注册
       description: |
         使用 register 用途验证码。验证码先在 Redis 原子消费，再执行 PostgreSQL 事务；
         两者不存在分布式事务。注册成功后账号直接进入 approved/active，并建立 12 小时浏览器会话；
         不需要管理员审批首次登录。历史 pending/rejected 状态继续兼容保留。
-        手机号是否已注册仅在验证码成功消费后通过 ACCOUNT_ALREADY_EXISTS 返回。
+        ref 是后端签名且带有效期的代理渠道标识，不接受 admin_id 作为归属依据。
+        注册事务会再次校验代理状态并确定性创建 CustomerAssignment。手机号是否已注册仅在
+        验证码成功消费后通过 ACCOUNT_ALREADY_EXISTS 返回。
       parameters:
         - $ref: '#/components/parameters/CsrfToken'
       requestBody:
@@ -140,6 +142,23 @@ paths:
           $ref: '#/components/responses/InternalError'
         '503':
           $ref: '#/components/responses/ServiceUnavailable'
+  /auth/registration-ref:
+    get:
+      tags: [Auth]
+      security: []
+      summary: 验证代理专属注册链接 ref
+      parameters:
+        - name: ref
+          in: query
+          required: true
+          schema: {type: string, maxLength: 512}
+      responses:
+        '200':
+          description: ref 有效，仅返回可公开的渠道名称
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RegistrationReferenceEnvelope'}
+        '422': {$ref: '#/components/responses/ValidationError'}
   /auth/login/sms:
     post:
       tags: [Auth]
@@ -2629,6 +2648,19 @@ paths:
       parameters: [{$ref: '#/components/parameters/CsrfToken'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AdminUpdateRequest'}}}}
       responses: {'200': {description: 已更新}, '409': {description: ADMIN_VERSION_CONFLICT}}
+  /admin/admins/{adminId}/registration-link:
+    parameters: [{$ref: '#/components/parameters/AdminId'}]
+    get:
+      tags: [Admin]
+      summary: SUPER_ADMIN 获取指定 ADMIN 的签名专属注册链接
+      responses:
+        '200':
+          description: 返回不包含 ADMIN 主键的时限注册链接
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminRegistrationLinkEnvelope'}
+        '403': {$ref: '#/components/responses/PermissionDenied'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
   /admin/admins/{adminId}/force-logout:
     parameters: [{$ref: '#/components/parameters/AdminId'}]
     post:
@@ -2748,13 +2780,13 @@ paths:
       summary: 查看当前客户负责人（仅昵称和脱敏手机号）
       parameters: [{$ref: '#/components/parameters/UserId'}]
       responses:
-        '200': {description: 当前负责人或未分配状态}
+        '200': {description: 当前唯一 ADMIN 负责人}
         '401': {$ref: '#/components/responses/AuthRequired'}
         '403': {$ref: '#/components/responses/PermissionDenied'}
         '404': {$ref: '#/components/responses/ResourceNotFound'}
     put:
       tags: [Admin]
-      summary: 分配、转交或解除客户负责人
+      summary: 由 SUPER_ADMIN 将客户转交给另一个 ADMIN
       parameters: [{$ref: '#/components/parameters/UserId'}, {$ref: '#/components/parameters/CsrfToken'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AssignmentUpdateRequest'}}}}
       responses:
@@ -4318,7 +4350,7 @@ components:
     RegistrationRequest:
       type: object
       additionalProperties: false
-      required: [phone, nickname, sms_code, password]
+      required: [phone, nickname, sms_code, password, ref]
       properties:
         phone:
           type: string
@@ -4326,6 +4358,22 @@ components:
         nickname: {type: string, minLength: 1, maxLength: 50}
         sms_code: {type: string, pattern: '^\d{6}$'}
         password: {type: string, minLength: 10, maxLength: 128, format: password}
+        ref:
+          type: string
+          maxLength: 512
+          description: 后端签名的代理渠道 token；不能由 admin_id 替代
+    RegistrationReferenceEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          properties:
+            data:
+              type: object
+              additionalProperties: false
+              required: [valid, channel_name]
+              properties:
+                valid: {type: boolean, const: true}
+                channel_name: {type: string}
     SmsLoginRequest:
       type: object
       additionalProperties: false
@@ -4396,7 +4444,7 @@ components:
         approval_reason: {type: [string, 'null'], maxLength: 500}
         commercial_identity:
           type: string
-          enum: [PLATFORM_SUPER_ADMIN, TENANT_ADMIN, END_USER]
+          enum: [SUPER_ADMIN, ADMIN, USER]
         home_route:
           type: string
           enum: [/admin, /workspace]
@@ -5848,6 +5896,20 @@ components:
         role: {$ref: '#/components/schemas/AdminRoleSummary'}
         tenant_id: {type: [string, 'null'], format: uuid}
         tenant_name: {type: [string, 'null']}
+    AdminRegistrationLinkEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          properties:
+            data:
+              type: object
+              additionalProperties: false
+              required: [registration_path, expires_in, channel_name, usable]
+              properties:
+                registration_path: {type: string}
+                expires_in: {type: integer, minimum: 60}
+                channel_name: {type: string}
+                usable: {type: boolean}
     AdminContextEnvelope:
       allOf:
         - $ref: '#/components/schemas/EnvelopeBase'
@@ -5860,7 +5922,7 @@ components:
                   properties:
                     admin_version: {type: integer, minimum: 1}
                     data_scope: {type: string, enum: [own, role, all]}
-                    commercial_identity: {type: string, enum: [PLATFORM_SUPER_ADMIN, TENANT_ADMIN]}
+                    commercial_identity: {type: string, enum: [SUPER_ADMIN, ADMIN]}
                     tenant_id: {type: [string, 'null'], format: uuid}
                     permission_keys: {type: array, items: {type: string}}
                     menu_keys: {type: array, items: {type: string}}
@@ -5919,8 +5981,8 @@ components:
       additionalProperties: false
       required: [owner_admin_id, expected_version]
       properties:
-        owner_admin_id: {type: [string, 'null'], format: uuid}
-        expected_version: {type: integer, minimum: 0}
+        owner_admin_id: {type: string, format: uuid}
+        expected_version: {type: integer, minimum: 1}
         reason: {type: string, maxLength: 200}
         confirmed: {type: boolean}
         current_password: {type: string, format: password, writeOnly: true}
@@ -6076,8 +6138,8 @@ components:
       additionalProperties: false
       required: [owner_admin_id, expected_version]
       properties:
-        owner_admin_id: {type: [string, 'null'], format: uuid}
-        expected_version: {type: integer, minimum: 0}
+        owner_admin_id: {type: string, format: uuid}
+        expected_version: {type: integer, minimum: 1}
         reason: {type: string, maxLength: 200}
         confirmed: {type: boolean}
         current_password: {type: string, format: password, writeOnly: true}

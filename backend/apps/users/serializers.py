@@ -41,7 +41,24 @@ class SmsCodeSerializer(NormalizedPhoneSerializer):
     )
 
 
+class RegistrationReferenceSerializer(serializers.Serializer):
+    ref = serializers.CharField(max_length=512, trim_whitespace=False)
+
+    def validate_ref(self, value):
+        from apps.admin_rbac.registration_links import (
+            InvalidRegistrationReference,
+            resolve_registration_admin,
+        )
+
+        try:
+            resolve_registration_admin(value)
+        except InvalidRegistrationReference as exc:
+            raise serializers.ValidationError("注册链接无效、已过期或所属代理不可用。") from exc
+        return value
+
+
 class RegistrationSerializer(SmsCodeSerializer):
+    ref = serializers.CharField(max_length=512, trim_whitespace=False)
     nickname = serializers.CharField(max_length=50, trim_whitespace=True)
     password = serializers.CharField(
         max_length=128,
@@ -53,7 +70,17 @@ class RegistrationSerializer(SmsCodeSerializer):
     def validate_nickname(self, value: str) -> str:
         return validate_nickname(value)
 
+    def validate_ref(self, value: str) -> str:
+        serializer = RegistrationReferenceSerializer(data={"ref": value})
+        serializer.is_valid(raise_exception=True)
+        return serializer.validated_data["ref"]
+
     def validate(self, attrs):
+        unknown_fields = set(self.initial_data) - set(self.fields)
+        if unknown_fields:
+            raise serializers.ValidationError(
+                {field: ["不支持该注册字段。"] for field in sorted(unknown_fields)}
+            )
         provisional_user = User(phone=attrs["phone"], nickname=attrs["nickname"])
         try:
             validate_password(attrs["password"], provisional_user)

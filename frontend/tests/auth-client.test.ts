@@ -8,6 +8,7 @@ import {
   resetPassword,
   sendSms,
   setAdminStepUpHandler,
+  validateRegistrationReference,
 } from "../lib/auth-client";
 
 function jsonResponse(body: unknown, status = 200) {
@@ -73,6 +74,7 @@ describe("集中认证客户端", () => {
       nickname: "测试用户",
       smsCode: "438921",
       password: "Correct-Horse-Battery-2026!",
+      ref: "signed-agent-ref",
     });
 
     const requestBody = JSON.parse(String(fetchMock.mock.calls[1][1]?.body));
@@ -81,8 +83,28 @@ describe("集中认证客户端", () => {
       nickname: "测试用户",
       sms_code: "438921",
       password: "Correct-Horse-Battery-2026!",
+      ref: "signed-agent-ref",
     });
     expect(requestBody).not.toHaveProperty("passwordConfirmation");
+  });
+
+  it("注册链接验证使用编码后的 opaque ref 且不发起写请求", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      jsonResponse({
+        success: true,
+        data: { valid: true, channel_name: "代理甲" },
+        request_id: "r-ref",
+      }),
+    );
+
+    await expect(validateRegistrationReference("opaque:signed+ref")).resolves.toEqual({
+      valid: true,
+      channel_name: "代理甲",
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/auth/registration-ref?ref=opaque%3Asigned%2Bref"),
+      expect.objectContaining({ method: "GET", credentials: "include" }),
+    );
   });
 
   it("解析统一中文错误且不打印请求正文", async () => {

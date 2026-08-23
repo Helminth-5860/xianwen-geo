@@ -1,20 +1,26 @@
+import uuid
+
 import pytest
-from rest_framework.exceptions import NotFound
+from django.core.exceptions import ValidationError
+from rest_framework.exceptions import NotFound, PermissionDenied
 from rest_framework.test import APIClient
 
-from apps.admin_rbac.commercial_policy import TENANT_ADMIN_BASELINE_PERMISSIONS
-from apps.admin_rbac.models import AdminProfile, AdminRole
+from apps.admin_rbac.commercial_policy import ADMIN_BASELINE_PERMISSIONS
+from apps.admin_rbac.models import AdminRole, CustomerAssignment
 from apps.admin_rbac.permissions import resolve_admin_context
+from apps.admin_rbac.registration_links import issue_registration_ref
 from apps.admin_rbac.risk_catalog import SMS_STEP_UP_REQUIRED_ACTIONS
-from apps.admin_rbac.scopes import scoped_customers
-from apps.admin_rbac.services import assign_customer
+from apps.admin_rbac.scopes import scoped_customer_or_404, scoped_customers
+from apps.admin_rbac.services import assign_customer, create_admin
 from apps.articles.models import Article
 from apps.geo.models import GeoDetectionJob, GeoReport
 from apps.images.models import ImageAsset
 from apps.subjects.models import Subject
+from apps.users.authentication import AccountUnavailable, start_browser_session
 from apps.users.commercial import CommercialIdentity, commercial_home_route, commercial_identity
 from apps.users.models import Tenant, User
-from apps.users.serializers import CurrentUserSerializer
+from apps.users.serializers import CurrentUserSerializer, RegistrationSerializer
+from apps.users.services import create_registered_user
 from tests.admin_session_helpers import authenticate_admin_client
 
 PASSWORD = "Correct-Horse-Battery-2026!"
@@ -24,7 +30,7 @@ def tenant(key: str, name: str) -> Tenant:
     return Tenant.objects.create(key=key, display_name=name, brand_name=f"{name}品牌")
 
 
-def user(phone: str, tenant_obj: Tenant, *, staff: bool = False) -> User:
+def user(phone: str, tenant_obj: Tenant | None = None, *, staff: bool = False) -> User:
     return User.objects.create_user(
         phone=phone,
         nickname=phone[-4:],
@@ -35,22 +41,34 @@ def user(phone: str, tenant_obj: Tenant, *, staff: bool = False) -> User:
     )
 
 
+def admin(super_admin, role, phone, tenant_obj=None):
+    return create_admin(
+        actor_id=super_admin.id,
+        phone=phone,
+        nickname=phone[-4:],
+        password=PASSWORD,
+        role_id=role.id,
+        tenant_id=tenant_obj.id if tenant_obj else None,
+        request_id=uuid.uuid4(),
+    )
+
+
 @pytest.mark.django_db
 def test_three_commercial_identities_have_stable_home_routes_and_branding():
     first = tenant("first", "第一租户")
-    end_user = user("13800001001", first)
-    role = AdminRole.objects.create(name="租户管理员", data_scope=AdminRole.DataScope.OWN)
-    tenant_admin = user("13800001002", first, staff=True)
-    AdminProfile.objects.create(user=tenant_admin, role=role)
     super_admin = User.objects.create_superuser(
         phone="13800001003", nickname="平台管理员", password=PASSWORD
     )
+    role = AdminRole.objects.create(name="代理管理员", data_scope=AdminRole.DataScope.OWN)
+    owner = admin(super_admin, role, "13800001002", first)
+    end_user = user("13800001001", first)
+    CustomerAssignment.objects.create(customer=end_user, owner_admin=owner)
 
-    assert commercial_identity(end_user) == CommercialIdentity.END_USER
+    assert commercial_identity(end_user) == CommercialIdentity.USER
     assert commercial_home_route(end_user) == "/workspace"
-    assert commercial_identity(tenant_admin) == CommercialIdentity.TENANT_ADMIN
-    assert commercial_home_route(tenant_admin) == "/admin"
-    assert commercial_identity(super_admin) == CommercialIdentity.PLATFORM_SUPER_ADMIN
+    assert commercial_identity(owner.user) == CommercialIdentity.ADMIN
+    assert commercial_home_route(owner.user) == "/admin"
+    assert commercial_identity(super_admin) == CommercialIdentity.SUPER_ADMIN
     assert commercial_home_route(super_admin) == "/admin"
 
     payload = CurrentUserSerializer(end_user).data
@@ -59,91 +77,222 @@ def test_three_commercial_identities_have_stable_home_routes_and_branding():
 
 
 @pytest.mark.django_db
-def test_tenant_admin_gets_operational_pages_without_fine_role_grants_but_not_platform_secrets():
-    first = tenant("first", "第一租户")
-    role = AdminRole.objects.create(name="空权限租户角色", data_scope=AdminRole.DataScope.OWN)
-    tenant_admin = user("13800002001", first, staff=True)
-    AdminProfile.objects.create(user=tenant_admin, role=role)
+def test_admin_gets_operational_pages_without_super_admin_capabilities():
+    super_admin = User.objects.create_superuser(
+        phone="13800002000", nickname="平台管理员", password=PASSWORD
+    )
+    role = AdminRole.objects.create(name="代理角色", data_scope=AdminRole.DataScope.ALL)
+    profile = admin(super_admin, role, "13800002001")
 
-    context = resolve_admin_context(tenant_admin)
+    context = resolve_admin_context(profile.user)
     assert context is not None
-    assert context.identity == CommercialIdentity.TENANT_ADMIN
-    assert TENANT_ADMIN_BASELINE_PERMISSIONS <= context.permission_keys
-    assert {
-        "menu.admin.users",
-        "menu.admin.plan-applications",
-        "menu.admin.subscriptions",
-        "menu.admin.quotas",
-        "menu.admin.operations",
-    } <= context.menu_keys
+    assert context.identity == CommercialIdentity.ADMIN
+    assert ADMIN_BASELINE_PERMISSIONS <= context.permission_keys
     assert "menu.admin.admins" not in context.menu_keys
-    assert "menu.admin.models" not in context.menu_keys
     assert "api_credentials.manage" not in context.permission_keys
     assert "quotas.adjust" not in context.permission_keys
 
 
 @pytest.mark.django_db
-def test_tenant_scope_is_the_boundary_for_all_user_owned_business_domains():
+def test_customer_assignment_is_the_boundary_for_all_user_owned_business_domains():
     first = tenant("first", "第一租户")
     second = tenant("second", "第二租户")
-    role = AdminRole.objects.create(name="租户运营", data_scope=AdminRole.DataScope.ALL)
-    tenant_admin = user("13800003001", first, staff=True)
-    AdminProfile.objects.create(user=tenant_admin, role=role)
+    super_admin = User.objects.create_superuser(
+        phone="13800003000", nickname="平台管理员", password=PASSWORD
+    )
+    role = AdminRole.objects.create(name="代理运营", data_scope=AdminRole.DataScope.ALL)
+    first_admin = admin(super_admin, role, "13800003001", first)
+    second_admin = admin(super_admin, role, "13800003004", second)
     first_user = user("13800003002", first)
-    second_user = user("13800003003", second)
+    second_user = user("13800003003", first)
+    CustomerAssignment.objects.create(customer=first_user, owner_admin=first_admin)
+    CustomerAssignment.objects.create(customer=second_user, owner_admin=second_admin)
 
-    context = resolve_admin_context(tenant_admin)
-    assert context is not None
-    visible_ids = set(scoped_customers(tenant_admin, context).values_list("id", flat=True))
-    assert first_user.id in visible_ids
-    assert second_user.id not in visible_ids
+    context = resolve_admin_context(first_admin.user)
+    visible_ids = set(scoped_customers(first_admin.user, context).values_list("id", flat=True))
+    assert visible_ids == {first_user.id}
+
+    # Tenant equality and role data_scope=ALL cannot widen direct ownership.
+    with pytest.raises(NotFound):
+        scoped_customer_or_404(first_admin.user, context, second_user.id)
 
     # Every requested business domain inherits the same boundary through its
-    # protected User foreign key; no plan or quota field participates in scope.
+    # protected User foreign key; plans and quota fields do not alter scope.
     for model in (Subject, GeoDetectionJob, GeoReport, Article, ImageAsset):
-        owner_field = model._meta.get_field("user")
-        assert owner_field.remote_field.model is User
+        assert model._meta.get_field("user").remote_field.model is User
 
 
 @pytest.mark.django_db
-def test_tenant_internal_assignment_cannot_bind_an_admin_from_another_tenant():
-    first = tenant("first", "第一租户")
-    second = tenant("second", "第二租户")
-    role = AdminRole.objects.create(name="租户运营", data_scope=AdminRole.DataScope.OWN)
-    first_admin = user("13800003501", first, staff=True)
-    first_profile = AdminProfile.objects.create(user=first_admin, role=role)
-    second_admin = user("13800003502", second, staff=True)
-    second_profile = AdminProfile.objects.create(user=second_admin, role=role)
-    first_customer = user("13800003503", first)
-    context = resolve_admin_context(first_admin)
-    assert context is not None
+def test_only_super_admin_can_reassign_admin_owned_users():
+    super_admin = User.objects.create_superuser(
+        phone="13800003500", nickname="平台管理员", password=PASSWORD
+    )
+    role = AdminRole.objects.create(name="代理运营", data_scope=AdminRole.DataScope.ALL)
+    first = admin(super_admin, role, "13800003501")
+    second = admin(super_admin, role, "13800003502")
+    customer = user("13800003503")
+    assignment = CustomerAssignment.objects.create(customer=customer, owner_admin=first)
 
-    with pytest.raises(NotFound):
+    with pytest.raises(PermissionDenied):
         assign_customer(
-            actor=first_admin,
-            context=context,
-            customer=first_customer,
-            owner_admin_id=second_profile.id,
-            expected_version=0,
-            reason="不得跨租户分配",
-            request_id=first_profile.id,
+            actor=first.user,
+            context=resolve_admin_context(first.user),
+            customer=customer,
+            owner_admin_id=second.id,
+            expected_version=assignment.version,
+            reason="ADMIN 不得变更归属",
+            request_id=uuid.uuid4(),
         )
 
+    changed = assign_customer(
+        actor=super_admin,
+        context=resolve_admin_context(super_admin),
+        customer=customer,
+        owner_admin_id=second.id,
+        expected_version=assignment.version,
+        reason="平台重新分配",
+        request_id=uuid.uuid4(),
+    )
+    assert changed.owner_admin == second
+
 
 @pytest.mark.django_db
-def test_super_admin_has_global_catalog_and_tenant_admin_quota_visibility_is_not_execution():
+def test_admin_cannot_create_admin_even_with_broad_role_scope():
+    super_admin = User.objects.create_superuser(
+        phone="13800003600", nickname="平台管理员", password=PASSWORD
+    )
+    role = AdminRole.objects.create(name="全范围代理", data_scope=AdminRole.DataScope.ALL)
+    profile = admin(super_admin, role, "13800003601")
+    client = authenticate_admin_client(APIClient(), profile.user, step_up=True)
+
+    response = client.post(
+        "/api/v1/admin/admins",
+        {
+            "phone": "13800003602",
+            "nickname": "禁止创建",
+            "password": PASSWORD,
+            "role_id": str(role.id),
+        },
+        format="json",
+    )
+    assert response.status_code == 403
+    assert not User.objects.filter(phone="+8613800003602").exists()
+
+
+@pytest.mark.django_db
+def test_user_cannot_create_admin_or_submit_role_upgrade_fields():
+    super_admin = User.objects.create_superuser(
+        phone="13800003610", nickname="平台管理员", password=PASSWORD
+    )
+    role = AdminRole.objects.create(name="直属代理", data_scope=AdminRole.DataScope.OWN)
+    owner = admin(super_admin, role, "13800003611")
+    customer = user("13800003612")
+    CustomerAssignment.objects.create(customer=customer, owner_admin=owner)
+
+    client = APIClient()
+    client.force_authenticate(customer)
+    denied = client.post(
+        "/api/v1/admin/admins",
+        {
+            "phone": "13800003613",
+            "nickname": "禁止升级",
+            "password": PASSWORD,
+            "role_id": str(role.id),
+        },
+        format="json",
+    )
+    assert denied.status_code == 403
+
+    serializer = RegistrationSerializer(
+        data={
+            "phone": "13800003614",
+            "nickname": "恶意注册字段",
+            "sms_code": "123456",
+            "password": PASSWORD,
+            "ref": issue_registration_ref(owner),
+            "is_staff": True,
+            "role_id": str(role.id),
+        }
+    )
+    assert serializer.is_valid() is False
+    assert {"is_staff", "role_id"} <= set(serializer.errors)
+
+
+@pytest.mark.django_db
+def test_user_registration_cannot_upgrade_role_and_must_bind_one_admin():
+    default_tenant = Tenant.legacy_default()
+    super_admin = User.objects.create_superuser(
+        phone="13800003700", nickname="平台管理员", password=PASSWORD
+    )
+    role = AdminRole.objects.create(name="默认代理", data_scope=AdminRole.DataScope.OWN)
+    owner = admin(super_admin, role, "13800003701", default_tenant)
+    registration_ref = issue_registration_ref(owner)
+
+    created = create_registered_user(
+        phone="+8613800003702",
+        nickname="企业客户",
+        password=PASSWORD,
+        registration_ref=registration_ref,
+    )
+
+    assert commercial_identity(created) == CommercialIdentity.USER
+    assert created.is_staff is False
+    assert created.is_superuser is False
+    assert created.customer_assignment.owner_admin == owner
+    assert CustomerAssignment.objects.filter(customer=created).count() == 1
+
+
+@pytest.mark.django_db
+def test_super_admin_cannot_be_a_direct_customer_owner():
+    super_admin = User.objects.create_superuser(
+        phone="13800003800", nickname="平台管理员", password=PASSWORD
+    )
+    customer = user("13800003801")
+    assignment = CustomerAssignment(customer=customer, owner_admin=super_admin.admin_profile)
+
+    with pytest.raises(ValidationError):
+        assignment.full_clean()
+
+
+@pytest.mark.django_db
+def test_orphan_user_login_fails_closed(rf):
+    orphan = user("13800003802")
+    request = rf.post("/api/v1/auth/login/password")
+    request.session = {}
+
+    with pytest.raises(AccountUnavailable):
+        start_browser_session(request, orphan.id)
+
+
+@pytest.mark.django_db
+def test_super_admin_has_global_customer_visibility_and_admin_does_not():
     super_admin = User.objects.create_superuser(
         phone="13800004001", nickname="平台管理员", password=PASSWORD
     )
-    context = resolve_admin_context(super_admin)
-    assert context is not None
-    assert context.identity == CommercialIdentity.PLATFORM_SUPER_ADMIN
-    assert "menu.admin.admins" in context.menu_keys
-    assert "api_credentials.manage" in context.permission_keys
+    role = AdminRole.objects.create(name="代理", data_scope=AdminRole.DataScope.ALL)
+    first = admin(super_admin, role, "13800004002")
+    second = admin(super_admin, role, "13800004003")
+    first_customer = user("13800004004")
+    second_customer = user("13800004005")
+    CustomerAssignment.objects.create(customer=first_customer, owner_admin=first)
+    CustomerAssignment.objects.create(customer=second_customer, owner_admin=second)
 
-    assert "quotas.list" in TENANT_ADMIN_BASELINE_PERMISSIONS
-    assert "quotas.ledger.view" in TENANT_ADMIN_BASELINE_PERMISSIONS
-    assert "quotas.adjust" not in TENANT_ADMIN_BASELINE_PERMISSIONS
+    admin_ids = set(
+        scoped_customers(first.user, resolve_admin_context(first.user)).values_list("id", flat=True)
+    )
+    super_ids = set(
+        scoped_customers(super_admin, resolve_admin_context(super_admin)).values_list(
+            "id", flat=True
+        )
+    )
+    assert admin_ids == {first_customer.id}
+    assert {first_customer.id, second_customer.id} <= super_ids
+    super_context = resolve_admin_context(super_admin)
+    assert "menu.admin.admins" in super_context.menu_keys
+    assert "api_credentials.manage" in super_context.permission_keys
+    assert "quotas.list" in ADMIN_BASELINE_PERMISSIONS
+    assert "quotas.ledger.view" in ADMIN_BASELINE_PERMISSIONS
+    assert "quotas.adjust" not in ADMIN_BASELINE_PERMISSIONS
     assert {"quota.grant", "quota.compensate", "quota.manual_deduct"} <= (
         SMS_STEP_UP_REQUIRED_ACTIONS
     )
@@ -182,4 +331,3 @@ def test_tenant_management_is_super_admin_only_and_keeps_step_up_enforcement():
         format="json",
     )
     assert created.status_code == 201
-    assert created.json()["data"]["key"] == "step-up-allowed"

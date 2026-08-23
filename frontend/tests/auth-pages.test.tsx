@@ -15,6 +15,7 @@ describe("认证页面", () => {
     expect(html).toContain("昵称");
     expect(html).toContain("短信验证码");
     expect(html).toContain("完成短信验证后，账号立即启用");
+    expect(html).toContain("正在验证代理注册链接");
   });
 
   it("登录页提供密码和短信两种模式", () => {

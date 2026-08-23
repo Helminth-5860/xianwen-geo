@@ -17,6 +17,7 @@ def test_xw0105_paths_are_documented():
         "/admin/tenants/{tenantId}",
         "/admin/admins",
         "/admin/admins/{adminId}",
+        "/admin/admins/{adminId}/registration-link",
         "/admin/admins/{adminId}/disable",
         "/admin/admins/{adminId}/enable",
         "/admin/admins/{adminId}/lock",
@@ -38,7 +39,8 @@ def test_xw0105_write_operations_document_csrf_and_versions():
     assert any(item["$ref"].endswith("/CsrfToken") for item in assignment["parameters"])
     schemas = SPEC["components"]["schemas"]
     assert "expected_version" in schemas["AdminUpdateRequest"]["required"]
-    assert schemas["AssignmentUpdateRequest"]["properties"]["expected_version"]["minimum"] == 0
+    assert schemas["AssignmentUpdateRequest"]["properties"]["expected_version"]["minimum"] == 1
+    assert schemas["AssignmentUpdateRequest"]["properties"]["owner_admin_id"]["type"] == "string"
 
 
 def test_admin_schemas_do_not_expose_credentials_or_full_phone():

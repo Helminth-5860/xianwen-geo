@@ -27,6 +27,7 @@ from apps.web_sources.models import WebSourceImport, WebSourceParsedVersion, Web
 from apps.web_sources.parser import parse_response
 from apps.web_sources.services import confirmed_content, execute_import
 from apps.web_sources.url_security import canonicalize_url, is_allowed_address, resolve_and_validate
+from tests.customer_ownership_helpers import assign_test_customer
 
 pytestmark = pytest.mark.django_db
 
@@ -41,6 +42,7 @@ def _facts():
         password=PASSWORD,
         approval_status=User.ApprovalStatus.APPROVED,
     )
+    assign_test_customer(user)
     subject_type = SubjectType.objects.create(
         key=f"web_{suffix}",
         name="Web type",

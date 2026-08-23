@@ -13,6 +13,7 @@ import {
 } from "@ant-design/icons";
 import { Alert, Button, Card, ConfigProvider, Space, Spin, Tag, Typography } from "antd";
 import zhCN from "antd/locale/zh_CN";
+import { useRouter } from "next/navigation";
 import { useEffect, useState, useSyncExternalStore } from "react";
 
 import { PlanCatalog } from "@/components/plans/plan-catalog";
@@ -24,6 +25,7 @@ import { SITE_DESCRIPTION, SITE_NAME } from "@/lib/site";
 const { Paragraph, Text, Title } = Typography;
 
 export default function WorkspacePage() {
+  const router = useRouter();
   const [user, setUser] = useState<AccountUser | null | undefined>();
   const [subscription, setSubscription] = useState<Subscription | null | undefined>();
   const [workspaceError, setWorkspaceError] = useState("");
@@ -38,6 +40,10 @@ export default function WorkspacePage() {
     void getCurrentUser()
       .then(async (value) => {
         if (!current) return;
+        if (value.commercial_identity !== "USER") {
+          router.replace(value.home_route);
+          return;
+        }
         setUser(value);
         try {
           const data = await getCurrentSubscription();
@@ -58,7 +64,7 @@ export default function WorkspacePage() {
     return () => {
       current = false;
     };
-  }, []);
+  }, [router]);
 
   const authenticated = user !== null && user !== undefined;
 

@@ -33,9 +33,9 @@ Plan 下架、归档、版本退休或发布新版本不会重绑旧申请。XW-
 
 ## 范围、风险动作与安全数据
 
-管理员 QuerySet 动态复用当前 CustomerAssignment：own、role、all 和 superuser 规则与 XW-0105
-一致，未分配客户仅 all/superuser 可见；手机号筛选在 scoped QuerySet 后执行，越权详情与动作返回
-404。申请表不复制负责人，负责人变化立即改变可见性。
+管理员 QuerySet 动态复用当前非空 CustomerAssignment：普通 ADMIN 只看到直接归属自己的 USER，
+SUPER_ADMIN 可见全部 USER；手机号筛选在 scoped QuerySet 后执行，越权详情与动作返回 404。
+申请表不复制负责人，SUPER_ADMIN 转交负责人后可见性立即随归属变化。
 
 `plan_application.contact` 与 `plan_application.close` 的默认及最低模式均为 confirm，可由
 RiskPolicy 提高为 password/two_person。旧 HTTP 写入口必须经过统一风险编排、静态 Handler、严格

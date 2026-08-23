@@ -5,7 +5,7 @@ from rest_framework.permissions import BasePermission
 from apps.users.commercial import CommercialIdentity, commercial_identity
 
 from .catalog import CATALOG_BY_KEY
-from .commercial_policy import TENANT_ADMIN_BASELINE_PERMISSIONS
+from .commercial_policy import ADMIN_BASELINE_PERMISSIONS
 from .models import AdminPermission, AdminProfile, AdminRole
 
 
@@ -34,11 +34,11 @@ def resolve_admin_context(user) -> AdminContext | None:
     if profile.admin_status != AdminProfile.Status.ACTIVE:
         return None
     identity = commercial_identity(user)
-    if identity == CommercialIdentity.PLATFORM_SUPER_ADMIN:
+    if identity == CommercialIdentity.SUPER_ADMIN:
         if not user.is_staff or profile.role_id is not None:
             return None
         active = AdminPermission.objects.filter(status=AdminPermission.Status.ACTIVE)
-    elif identity == CommercialIdentity.TENANT_ADMIN:
+    elif identity == CommercialIdentity.ADMIN:
         role = profile.role
         if not user.is_staff or role is None or role.status != AdminRole.Status.ACTIVE:
             return None
@@ -49,7 +49,7 @@ def resolve_admin_context(user) -> AdminContext | None:
         )
         baseline = AdminPermission.objects.filter(
             status=AdminPermission.Status.ACTIVE,
-            key__in=TENANT_ADMIN_BASELINE_PERMISSIONS,
+            key__in=ADMIN_BASELINE_PERMISSIONS,
             superuser_only=False,
         )
         active = (explicit | baseline).distinct()
