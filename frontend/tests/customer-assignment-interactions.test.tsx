@@ -15,19 +15,19 @@ vi.mock("@/lib/admin-rbac-client", () => ({
 }));
 
 const assignment = {
-  id: null,
+  id: "assignment-1",
   customer_id: "customer-1",
-  owner_admin_id: null,
-  owner_nickname: null,
-  owner_phone_masked: "",
-  version: 0,
+  owner_admin_id: "admin-1",
+  owner_nickname: "客户经理甲",
+  owner_phone_masked: "138****8000",
+  version: 1,
   assigned_at: null,
 };
 
 const admin = {
   id: "admin-1",
   user_id: "user-1",
-  nickname: "客户经理",
+  nickname: "客户经理甲",
   phone_masked: "138****8000",
   is_superuser: false,
   admin_status: "active" as const,
@@ -36,6 +36,14 @@ const admin = {
   role: null,
   tenant_id: null,
   tenant_name: null,
+};
+
+const secondAdmin = {
+  ...admin,
+  id: "admin-2",
+  user_id: "user-2",
+  nickname: "客户经理乙",
+  phone_masked: "139****9000",
 };
 
 beforeAll(() => {
@@ -82,26 +90,26 @@ describe("customer assignment high-risk entry", () => {
     const { container } = render(
       <CustomerAssignmentActions
         assignment={assignment}
-        admins={[admin]}
+        admins={[admin, secondAdmin]}
         mode="two_person"
         onChanged={vi.fn()}
         onApproval={onApproval}
       />,
     );
 
-    expect(container.textContent).toContain("未分配");
+    expect(container.textContent).toContain("客户经理甲");
     expect(container.textContent).not.toContain("13800138000");
 
     fireEvent.mouseDown(screen.getByRole("combobox"));
     const option = await waitFor(() => {
       const candidate = Array.from(
         document.querySelectorAll<HTMLElement>(".ant-select-item-option"),
-      ).find((item) => item.textContent?.includes("客户经理"));
+      ).find((item) => item.textContent?.includes("客户经理乙"));
       if (!candidate) throw new Error("admin option not rendered");
       return candidate;
     });
     await userEvent.click(option);
-    expect(document.body.textContent).toContain("138****8000");
+    expect(document.body.textContent).toContain("139****9000");
     await userEvent.click(container.querySelector("button") as HTMLButtonElement);
     await userEvent.type(screen.getByLabelText("操作原因"), "客户归属调整");
     await userEvent.click(screen.getByRole("button", { name: "发起审批" }));
@@ -109,8 +117,8 @@ describe("customer assignment high-risk entry", () => {
     await waitFor(() =>
       expect(mocks.changeCustomerAssignment).toHaveBeenCalledWith(
         "customer-1",
-        "admin-1",
-        0,
+        "admin-2",
+        1,
         "客户归属调整",
         {
           confirmed: true,
@@ -124,22 +132,20 @@ describe("customer assignment high-risk entry", () => {
     expect(sessionStorage.length).toBe(0);
   });
 
-  it("executes unassignment in confirm mode and reports the new safe assignment", async () => {
-    const assigned = {
+  it("executes non-null owner transfer in confirm mode", async () => {
+    const transferred = {
       ...assignment,
-      id: "assignment-1",
-      owner_admin_id: admin.id,
-      owner_nickname: admin.nickname,
-      owner_phone_masked: admin.phone_masked,
-      version: 3,
+      owner_admin_id: secondAdmin.id,
+      owner_nickname: secondAdmin.nickname,
+      owner_phone_masked: secondAdmin.phone_masked,
+      version: 2,
     };
-    const unassigned = { ...assignment, id: "assignment-1", version: 4 };
-    mocks.changeCustomerAssignment.mockResolvedValue(unassigned);
+    mocks.changeCustomerAssignment.mockResolvedValue(transferred);
     const onChanged = vi.fn();
     const { container } = render(
       <CustomerAssignmentActions
-        assignment={assigned}
-        admins={[admin]}
+        assignment={assignment}
+        admins={[admin, secondAdmin]}
         mode="confirm"
         onChanged={onChanged}
         onApproval={vi.fn()}
@@ -150,16 +156,16 @@ describe("customer assignment high-risk entry", () => {
     const option = await waitFor(() => {
       const candidate = Array.from(
         document.querySelectorAll<HTMLElement>(".ant-select-item-option"),
-      ).find((item) => item.textContent?.includes("解除负责人"));
-      if (!candidate) throw new Error("unassign option not rendered");
+      ).find((item) => item.textContent?.includes("客户经理乙"));
+      if (!candidate) throw new Error("transfer option not rendered");
       return candidate;
     });
     await userEvent.click(option);
     await userEvent.click(container.querySelector("button") as HTMLButtonElement);
-    await userEvent.type(screen.getByLabelText("操作原因"), "解除归属");
+    await userEvent.type(screen.getByLabelText("操作原因"), "转交归属");
     await userEvent.click(screen.getByRole("button", { name: "确认执行" }));
 
-    await waitFor(() => expect(onChanged).toHaveBeenCalledWith(unassigned));
+    await waitFor(() => expect(onChanged).toHaveBeenCalledWith(transferred));
   });
 
   it.each([403, 404, 409, 422, 429, 503])(
@@ -169,7 +175,7 @@ describe("customer assignment high-risk entry", () => {
       const { container } = render(
         <CustomerAssignmentActions
           assignment={assignment}
-          admins={[admin]}
+          admins={[admin, secondAdmin]}
           mode="confirm"
           onChanged={vi.fn()}
           onApproval={vi.fn()}
@@ -179,7 +185,7 @@ describe("customer assignment high-risk entry", () => {
       const option = await waitFor(() => {
         const candidate = Array.from(
           document.querySelectorAll<HTMLElement>(".ant-select-item-option"),
-        ).find((item) => item.textContent?.includes("客户经理"));
+        ).find((item) => item.textContent?.includes("客户经理乙"));
         if (!candidate) throw new Error("admin option not rendered");
         return candidate;
       });

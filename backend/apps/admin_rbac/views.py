@@ -1,5 +1,7 @@
 from math import ceil
+from urllib.parse import urlencode
 
+from django.conf import settings
 from django.db import IntegrityError
 from django.db.models import Count
 from django.utils.decorators import method_decorator
@@ -14,6 +16,7 @@ from apps.users.models import Tenant
 
 from .models import AdminPermission, AdminProfile, AdminRole, CustomerAssignment
 from .permissions import HasAdminPermission, HasSuperuserAdminSession
+from .registration_links import issue_registration_ref
 from .risk_services import RiskError, perform_risk_action
 from .risk_views import risk_error_response
 from .scopes import scoped_customer_or_404
@@ -137,8 +140,7 @@ class TenantDetailView(APIView):
 
 @method_decorator(csrf_protect, name="dispatch")
 class AdminListCreateView(APIView):
-    required_permission = "admins.list"
-    permission_classes = [HasAdminPermission]
+    permission_classes = [HasSuperuserAdminSession]
     step_up_methods = {"POST"}
 
     def get(self, request):
@@ -147,8 +149,6 @@ class AdminListCreateView(APIView):
 
     @method_decorator(csrf_protect)
     def post(self, request):
-        self.required_permission = "admins.create"
-        self.check_permissions(request)
         serializer = AdminCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
@@ -168,8 +168,7 @@ class AdminListCreateView(APIView):
 
 @method_decorator(csrf_protect, name="dispatch")
 class AdminDetailView(APIView):
-    required_permission = "admins.view"
-    permission_classes = [HasAdminPermission]
+    permission_classes = [HasSuperuserAdminSession]
     step_up_methods = {"PATCH"}
 
     def _get(self, profile_id):
@@ -183,8 +182,6 @@ class AdminDetailView(APIView):
 
     @method_decorator(csrf_protect)
     def patch(self, request, profile_id):
-        self.required_permission = "admins.update"
-        self.check_permissions(request)
         serializer = AdminUpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
@@ -200,10 +197,41 @@ class AdminDetailView(APIView):
         return Response(AdminProfileSerializer(profile).data)
 
 
+class AdminRegistrationLinkView(APIView):
+    permission_classes = [HasSuperuserAdminSession]
+
+    def get(self, request, profile_id):
+        try:
+            profile = AdminProfile.objects.select_related("user", "role").get(
+                pk=profile_id,
+                user__is_superuser=False,
+                role__isnull=False,
+            )
+        except AdminProfile.DoesNotExist as exc:
+            raise NotFound from exc
+        role = profile.role
+        if role is None:
+            raise NotFound
+        registration_ref = issue_registration_ref(profile)
+        usable = (
+            profile.admin_status == AdminProfile.Status.ACTIVE
+            and profile.user.is_active
+            and profile.user.is_staff
+            and role.status == AdminRole.Status.ACTIVE
+        )
+        return Response(
+            {
+                "registration_path": f"/register?{urlencode({'ref': registration_ref})}",
+                "expires_in": settings.REGISTRATION_REF_MAX_AGE_SECONDS,
+                "channel_name": profile.user.nickname,
+                "usable": usable,
+            }
+        )
+
+
 @method_decorator(csrf_protect, name="dispatch")
 class AdminRoleChangeView(APIView):
-    required_permission = "admins.update"
-    permission_classes = [HasAdminPermission]
+    permission_classes = [HasSuperuserAdminSession]
 
     def post(self, request, profile_id):
         serializer = AdminRoleChangeSerializer(data=request.data)
@@ -236,8 +264,7 @@ class AdminRoleChangeView(APIView):
 
 @method_decorator(csrf_protect, name="dispatch")
 class AdminStatusView(APIView):
-    required_permission = "admins.disable"
-    permission_classes = [HasAdminPermission]
+    permission_classes = [HasSuperuserAdminSession]
     requires_step_up = True
     action = ""
 
@@ -421,28 +448,16 @@ class PermissionListView(APIView):
 
 @method_decorator(csrf_protect, name="dispatch")
 class CustomerAssignmentView(APIView):
-    required_permission = "users.assign"
-    permission_classes = [HasAdminPermission]
+    permission_classes = [HasSuperuserAdminSession]
 
     def get(self, request, customer_id):
         customer = scoped_customer_or_404(request.user, request.admin_context, customer_id)
-        assignment = (
-            CustomerAssignment.objects.select_related("owner_admin__user")
-            .filter(customer=customer)
-            .first()
-        )
-        if assignment is None:
-            return Response(
-                {
-                    "id": None,
-                    "customer_id": str(customer.pk),
-                    "owner_admin_id": None,
-                    "owner_nickname": None,
-                    "owner_phone_masked": "",
-                    "version": 0,
-                    "assigned_at": None,
-                }
+        try:
+            assignment = CustomerAssignment.objects.select_related("owner_admin__user").get(
+                customer=customer
             )
+        except CustomerAssignment.DoesNotExist as exc:
+            raise NotFound from exc
         return Response(AssignmentSerializer(assignment).data)
 
     @method_decorator(csrf_protect)

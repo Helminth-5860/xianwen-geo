@@ -43,7 +43,7 @@ const context: AdminContext = {
   data_scope: "all",
   permission_keys: ["models.list", "models.manage"],
   menu_keys: ["menu.admin.models"],
-  commercial_identity: "TENANT_ADMIN",
+  commercial_identity: "ADMIN",
   tenant_id: null,
   tenant_name: null,
 };

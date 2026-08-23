@@ -101,6 +101,7 @@ class AdminProfile(models.Model):  # noqa: DJ008
         LOCKED = "locked", "锁定"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    registration_channel_key = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="admin_profile"
     )
@@ -150,8 +151,6 @@ class CustomerAssignment(models.Model):  # noqa: DJ008
     )
     owner_admin = models.ForeignKey(
         AdminProfile,
-        null=True,
-        blank=True,
         on_delete=models.PROTECT,
         related_name="customer_assignments",
     )
@@ -174,6 +173,26 @@ class CustomerAssignment(models.Model):  # noqa: DJ008
                 condition=models.Q(version__gte=1), name="customer_assignment_version_gte_1"
             )
         ]
+
+    def save(self, *args, **kwargs):
+        # Ownership is an authorization boundary, so invalid ADMIN/USER links
+        # must not be persistable through ordinary ORM writes outside services.
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        if self.customer_id:
+            customer = self.customer
+            if customer.is_staff or customer.is_superuser:
+                errors["customer"] = "只有 USER 可以建立 ADMIN 归属。"
+        if self.owner_admin_id:
+            owner = self.owner_admin
+            if owner.user.is_superuser or owner.role_id is None:
+                errors["owner_admin"] = "USER 必须归属一个有效的非超级管理员 ADMIN。"
+        if errors:
+            raise ValidationError(errors)
 
 
 class AdminRbacEvent(models.Model):  # noqa: DJ008

@@ -172,7 +172,7 @@ export default function AdminUserDetailPage() {
       </Card>
       {capabilities?.permission_keys.includes("users.assign") && assignment && (
         <CustomerAssignmentActions
-          key={`${assignment.customer_id}:${assignment.version}:${assignment.owner_admin_id ?? "unassigned"}`}
+          key={`${assignment.customer_id}:${assignment.version}:${assignment.owner_admin_id}`}
           assignment={assignment}
           admins={admins}
           mode={riskModes["customer.assignment.change"] ?? "password"}

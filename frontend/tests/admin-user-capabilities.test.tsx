@@ -22,7 +22,7 @@ const baseContext: AdminContext = {
   data_scope: "all",
   permission_keys: [],
   menu_keys: ["menu.admin.users"],
-  commercial_identity: "TENANT_ADMIN",
+  commercial_identity: "ADMIN",
   tenant_id: null,
   tenant_name: null,
 };

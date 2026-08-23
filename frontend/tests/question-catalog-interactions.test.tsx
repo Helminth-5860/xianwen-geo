@@ -65,7 +65,7 @@ const context: AdminContext = {
     "question_tags.disable",
   ],
   menu_keys: ["menu.admin.question-categories"],
-  commercial_identity: "TENANT_ADMIN",
+  commercial_identity: "ADMIN",
   tenant_id: null,
   tenant_name: null,
 };

@@ -7,7 +7,11 @@ const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf
 describe("管理员 RBAC 和数据范围页面", () => {
   it("管理员和角色页面真实存在", () => {
     expect(read("../app/admin/admins/page.tsx")).toContain("创建普通管理员");
-    expect(read("../app/admin/admins/[id]/page.tsx")).toContain("紧急锁定");
+    const adminDetail = read("../app/admin/admins/[id]/page.tsx");
+    expect(adminDetail).toContain("紧急锁定");
+    expect(adminDetail).toContain("代理专属注册链接");
+    expect(adminDetail).toContain('commercial_identity === "SUPER_ADMIN"');
+    expect(adminDetail).toContain("getAdminRegistrationLink");
     expect(read("../app/admin/roles/page.tsx")).toContain("客户数据范围");
     expect(read("../app/admin/roles/[id]/page.tsx")).toContain("菜单与动作权限");
   });

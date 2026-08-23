@@ -30,7 +30,7 @@ export type AdminContext = AdminProfile &
     data_scope: "own" | "role" | "all";
     permission_keys: string[];
     menu_keys: string[];
-    commercial_identity: "PLATFORM_SUPER_ADMIN" | "TENANT_ADMIN";
+    commercial_identity: "SUPER_ADMIN" | "ADMIN";
     tenant_id: string | null;
   }>;
 
@@ -59,6 +59,14 @@ export const updateTenant = (id: string, body: Record<string, unknown>) =>
   write<Tenant>("PATCH", `/admin/tenants/${id}`, body);
 export const getAdmins = () => get<PageData<AdminProfile>>("/admin/admins");
 export const getAdmin = (id: string) => get<AdminProfile>(`/admin/admins/${id}`);
+export type AdminRegistrationLink = Readonly<{
+  registration_path: string;
+  expires_in: number;
+  channel_name: string;
+  usable: boolean;
+}>;
+export const getAdminRegistrationLink = (id: string) =>
+  get<AdminRegistrationLink>(`/admin/admins/${id}/registration-link`);
 export const createAdmin = (body: Record<string, unknown>) =>
   post<AdminProfile>("/admin/admins", body);
 export const updateAdmin = (id: string, body: Record<string, unknown>) =>
@@ -69,10 +77,10 @@ export type RiskCredentials = Readonly<{
 }>;
 
 export type CustomerAssignment = Readonly<{
-  id: string | null;
+  id: string;
   customer_id: string;
-  owner_admin_id: string | null;
-  owner_nickname: string | null;
+  owner_admin_id: string;
+  owner_nickname: string;
   owner_phone_masked: string;
   version: number;
   assigned_at: string | null;
@@ -83,7 +91,7 @@ export const getCustomerAssignment = (customerId: string) =>
 
 export const changeCustomerAssignment = (
   customerId: string,
-  ownerAdminId: string | null,
+  ownerAdminId: string,
   expectedVersion: number,
   reason: string,
   credentials: RiskCredentials,

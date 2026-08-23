@@ -208,8 +208,8 @@ class AdminRoleChangeSerializer(StrictSerializer):
 
 
 class AssignmentSerializer(serializers.ModelSerializer):
-    owner_admin_id = serializers.UUIDField(allow_null=True)
-    owner_nickname = serializers.CharField(source="owner_admin.user.nickname", allow_null=True)
+    owner_admin_id = serializers.UUIDField()
+    owner_nickname = serializers.CharField(source="owner_admin.user.nickname")
     owner_phone_masked = serializers.SerializerMethodField()
 
     class Meta:
@@ -225,14 +225,12 @@ class AssignmentSerializer(serializers.ModelSerializer):
         )
 
     def get_owner_phone_masked(self, assignment):
-        if assignment.owner_admin_id is None:
-            return ""
         return mask_phone(assignment.owner_admin.user.phone)
 
 
 class AssignmentUpdateSerializer(StrictSerializer):
-    owner_admin_id = serializers.UUIDField(allow_null=True)
-    expected_version = serializers.IntegerField(min_value=0)
+    owner_admin_id = serializers.UUIDField()
+    expected_version = serializers.IntegerField(min_value=1)
     reason = serializers.CharField(
         max_length=200, required=False, allow_blank=True, trim_whitespace=False
     )

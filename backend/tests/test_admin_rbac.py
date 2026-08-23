@@ -260,7 +260,7 @@ def test_role_version_and_permission_change_revoke_sessions():
 
 
 @pytest.mark.django_db
-def test_assignment_version_zero_transfer_unassign_and_aba_protection():
+def test_assignment_transfer_is_super_only_non_null_and_version_protected():
     actor = superuser()
     context = resolve_admin_context(actor)
     role_obj = role()
@@ -272,28 +272,27 @@ def test_assignment_version_zero_transfer_unassign_and_aba_protection():
         role_id=role_obj.id,
         request_id=uuid.uuid4(),
     )
+    second_owner = create_admin(
+        actor_id=actor.id,
+        phone="13600136000",
+        nickname="新负责人",
+        password=PASSWORD,
+        role_id=role_obj.id,
+        request_id=uuid.uuid4(),
+    )
     user = customer()
+    assignment = CustomerAssignment.objects.create(customer=user, owner_admin=owner)
     first = assign_customer(
         actor=actor,
         context=context,
         customer=user,
-        owner_admin_id=owner.id,
-        expected_version=0,
+        owner_admin_id=second_owner.id,
+        expected_version=assignment.version,
         reason="",
         request_id=uuid.uuid4(),
     )
-    assert first.version == 1
-    second = assign_customer(
-        actor=actor,
-        context=context,
-        customer=user,
-        owner_admin_id=None,
-        expected_version=1,
-        reason="解除",
-        request_id=uuid.uuid4(),
-    )
-    assert second.version == 2
-    assert second.owner_admin is None
+    assert first.version == 2
+    assert first.owner_admin == second_owner
     with pytest.raises(AssignmentVersionConflict):
         assign_customer(
             actor=actor,
@@ -307,7 +306,7 @@ def test_assignment_version_zero_transfer_unassign_and_aba_protection():
 
 
 @pytest.mark.django_db
-def test_own_role_all_and_unassigned_scopes_include_locked_owner_for_role_scope():
+def test_role_scope_never_widens_direct_customer_ownership():
     actor = superuser()
     shared_role = role("角色范围", AdminRole.DataScope.ROLE)
     first = create_admin(
@@ -327,8 +326,9 @@ def test_own_role_all_and_unassigned_scopes_include_locked_owner_for_role_scope(
         request_id=uuid.uuid4(),
     )
     assigned = customer()
-    unassigned = customer("13500135000")
+    second_customer = customer("13500135000")
     CustomerAssignment.objects.create(customer=assigned, owner_admin=first)
+    CustomerAssignment.objects.create(customer=second_customer, owner_admin=second)
     change_admin_status(
         actor_id=actor.id,
         profile_id=first.id,
@@ -339,12 +339,11 @@ def test_own_role_all_and_unassigned_scopes_include_locked_owner_for_role_scope(
     context = resolve_admin_context(second.user)
     assert context is not None
     visible = set(scoped_customers(second.user, context).values_list("id", flat=True))
-    assert assigned.id in visible
-    assert unassigned.id not in visible
+    assert visible == {second_customer.id}
     super_visible = set(
         scoped_customers(actor, resolve_admin_context(actor)).values_list("id", flat=True)
     )
-    assert {assigned.id, unassigned.id}.issubset(super_visible)
+    assert {assigned.id, second_customer.id}.issubset(super_visible)
 
 
 @pytest.mark.django_db

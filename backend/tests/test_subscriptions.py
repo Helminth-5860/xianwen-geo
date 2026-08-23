@@ -482,7 +482,7 @@ def test_subscription_scope_is_consistent_for_own_role_all_and_object_404():
     )
     customers = [customer(f"1360013600{index}") for index in range(4)]
     subscriptions = []
-    for item, owner in zip(customers, (manager, peer, outsider, None), strict=True):
+    for item, owner in zip(customers, (manager, peer, outsider, outsider), strict=True):
         CustomerAssignment.objects.create(customer=item, owner_admin=owner)
         subscriptions.append(
             grant_trial(
@@ -511,14 +511,14 @@ def test_subscription_scope_is_consistent_for_own_role_all_and_object_404():
     context = SimpleNamespace(
         profile=AdminProfile.objects.select_related("role").get(pk=manager.pk)
     )
-    assert scoped_subscriptions(manager_user, context).count() == 2
+    assert scoped_subscriptions(manager_user, context).count() == 1
 
     role.data_scope = AdminRole.DataScope.ALL
     role.save(update_fields=["data_scope", "updated_at"])
     context = SimpleNamespace(
         profile=AdminProfile.objects.select_related("role").get(pk=manager.pk)
     )
-    assert scoped_subscriptions(manager_user, context).count() == 4
+    assert scoped_subscriptions(manager_user, context).count() == 1
 
 
 @pytest.mark.django_db
@@ -565,7 +565,8 @@ def test_version_override_requires_independent_permission_before_approval_creati
         is_staff=True,
         approval_status=User.ApprovalStatus.APPROVED,
     )
-    AdminProfile.objects.create(user=manager_user, role=role)
+    manager = AdminProfile.objects.create(user=manager_user, role=role)
+    CustomerAssignment.objects.create(customer=user, owner_admin=manager)
     permissions = AdminPermission.objects.filter(
         key__in=("subscriptions.open", "approvals.request")
     )

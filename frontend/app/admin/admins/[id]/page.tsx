@@ -11,6 +11,7 @@ import {
   changeAdminStatus,
   forceLogoutAdmin,
   getAdmin,
+  getAdminRegistrationLink,
   getRoles,
   updateAdmin,
   type AdminProfile,
@@ -33,6 +34,8 @@ export default function AdminAccountDetailPage() {
   const [modes, setModes] = useState<Record<string, RiskMode>>({});
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [registrationUrl, setRegistrationUrl] = useState("");
+  const [registrationLinkUsable, setRegistrationLinkUsable] = useState(true);
   const load = useCallback(async () => {
     try {
       const [profile, rolePage, actions] = await Promise.all([
@@ -80,6 +83,39 @@ export default function AdminAccountDetailPage() {
               <Typography.Text>
                 {admin.nickname} · {admin.phone_masked} · <Tag>{admin.admin_status}</Tag>
               </Typography.Text>
+              {!admin.is_superuser && capabilities?.commercial_identity === "SUPER_ADMIN" && (
+                <Card size="small" title="代理专属注册链接">
+                  <Space direction="vertical" style={{ width: "100%" }}>
+                    <Button
+                      onClick={async () => {
+                        try {
+                          const result = await getAdminRegistrationLink(admin.id);
+                          setRegistrationUrl(
+                            new URL(result.registration_path, window.location.origin).toString(),
+                          );
+                          setRegistrationLinkUsable(result.usable);
+                        } catch (reason) {
+                          setError(userMessage(reason));
+                        }
+                      }}
+                    >
+                      获取专属注册链接
+                    </Button>
+                    {registrationUrl && (
+                      <Typography.Paragraph copyable={{ text: registrationUrl }}>
+                        {registrationUrl}
+                      </Typography.Paragraph>
+                    )}
+                    {!registrationLinkUsable && (
+                      <Alert
+                        type="warning"
+                        showIcon
+                        message="该代理当前不可用，注册链接会拒绝注册"
+                      />
+                    )}
+                  </Space>
+                </Card>
+              )}
               {!admin.is_superuser && capabilities?.permission_keys.includes("admins.update") && (
                 <>
                   <Form

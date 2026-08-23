@@ -28,8 +28,9 @@ python manage.py sync_admin_rbac --apply --permission-key users.review --permiss
 禁止直接调用 `AdminPermission.save()` 修改状态。active -> inactive 会在同一 PostgreSQL 事务内锁定 Permission，并用数据库原子递增撤销实际绑定该权限的普通管理员 Session；重复停用幂等，重新启用不会恢复旧 Session。catalog 同步命令的状态选项复用同一服务，PostgreSQL 仍是唯一永久事实源。
 ## 客户范围
 
-`CustomerAssignment` 保留一行当前归属和单调 version。`owner_admin=null` 表示未分配，不
-删除后重建，从而避免 ABA。own、role、all 和超级管理员范围统一应用到 XW-0104 用户列表、
+`CustomerAssignment` 保留一行当前唯一归属和单调 version。`owner_admin` 不可为空，并且只能
+指向有效的非超级管理员 ADMIN；归属变更只更新既有记录而不删除后重建，从而避免 ABA。
+ADMIN 只能看到直接归属自己的 USER，SUPER_ADMIN 可以看到全部 USER。该范围统一应用到用户列表、
 详情、历史、审核和冻结 QuerySet；无权对象返回 404，手机号精确过滤不能扩大范围。
 
 本任务只保存当前负责人及最小追加式 `AdminRbacEvent`。XW-0901 在此基础上扩展完整转交
