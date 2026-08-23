@@ -55,6 +55,11 @@ def keep_backfilled_ownership(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
+    # PostgreSQL cannot ALTER customer_assignments in the same transaction as
+    # the ownership backfill because the writes leave deferred trigger events.
+    # Keep the data operation atomic, then let the schema operation run after
+    # that transaction has committed.
+    atomic = False
 
     dependencies = [
         ("admin_rbac", "0021_seed_stage3_operations_permissions"),
@@ -62,7 +67,11 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.RunPython(backfill_customer_ownership, keep_backfilled_ownership),
+        migrations.RunPython(
+            backfill_customer_ownership,
+            keep_backfilled_ownership,
+            atomic=True,
+        ),
         migrations.AlterField(
             model_name="customerassignment",
             name="owner_admin",
