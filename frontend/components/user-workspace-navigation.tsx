@@ -1,6 +1,7 @@
 "use client";
 
-import { Button, Space, Typography } from "antd";
+import { AppstoreOutlined, FileSearchOutlined, FundProjectionScreenOutlined, RobotOutlined, SettingOutlined, TagsOutlined } from "@ant-design/icons";
+import { Button, Typography } from "antd";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 
@@ -9,11 +10,12 @@ import { getCurrentUser, type AccountUser } from "@/lib/auth-client";
 const HIDDEN_PREFIXES = ["/admin", "/login", "/register", "/forgot-password", "/public"];
 
 const items = [
-  ["/workspace", "工作台"],
-  ["/subjects", "主体与 GEO"],
-  ["/assistant", "AI 助手"],
-  ["/subscription", "订阅与额度"],
-  ["/plan-applications", "套餐申请"],
+  ["/workspace", "GEO 总览", AppstoreOutlined],
+  ["/subjects", "主体管理", SettingOutlined],
+  ["/subjects", "问题与关键词库", TagsOutlined],
+  ["/subjects", "AI 可见度检测", FileSearchOutlined],
+  ["/subjects", "GEO 报告与洞察", FundProjectionScreenOutlined],
+  ["/assistant", "显问 AI 助手", RobotOutlined],
 ] as const;
 
 export function UserWorkspaceNavigation() {
@@ -22,40 +24,26 @@ export function UserWorkspaceNavigation() {
   const [user, setUser] = useState<AccountUser | null>(null);
 
   useEffect(() => {
-    let current = true;
-    if (hidden) {
-      return () => {
-        current = false;
-      };
-    }
-    void getCurrentUser()
-      .then((value) => {
-        if (current) setUser(value);
-      })
-      .catch(() => {
-        if (current) setUser(null);
-      });
-    return () => {
-      current = false;
-    };
-  }, [hidden, pathname]);
+    if (hidden) return;
+    void getCurrentUser().then(setUser).catch(() => setUser(null));
+  }, [hidden]);
 
   if (hidden || !user) return null;
 
   return (
-    <header className="workspace-navigation">
-      <nav aria-label="用户工作台导航">
-        <Space wrap>
-          {items.map(([href, label]) => (
-            <Button key={href} href={href} type={pathname === href ? "primary" : "text"}>
-              {label}
-            </Button>
-          ))}
-        </Space>
+    <aside className="geo-sidebar">
+      <div className="geo-sidebar__brand">显问 GEO</div>
+      <nav aria-label="GEO 工作台导航">
+        {items.map(([href, label, Icon]) => (
+          <Button key={label} href={href} type={pathname === href ? "primary" : "text"}>
+            <Icon />
+            {label}
+          </Button>
+        ))}
       </nav>
-      <Typography.Text type="secondary">
-        {user.tenant?.brand_name || "显问 GEO"} · {user.nickname}
+      <Typography.Text type="secondary" className="geo-sidebar__user">
+        {user.tenant?.brand_name || "显问 GEO"}
       </Typography.Text>
-    </header>
+    </aside>
   );
 }
