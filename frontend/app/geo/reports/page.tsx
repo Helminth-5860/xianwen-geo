@@ -81,7 +81,9 @@ export default function GeoReportsIndexPage() {
       {!subject ? (
         <Card>
           <Empty description="请先创建并选择当前主体">
-            <Button type="primary" href="/subjects">进入主体与知识</Button>
+            <Button type="primary" href="/subjects">
+              进入主体与知识
+            </Button>
           </Empty>
         </Card>
       ) : (
@@ -106,17 +108,23 @@ export default function GeoReportsIndexPage() {
               </Card>
               <Card>
                 <Text type="secondary">AI 曝光指数</Text>
-                <div className="geo-metric-grid__value">{value(latest.summary.exposure.exposure_index)}</div>
+                <div className="geo-metric-grid__value">
+                  {value(latest.summary.exposure.exposure_index)}
+                </div>
                 <Text type="secondary">{latest.summary.exposure.grade}</Text>
               </Card>
               <Card>
                 <Text type="secondary">品牌提及</Text>
-                <div className="geo-metric-grid__value">{value(latest.summary.exposure.mention_rate_score)}</div>
+                <div className="geo-metric-grid__value">
+                  {value(latest.summary.exposure.mention_rate_score)}
+                </div>
                 <Text type="secondary">最新报告指标</Text>
               </Card>
               <Card>
                 <Text type="secondary">推荐表现</Text>
-                <div className="geo-metric-grid__value">{value(latest.summary.exposure.recommendation_rate_score)}</div>
+                <div className="geo-metric-grid__value">
+                  {value(latest.summary.exposure.recommendation_rate_score)}
+                </div>
                 <Text type="secondary">最新报告指标</Text>
               </Card>
             </section>
@@ -136,16 +144,24 @@ export default function GeoReportsIndexPage() {
                     <div>
                       <Space wrap>
                         <Text strong>{index === 0 ? "最新报告" : `历史报告 ${index + 1}`}</Text>
-                        {report.retest_mode && <Tag>{report.retest_mode === "quick" ? "快速复测" : "调整复测"}</Tag>}
+                        {report.retest_mode && (
+                          <Tag>{report.retest_mode === "quick" ? "快速复测" : "调整复测"}</Tag>
+                        )}
                         <Tag color={report.summary.geo.status === "formal" ? "blue" : "default"}>
                           {report.summary.geo.status === "formal" ? "正式结果" : "参考结果"}
                         </Tag>
                       </Space>
                       <Title level={4}>GEO Score {value(report.summary.geo.score)}</Title>
                       <Space wrap>
-                        <Text type="secondary">曝光 {value(report.summary.exposure.exposure_index)}</Text>
-                        <Text type="secondary">提及 {value(report.summary.exposure.mention_rate_score)}</Text>
-                        <Text type="secondary">推荐 {value(report.summary.exposure.recommendation_rate_score)}</Text>
+                        <Text type="secondary">
+                          曝光 {value(report.summary.exposure.exposure_index)}
+                        </Text>
+                        <Text type="secondary">
+                          提及 {value(report.summary.exposure.mention_rate_score)}
+                        </Text>
+                        <Text type="secondary">
+                          推荐 {value(report.summary.exposure.recommendation_rate_score)}
+                        </Text>
                       </Space>
                       <Text type="secondary" className="geo-report-card__time">
                         {new Date(report.generated_at).toLocaleString("zh-CN")}
