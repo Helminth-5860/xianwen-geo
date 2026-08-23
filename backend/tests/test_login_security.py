@@ -7,6 +7,7 @@ from rest_framework.test import APIClient
 from apps.core.logging import RequestContextFilter
 from apps.users.models import LoginEvent, User
 from apps.users.rate_limits import login_rate_limit_keys
+from tests.customer_ownership_helpers import assign_test_customer
 
 STRONG_PASSWORD = "Correct-Horse-Battery-2026!"
 LOGIN_PATH = "/api/v1/auth/login/password"
@@ -42,11 +43,12 @@ def test_combination_rate_limit_and_success_cleanup(settings):
     settings.LOGIN_RATE_LIMIT_COMBINATION_FAILURES = 2
     settings.LOGIN_RATE_LIMIT_PHONE_FAILURES = 100
     settings.LOGIN_RATE_LIMIT_IP_FAILURES = 100
-    User.objects.create_user(
+    created = User.objects.create_user(
         phone="13800138000",
         nickname="限流用户",
         password=STRONG_PASSWORD,
     )
+    assign_test_customer(created)
     client, token = csrf_login_client()
 
     first = attempt_login(
@@ -216,11 +218,12 @@ def test_rate_limit_keys_are_hmac_fingerprints(settings):
 
 @pytest.mark.django_db
 def test_authentication_logs_do_not_include_credentials_or_session(caplog):
-    User.objects.create_user(
+    created = User.objects.create_user(
         phone="13800138000",
         nickname="日志用户",
         password=STRONG_PASSWORD,
     )
+    assign_test_customer(created)
     client, token = csrf_login_client()
 
     with caplog.at_level(logging.INFO):

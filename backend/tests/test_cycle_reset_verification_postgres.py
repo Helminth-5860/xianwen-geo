@@ -20,8 +20,9 @@ from django.utils import timezone
 from django_redis import get_redis_connection
 from rest_framework.test import APIClient
 
-from apps.admin_rbac.models import ApprovalRequest, AuditEvent, CustomerAssignment
+from apps.admin_rbac.models import AdminRole, ApprovalRequest, AuditEvent, CustomerAssignment
 from apps.admin_rbac.permissions import resolve_admin_context
+from apps.admin_rbac.services import create_admin
 from apps.plans import lifecycle as plan_lifecycle
 from apps.plans.change_idempotency import derive_plan_change_digests
 from apps.plans.change_services import cancel_scheduled_change
@@ -467,14 +468,31 @@ def test_approved_unavailable_confirmation_survives_until_scheduled_execution(ki
 def test_scheduled_execution_ignores_later_requester_approver_and_scope_changes():
     source, change = approved_renewal(valid_days=180)
     approval = change.source_approval
+    role = AdminRole.objects.create(name="续费归属测试", data_scope=AdminRole.DataScope.OWN)
+    first_owner = create_admin(
+        actor_id=source.opened_by_id,
+        phone="13700137020",
+        nickname="原代理",
+        password=PASSWORD,
+        role_id=role.pk,
+        request_id=uuid.uuid4(),
+    )
+    second_owner = create_admin(
+        actor_id=source.opened_by_id,
+        phone="13700137022",
+        nickname="新代理",
+        password=PASSWORD,
+        role_id=role.pk,
+        request_id=uuid.uuid4(),
+    )
     CustomerAssignment.objects.create(
         customer=source.user,
-        owner_admin=approval.requester.admin_profile,
+        owner_admin=first_owner,
         assigned_by=approval.requester,
         assigned_at=timezone.now(),
     )
     CustomerAssignment.objects.filter(customer=source.user).update(
-        owner_admin=None,
+        owner_admin=second_owner,
         version=2,
     )
     type(approval.requester).objects.filter(

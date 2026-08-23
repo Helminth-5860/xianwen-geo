@@ -7,7 +7,7 @@ export type AccountUser = Readonly<{
   approval_status: "pending" | "approved" | "rejected";
   account_status: "active" | "frozen" | "cancel_pending" | "cancelled";
   approval_reason?: string;
-  commercial_identity: "PLATFORM_SUPER_ADMIN" | "TENANT_ADMIN" | "END_USER";
+  commercial_identity: "SUPER_ADMIN" | "ADMIN" | "USER";
   home_route: "/admin" | "/workspace";
   tenant: Readonly<{
     id: string;
@@ -180,13 +180,21 @@ export function registerAccount(input: {
   nickname: string;
   smsCode: string;
   password: string;
+  ref: string;
 }) {
   return post<AccountUser>("/auth/register", {
     phone: input.phone,
     nickname: input.nickname,
     sms_code: input.smsCode,
     password: input.password,
+    ref: input.ref,
   });
+}
+
+export function validateRegistrationReference(ref: string) {
+  return get<{ valid: true; channel_name: string }>(
+    `/auth/registration-ref?ref=${encodeURIComponent(ref)}`,
+  );
 }
 
 export function loginWithPassword(phone: string, password: string) {

@@ -7,6 +7,7 @@ from rest_framework.test import APIClient
 
 from apps.users.authentication import SESSION_VERSION_KEY
 from apps.users.models import LoginEvent, User
+from tests.customer_ownership_helpers import assign_test_customer
 
 STRONG_PASSWORD = "Correct-Horse-Battery-2026!"
 LOGIN_PATH = "/api/v1/auth/login/password"
@@ -24,11 +25,13 @@ def clear_auth_cache():
 
 @pytest.fixture
 def user(db):
-    return User.objects.create_user(
+    created = User.objects.create_user(
         phone="13800138000",
         nickname="认证用户",
         password=STRONG_PASSWORD,
     )
+    assign_test_customer(created)
+    return created
 
 
 def csrf_client():
@@ -97,7 +100,7 @@ def test_successful_password_login_rotates_session_and_sets_browser_cookie(user)
         "phone_masked": "+86 138****8000",
         "approval_status": "pending",
         "account_status": "active",
-        "commercial_identity": "END_USER",
+        "commercial_identity": "USER",
         "home_route": "/workspace",
         "tenant": None,
     }
@@ -186,12 +189,13 @@ def test_wrong_password_and_unknown_phone_have_identical_external_response(user)
     ],
 )
 def test_approval_status_does_not_prevent_login(approval_status):
-    User.objects.create_user(
+    created = User.objects.create_user(
         phone="13800138000",
         nickname="审核状态用户",
         password=STRONG_PASSWORD,
         approval_status=approval_status,
     )
+    assign_test_customer(created)
     client, token, _ = csrf_client()
 
     assert password_login(client, token).status_code == 200
@@ -208,12 +212,13 @@ def test_approval_status_does_not_prevent_login(approval_status):
     ],
 )
 def test_account_status_controls_login(account_status, expected_status):
-    User.objects.create_user(
+    created = User.objects.create_user(
         phone="13800138000",
         nickname="账号状态用户",
         password=STRONG_PASSWORD,
         account_status=account_status,
     )
+    assign_test_customer(created)
     client, token, _ = csrf_client()
 
     response = password_login(client, token)

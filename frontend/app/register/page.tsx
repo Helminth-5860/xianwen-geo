@@ -3,12 +3,12 @@
 import { Alert, Form, Input, Typography } from "antd";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { AuthShell, SubmitButton } from "@/components/auth/auth-shell";
 import { phoneRules, SmsCodeField } from "@/components/auth/sms-code-field";
 import { useSmsCode } from "@/hooks/use-sms-code";
-import { registerAccount, userMessage } from "@/lib/auth-client";
+import { registerAccount, userMessage, validateRegistrationReference } from "@/lib/auth-client";
 import { focusFirstInvalidField } from "@/lib/form-focus";
 import { validateConfirmation, validatePassword } from "@/lib/auth-validation";
 
@@ -28,8 +28,37 @@ export default function RegisterPage() {
   const sms = useSmsCode("register");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [registrationRef, setRegistrationRef] = useState("");
+  const [channelName, setChannelName] = useState("");
+  const [channelStatus, setChannelStatus] = useState<"checking" | "valid" | "invalid">("checking");
+
+  useEffect(() => {
+    let current = true;
+    const timer = window.setTimeout(() => {
+      const ref = new URLSearchParams(window.location.search).get("ref") ?? "";
+      setRegistrationRef(ref);
+      if (!ref) {
+        setChannelStatus("invalid");
+        return;
+      }
+      void validateRegistrationReference(ref)
+        .then((result) => {
+          if (!current) return;
+          setChannelName(result.channel_name);
+          setChannelStatus("valid");
+        })
+        .catch(() => {
+          if (current) setChannelStatus("invalid");
+        });
+    }, 0);
+    return () => {
+      current = false;
+      window.clearTimeout(timer);
+    };
+  }, []);
 
   const submit = async (values: RegistrationValues) => {
+    if (channelStatus !== "valid" || !registrationRef) return;
     setError("");
     setSubmitting(true);
     try {
@@ -38,6 +67,7 @@ export default function RegisterPage() {
         nickname: values.nickname.trim(),
         smsCode: values.smsCode,
         password: values.password,
+        ref: registrationRef,
       });
       router.push(user.home_route);
     } catch (reason) {
@@ -58,6 +88,20 @@ export default function RegisterPage() {
         </Text>
       }
     >
+      {channelStatus === "checking" && (
+        <Alert type="info" showIcon message="正在验证代理注册链接" />
+      )}
+      {channelStatus === "valid" && (
+        <Alert type="success" showIcon message={`已验证代理渠道：${channelName}`} />
+      )}
+      {channelStatus === "invalid" && (
+        <Alert
+          type="error"
+          showIcon
+          message="注册链接无效或已过期"
+          description="请向你的代理管理员获取新的专属注册链接。"
+        />
+      )}
       {error && <Alert type="error" showIcon message={error} role="alert" />}
       <Form
         form={form}
@@ -66,7 +110,7 @@ export default function RegisterPage() {
         onFinish={submit}
         onFinishFailed={focusFirstInvalidField(form)}
         autoComplete="on"
-        disabled={submitting}
+        disabled={submitting || channelStatus !== "valid"}
       >
         <Form.Item name="phone" label="手机号" rules={phoneRules}>
           <Input

@@ -29,6 +29,7 @@ from .views import (
     AdminDetailView,
     AdminListCreateView,
     AdminMeView,
+    AdminRegistrationLinkView,
     AdminRoleChangeView,
     CustomerAssignmentView,
     PermissionListView,
@@ -61,6 +62,11 @@ urlpatterns = [
     path("admin/tenants/<uuid:tenant_id>", TenantDetailView.as_view(), name="tenant-detail"),
     path("admin/admins", AdminListCreateView.as_view(), name="admin-list"),
     path("admin/admins/<uuid:profile_id>", AdminDetailView.as_view(), name="admin-detail"),
+    path(
+        "admin/admins/<uuid:profile_id>/registration-link",
+        AdminRegistrationLinkView.as_view(),
+        name="admin-registration-link",
+    ),
     path(
         "admin/admins/<uuid:profile_id>/role",
         AdminRoleChangeView.as_view(),

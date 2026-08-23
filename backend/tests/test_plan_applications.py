@@ -278,7 +278,7 @@ def test_admin_contact_close_risk_path_events_notifications_and_audit():
 
 
 @pytest.mark.django_db
-def test_dynamic_own_role_all_scope_and_unassigned():
+def test_plan_application_scope_is_direct_assignment_regardless_of_role_scope():
     admin = make_admin()
     plan, version = make_published_plan(admin)
     role = AdminRole.objects.create(name="申请组", data_scope="own")
@@ -287,7 +287,7 @@ def test_dynamic_own_role_all_scope_and_unassigned():
     owner_b = AdminProfile.objects.create(user=make_user("13700137011", staff=True), role=role)
     owner_c = AdminProfile.objects.create(user=make_user("13700137012", staff=True), role=peer_role)
     customers = [make_user(f"1360013600{index}") for index in range(4)]
-    for index, owner in enumerate((owner_a, owner_b, owner_c, None)):
+    for index, owner in enumerate((owner_a, owner_b, owner_c, owner_c)):
         CustomerAssignment.objects.create(customer=customers[index], owner_admin=owner)
         create_application(
             user_client(customers[index]), plan, version, key=f"application-key-100{index}"
@@ -296,10 +296,10 @@ def test_dynamic_own_role_all_scope_and_unassigned():
     assert scoped_plan_applications(owner_a.user, context).count() == 1
     role.data_scope = "role"
     role.save(update_fields=["data_scope", "updated_at"])
-    assert scoped_plan_applications(owner_a.user, context).count() == 2
+    assert scoped_plan_applications(owner_a.user, context).count() == 1
     role.data_scope = "all"
     role.save(update_fields=["data_scope", "updated_at"])
-    assert scoped_plan_applications(owner_a.user, context).count() == 4
+    assert scoped_plan_applications(owner_a.user, context).count() == 1
     CustomerAssignment.objects.filter(customer=customers[0]).update(owner_admin=owner_c)
     role.data_scope = "own"
     role.save(update_fields=["data_scope", "updated_at"])

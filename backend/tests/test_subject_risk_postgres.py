@@ -264,7 +264,7 @@ def test_new_version_and_review_decision_race_never_authorizes_stale_version():
     ).exists()
 
 
-def test_review_scope_is_own_role_all_and_out_of_scope_object_is_hidden():
+def test_review_scope_is_direct_owner_for_admin_and_all_for_superuser():
     root, _, _ = publish_matching_catalog()
     customers = []
     reviews = []
@@ -337,7 +337,7 @@ def test_review_scope_is_own_role_all_and_out_of_scope_object_is_hidden():
             "id", flat=True
         )
     )
-    assert role_ids == {reviews[0].id, reviews[1].id}
+    assert role_ids == {reviews[0].id}
     assert own_ids == {reviews[2].id}
     assert {review.id for review in reviews} <= all_ids
 

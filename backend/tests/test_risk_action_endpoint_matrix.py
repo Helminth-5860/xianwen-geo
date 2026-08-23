@@ -488,11 +488,12 @@ def build_case(action_key, actor):
             ),
         )
     if action_key == "customer.assignment.change":
+        CustomerAssignment.objects.create(customer=customer, owner_admin=target_admin)
         return EndpointCase(
             f"/api/v1/admin/users/{customer.id}/assignment",
             "put",
             {
-                "expected_version": 0,
+                "expected_version": 1,
                 "owner_admin_id": str(target_admin.id),
                 "reason": "分配负责人",
             },

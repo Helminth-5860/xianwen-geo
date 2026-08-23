@@ -17,6 +17,7 @@ from apps.users.status_services import (
     review_user,
 )
 from tests.admin_session_helpers import authenticate_admin_client
+from tests.customer_ownership_helpers import assign_test_customer
 
 PASSWORD = "Correct-Horse-Battery-2026!"
 CSRF_PATH = "/api/v1/auth/csrf"
@@ -25,12 +26,15 @@ ME_PATH = "/api/v1/me"
 
 
 def create_user(phone="13800138000", **kwargs):
-    return User.objects.create_user(
+    created = User.objects.create_user(
         phone=phone,
         nickname=kwargs.pop("nickname", "审核用户"),
         password=kwargs.pop("password", PASSWORD),
         **kwargs,
     )
+    if not created.is_staff and not created.is_superuser:
+        assign_test_customer(created)
+    return created
 
 
 def create_admin(phone="13900139000", **kwargs):

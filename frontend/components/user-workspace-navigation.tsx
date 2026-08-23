@@ -130,7 +130,7 @@ export function UserWorkspaceNavigation() {
     };
   }, [hidden]);
 
-  if (hidden || !user) return null;
+  if (hidden || !user || user.commercial_identity !== "USER") return null;
 
   return (
     <aside className="geo-sidebar">

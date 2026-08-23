@@ -14,6 +14,7 @@ let pathname = "/workspace";
 const replace = vi.fn();
 
 vi.mock("next/navigation", () => ({
+  redirect: (href: string) => replace(href),
   usePathname: () => pathname,
   useRouter: () => ({ replace }),
 }));
@@ -48,7 +49,7 @@ const user = {
   phone_masked: "masked",
   approval_status: "approved" as const,
   account_status: "active" as const,
-  commercial_identity: "END_USER" as const,
+  commercial_identity: "USER" as const,
   home_route: "/workspace" as const,
   tenant: {
     id: "tenant-1",
@@ -136,9 +137,9 @@ afterEach(() => {
 });
 
 describe("GEO 产品工作台", () => {
-  it("已登录用户从公开首页进入工作台", async () => {
-    render(<PublicHome />);
-    await waitFor(() => expect(replace).toHaveBeenCalledWith("/workspace"));
+  it("公开首页统一进入登录入口", () => {
+    PublicHome();
+    expect(replace).toHaveBeenCalledWith("/login");
   });
 
   it("工作台直接展示当前主体、真实 GEO 指标和完整优化主线", async () => {

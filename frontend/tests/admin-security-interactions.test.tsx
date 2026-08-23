@@ -156,7 +156,7 @@ describe("普通登录与 challenge 内存边界", () => {
     );
     const user = userEvent.setup();
     render(<LoginPage />);
-    await user.type(screen.getByLabelText("手机号"), "13900139000");
+    await user.type(screen.getByLabelText("手机号或账号"), "13900139000");
     await user.type(screen.getByLabelText("密码"), "Safe-password");
     await user.click(screen.getByRole("button", { name: /登\s*录/ }));
     expect(await screen.findByText("请使用管理员登录入口")).toBeTruthy();

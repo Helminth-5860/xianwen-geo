@@ -150,7 +150,7 @@ def test_postgresql_last_superuser_concurrency_preserves_one_active():
     )
 
 
-def test_postgresql_first_assignment_version_zero_allows_one_creator():
+def test_postgresql_assignment_transfer_allows_one_version_winner():
     require_postgresql()
     actor = make_superuser("13900139000")
     role = AdminRole.objects.create(name="负责人", data_scope=AdminRole.DataScope.ALL)
@@ -163,6 +163,7 @@ def test_postgresql_first_assignment_version_zero_allows_one_creator():
         request_id=uuid.uuid4(),
     )
     customer = User.objects.create_user(phone="13800138000", nickname="客户", password=PASSWORD)
+    CustomerAssignment.objects.create(customer=customer, owner_admin=owner)
 
     def assign():
         actor.refresh_from_db()
@@ -172,7 +173,7 @@ def test_postgresql_first_assignment_version_zero_allows_one_creator():
                 context=resolve_admin_context(actor),
                 customer=customer,
                 owner_admin_id=owner.id,
-                expected_version=0,
+                expected_version=1,
                 reason="",
                 request_id=uuid.uuid4(),
             )
@@ -181,7 +182,7 @@ def test_postgresql_first_assignment_version_zero_allows_one_creator():
             return "conflict"
 
     assert sorted(run_parallel(assign, assign)) == ["conflict", "success"]
-    assert CustomerAssignment.objects.get(customer=customer).version == 1
+    assert CustomerAssignment.objects.get(customer=customer).version == 2
 
 
 def test_postgresql_lock_with_assignment_is_not_blocked():
@@ -237,7 +238,7 @@ def test_postgresql_lock_with_assignment_is_not_blocked():
     assert old_client.get("/api/v1/me").status_code == 401
 
 
-def test_postgresql_own_role_all_scopes_and_phone_filter_remain_closed():
+def test_postgresql_role_scope_values_never_widen_direct_ownership():
     require_postgresql()
     actor = make_superuser("13900139000")
     own_role = AdminRole.objects.create(name="本人范围", data_scope=AdminRole.DataScope.OWN)
@@ -289,6 +290,7 @@ def test_postgresql_own_role_all_scopes_and_phone_filter_remain_closed():
     unassigned = User.objects.create_user(phone="13200132000", nickname="未分配", password=PASSWORD)
     CustomerAssignment.objects.create(customer=own_customer, owner_admin=own_admin)
     CustomerAssignment.objects.create(customer=role_customer, owner_admin=shared_first)
+    CustomerAssignment.objects.create(customer=unassigned, owner_admin=all_admin)
 
     own_ids = set(
         scoped_customers(own_admin.user, resolve_admin_context(own_admin.user)).values_list(
@@ -306,8 +308,8 @@ def test_postgresql_own_role_all_scopes_and_phone_filter_remain_closed():
         )
     )
     assert own_ids == {own_customer.id}
-    assert role_ids == {role_customer.id}
-    assert {own_customer.id, role_customer.id, unassigned.id}.issubset(all_ids)
+    assert role_ids == set()
+    assert all_ids == {unassigned.id}
 
     context = resolve_admin_context(own_admin.user)
     assert context is not None and "users.list" in context.permission_keys

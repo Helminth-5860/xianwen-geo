@@ -44,7 +44,7 @@ export function AdminCapabilityProvider({ children }: { children: ReactNode }) {
     <AdminCapabilityContext.Provider value={context}>
       <nav aria-label="后台菜单">
         <Space wrap>
-          {context.commercial_identity === "PLATFORM_SUPER_ADMIN" && (
+          {context.commercial_identity === "SUPER_ADMIN" && (
             <Link href="/admin/tenants">
               <Button type="text">租户</Button>
             </Link>

@@ -78,7 +78,7 @@ class IpAllowlistPayloadSerializer(StrictPayloadSerializer):
 
 
 class CustomerAssignmentPayloadSerializer(StrictPayloadSerializer):
-    owner_admin_id = serializers.UUIDField(allow_null=True)
+    owner_admin_id = serializers.UUIDField()
     reason = serializers.CharField(max_length=200, required=False, allow_blank=True)
 
     def validate_reason(self, value):

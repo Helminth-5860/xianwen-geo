@@ -15,6 +15,7 @@ from rest_framework.status import (
 )
 from rest_framework.views import APIView
 
+from apps.admin_rbac.registration_links import InvalidRegistrationReference
 from apps.core.error_codes import ErrorCode
 from apps.core.responses import error_response
 
@@ -25,6 +26,7 @@ from .serializers import (
     CurrentUserSerializer,
     PasswordLoginSerializer,
     PasswordResetSerializer,
+    RegistrationReferenceSerializer,
     RegistrationSerializer,
     SmsLoginSerializer,
     SmsSendSerializer,
@@ -133,6 +135,19 @@ class CsrfTokenView(APIView):
         return Response({"csrf_token": get_token(request)})
 
 
+class RegistrationReferenceView(APIView):
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        serializer = RegistrationReferenceSerializer(data=request.query_params)
+        serializer.is_valid(raise_exception=True)
+        from apps.admin_rbac.registration_links import resolve_registration_admin
+
+        owner = resolve_registration_admin(serializer.validated_data["ref"])
+        return Response({"valid": True, "channel_name": owner.user.nickname})
+
+
 @method_decorator(csrf_protect, name="dispatch")
 class RegistrationView(APIView):
     authentication_classes = []
@@ -171,12 +186,20 @@ class RegistrationView(APIView):
                 phone=normalized_phone,
                 nickname=data["nickname"],
                 password=data["password"],
+                registration_ref=data["ref"],
             )
         except AccountAlreadyExists:
             return error_response(
                 ErrorCode.ACCOUNT_ALREADY_EXISTS,
                 status_code=HTTP_409_CONFLICT,
                 request=request,
+            )
+        except InvalidRegistrationReference:
+            return error_response(
+                ErrorCode.VALIDATION_ERROR,
+                status_code=HTTP_422_UNPROCESSABLE_ENTITY,
+                request=request,
+                details={"ref": ["注册链接无效、已过期或所属代理不可用。"]},
             )
 
         try:

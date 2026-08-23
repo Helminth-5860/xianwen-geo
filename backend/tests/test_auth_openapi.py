@@ -16,6 +16,7 @@ def test_openapi_exposes_only_implemented_auth_endpoints():
         "/auth/csrf",
         "/auth/login/password",
         "/auth/sms/send",
+        "/auth/registration-ref",
         "/auth/register",
         "/auth/login/sms",
         "/auth/password/reset",
@@ -97,6 +98,7 @@ def test_openapi_documents_registration_sms_login_and_password_reset():
         "nickname",
         "sms_code",
         "password",
+        "ref",
     }
     assert set(schemas["SmsLoginRequest"]["required"]) == {"phone", "sms_code"}
     assert set(schemas["PasswordResetRequest"]["required"]) == {

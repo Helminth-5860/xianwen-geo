@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 
 import ForgotPasswordPage from "../app/forgot-password/page";
-import LoginPage, { LOGIN_MODE_OPTIONS } from "../app/login/page";
+import LoginPage from "../app/login/page";
 import RegisterPage from "../app/register/page";
 
 describe("认证页面", () => {
@@ -15,14 +15,15 @@ describe("认证页面", () => {
     expect(html).toContain("昵称");
     expect(html).toContain("短信验证码");
     expect(html).toContain("完成短信验证后，账号立即启用");
+    expect(html).toContain("正在验证代理注册链接");
   });
 
-  it("登录页提供密码和短信两种模式", () => {
+  it("登录页提供账号密码入口", () => {
     const html = renderToStaticMarkup(<LoginPage />);
-    expect(LOGIN_MODE_OPTIONS.map((option) => option.label)).toEqual(["密码登录", "短信登录"]);
-    expect(html).toContain("密码登录");
-    expect(html).toContain("短信登录");
+    expect(html).toContain("手机号 / 账号");
+    expect(html).toContain("密码");
     expect(html).toContain("忘记密码");
+    expect(html).toContain("立即注册");
   });
 
   it("忘记密码页说明旧会话失效", () => {

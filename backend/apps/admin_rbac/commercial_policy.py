@@ -5,7 +5,7 @@ Security-critical mutations stay outside this set and continue to require an
 explicit RBAC permission and, where configured by the view, SMS Step-Up.
 """
 
-TENANT_ADMIN_BASELINE_PERMISSIONS = frozenset(
+ADMIN_BASELINE_PERMISSIONS = frozenset(
     {
         "menu.admin.dashboard",
         "menu.admin.users",
@@ -21,7 +21,6 @@ TENANT_ADMIN_BASELINE_PERMISSIONS = frozenset(
         "users.list",
         "users.view",
         "users.history.view",
-        "users.assign",
         "notifications.view",
         "plans.list",
         "plans.view",

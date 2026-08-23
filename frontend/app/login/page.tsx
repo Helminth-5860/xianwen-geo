@@ -8,7 +8,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState, useSyncExternalStore } from "react";
 
 import { phoneRules } from "@/components/auth/sms-code-field";
-import { getCurrentUser, loginWithPassword, userMessage } from "@/lib/auth-client";
+import { AuthApiError, getCurrentUser, loginWithPassword, userMessage } from "@/lib/auth-client";
 import { focusFirstInvalidField } from "@/lib/form-focus";
 
 import styles from "./login.module.css";
@@ -21,6 +21,7 @@ export default function LoginPage() {
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [adminLoginRequired, setAdminLoginRequired] = useState(false);
   const resetComplete = useSyncExternalStore(
     () => () => undefined,
     () => new URLSearchParams(window.location.search).get("reset") === "success",
@@ -41,6 +42,7 @@ export default function LoginPage() {
 
   const submit = async (values: LoginValues) => {
     setError("");
+    setAdminLoginRequired(false);
     setSubmitting(true);
     try {
       const user = await loginWithPassword(values.phone, values.password);
@@ -48,6 +50,9 @@ export default function LoginPage() {
         user.approval_status === "pending" ? "/workspace?account=pending" : user.home_route,
       );
     } catch (reason) {
+      setAdminLoginRequired(
+        reason instanceof AuthApiError && reason.code === "ADMIN_LOGIN_REQUIRED",
+      );
       setError(userMessage(reason));
     } finally {
       setSubmitting(false);
@@ -86,7 +91,19 @@ export default function LoginPage() {
             {resetComplete && (
               <Alert type="success" showIcon message="密码已重置，请使用新密码登录" />
             )}
-            {error && <Alert type="error" showIcon message={error} role="alert" />}
+            {error && (
+              <Alert
+                type="error"
+                showIcon
+                message={error}
+                role="alert"
+                action={
+                  adminLoginRequired ? (
+                    <Link href="/admin/login">前往管理员安全登录</Link>
+                  ) : undefined
+                }
+              />
+            )}
 
             <Form
               form={form}

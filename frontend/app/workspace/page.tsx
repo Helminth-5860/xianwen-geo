@@ -49,6 +49,10 @@ export default function WorkspacePage() {
     void getCurrentUser()
       .then(async (account) => {
         if (!current) return;
+        if (account.commercial_identity !== "USER") {
+          router.replace(account.home_route);
+          return;
+        }
         setUser(account);
         const subjectData = await getSubjects();
         if (!current) return;

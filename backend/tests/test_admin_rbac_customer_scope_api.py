@@ -45,7 +45,6 @@ def scope_fixture():
     )
     own_role = AdminRole.objects.create(name="本人范围", data_scope=AdminRole.DataScope.OWN)
     shared_role = AdminRole.objects.create(name="角色范围", data_scope=AdminRole.DataScope.ROLE)
-    other_role = AdminRole.objects.create(name="其他角色", data_scope=AdminRole.DataScope.OWN)
     all_role = AdminRole.objects.create(name="全部范围", data_scope=AdminRole.DataScope.ALL)
     permission_keys = [
         "users.list",
@@ -57,7 +56,7 @@ def scope_fixture():
     permissions = list(AdminPermission.objects.filter(key__in=permission_keys))
     AdminRolePermission.objects.bulk_create(
         AdminRolePermission(role=role, permission=permission)
-        for role in (own_role, shared_role, other_role, all_role)
+        for role in (own_role, shared_role, all_role)
         for permission in permissions
     )
 
@@ -74,7 +73,6 @@ def scope_fixture():
     own_admin = admin("13700137000", "本人管理员", own_role)
     role_admin = admin("13600136000", "角色管理员", shared_role)
     role_owner = admin("13500135000", "同角色负责人", shared_role)
-    other_owner = admin("13400134000", "其他负责人", other_role)
     all_admin = admin("13300133000", "全部管理员", all_role)
 
     own_customer = User.objects.create_user(
@@ -90,8 +88,9 @@ def scope_fixture():
         phone="13000130000", nickname="未分配客户", password=PASSWORD
     )
     CustomerAssignment.objects.create(customer=own_customer, owner_admin=own_admin)
-    CustomerAssignment.objects.create(customer=role_customer, owner_admin=role_owner)
-    CustomerAssignment.objects.create(customer=other_customer, owner_admin=other_owner)
+    CustomerAssignment.objects.create(customer=role_customer, owner_admin=role_admin)
+    CustomerAssignment.objects.create(customer=other_customer, owner_admin=role_owner)
+    CustomerAssignment.objects.create(customer=unassigned, owner_admin=all_admin)
 
     return ScopeFixture(
         own_client=client_for(own_admin.user),
@@ -113,7 +112,7 @@ def result_ids(response):
 
 
 @pytest.mark.django_db
-def test_users_list_own_role_all_unassigned_and_exact_phone_scope(scope_fixture):
+def test_users_list_is_always_direct_owner_scope_and_exact_phone_cannot_bypass(scope_fixture):
     data = scope_fixture
     own_ids = result_ids(data.own_client.get("/api/v1/admin/users"))
     role_ids = result_ids(data.role_client.get("/api/v1/admin/users"))
@@ -121,12 +120,7 @@ def test_users_list_own_role_all_unassigned_and_exact_phone_scope(scope_fixture)
 
     assert own_ids == {str(data.own_customer.id)}
     assert role_ids == {str(data.role_customer.id)}
-    assert {
-        str(data.own_customer.id),
-        str(data.role_customer.id),
-        str(data.other_customer.id),
-        str(data.unassigned.id),
-    }.issubset(all_ids)
+    assert all_ids == {str(data.unassigned.id)}
     filtered = data.own_client.get("/api/v1/admin/users", {"phone": data.role_customer.phone})
     assert result_ids(filtered) == set()
 
@@ -207,7 +201,7 @@ def test_user_freeze_uses_own_scope_and_freeze_permission(scope_fixture):
 
 
 @pytest.mark.django_db
-def test_user_unfreeze_uses_scope_and_never_exposes_unassigned_to_role(scope_fixture):
+def test_user_unfreeze_uses_scope_and_never_exposes_another_admin_customer(scope_fixture):
     data = scope_fixture
     data.role_customer.account_status = User.AccountStatus.FROZEN
     data.role_customer.is_active = False
