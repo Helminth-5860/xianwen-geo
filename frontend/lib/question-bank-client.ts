@@ -3,13 +3,7 @@ import { get, post, write } from "./auth-client";
 export type QuestionPriority = "high" | "medium" | "low";
 export type QuestionType = "natural" | "brand_directed";
 export type QuestionGenerationStatus =
-  | "queued"
-  | "running"
-  | "retry_wait"
-  | "succeeded"
-  | "failed"
-  | "conflict"
-  | "superseded";
+  "queued" | "running" | "retry_wait" | "succeeded" | "failed" | "conflict" | "superseded";
 
 export type QuestionCatalogOption = Readonly<{
   id: string;
