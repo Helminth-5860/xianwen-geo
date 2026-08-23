@@ -111,7 +111,7 @@ describe("Stage 1E strategy interactions", () => {
   it("selects a strategy period, shows first-free quota, and generates", async () => {
     createStrategy.mockResolvedValue(strategy);
     render(<ImprovementStrategyPage reportId="report-1" />);
-    expect(await screen.findByText("首份策略免费")).toBeTruthy();
+    expect((await screen.findAllByText("首份策略免费")).length).toBeGreaterThan(0);
     expect(screen.getByText("剩余重新生成次数：3")).toBeTruthy();
     await userEvent.click(screen.getByText("90 天"));
     await userEvent.click(screen.getByRole("button", { name: "生成策略" }));
