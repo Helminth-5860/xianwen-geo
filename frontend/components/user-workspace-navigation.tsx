@@ -16,7 +16,14 @@ import { useEffect, useState } from "react";
 import { getCurrentUser, type AccountUser } from "@/lib/auth-client";
 import { getSubjects } from "@/lib/subjects-client";
 
-const HIDDEN_PREFIXES = ["/admin", "/login", "/register", "/forgot-password", "/public"];
+const HIDDEN_PREFIXES = [
+  "/admin",
+  "/assistant",
+  "/login",
+  "/register",
+  "/forgot-password",
+  "/public",
+];
 
 type NavItem = Readonly<{
   label: string;
@@ -37,7 +44,9 @@ const workflowItems: NavItem[] = [
     href: "/subjects",
     icon: SettingOutlined,
     active: (pathname) =>
-      pathname.startsWith("/subjects") && !pathname.includes("/keywords") && !pathname.includes("/articles"),
+      pathname.startsWith("/subjects") &&
+      !pathname.includes("/keywords") &&
+      !pathname.includes("/articles"),
   },
   {
     label: "关键词与问题",
