@@ -77,6 +77,16 @@ export type QuestionGenerationJob = Readonly<{
   finished_at: string | null;
 }>;
 
+export type QuestionBankVersionItem = Readonly<{
+  id: string;
+  text: string;
+  priority: QuestionPriority;
+  question_type: QuestionType;
+  participates_in_scoring: boolean;
+  ai_reason: string;
+  sort_order: number;
+}>;
+
 export type QuestionBankVersion = Readonly<{
   id: string;
   version_no: number;
@@ -85,9 +95,7 @@ export type QuestionBankVersion = Readonly<{
   source_result_id: string | null;
   item_count: number;
   confirmed_at: string;
-  items?: ReadonlyArray<
-    Pick<QuestionDraftItem, "id" | "text" | "priority" | "question_type" | "sort_order">
-  >;
+  items?: ReadonlyArray<QuestionBankVersionItem>;
 }>;
 
 export const getQuestionBankDraft = (subjectId: string) =>

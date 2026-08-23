@@ -7,7 +7,9 @@ import WorkspacePage from "../app/workspace/page";
 import { UserWorkspaceNavigation } from "../components/user-workspace-navigation";
 
 const getCurrentUser = vi.fn();
-const getCurrentSubscription = vi.fn();
+const getSubjects = vi.fn();
+const getReportHistory = vi.fn();
+const getQuestionBankDraft = vi.fn();
 let pathname = "/workspace";
 const replace = vi.fn();
 
@@ -17,26 +19,33 @@ vi.mock("next/navigation", () => ({
 }));
 vi.mock("../lib/auth-client", async () => {
   const actual = await vi.importActual<typeof import("../lib/auth-client")>("../lib/auth-client");
+  return { ...actual, getCurrentUser: (...args: unknown[]) => getCurrentUser(...args) };
+});
+vi.mock("../lib/subjects-client", async () => {
+  const actual =
+    await vi.importActual<typeof import("../lib/subjects-client")>("../lib/subjects-client");
+  return { ...actual, getSubjects: (...args: unknown[]) => getSubjects(...args) };
+});
+vi.mock("../lib/geo-report-client", async () => {
+  const actual = await vi.importActual<typeof import("../lib/geo-report-client")>(
+    "../lib/geo-report-client",
+  );
+  return { ...actual, getReportHistory: (...args: unknown[]) => getReportHistory(...args) };
+});
+vi.mock("../lib/question-bank-client", async () => {
+  const actual = await vi.importActual<typeof import("../lib/question-bank-client")>(
+    "../lib/question-bank-client",
+  );
   return {
     ...actual,
-    getCurrentUser: (...args: unknown[]) => getCurrentUser(...args),
+    getQuestionBankDraft: (...args: unknown[]) => getQuestionBankDraft(...args),
   };
 });
-vi.mock("../lib/plans-client", async () => {
-  const actual = await vi.importActual<typeof import("../lib/plans-client")>("../lib/plans-client");
-  return {
-    ...actual,
-    getCurrentSubscription: (...args: unknown[]) => getCurrentSubscription(...args),
-  };
-});
-vi.mock("../components/plans/plan-catalog", () => ({
-  PlanCatalog: () => <section>套餐目录</section>,
-}));
 
 const user = {
   id: "user-1",
-  nickname: "免费体验用户",
-  phone_masked: "+86 138****0001",
+  nickname: "预览用户",
+  phone_masked: "masked",
   approval_status: "approved" as const,
   account_status: "active" as const,
   commercial_identity: "END_USER" as const,
@@ -48,6 +57,47 @@ const user = {
     brand_name: "显问 GEO",
     logo_reference: "",
   },
+};
+
+const subject = {
+  id: "subject-1",
+  subject_type: { id: "type-1", key: "company", name: "企业", icon_key: "company" },
+  status: "active" as const,
+  version: 3,
+  is_current: true,
+  current_version_no: 2,
+  official_name: "显问科技",
+  retest_required: false,
+  created_at: "2026-08-01T00:00:00Z",
+  updated_at: "2026-08-20T00:00:00Z",
+};
+
+const latestReport = {
+  id: "report-1",
+  detection_id: "detection-1",
+  subject_id: "subject-1",
+  subject_version_id: "subject-version-1",
+  retest_mode: "" as const,
+  summary: {
+    geo: { score: "68.2", grade: "B", status: "formal" as const },
+    brand_reputation: { score: "72.0", grade: "B", status: "formal" as const },
+    exposure: {
+      exposure_index: "61.4",
+      grade: "B",
+      status: "formal" as const,
+      disclaimer: "",
+      mention_rate_score: "58.0",
+      recommendation_rate_score: "47.0",
+      ranking_performance_score: "63.0",
+      model_coverage_score: "75.0",
+    },
+    models: [],
+    dimensions: {},
+    competitors: [],
+  },
+  provenance: { scoring_rule_version: "v1", questions: [], models: [] },
+  comparison: null,
+  generated_at: "2026-08-22T08:00:00Z",
 };
 
 beforeAll(() => {
@@ -72,7 +122,12 @@ beforeAll(() => {
 beforeEach(() => {
   pathname = "/workspace";
   getCurrentUser.mockResolvedValue(user);
-  getCurrentSubscription.mockResolvedValue({ current: null });
+  getSubjects.mockResolvedValue({
+    subjects: [subject],
+    context: { current_subject_id: subject.id, version: 1 },
+  });
+  getReportHistory.mockResolvedValue({ items: [latestReport] });
+  getQuestionBankDraft.mockResolvedValue({ current_question_bank_version_no: 3 });
 });
 
 afterEach(() => {
@@ -80,55 +135,73 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("无套餐用户工作台", () => {
-  it("已登录用户从公开首页进入真实身份工作台", async () => {
+describe("GEO 产品工作台", () => {
+  it("已登录用户从公开首页进入工作台", async () => {
     render(<PublicHome />);
     await waitFor(() => expect(replace).toHaveBeenCalledWith("/workspace"));
   });
 
-  it("登录后始终展示功能入口和付费路径", async () => {
+  it("工作台直接展示当前主体、真实 GEO 指标和完整优化主线", async () => {
     render(<WorkspacePage />);
+    expect(await screen.findByRole("heading", { name: "GEO 总览" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "显问科技" })).toBeTruthy();
+    expect(screen.getAllByText("68.2").length).toBeGreaterThan(0);
+    expect(screen.getByText("1. 主体与知识")).toBeTruthy();
+    expect(screen.getByText("3. AI 可见度检测")).toBeTruthy();
+    expect(screen.getByText("5. 优化策略")).toBeTruthy();
+    expect(screen.getByText("7. 复测验证")).toBeTruthy();
+    expect(screen.queryByText("欢迎回来")).toBeNull();
+    expect(screen.queryByText("当前没有生效套餐，但工作台功能仍然可见")).toBeNull();
+    expect(screen.queryByText("显问 AI 助手")).toBeNull();
+    expect(screen.queryByText("套餐目录")).toBeNull();
+  });
 
-    expect(await screen.findByText("免费体验用户，欢迎回来")).toBeTruthy();
-    expect(screen.getByText("当前没有生效套餐，但工作台功能仍然可见")).toBeTruthy();
-    expect(screen.getByText("关键词与问题库")).toBeTruthy();
-    expect(screen.getByText("GEO 检测与报告")).toBeTruthy();
-    expect(screen.getByText("改善策略与内容")).toBeTruthy();
-    expect(
-      screen
-        .getAllByRole("link", { name: "进入主体工作台" })
-        .every((link) => link.getAttribute("href") === "/subjects"),
-    ).toBe(true);
-    expect(
-      screen
-        .getAllByRole("link", { name: "打开 AI 助手" })
-        .every((link) => link.getAttribute("href") === "/assistant"),
-    ).toBe(true);
-    expect(screen.getByRole("link", { name: "查看订阅与额度" }).getAttribute("href")).toBe(
-      "/subscription",
+  it("没有当前主体时只引导进入 GEO 主流程，不展示官网式功能介绍", async () => {
+    getSubjects.mockResolvedValue({
+      subjects: [],
+      context: { current_subject_id: null, version: 0 },
+    });
+    render(<WorkspacePage />);
+    expect(await screen.findByText("还没有当前 GEO 主体")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "创建并选择主体" }).getAttribute("href")).toBe(
+      "/subjects",
     );
-    expect(screen.getByText("套餐目录")).toBeTruthy();
-    expect(screen.queryByText("基础设施")).toBeNull();
+    expect(screen.queryByText("显问 AI 助手")).toBeNull();
   });
 
-  it("未登录访客仍看到注册登录入口而不显示用户工作台", async () => {
-    getCurrentUser.mockRejectedValue(new Error("unauthenticated"));
+  it("未登录访问工作台时回登录页，而不是显示产品宣传页", async () => {
+    getCurrentUser.mockRejectedValue(Object.assign(new Error("unauthenticated"), { status: 401 }));
     render(<WorkspacePage />);
-
-    expect(await screen.findByText("显问 GEO 智能体系统")).toBeTruthy();
-    expect(screen.getByRole("link", { name: "创建账号" })).toBeTruthy();
-    expect(screen.queryByLabelText("用户功能工作台")).toBeNull();
+    await waitFor(() => expect(replace).toHaveBeenCalledWith("/login"));
+    expect(screen.queryByText("创建账号")).toBeNull();
   });
 
-  it("认证导航不依赖套餐，并在管理后台隐藏", async () => {
+  it("左侧导航按 GEO 主线组织，并彻底移除内部 AI 对话入口", async () => {
     const { rerender } = render(<UserWorkspaceNavigation />);
-    expect(await screen.findByRole("navigation", { name: "用户工作台导航" })).toBeTruthy();
-    expect(screen.getByRole("link", { name: "主体与 GEO" }).getAttribute("href")).toBe("/subjects");
+    expect(await screen.findByRole("navigation", { name: "GEO 工作台导航" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "GEO 总览" }).getAttribute("href")).toBe("/workspace");
+    expect(screen.getByRole("link", { name: "关键词与问题" }).getAttribute("href")).toBe(
+      "/subjects/subject-1/keywords",
+    );
+    expect(screen.getByRole("link", { name: "AI 可见度检测" }).getAttribute("href")).toBe(
+      "/geo/detections",
+    );
+    expect(screen.getByRole("link", { name: "GEO 报告与洞察" }).getAttribute("href")).toBe(
+      "/geo/reports",
+    );
+    expect(screen.getByRole("link", { name: "优化策略" }).getAttribute("href")).toBe(
+      "/geo/strategy",
+    );
+    expect(screen.getByRole("link", { name: "内容执行" }).getAttribute("href")).toBe(
+      "/subjects/subject-1/articles/new",
+    );
+    expect(screen.getByRole("link", { name: "复测验证" }).getAttribute("href")).toBe("/geo/retest");
+    expect(screen.queryByRole("link", { name: "显问 AI 助手" })).toBeNull();
 
     pathname = "/admin";
     rerender(<UserWorkspaceNavigation />);
     await waitFor(() =>
-      expect(screen.queryByRole("navigation", { name: "用户工作台导航" })).toBeNull(),
+      expect(screen.queryByRole("navigation", { name: "GEO 工作台导航" })).toBeNull(),
     );
   });
 });
