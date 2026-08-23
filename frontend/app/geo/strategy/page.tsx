@@ -1,6 +1,10 @@
 "use client";
 
-import { ArrowRightOutlined, FundProjectionScreenOutlined, RadarChartOutlined } from "@ant-design/icons";
+import {
+  ArrowRightOutlined,
+  FundProjectionScreenOutlined,
+  RadarChartOutlined,
+} from "@ant-design/icons";
 import { Alert, Button, Card, Empty, Space, Spin, Tag, Typography } from "antd";
 import { useEffect, useState } from "react";
 
@@ -69,7 +73,9 @@ export default function GeoStrategyIndexPage() {
       {!subject ? (
         <Card>
           <Empty description="请先创建并选择当前主体">
-            <Button type="primary" href="/subjects">进入主体与知识</Button>
+            <Button type="primary" href="/subjects">
+              进入主体与知识
+            </Button>
           </Empty>
         </Card>
       ) : reports.length === 0 ? (
