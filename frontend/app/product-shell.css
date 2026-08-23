@@ -1,0 +1,49 @@
+body {
+  margin: 0;
+}
+
+.geo-app-shell {
+  min-height: 100vh;
+  display: flex;
+  background: #f7f9fc;
+}
+
+.geo-app-shell__content {
+  flex: 1;
+  min-width: 0;
+}
+
+.geo-sidebar {
+  width: 240px;
+  min-height: 100vh;
+  padding: 24px 16px;
+  box-sizing: border-box;
+  background: #ffffff;
+  border-right: 1px solid #e8edf5;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.geo-sidebar__brand {
+  font-size: 22px;
+  font-weight: 700;
+  padding: 8px;
+}
+
+.geo-sidebar nav {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.geo-sidebar nav .ant-btn {
+  text-align: left;
+  justify-content: flex-start;
+  height: 42px;
+}
+
+.geo-sidebar__user {
+  margin-top: auto;
+  padding: 8px;
+}
