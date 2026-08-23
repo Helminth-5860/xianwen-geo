@@ -184,6 +184,10 @@ def test_postgresql_requester_permission_loss_marks_approval_stale():
         request_id=uuid.uuid4(),
     ).user
     target = User.objects.create_user(phone="13800138000", nickname="客户", password=PASSWORD)
+    CustomerAssignment.objects.create(
+        customer=target,
+        owner_admin=requester.admin_profile,
+    )
     policy = RiskPolicy.objects.get(action_id="user.freeze")
     policy.current_mode = "two_person"
     policy.version += 1
