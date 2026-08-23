@@ -151,7 +151,12 @@ export function UserWorkspaceNavigation() {
           const href = typeof item.href === "function" ? item.href(currentSubjectId) : item.href;
           const Icon = item.icon;
           return (
-            <Button key={item.label} href={href} type={item.active(pathname) ? "primary" : "text"}>
+            <Button
+              key={item.label}
+              aria-label={item.label}
+              href={href}
+              type={item.active(pathname) ? "primary" : "text"}
+            >
               <Icon />
               {item.label}
             </Button>
