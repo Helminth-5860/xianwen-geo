@@ -60,7 +60,8 @@ export default function GeoRetestIndexPage() {
           <Text type="secondary">GEO VALIDATION</Text>
           <Title level={2}>复测验证</Title>
           <Paragraph type="secondary">
-            GEO 优化不是“生成内容就结束”。完成主体或内容调整后，用同一套报告基线复测，确认指标是否真实提升。
+            GEO
+            优化不是“生成内容就结束”。完成主体或内容调整后，用同一套报告基线复测，确认指标是否真实提升。
           </Paragraph>
         </div>
         <Button href="/workspace">返回 GEO 总览</Button>
@@ -71,7 +72,9 @@ export default function GeoRetestIndexPage() {
       {!subject ? (
         <Card>
           <Empty description="请先创建并选择当前主体">
-            <Button type="primary" href="/subjects">进入主体与知识</Button>
+            <Button type="primary" href="/subjects">
+              进入主体与知识
+            </Button>
           </Empty>
         </Card>
       ) : !latest ? (
@@ -106,12 +109,8 @@ export default function GeoRetestIndexPage() {
                   <Text type="secondary">最新报告</Text>
                   <Title level={3}>GEO Score {latest.summary.geo.score ?? "—"}</Title>
                   <Space wrap>
-                    <Text type="secondary">
-                      曝光 {latest.summary.exposure.exposure_index}
-                    </Text>
-                    <Text type="secondary">
-                      提及 {latest.summary.exposure.mention_rate_score}
-                    </Text>
+                    <Text type="secondary">曝光 {latest.summary.exposure.exposure_index}</Text>
+                    <Text type="secondary">提及 {latest.summary.exposure.mention_rate_score}</Text>
                     <Text type="secondary">
                       推荐 {latest.summary.exposure.recommendation_rate_score}
                     </Text>
@@ -129,11 +128,7 @@ export default function GeoRetestIndexPage() {
                       : "完成一轮优化后，进入最新报告发起快速复测或调整复测，并与基线比较。"
                   }
                 />
-                <Button
-                  type="primary"
-                  href={`/geo/reports/${latest.id}`}
-                  icon={<SyncOutlined />}
-                >
+                <Button type="primary" href={`/geo/reports/${latest.id}`} icon={<SyncOutlined />}>
                   进入报告并发起复测
                 </Button>
               </Space>
