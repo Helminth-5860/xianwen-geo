@@ -111,7 +111,8 @@ export default function GeoDetectionIndexPage() {
   }, []);
 
   const questions = useMemo<QuestionBankVersionItem[]>(
-    () => [...(questionBank?.items ?? [])].sort((left, right) => left.sort_order - right.sort_order),
+    () =>
+      [...(questionBank?.items ?? [])].sort((left, right) => left.sort_order - right.sort_order),
     [questionBank],
   );
 
@@ -189,7 +190,9 @@ export default function GeoDetectionIndexPage() {
       {!subject ? (
         <Card>
           <Empty description="请先创建并选择当前主体">
-            <Button type="primary" href="/subjects">进入主体与知识</Button>
+            <Button type="primary" href="/subjects">
+              进入主体与知识
+            </Button>
           </Empty>
         </Card>
       ) : (
@@ -216,7 +219,8 @@ export default function GeoDetectionIndexPage() {
                 ) : (
                   <Space direction="vertical" size="small" style={{ width: "100%" }}>
                     <Text type="secondary">
-                      已选择 {selectedQuestions.length} / {options?.max_questions_per_detection ?? "—"} 个问题
+                      已选择 {selectedQuestions.length} /{" "}
+                      {options?.max_questions_per_detection ?? "—"} 个问题
                     </Text>
                     {questions.map((question) => (
                       <label key={question.id} className="geo-selection-row">
@@ -227,7 +231,7 @@ export default function GeoDetectionIndexPage() {
                             (!selectedQuestions.includes(question.id) &&
                               Boolean(
                                 options &&
-                                  selectedQuestions.length >= options.max_questions_per_detection,
+                                selectedQuestions.length >= options.max_questions_per_detection,
                               ))
                           }
                           onChange={(event) => toggleQuestion(question.id, event.target.checked)}
@@ -235,7 +239,9 @@ export default function GeoDetectionIndexPage() {
                         <span>
                           <Text>{question.text}</Text>
                           <Text type="secondary">
-                            {question.question_type === "brand_directed" ? "品牌指向型" : "自然探索型"}
+                            {question.question_type === "brand_directed"
+                              ? "品牌指向型"
+                              : "自然探索型"}
                             {!question.participates_in_scoring ? " · 不参与检测" : ""}
                           </Text>
                         </span>
@@ -282,10 +288,29 @@ export default function GeoDetectionIndexPage() {
               <Card title="检测预估">
                 <Space direction="vertical" size="middle" style={{ width: "100%" }}>
                   <div className="geo-estimate-grid">
-                    <span><Text type="secondary">问题</Text><Text strong>{selectedQuestions.length}</Text></span>
-                    <span><Text type="secondary">模型</Text><Text strong>{selectedModels.length}</Text></span>
-                    <span><Text type="secondary">预计检测点</Text><Text strong>{estimate?.required_detection_points ?? selectedQuestions.length * selectedModels.length}</Text></span>
-                    <span><Text type="secondary">可用检测点</Text><Text strong>{estimate?.available_detection_points ?? options?.available_detection_points ?? "—"}</Text></span>
+                    <span>
+                      <Text type="secondary">问题</Text>
+                      <Text strong>{selectedQuestions.length}</Text>
+                    </span>
+                    <span>
+                      <Text type="secondary">模型</Text>
+                      <Text strong>{selectedModels.length}</Text>
+                    </span>
+                    <span>
+                      <Text type="secondary">预计检测点</Text>
+                      <Text strong>
+                        {estimate?.required_detection_points ??
+                          selectedQuestions.length * selectedModels.length}
+                      </Text>
+                    </span>
+                    <span>
+                      <Text type="secondary">可用检测点</Text>
+                      <Text strong>
+                        {estimate?.available_detection_points ??
+                          options?.available_detection_points ??
+                          "—"}
+                      </Text>
+                    </span>
                   </div>
                   {estimate && (
                     <Alert
@@ -334,12 +359,17 @@ export default function GeoDetectionIndexPage() {
                       <a key={job.id} href={`/geo/detections/${job.id}`} className="geo-report-row">
                         <span>
                           <Space>
-                            {job.status === "succeeded" ? <CheckCircleOutlined /> : <ClockCircleOutlined />}
+                            {job.status === "succeeded" ? (
+                              <CheckCircleOutlined />
+                            ) : (
+                              <ClockCircleOutlined />
+                            )}
                             <Text strong>{job.status}</Text>
                             <Tag>{job.planned_detection_points} 检测点</Tag>
                           </Space>
                           <Text type="secondary">
-                            {job.progress_percent}% · {new Date(job.created_at).toLocaleString("zh-CN")}
+                            {job.progress_percent}% ·{" "}
+                            {new Date(job.created_at).toLocaleString("zh-CN")}
                           </Text>
                         </span>
                         <ArrowRightOutlined />
