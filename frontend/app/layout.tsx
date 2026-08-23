@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 import { UserWorkspaceNavigation } from "@/components/user-workspace-navigation";
 
 import "./globals.css";
+import "./product-shell.css";
 
 export const metadata: Metadata = {
   title: "显问 GEO 智能体系统",
@@ -15,8 +16,10 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html lang="zh-CN">
       <body>
         <AntdRegistry>
-          <UserWorkspaceNavigation />
-          {children}
+          <div className="geo-app-shell">
+            <UserWorkspaceNavigation />
+            <div className="geo-app-shell__content">{children}</div>
+          </div>
         </AntdRegistry>
       </body>
     </html>
