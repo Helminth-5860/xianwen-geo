@@ -1,7 +1,12 @@
-import { get } from "./auth-client";
+import { get, post } from "./auth-client";
 
 export type DetectionStatus =
-  "queued" | "running" | "partial" | "succeeded" | "failed" | "cancelled";
+  | "queued"
+  | "running"
+  | "partial"
+  | "succeeded"
+  | "failed"
+  | "cancelled";
 
 export type GeoDetectionJob = Readonly<{
   id: string;
@@ -48,6 +53,25 @@ export type GeoModelProgress = Readonly<{
   degraded_count: number;
 }>;
 
+export type GeoDetectionEstimate = Readonly<{
+  question_count: number;
+  model_count: number;
+  required_detection_points: number;
+  available_detection_points: number;
+  active_detection_jobs: number;
+  concurrent_detection_jobs: number;
+  can_submit: boolean;
+}>;
+
+export type GeoDetectionCreated = Readonly<{
+  detection_id: string;
+  status: DetectionStatus;
+  planned_detection_points: number;
+  quota_hold: number;
+  status_url: string;
+  replayed: boolean;
+}>;
+
 export const terminalDetectionStatuses = new Set<DetectionStatus>([
   "partial",
   "succeeded",
@@ -62,3 +86,25 @@ export async function getDetectionProgress(detectionId: string) {
   ]);
   return { job, models: models.items } as const;
 }
+
+export const getDetectionHistory = (subjectId: string) =>
+  get<{ items: GeoDetectionJob[] }>(`/subjects/${subjectId}/geo/detections`);
+
+export const estimateDetection = (subjectId: string, questionIds: string[], modelIds: string[]) =>
+  post<GeoDetectionEstimate>(`/subjects/${subjectId}/geo/estimate`, {
+    question_ids: questionIds,
+    model_ids: modelIds,
+    mode: "new",
+  });
+
+export const createDetection = (
+  subjectId: string,
+  questionIds: string[],
+  modelIds: string[],
+  idempotencyKey: string,
+) =>
+  post<GeoDetectionCreated>(
+    `/subjects/${subjectId}/geo/detections`,
+    { question_ids: questionIds, model_ids: modelIds, mode: "new" },
+    { "Idempotency-Key": idempotencyKey },
+  );
