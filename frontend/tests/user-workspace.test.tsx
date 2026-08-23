@@ -19,30 +19,23 @@ vi.mock("next/navigation", () => ({
 }));
 vi.mock("../lib/auth-client", async () => {
   const actual = await vi.importActual<typeof import("../lib/auth-client")>("../lib/auth-client");
-  return {
-    ...actual,
-    getCurrentUser: (...args: unknown[]) => getCurrentUser(...args),
-  };
+  return { ...actual, getCurrentUser: (...args: unknown[]) => getCurrentUser(...args) };
 });
 vi.mock("../lib/subjects-client", async () => {
   const actual =
     await vi.importActual<typeof import("../lib/subjects-client")>("../lib/subjects-client");
-  return {
-    ...actual,
-    getSubjects: (...args: unknown[]) => getSubjects(...args),
-  };
+  return { ...actual, getSubjects: (...args: unknown[]) => getSubjects(...args) };
 });
 vi.mock("../lib/geo-report-client", async () => {
-  const actual =
-    await vi.importActual<typeof import("../lib/geo-report-client")>("../lib/geo-report-client");
-  return {
-    ...actual,
-    getReportHistory: (...args: unknown[]) => getReportHistory(...args),
-  };
+  const actual = await vi.importActual<typeof import("../lib/geo-report-client")>(
+    "../lib/geo-report-client",
+  );
+  return { ...actual, getReportHistory: (...args: unknown[]) => getReportHistory(...args) };
 });
 vi.mock("../lib/question-bank-client", async () => {
-  const actual =
-    await vi.importActual<typeof import("../lib/question-bank-client")>("../lib/question-bank-client");
+  const actual = await vi.importActual<typeof import("../lib/question-bank-client")>(
+    "../lib/question-bank-client",
+  );
   return {
     ...actual,
     getQuestionBankDraft: (...args: unknown[]) => getQuestionBankDraft(...args),
@@ -52,7 +45,7 @@ vi.mock("../lib/question-bank-client", async () => {
 const user = {
   id: "user-1",
   nickname: "预览用户",
-  phone_masked: "+86 138****0001",
+  phone_masked: "masked",
   approval_status: "approved" as const,
   account_status: "active" as const,
   commercial_identity: "END_USER" as const,
@@ -129,7 +122,10 @@ beforeAll(() => {
 beforeEach(() => {
   pathname = "/workspace";
   getCurrentUser.mockResolvedValue(user);
-  getSubjects.mockResolvedValue({ subjects: [subject], context: { current_subject_id: subject.id, version: 1 } });
+  getSubjects.mockResolvedValue({
+    subjects: [subject],
+    context: { current_subject_id: subject.id, version: 1 },
+  });
   getReportHistory.mockResolvedValue({ items: [latestReport] });
   getQuestionBankDraft.mockResolvedValue({ current_question_bank_version_no: 3 });
 });
@@ -147,7 +143,6 @@ describe("GEO 产品工作台", () => {
 
   it("工作台直接展示当前主体、真实 GEO 指标和完整优化主线", async () => {
     render(<WorkspacePage />);
-
     expect(await screen.findByRole("heading", { name: "GEO 总览" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "显问科技" })).toBeTruthy();
     expect(screen.getByText("68.2")).toBeTruthy();
@@ -162,9 +157,11 @@ describe("GEO 产品工作台", () => {
   });
 
   it("没有当前主体时只引导进入 GEO 主流程，不展示官网式功能介绍", async () => {
-    getSubjects.mockResolvedValue({ subjects: [], context: { current_subject_id: null, version: 0 } });
+    getSubjects.mockResolvedValue({
+      subjects: [],
+      context: { current_subject_id: null, version: 0 },
+    });
     render(<WorkspacePage />);
-
     expect(await screen.findByText("还没有当前 GEO 主体")).toBeTruthy();
     expect(screen.getByRole("link", { name: "创建并选择主体" }).getAttribute("href")).toBe(
       "/subjects",
@@ -175,7 +172,6 @@ describe("GEO 产品工作台", () => {
   it("未登录访问工作台时回登录页，而不是显示产品宣传页", async () => {
     getCurrentUser.mockRejectedValue(Object.assign(new Error("unauthenticated"), { status: 401 }));
     render(<WorkspacePage />);
-
     await waitFor(() => expect(replace).toHaveBeenCalledWith("/login"));
     expect(screen.queryByText("创建账号")).toBeNull();
   });
@@ -198,6 +194,9 @@ describe("GEO 产品工作台", () => {
     );
     expect(screen.getByRole("link", { name: "内容执行" }).getAttribute("href")).toBe(
       "/subjects/subject-1/articles/new",
+    );
+    expect(screen.getByRole("link", { name: "复测验证" }).getAttribute("href")).toBe(
+      "/geo/retest",
     );
     expect(screen.queryByRole("link", { name: "显问 AI 助手" })).toBeNull();
 
