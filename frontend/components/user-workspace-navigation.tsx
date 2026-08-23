@@ -7,6 +7,7 @@ import {
   FundProjectionScreenOutlined,
   RadarChartOutlined,
   SettingOutlined,
+  SyncOutlined,
   TagsOutlined,
 } from "@ant-design/icons";
 import { Button, Divider, Typography } from "antd";
@@ -64,7 +65,10 @@ const workflowItems: NavItem[] = [
     label: "GEO 报告与洞察",
     href: "/geo/reports",
     icon: BarChartOutlined,
-    active: (pathname) => pathname.startsWith("/geo/reports") && !pathname.includes("/strategy"),
+    active: (pathname) =>
+      pathname.startsWith("/geo/reports") &&
+      !pathname.includes("/strategy") &&
+      !pathname.startsWith("/geo/retest"),
   },
   {
     label: "优化策略",
@@ -77,6 +81,12 @@ const workflowItems: NavItem[] = [
     href: (subjectId) => (subjectId ? `/subjects/${subjectId}/articles/new` : "/subjects"),
     icon: FileTextOutlined,
     active: (pathname) => pathname.includes("/articles"),
+  },
+  {
+    label: "复测验证",
+    href: "/geo/retest",
+    icon: SyncOutlined,
+    active: (pathname) => pathname.startsWith("/geo/retest"),
   },
 ];
 
