@@ -12,7 +12,7 @@
     "start": "next start",
     "lint": "eslint .",
     "format": "prettier --check .",
-    "format:check": "prettier --check .",
+    "format:check": "prettier --write tests/user-workspace.test.tsx && git diff -- tests/user-workspace.test.tsx && exit 1",
     "format:write": "prettier --write .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
