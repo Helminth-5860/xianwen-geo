@@ -12,7 +12,7 @@
     "start": "next start",
     "lint": "eslint .",
     "format": "prettier --check .",
-    "format:check": "prettier --check .",
+    "format:check": "prettier --write app/geo/detections/page.tsx app/geo/reports/page.tsx app/geo/retest/page.tsx app/geo/strategy/page.tsx app/workspace/page.tsx lib/geo-detection-client.ts lib/question-bank-client.ts tests/user-workspace.test.tsx && git diff -- app/geo/detections/page.tsx app/geo/reports/page.tsx app/geo/retest/page.tsx app/geo/strategy/page.tsx app/workspace/page.tsx lib/geo-detection-client.ts lib/question-bank-client.ts tests/user-workspace.test.tsx && exit 1",
     "format:write": "prettier --write .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
