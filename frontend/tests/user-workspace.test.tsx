@@ -195,9 +195,7 @@ describe("GEO 产品工作台", () => {
     expect(screen.getByRole("link", { name: "内容执行" }).getAttribute("href")).toBe(
       "/subjects/subject-1/articles/new",
     );
-    expect(screen.getByRole("link", { name: "复测验证" }).getAttribute("href")).toBe(
-      "/geo/retest",
-    );
+    expect(screen.getByRole("link", { name: "复测验证" }).getAttribute("href")).toBe("/geo/retest");
     expect(screen.queryByRole("link", { name: "显问 AI 助手" })).toBeNull();
 
     pathname = "/admin";
