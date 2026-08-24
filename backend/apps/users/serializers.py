@@ -168,6 +168,7 @@ class AdminUserListSerializer(serializers.ModelSerializer):
             "nickname",
             "phone_masked",
             "account_status",
+            "is_test_account",
             "status_version",
             "created_at",
         )
@@ -178,6 +179,16 @@ class AdminUserListSerializer(serializers.ModelSerializer):
 
 class AdminUserDetailSerializer(AdminUserListSerializer):
     pass
+
+
+class TestAccountActionSerializer(serializers.Serializer):
+    enabled = serializers.BooleanField()
+    confirmed = serializers.BooleanField()
+    current_password = serializers.CharField(
+        max_length=128,
+        write_only=True,
+        trim_whitespace=False,
+    )
 
 
 class UserStatusEventSerializer(serializers.ModelSerializer):

@@ -42,6 +42,13 @@ const columns: TableProps<AdminUser>["columns"] = [
     },
   },
   {
+    title: "测试账号",
+    dataIndex: "is_test_account",
+    render: (enabled: boolean) => (
+      <Tag color={enabled ? "blue" : "default"}>{enabled ? "是" : "否"}</Tag>
+    ),
+  },
+  {
     title: "注册时间",
     dataIndex: "created_at",
     render: (value: string) => new Date(value).toLocaleString("zh-CN"),

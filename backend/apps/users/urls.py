@@ -6,6 +6,7 @@ from .admin_views import (
     AdminUserFreezeView,
     AdminUserHistoryView,
     AdminUserListView,
+    AdminUserTestAccountView,
     AdminUserUnfreezeView,
 )
 from .views import (
@@ -58,5 +59,10 @@ urlpatterns = [
         "admin/users/<uuid:user_id>/unfreeze",
         AdminUserUnfreezeView.as_view(),
         name="admin-user-unfreeze",
+    ),
+    path(
+        "admin/users/<uuid:user_id>/test-account",
+        AdminUserTestAccountView.as_view(),
+        name="admin-user-test-account",
     ),
 ]

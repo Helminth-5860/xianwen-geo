@@ -6,6 +6,7 @@ from django.utils import timezone
 from rest_framework.exceptions import NotFound
 
 from apps.plans.models import Subscription, SubscriptionChange
+from apps.plans.subscription_services import effective_entitlement_snapshot
 from apps.users.models import User
 
 from .models import Subject, SubjectContext, SubjectEvent, SubjectType
@@ -146,7 +147,9 @@ def _future_scheduled_limit(*, user: User, current: Subscription) -> int | None:
 
 
 def effective_subject_activation_limit(*, user: User, subscription: Subscription) -> int:
-    current_limit = _limit_from_snapshot(subscription.entitlement_snapshot)
+    current_limit = _limit_from_snapshot(effective_entitlement_snapshot(subscription))
+    if user.is_test_account:
+        return current_limit
     future_limit = _future_scheduled_limit(user=user, current=subscription)
     return min(current_limit, future_limit) if future_limit is not None else current_limit
 

@@ -12,6 +12,7 @@ from django.http import Http404
 from django.utils import timezone
 
 from apps.ai.sanitization import sanitize_provider_metrics
+from apps.plans.subscription_services import effective_entitlement_snapshot
 from apps.quotas.models import QuotaAccount
 from apps.quotas.services import (
     consume_hold,
@@ -235,7 +236,7 @@ def create_keyword_generation_job(
         expected_subject_version_id=expected_subject_version_id,
     )
     subscription = _lock_effective_subscription(user)
-    limits = subscription.entitlement_snapshot.get("limits", {})
+    limits = effective_entitlement_snapshot(subscription).get("limits", {})
     plan_generation_limit = limits.get("keyword_generation_limit")
     if type(plan_generation_limit) is not int or target_count > plan_generation_limit:
         raise KeywordGenerationLimitExceeded

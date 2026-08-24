@@ -19,6 +19,7 @@ def test_account_status_paths_and_csrf_contracts_are_documented():
         "/admin/users/{userId}/history",
         "/admin/users/{userId}/freeze",
         "/admin/users/{userId}/unfreeze",
+        "/admin/users/{userId}/test-account",
     }
     assert expected_paths <= set(paths)
 
@@ -27,6 +28,7 @@ def test_account_status_paths_and_csrf_contracts_are_documented():
         "/notifications/{notificationId}/read",
         "/admin/users/{userId}/freeze",
         "/admin/users/{userId}/unfreeze",
+        "/admin/users/{userId}/test-account",
     ):
         assert csrf_ref in paths[path]["post"]["parameters"]
 

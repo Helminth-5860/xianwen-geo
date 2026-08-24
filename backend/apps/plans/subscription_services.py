@@ -1,6 +1,7 @@
 import copy
 import hashlib
 import json
+import uuid
 from datetime import timedelta
 
 from django.db import IntegrityError, transaction
@@ -12,6 +13,7 @@ from apps.admin_rbac.scopes import scoped_customer_or_404, scoped_customers
 from apps.users.models import Notification, User
 
 from .application_services import scoped_application_or_404
+from .catalog import CATALOG_VERSION, MODEL_KEYS
 from .models import (
     Plan,
     PlanApplication,
@@ -68,6 +70,76 @@ class SubscriptionSubjectLimitReconciliationRequired(SubscriptionError):
 
 class SubscriptionNoteInvalid(SubscriptionError):
     code = "SUBSCRIPTION_NOTE_INVALID"
+
+
+INTERNAL_TEST_PLAN_ID = uuid.UUID("4ca150d9-b51e-4b16-9dc8-67d594d08ad1")
+INTERNAL_TEST_PLAN_VERSION_ID = uuid.UUID("0ef7b50a-eae8-448a-85cf-57f53b558193")
+INTERNAL_TEST_VALID_DAYS = 36_500
+INTERNAL_TEST_MAX_QUOTA = 9_223_372_036_854_775_807
+
+
+def _internal_test_snapshot(generated_at) -> dict:
+    generated = generated_at.isoformat().replace("+00:00", "Z")
+    return {
+        "schema_version": "1.0",
+        "plan_id": str(INTERNAL_TEST_PLAN_ID),
+        "plan_version_id": str(INTERNAL_TEST_PLAN_VERSION_ID),
+        "version_no": 1,
+        "valid_days": INTERNAL_TEST_VALID_DAYS,
+        "queue_priority": 100,
+        "limits": {
+            "subject_active_limit": 1_000_000,
+            "allow_user_model_selection": True,
+            "max_models_per_detection": len(MODEL_KEYS),
+            "max_questions_per_detection": 1_000_000,
+            "concurrent_detection_jobs": 1_000,
+            "detection_points": INTERNAL_TEST_MAX_QUOTA,
+            "article_credits": INTERNAL_TEST_MAX_QUOTA,
+            "image_credits": INTERNAL_TEST_MAX_QUOTA,
+            "keyword_generation_limit": 1_000_000,
+            "question_bank_limit": 1_000_000,
+            "keyword_regenerations_per_cycle": INTERNAL_TEST_MAX_QUOTA,
+            "distillation_regenerations_per_cycle": INTERNAL_TEST_MAX_QUOTA,
+            "question_bank_regenerations_per_cycle": INTERNAL_TEST_MAX_QUOTA,
+            "strategy_regenerations_per_cycle": INTERNAL_TEST_MAX_QUOTA,
+            "outline_regenerations_per_cycle": INTERNAL_TEST_MAX_QUOTA,
+            "local_ai_edits_per_cycle": INTERNAL_TEST_MAX_QUOTA,
+            "quality_rechecks_per_cycle": INTERNAL_TEST_MAX_QUOTA,
+            "assistant_messages_per_cycle": INTERNAL_TEST_MAX_QUOTA,
+            "storage_bytes": INTERNAL_TEST_MAX_QUOTA,
+            "white_label_enabled": True,
+            "report_export_enabled": True,
+            "report_share_enabled": True,
+            "business_record_retention_days": None,
+            "subject_trash_days": 36_500,
+            "image_trash_days": 36_500,
+            "document_retention_days_after_expiry": None,
+            "document_expiry_action": "move_to_trash",
+            "document_trash_days": 36_500,
+            "expiry_quota_policy": {
+                "detection_points": "retain",
+                "article_credits": "retain",
+                "image_credits": "retain",
+            },
+        },
+        "model_permissions": [
+            {
+                "model_key": model_key,
+                "sort_order": index * 10,
+                "selected_by_default": True,
+            }
+            for index, model_key in enumerate(MODEL_KEYS, start=1)
+        ],
+        "generated_at": generated,
+        "catalog_version": CATALOG_VERSION,
+        "internal_test_access": True,
+    }
+
+
+def effective_entitlement_snapshot(subscription: Subscription) -> dict:
+    if subscription.user.is_test_account:
+        return _internal_test_snapshot(timezone.now())
+    return subscription.entitlement_snapshot
 
 
 def normalize_note(value: str, *, required: bool = False) -> str:
@@ -274,9 +346,131 @@ def _create_active_subscription(
     return subscription
 
 
+def _internal_test_plan_version(*, moment):
+    plan, _ = Plan.objects.get_or_create(
+        id=INTERNAL_TEST_PLAN_ID,
+        defaults={
+            "code": Plan.INTERNAL_TEST_CODE,
+            "name": "内部测试访问",
+            "description": "系统内部测试账号专用，不对外展示或销售。",
+            "price_display_mode": Plan.PriceDisplayMode.CONTACT,
+            "is_trial": False,
+            "status": Plan.Status.ARCHIVED,
+            "sort_order": 2_147_483_647,
+        },
+    )
+    if plan.code != Plan.INTERNAL_TEST_CODE:
+        raise SubscriptionStateConflict
+    snapshot = _internal_test_snapshot(moment)
+    version, _ = PlanVersion.objects.get_or_create(
+        id=INTERNAL_TEST_PLAN_VERSION_ID,
+        defaults={
+            "plan": plan,
+            "version_no": 1,
+            "status": PlanVersion.Status.RETIRED,
+            "valid_days": INTERNAL_TEST_VALID_DAYS,
+            "queue_priority": 100,
+            "effective_config": snapshot,
+            "config_digest": _snapshot_digest(snapshot),
+            "snapshot_generated_at": moment,
+            "published_at": moment,
+        },
+    )
+    if version.plan_id != plan.pk or version.config_digest != _snapshot_digest(
+        version.effective_config
+    ):
+        raise SubscriptionStateConflict
+    return plan, version
+
+
+@transaction.atomic
+def ensure_internal_test_subscription(
+    *, user: User, request_id=None, actor=None, now=None
+) -> Subscription:
+    moment = now or timezone.now()
+    locked_user = User.objects.select_for_update().get(pk=user.pk)
+    _ensure_user_eligible(locked_user)
+    if not locked_user.is_test_account:
+        raise SubscriptionNotEligible
+    active = (
+        Subscription.objects.select_for_update()
+        .filter(user=locked_user, status=Subscription.Status.ACTIVE)
+        .select_related("plan", "plan_version")
+        .first()
+    )
+    if active is not None and active.starts_at <= moment < active.ends_at:
+        return active
+    operation_request_id = request_id or uuid.uuid4()
+    if active is not None:
+        active.status = Subscription.Status.EXPIRED
+        active.expired_at = moment
+        active.version += 1
+        active.save(update_fields=["status", "expired_at", "version", "updated_at"])
+    plan, version = _internal_test_plan_version(moment=moment)
+    snapshot = copy.deepcopy(version.effective_config)
+    subscription = Subscription.objects.create(
+        user=locked_user,
+        source_type=Subscription.SourceType.INTERNAL_TEST,
+        plan=plan,
+        plan_version=version,
+        plan_version_no=version.version_no,
+        entitlement_snapshot=snapshot,
+        entitlement_digest=version.config_digest,
+        status=Subscription.Status.ACTIVE,
+        starts_at=moment,
+        ends_at=moment + timedelta(days=INTERNAL_TEST_VALID_DAYS),
+        cycle_anchor_day=timezone.localtime(moment).day,
+        cycle_anchor_time=timezone.localtime(moment).timetz().replace(tzinfo=None),
+        is_trial=False,
+        opened_by=actor,
+        opening_note="内部测试账号访问授权。",
+        activated_at=moment,
+        request_id=operation_request_id,
+    )
+    from apps.quotas.services import initialize_subscription_accounts
+
+    initialize_subscription_accounts(
+        subscription=subscription,
+        request_id=operation_request_id,
+        actor=actor,
+    )
+    return subscription
+
+
+@transaction.atomic
+def terminate_internal_test_subscription(*, user: User, actor=None, now=None) -> None:
+    moment = now or timezone.now()
+    subscription = (
+        Subscription.objects.select_for_update()
+        .filter(
+            user=user,
+            source_type=Subscription.SourceType.INTERNAL_TEST,
+            status=Subscription.Status.ACTIVE,
+        )
+        .first()
+    )
+    if subscription is None:
+        return
+    subscription.status = Subscription.Status.TERMINATED
+    subscription.terminated_at = moment
+    subscription.terminated_by = actor
+    subscription.termination_reason = "内部测试账号权限已关闭。"
+    subscription.version += 1
+    subscription.save(
+        update_fields=[
+            "status",
+            "terminated_at",
+            "terminated_by",
+            "termination_reason",
+            "version",
+            "updated_at",
+        ]
+    )
+
+
 def current_subscription(user: User, *, now=None):
     moment = now or timezone.now()
-    return (
+    subscription = (
         Subscription.objects.filter(
             user=user,
             status=Subscription.Status.ACTIVE,
@@ -287,6 +481,9 @@ def current_subscription(user: User, *, now=None):
         .prefetch_related("events")
         .first()
     )
+    if subscription is not None or not user.is_test_account:
+        return subscription
+    return ensure_internal_test_subscription(user=user, now=moment)
 
 
 def scoped_subscriptions(user, context: AdminContext):

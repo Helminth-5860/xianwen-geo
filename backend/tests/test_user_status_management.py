@@ -88,6 +88,7 @@ def test_admin_list_detail_filters_phone_and_minimizes_fields():
         "nickname": "账号用户",
         "phone_masked": "+86 138****8000",
         "account_status": "active",
+        "is_test_account": False,
         "status_version": 1,
         "created_at": result["created_at"],
     }
@@ -102,6 +103,7 @@ def test_admin_list_detail_filters_phone_and_minimizes_fields():
         "nickname",
         "phone_masked",
         "account_status",
+        "is_test_account",
         "status_version",
         "created_at",
     }

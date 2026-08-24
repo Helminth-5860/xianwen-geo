@@ -15,6 +15,7 @@ from apps.ai.contracts import AIAdapterRequest, AIModelCapability
 from apps.ai.errors import AIAdapterError
 from apps.ai.registry import model_registry
 from apps.ai.runtime import get_runtime_snapshot
+from apps.plans.subscription_services import effective_entitlement_snapshot
 from apps.quotas.models import QuotaAccount
 from apps.quotas.services import (
     consume_hold,
@@ -444,7 +445,7 @@ def _remaining(strategy: StrategyReport) -> int | None:
     ).aggregate(total=Sum("available"))["total"]
     if total is not None:
         return int(total)
-    limits = strategy.subscription.entitlement_snapshot.get("limits", {})
+    limits = effective_entitlement_snapshot(strategy.subscription).get("limits", {})
     value = limits.get("strategy_regenerations_per_cycle")
     return value if type(value) is int else None
 
@@ -506,8 +507,10 @@ def strategy_list_payload(*, user, report: GeoReport) -> dict[str, Any]:
     if remaining is None:
         try:
             subscription = _effective_subscription(user=user)
-            value = subscription.entitlement_snapshot.get("limits", {}).get(
-                "strategy_regenerations_per_cycle"
+            value = (
+                effective_entitlement_snapshot(subscription)
+                .get("limits", {})
+                .get("strategy_regenerations_per_cycle")
             )
             remaining = value if type(value) is int else None
         except Exception:

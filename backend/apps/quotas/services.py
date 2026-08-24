@@ -10,6 +10,8 @@ from django.utils import timezone
 from rest_framework.exceptions import NotFound
 
 from apps.plans.models import Subscription
+from apps.plans.subscription_services import effective_entitlement_snapshot
+from apps.users.models import User
 from apps.users.validators import validate_safe_plain_text
 
 from .catalog import (
@@ -253,7 +255,7 @@ def _lock_hold(hold_id) -> tuple[Subscription, QuotaAccount, QuotaHold]:
 
 def _snapshot_values(subscription: Subscription) -> dict[str, int]:
     try:
-        return snapshot_quota_values(subscription.entitlement_snapshot)
+        return snapshot_quota_values(effective_entitlement_snapshot(subscription))
     except ValueError as exc:
         raise QuotaSnapshotInvalid from exc
 
@@ -1106,6 +1108,9 @@ def freeze_quota(
         [account for account in accounts if _subscription_effective(subscription, account, now)],
         key=_spend_order,
     )
+    is_test_account_bypass = (
+        User.objects.only("is_test_account").get(pk=binding.user_id).is_test_account
+    )
     amount = _positive_amount(amount)
     business_type = _business_type(business_type)
     digests = derive_idempotency_digests(
@@ -1138,7 +1143,7 @@ def freeze_quota(
         business_id=business_id,
     ).exists():
         raise QuotaBusinessAlreadyHeld
-    if sum(account.available for account in accounts) < amount:
+    if not is_test_account_bypass and sum(account.available for account in accounts) < amount:
         raise QuotaInsufficient
     group = QuotaHoldGroup.objects.create(
         user_id=binding.user_id,
@@ -1146,11 +1151,40 @@ def freeze_quota(
         business_type=business_type,
         business_id=business_id,
         requested_amount=amount,
+        is_test_account_bypass=is_test_account_bypass,
         freeze_idempotency_key_version=digests.key_version,
         freeze_idempotency_key_digest=digests.key_digest,
         freeze_idempotency_scope_digest=digests.scope_digest,
         freeze_request_digest=digests.request_digest,
     )
+    if is_test_account_bypass:
+        try:
+            account = next(account for account in accounts if account.pk == binding.pk)
+        except StopIteration as exc:
+            raise QuotaSubscriptionUnavailable from exc
+        allocation_digests = system_idempotency_digests(
+            operation="test_account_bypass_allocation",
+            user_id=account.user_id,
+            account_id=account.pk,
+            business_type=business_type,
+            business_id=business_id,
+            request_payload={"group_id": str(group.pk), "amount": amount},
+        )
+        QuotaHold.objects.create(
+            group=group,
+            account=account,
+            user_id=account.user_id,
+            subscription=subscription,
+            quota_type=account.quota_type,
+            business_type=business_type,
+            business_id=business_id,
+            requested_amount=amount,
+            freeze_idempotency_key_version=allocation_digests.key_version,
+            freeze_idempotency_key_digest=allocation_digests.key_digest,
+            freeze_idempotency_scope_digest=allocation_digests.scope_digest,
+            freeze_request_digest=allocation_digests.request_digest,
+        )
+        return group
     remaining = amount
     for account in accounts:
         allocated = min(account.available, remaining)
@@ -1288,16 +1322,24 @@ def _settle_hold(*, hold_id, amount, action: str, idempotency_key: str, request_
             account=account,
             hold=hold,
             action=action,
-            available_delta=settled if action == QuotaLedgerEntry.Action.RELEASE else 0,
-            frozen_delta=-settled,
+            available_delta=(
+                settled
+                if action == QuotaLedgerEntry.Action.RELEASE and not group.is_test_account_bypass
+                else 0
+            ),
+            frozen_delta=0 if group.is_test_account_bypass else -settled,
             digests=allocation_digests,
             business_type=group.business_type,
             business_id=group.business_id,
-            safe_reason="业务额度返还。" if action == "release" else "业务额度扣除。",
+            safe_reason=(
+                "测试账号额度豁免，不扣减额度。"
+                if group.is_test_account_bypass
+                else ("业务额度返还。" if action == "release" else "业务额度扣除。")
+            ),
             actor=None,
             request_id=request_id,
         )
-        if action == QuotaLedgerEntry.Action.RELEASE:
+        if action == QuotaLedgerEntry.Action.RELEASE and not group.is_test_account_bypass:
             late_action = None
             business_type = ""
             business_id = None

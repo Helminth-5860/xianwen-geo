@@ -8,6 +8,8 @@ from .catalog import MODEL_KEYS
 
 
 class Plan(models.Model):  # noqa: DJ008
+    INTERNAL_TEST_CODE = "__internal_test_access__"
+
     class Status(models.TextChoices):
         DRAFT = "draft", "草稿"
         PUBLISHED = "published", "已上架"
@@ -554,6 +556,7 @@ class Subscription(models.Model):  # noqa: DJ008
         APPLICATION = "application", "套餐申请"
         TRIAL_GRANT = "trial_grant", "试用发放"
         PLAN_CHANGE = "plan_change", "套餐变更"
+        INTERNAL_TEST = "internal_test", "内部测试授权"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(
@@ -661,7 +664,14 @@ class Subscription(models.Model):  # noqa: DJ008
                 name="subscription_digest_present",
             ),
             models.CheckConstraint(
-                condition=models.Q(source_type__in=("application", "trial_grant", "plan_change")),
+                condition=models.Q(
+                    source_type__in=(
+                        "application",
+                        "trial_grant",
+                        "plan_change",
+                        "internal_test",
+                    )
+                ),
                 name="subscription_source_type_valid",
             ),
             models.CheckConstraint(
@@ -683,6 +693,12 @@ class Subscription(models.Model):  # noqa: DJ008
                         is_trial=False,
                         source_application__isnull=True,
                         source_change__isnull=False,
+                    )
+                    | models.Q(
+                        source_type="internal_test",
+                        is_trial=False,
+                        source_application__isnull=True,
+                        source_change__isnull=True,
                     )
                 ),
                 name="subscription_source_consistent",

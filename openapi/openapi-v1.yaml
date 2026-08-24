@@ -2396,6 +2396,36 @@ paths:
           $ref: '#/components/responses/AccountStateConflict'
         '422':
           $ref: '#/components/responses/ValidationError'
+  /admin/users/{userId}/test-account:
+    parameters:
+      - $ref: '#/components/parameters/UserId'
+    post:
+      tags: [Admin]
+      summary: 超级管理员开启或关闭内部测试账号
+      description: 仅改变商业套餐与额度限制；不绕过登录、安全、权限或数据隔离。
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TestAccountActionRequest'
+      responses:
+        '200':
+          description: 测试账号状态已更新并写入操作记录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUserEnvelope'
+        '401':
+          $ref: '#/components/responses/AuthRequired'
+        '403':
+          $ref: '#/components/responses/PermissionDenied'
+        '404':
+          $ref: '#/components/responses/ResourceNotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
   /admin/api-credentials:
     get:
       tags: [Admin]
@@ -4276,13 +4306,16 @@ components:
       type: object
       additionalProperties: false
       required:
-        [id, nickname, phone_masked, account_status, status_version, created_at]
+        [id, nickname, phone_masked, account_status, is_test_account, status_version, created_at]
       properties:
         id: {type: string, format: uuid}
         nickname: {type: string, maxLength: 50}
         phone_masked: {type: string, example: '+86 138****8000'}
         account_status:
           $ref: '#/components/schemas/AccountStatus'
+        is_test_account:
+          type: boolean
+          description: 是否启用内部测试账号商业权限豁免。
         status_version: {type: integer, minimum: 1}
         created_at: {type: string, format: date-time}
     Pagination:
@@ -4361,6 +4394,14 @@ components:
         reason: {type: string, maxLength: 500}
         expected_version: {type: integer, minimum: 1}
         confirmed: {type: boolean}
+        current_password: {type: string, format: password, writeOnly: true}
+    TestAccountActionRequest:
+      type: object
+      additionalProperties: false
+      required: [enabled, confirmed, current_password]
+      properties:
+        enabled: {type: boolean}
+        confirmed: {type: boolean, const: true}
         current_password: {type: string, format: password, writeOnly: true}
     Notification:
       type: object
@@ -6170,7 +6211,7 @@ components:
         plan_version_id: {type: string, format: uuid}
         plan_version_no: {type: integer, minimum: 1}
         status: {$ref: '#/components/schemas/SubscriptionStatus'}
-        source_type: {type: string, enum: [application, trial_grant, plan_change]}
+        source_type: {type: string, enum: [application, trial_grant, plan_change, internal_test]}
         is_trial: {type: boolean}
         starts_at: {type: string, format: date-time}
         ends_at: {type: string, format: date-time}

@@ -1,14 +1,17 @@
 from math import ceil
 
+from django.db import transaction
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_protect
+from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.response import Response
 from rest_framework.status import (
     HTTP_409_CONFLICT,
 )
 from rest_framework.views import APIView
 
-from apps.admin_rbac.permissions import HasAdminPermission
+from apps.admin_rbac.audit_services import record_audit_event
+from apps.admin_rbac.permissions import HasAdminPermission, HasSuperuserAdminSession
 from apps.admin_rbac.risk_services import RiskError, perform_risk_action
 from apps.admin_rbac.risk_views import risk_error_response
 from apps.admin_rbac.scopes import scoped_customer_or_404, scoped_customers
@@ -16,6 +19,7 @@ from apps.admin_rbac.security import (
     AdminReauthFailed,
     AdminReauthRateLimited,
     AdminSecurityUnavailable,
+    verify_current_password,
 )
 from apps.core.error_codes import ErrorCode
 from apps.core.responses import error_response
@@ -28,12 +32,14 @@ from .serializers import (
     AdminUserListSerializer,
     FreezeStatusActionSerializer,
     PaginationSerializer,
+    TestAccountActionSerializer,
     UserStatusEventSerializer,
 )
 from .status_services import (
     AccountStateConflict,
     change_account_status,
 )
+from .test_account_services import TestAccountTargetInvalid, set_test_account_access
 
 
 def _business_users():
@@ -169,3 +175,43 @@ class AdminUserFreezeView(_AdminAccountStatusView):
 @method_decorator(csrf_protect, name="dispatch")
 class AdminUserUnfreezeView(_AdminAccountStatusView):
     action = "unfreeze"
+
+
+@method_decorator(csrf_protect, name="dispatch")
+class AdminUserTestAccountView(APIView):
+    permission_classes = [HasSuperuserAdminSession]
+
+    @transaction.atomic
+    def post(self, request, user_id):
+        scoped_customer_or_404(request.user, request.admin_context, user_id)
+        serializer = TestAccountActionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        if not data["confirmed"]:
+            raise ValidationError({"confirmed": ["请先确认本次测试账号权限变更。"]})
+        try:
+            verify_current_password(request.user, data["current_password"])
+            before = User.objects.only("is_test_account").get(pk=user_id).is_test_account
+            user = set_test_account_access(
+                user_id=user_id,
+                enabled=data["enabled"],
+                actor=request.user,
+                request_id=request.request_id,
+            )
+        except AdminReauthFailed as exc:
+            return risk_error_response(exc, request)
+        except (User.DoesNotExist, TestAccountTargetInvalid) as exc:
+            raise NotFound from exc
+        record_audit_event(
+            request=request,
+            category="users",
+            action_key="user.test_account.set",
+            outcome="succeeded",
+            actor=request.user,
+            subject=user,
+            target_type="user",
+            target_id=user.pk,
+            safe_before={"is_test_account": before},
+            safe_after={"is_test_account": user.is_test_account},
+        )
+        return Response(AdminUserDetailSerializer(user).data)

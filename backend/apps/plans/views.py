@@ -70,14 +70,22 @@ def _pagination(request):
 
 def _plan_or_404(plan_id):
     try:
-        return Plan.objects.select_related("current_published_version").get(pk=plan_id)
+        return (
+            Plan.objects.exclude(code=Plan.INTERNAL_TEST_CODE)
+            .select_related("current_published_version")
+            .get(pk=plan_id)
+        )
     except Plan.DoesNotExist as exc:
         raise NotFound from exc
 
 
 def _version_or_404(version_id):
     try:
-        return PlanVersion.objects.select_related("plan").get(pk=version_id)
+        return (
+            PlanVersion.objects.exclude(plan__code=Plan.INTERNAL_TEST_CODE)
+            .select_related("plan")
+            .get(pk=version_id)
+        )
     except PlanVersion.DoesNotExist as exc:
         raise NotFound from exc
 
@@ -123,7 +131,9 @@ class AdminPlanListView(APIView):
     required_permissions_by_method = {"GET": "plans.list", "POST": "plans.create"}
 
     def get(self, request):
-        queryset = Plan.objects.select_related("current_published_version")
+        queryset = Plan.objects.exclude(code=Plan.INTERNAL_TEST_CODE).select_related(
+            "current_published_version"
+        )
         status_value = request.query_params.get("status")
         if status_value:
             if status_value not in Plan.Status.values:

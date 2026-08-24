@@ -80,6 +80,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     )
     session_version: models.PositiveBigIntegerField = models.PositiveBigIntegerField(default=1)
     status_version: models.PositiveBigIntegerField = models.PositiveBigIntegerField(default=1)
+    is_test_account: models.BooleanField = models.BooleanField(default=False, db_index=True)
     is_staff: models.BooleanField = models.BooleanField(default=False)
     is_active: models.BooleanField = models.BooleanField(default=True)
     created_at: models.DateTimeField = models.DateTimeField(auto_now_add=True, db_index=True)

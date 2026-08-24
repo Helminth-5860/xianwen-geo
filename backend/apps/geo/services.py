@@ -22,6 +22,7 @@ from apps.ai.registry import model_registry
 from apps.ai.runtime import get_runtime_snapshot
 from apps.keywords.models import DistillationWorkspace, KeywordSet
 from apps.plans.models import Subscription
+from apps.plans.subscription_services import effective_entitlement_snapshot
 from apps.questions.bank_models import Question, QuestionBankWorkspace
 from apps.quotas.models import QuotaAccount
 from apps.quotas.services import consume_hold, freeze_quota, release_hold
@@ -83,7 +84,7 @@ def _effective_subscription(*, user, lock: bool = False) -> Subscription:
 
 
 def _limits(subscription: Subscription) -> dict:
-    snapshot = subscription.entitlement_snapshot
+    snapshot = effective_entitlement_snapshot(subscription)
     if not isinstance(snapshot, dict) or not isinstance(snapshot.get("limits"), dict):
         raise GeoDetectionInputConflict
     return snapshot["limits"]
@@ -97,7 +98,7 @@ def _int_limit(limits: dict, key: str, *, minimum: int = 1) -> int:
 
 
 def _model_permissions(subscription: Subscription) -> list[dict]:
-    rows = subscription.entitlement_snapshot.get("model_permissions")
+    rows = effective_entitlement_snapshot(subscription).get("model_permissions")
     if not isinstance(rows, list) or not rows:
         raise GeoDetectionInputConflict
     normalized = []
@@ -523,7 +524,7 @@ def create_detection_job(
         keyword_set_version=selected["keyword_version"],
         distillation_set=selected["distillation"],
         question_bank_version=selected["question_bank"],
-        entitlement_snapshot=copy.deepcopy(subscription.entitlement_snapshot),
+        entitlement_snapshot=copy.deepcopy(effective_entitlement_snapshot(subscription)),
         model_snapshots=model_snapshots,
         system_prompt=GEO_SYSTEM_PROMPT,
         prompt_version=GEO_PROMPT_VERSION,

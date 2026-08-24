@@ -10,6 +10,7 @@ from django.utils import timezone
 from apps.ai.contracts import AIModelCapability
 from apps.ai.models import AIModel, AIModelRuntimeConfig
 from apps.ai.registry import model_registry
+from apps.plans.subscription_services import effective_entitlement_snapshot
 from apps.quotas.services import freeze_quota
 
 from .exceptions import (
@@ -59,7 +60,7 @@ def _preflight_models(*, subscription, baseline: GeoReport) -> tuple[list, list[
     try:
         permissions = {row["model_key"] for row in _model_permissions(subscription)}
     except GeoDetectionInputConflict:
-        if subscription.entitlement_snapshot.get("model_permissions") == []:
+        if effective_entitlement_snapshot(subscription).get("model_permissions") == []:
             permissions = set()
         else:
             raise
@@ -219,7 +220,7 @@ def create_quick_retest(
         keyword_set_version=keyword_version,
         distillation_set=distillation,
         question_bank_version=baseline.job.snapshot.question_bank_version,
-        entitlement_snapshot=copy.deepcopy(subscription.entitlement_snapshot),
+        entitlement_snapshot=copy.deepcopy(effective_entitlement_snapshot(subscription)),
         model_snapshots=model_snapshots,
         system_prompt=GEO_SYSTEM_PROMPT,
         prompt_version=GEO_PROMPT_VERSION,

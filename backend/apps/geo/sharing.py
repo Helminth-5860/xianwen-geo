@@ -18,7 +18,7 @@ from django.utils import timezone
 from apps.documents.exceptions import FileStorageUnavailable
 from apps.documents.models import DocumentVersion
 from apps.documents.storage import storage_provider
-from apps.plans.subscription_services import current_subscription
+from apps.plans.subscription_services import current_subscription, effective_entitlement_snapshot
 from apps.subjects.subject_services import subject_for_user_or_404
 from apps.users.services import client_ip_address
 
@@ -37,7 +37,7 @@ def _entitled(user, key: str) -> bool:
     subscription = current_subscription(user)
     if subscription is None:
         return False
-    value = subscription.entitlement_snapshot.get("limits", {}).get(key, False)
+    value = effective_entitlement_snapshot(subscription).get("limits", {}).get(key, False)
     return value is True or value == 1
 
 

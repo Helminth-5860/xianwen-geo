@@ -12,6 +12,7 @@ from django.utils import timezone
 from apps.ai.sanitization import sanitize_provider_metrics
 from apps.keywords.models import DistillationSet, DistillationWorkspace, Keyword
 from apps.keywords.services import _assert_user_write_allowed, _lock_effective_subscription
+from apps.plans.subscription_services import effective_entitlement_snapshot
 from apps.quotas.models import QuotaAccount
 from apps.quotas.services import (
     consume_hold,
@@ -227,7 +228,7 @@ def create_question_generation_job(
     if actual_version != expected_workspace_version:
         raise QuestionBankVersionConflict
     provider = require_available_question_generation_provider()
-    limits = subscription.entitlement_snapshot.get("limits", {})
+    limits = effective_entitlement_snapshot(subscription).get("limits", {})
     question_limit = limits.get("question_bank_limit")
     if type(question_limit) is not int or question_limit < 1:
         raise QuestionBankValuesInvalid
@@ -691,7 +692,9 @@ def save_question_bank_draft(*, user_id, subject_id, expected_version, items):
         raise QuestionBankVersionConflict
     _assert_workspace_input_current(workspace, subject)
     category_ids, tag_ids, keyword_ids = _current_catalog_and_keywords(workspace)
-    limit = subscription.entitlement_snapshot.get("limits", {}).get("question_bank_limit")
+    limit = (
+        effective_entitlement_snapshot(subscription).get("limits", {}).get("question_bank_limit")
+    )
     if type(limit) is not int or limit < 1:
         raise QuestionBankValuesInvalid
     normalized = validate_draft_items(

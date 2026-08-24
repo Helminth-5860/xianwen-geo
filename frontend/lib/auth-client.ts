@@ -237,6 +237,7 @@ export type AdminUser = Readonly<{
   nickname: string;
   phone_masked: string;
   account_status: AccountUser["account_status"];
+  is_test_account: boolean;
   status_version: number;
   created_at: string;
 }>;
@@ -320,6 +321,14 @@ export function freezeAdminUser(
 
 export function unfreezeAdminUser(userId: string) {
   return post<AdminUser>(`/admin/users/${userId}/unfreeze`, {});
+}
+
+export function setAdminUserTestAccount(userId: string, enabled: boolean, currentPassword: string) {
+  return post<AdminUser>(`/admin/users/${userId}/test-account`, {
+    enabled,
+    confirmed: true,
+    current_password: currentPassword,
+  });
 }
 
 export function userMessage(error: unknown): string {

@@ -198,6 +198,7 @@ class QuotaHoldGroup(models.Model):  # noqa: DJ008
     consumed_amount = models.BigIntegerField(default=0)
     released_amount = models.BigIntegerField(default=0)
     status = models.CharField(max_length=24, choices=Status.choices, default=Status.OPEN)
+    is_test_account_bypass = models.BooleanField(default=False)
     freeze_idempotency_key_version = models.PositiveSmallIntegerField(default=1)
     freeze_idempotency_key_digest = models.CharField(max_length=64, unique=True)
     freeze_idempotency_scope_digest = models.CharField(max_length=64)
