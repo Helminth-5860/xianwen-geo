@@ -95,8 +95,8 @@ def test_openapi_documents_registration_sms_login_and_password_reset():
         "nickname",
         "sms_code",
         "password",
-        "ref",
     }
+    assert "ref" in schemas["RegistrationRequest"]["properties"]
     assert set(schemas["SmsLoginRequest"]["required"]) == {"phone", "sms_code"}
     assert set(schemas["PasswordResetRequest"]["required"]) == {
         "phone",

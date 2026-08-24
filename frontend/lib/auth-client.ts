@@ -178,14 +178,14 @@ export function registerAccount(input: {
   nickname: string;
   smsCode: string;
   password: string;
-  ref: string;
+  ref?: string;
 }) {
   return post<AccountUser>("/auth/register", {
     phone: input.phone,
     nickname: input.nickname,
     sms_code: input.smsCode,
     password: input.password,
-    ref: input.ref,
+    ...(input.ref ? { ref: input.ref } : {}),
   });
 }
 

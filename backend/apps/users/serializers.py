@@ -58,7 +58,13 @@ class RegistrationReferenceSerializer(serializers.Serializer):
 
 
 class RegistrationSerializer(SmsCodeSerializer):
-    ref = serializers.CharField(max_length=512, trim_whitespace=False)
+    ref = serializers.CharField(
+        max_length=512,
+        trim_whitespace=False,
+        required=False,
+        allow_blank=True,
+        default="",
+    )
     nickname = serializers.CharField(max_length=50, trim_whitespace=True)
     password = serializers.CharField(
         max_length=128,
@@ -69,11 +75,6 @@ class RegistrationSerializer(SmsCodeSerializer):
 
     def validate_nickname(self, value: str) -> str:
         return validate_nickname(value)
-
-    def validate_ref(self, value: str) -> str:
-        serializer = RegistrationReferenceSerializer(data={"ref": value})
-        serializer.is_valid(raise_exception=True)
-        return serializer.validated_data["ref"]
 
     def validate(self, attrs):
         unknown_fields = set(self.initial_data) - set(self.fields)

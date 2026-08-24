@@ -151,6 +151,8 @@ class CustomerAssignment(models.Model):  # noqa: DJ008
     )
     owner_admin = models.ForeignKey(
         AdminProfile,
+        null=True,
+        blank=True,
         on_delete=models.PROTECT,
         related_name="customer_assignments",
     )
@@ -189,8 +191,8 @@ class CustomerAssignment(models.Model):  # noqa: DJ008
                 errors["customer"] = "只有 USER 可以建立 ADMIN 归属。"
         if self.owner_admin_id:
             owner = self.owner_admin
-            if owner.user.is_superuser or owner.role_id is None:
-                errors["owner_admin"] = "USER 必须归属一个有效的非超级管理员 ADMIN。"
+            if owner is None or owner.user.is_superuser or owner.role_id is None:
+                errors["owner_admin"] = "关联管理员必须是有效的非超级管理员账号。"
         if errors:
             raise ValidationError(errors)
 

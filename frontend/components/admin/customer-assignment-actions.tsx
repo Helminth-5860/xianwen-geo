@@ -19,26 +19,38 @@ type Props = Readonly<{
   onChanged: (assignment: CustomerAssignment) => void;
 }>;
 
+const INDEPENDENT_USER = "__independent_user__";
+
 export function CustomerAssignmentActions({ assignment, admins, mode, onChanged }: Props) {
-  const [ownerId, setOwnerId] = useState(assignment.owner_admin_id);
+  const currentSelection = assignment.owner_admin_id ?? INDEPENDENT_USER;
+  const [ownerId, setOwnerId] = useState(currentSelection);
   const options = useMemo(
-    () =>
-      admins
+    () => [
+      { value: INDEPENDENT_USER, label: "独立用户（不关联管理员）" },
+      ...admins
         .filter((admin) => admin.admin_status === "active" && !admin.is_superuser)
         .map((admin) => ({
           value: admin.id,
           label: `${admin.nickname}（${admin.phone_masked}）`,
         })),
+    ],
     [admins],
   );
-  const actionName = "更换所属管理员";
+  const actionName =
+    ownerId === INDEPENDENT_USER
+      ? "解除管理员关联"
+      : assignment.owner_admin_id
+        ? "更换所属管理员"
+        : "分配管理员";
 
   return (
     <Card size="small" title="所属管理员">
       <Space orientation="vertical" style={{ width: "100%" }}>
         <Typography.Text>
           当前管理员：
-          {`${assignment.owner_nickname}（${assignment.owner_phone_masked}）`}
+          {assignment.owner_admin_id
+            ? `${assignment.owner_nickname}（${assignment.owner_phone_masked}）`
+            : "无（独立用户）"}
         </Typography.Text>
         <Select
           aria-label="选择所属管理员"
@@ -47,7 +59,7 @@ export function CustomerAssignmentActions({ assignment, admins, mode, onChanged 
           style={{ width: "100%" }}
           onChange={setOwnerId}
         />
-        {options.length === 0 && (
+        {options.length === 1 && (
           <Alert
             type="info"
             showIcon
@@ -58,11 +70,11 @@ export function CustomerAssignmentActions({ assignment, admins, mode, onChanged 
           actionName={actionName}
           mode={mode}
           reasonRequired
-          disabled={ownerId === assignment.owner_admin_id}
+          disabled={ownerId === currentSelection}
           execute={(credentials) =>
             changeCustomerAssignment(
               assignment.customer_id,
-              ownerId,
+              ownerId === INDEPENDENT_USER ? null : ownerId,
               assignment.version,
               credentials.reason,
               credentials,

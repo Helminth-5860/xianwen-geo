@@ -53,14 +53,24 @@ def test_customer_assignment_get_returns_current_owner_with_masked_phone_only():
 
 
 @pytest.mark.django_db
-def test_customer_assignment_get_fails_closed_when_legacy_user_is_unassigned():
+def test_customer_assignment_get_returns_independent_user_without_owner():
     actor = User.objects.create_superuser(
         phone="13900139000", nickname="超级管理员", password=PASSWORD
     )
     customer = User.objects.create_user(phone="13800138000", nickname="客户", password=PASSWORD)
+    assignment = CustomerAssignment.objects.create(customer=customer, owner_admin=None)
 
     response = authenticate_admin_client(APIClient(), actor).get(
         f"/api/v1/admin/users/{customer.id}/assignment"
     )
 
-    assert response.status_code == 404
+    assert response.status_code == 200
+    assert response.json()["data"] == {
+        "id": str(assignment.id),
+        "customer_id": str(customer.id),
+        "owner_admin_id": None,
+        "owner_nickname": None,
+        "owner_phone_masked": None,
+        "version": 1,
+        "assigned_at": None,
+    }

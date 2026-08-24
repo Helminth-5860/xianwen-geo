@@ -101,13 +101,12 @@ paths:
     post:
       tags: [Auth]
       security: []
-      summary: 通过代理专属 ref、手机号、昵称、短信验证码和密码注册
+      summary: 通过手机号、昵称、短信验证码和密码公开注册 USER
       description: |
         使用 register 用途验证码。验证码先在 Redis 原子消费，再执行 PostgreSQL 事务；
-        两者不存在分布式事务。注册成功后账号直接进入 approved/active，并建立 12 小时浏览器会话；
-        不需要管理员审批首次登录。历史 pending/rejected 状态继续兼容保留。
-        ref 是后端签名且带有效期的代理渠道标识，不接受 admin_id 作为归属依据。
-        注册事务会再次校验代理状态并确定性创建 CustomerAssignment。手机号是否已注册仅在
+        两者不存在分布式事务。注册成功后账号直接进入正常状态并建立浏览器会话，首页为
+        /workspace。ref 是可选的后端签名管理员渠道标识，不接受 admin_id 作为归属依据；
+        有效 ref 建立管理员关联，无 ref 或无效 ref 创建独立用户且不阻塞注册。手机号是否已注册仅在
         验证码成功消费后通过 ACCOUNT_ALREADY_EXISTS 返回。
       parameters:
         - $ref: '#/components/parameters/CsrfToken'
@@ -2694,16 +2693,16 @@ paths:
   /admin/users/{userId}/assignment:
     get:
       tags: [Admin]
-      summary: 查看当前客户负责人（仅昵称和脱敏手机号）
+      summary: 查看用户当前关联管理员；独立用户返回空管理员字段
       parameters: [{$ref: '#/components/parameters/UserId'}]
       responses:
-        '200': {description: 当前唯一 ADMIN 负责人}
+        '200': {description: 当前管理员关联；独立用户的 owner_admin_id 为 null}
         '401': {$ref: '#/components/responses/AuthRequired'}
         '403': {$ref: '#/components/responses/PermissionDenied'}
         '404': {$ref: '#/components/responses/ResourceNotFound'}
     put:
       tags: [Admin]
-      summary: 由 SUPER_ADMIN 将客户转交给另一个 ADMIN
+      summary: 由 SUPER_ADMIN 分配、更换或解除用户的管理员关联
       parameters: [{$ref: '#/components/parameters/UserId'}, {$ref: '#/components/parameters/CsrfToken'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AssignmentUpdateRequest'}}}}
       responses:
@@ -4154,7 +4153,7 @@ components:
     RegistrationRequest:
       type: object
       additionalProperties: false
-      required: [phone, nickname, sms_code, password, ref]
+      required: [phone, nickname, sms_code, password]
       properties:
         phone:
           type: string
@@ -4165,7 +4164,7 @@ components:
         ref:
           type: string
           maxLength: 512
-          description: 后端签名的代理渠道 token；不能由 admin_id 替代
+          description: 可选的后端签名管理员渠道 token；无效时忽略关联并继续普通注册
     RegistrationReferenceEnvelope:
       allOf:
         - $ref: '#/components/schemas/EnvelopeBase'
@@ -5753,7 +5752,7 @@ components:
       additionalProperties: false
       required: [owner_admin_id, expected_version]
       properties:
-        owner_admin_id: {type: string, format: uuid}
+        owner_admin_id: {type: string, format: uuid, nullable: true}
         expected_version: {type: integer, minimum: 1}
         reason: {type: string, maxLength: 200}
         confirmed: {type: boolean}
@@ -5834,7 +5833,7 @@ components:
       additionalProperties: false
       required: [owner_admin_id, expected_version]
       properties:
-        owner_admin_id: {type: string, format: uuid}
+        owner_admin_id: {type: string, format: uuid, nullable: true}
         expected_version: {type: integer, minimum: 1}
         reason: {type: string, maxLength: 200}
         confirmed: {type: boolean}

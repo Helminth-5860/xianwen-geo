@@ -82,4 +82,5 @@ def test_customer_assignment_read_and_risk_mutation_are_documented():
     } <= set(path["put"]["responses"])
     properties = SPEC["components"]["schemas"]["AssignmentUpdateRequest"]["properties"]
     assert properties["current_password"]["writeOnly"]
+    assert properties["owner_admin_id"]["nullable"] is True
     assert {"owner_admin_id", "expected_version", "reason", "confirmed"} <= properties.keys()

@@ -16,7 +16,6 @@ from apps.articles.models import Article
 from apps.geo.models import GeoDetectionJob, GeoReport
 from apps.images.models import ImageAsset
 from apps.subjects.models import Subject
-from apps.users.authentication import AccountUnavailable, start_browser_session
 from apps.users.commercial import CommercialIdentity, commercial_home_route, commercial_identity
 from apps.users.models import Tenant, User
 from apps.users.serializers import CurrentUserSerializer, RegistrationSerializer
@@ -218,7 +217,7 @@ def test_user_cannot_create_admin_or_submit_role_upgrade_fields():
 
 
 @pytest.mark.django_db
-def test_user_registration_cannot_upgrade_role_and_must_bind_one_admin():
+def test_user_registration_cannot_upgrade_role_and_supports_optional_admin_assignment():
     default_tenant = Tenant.legacy_default()
     super_admin = User.objects.create_superuser(
         phone="13800003700", nickname="平台管理员", password=PASSWORD
@@ -240,6 +239,16 @@ def test_user_registration_cannot_upgrade_role_and_must_bind_one_admin():
     assert created.customer_assignment.owner_admin == owner
     assert CustomerAssignment.objects.filter(customer=created).count() == 1
 
+    independent = create_registered_user(
+        phone="+8613800003703",
+        nickname="独立企业客户",
+        password=PASSWORD,
+    )
+    assert commercial_identity(independent) == CommercialIdentity.USER
+    assert independent.is_staff is False
+    assert independent.is_superuser is False
+    assert independent.customer_assignment.owner_admin is None
+
 
 @pytest.mark.django_db
 def test_super_admin_cannot_be_a_direct_customer_owner():
@@ -254,13 +263,20 @@ def test_super_admin_cannot_be_a_direct_customer_owner():
 
 
 @pytest.mark.django_db
-def test_orphan_user_login_fails_closed(rf):
-    orphan = user("13800003802")
-    request = rf.post("/api/v1/auth/login/password")
-    request.session = {}
+def test_independent_user_login_succeeds_without_admin_assignment():
+    independent = user("13800003802")
+    client = APIClient(enforce_csrf_checks=True)
+    csrf = client.get("/api/v1/auth/csrf").json()["data"]["csrf_token"]
 
-    with pytest.raises(AccountUnavailable):
-        start_browser_session(request, orphan.id)
+    response = client.post(
+        "/api/v1/auth/login/password",
+        {"phone": independent.phone, "password": PASSWORD},
+        format="json",
+        HTTP_X_CSRFTOKEN=csrf,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["home_route"] == "/workspace"
 
 
 @pytest.mark.django_db

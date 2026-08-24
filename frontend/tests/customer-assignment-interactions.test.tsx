@@ -167,6 +167,54 @@ describe("customer assignment high-risk entry", () => {
     await waitFor(() => expect(onChanged).toHaveBeenCalledWith(transferred));
   });
 
+  it("allows the super admin to remove the admin relationship", async () => {
+    const independent = {
+      ...assignment,
+      owner_admin_id: null,
+      owner_nickname: null,
+      owner_phone_masked: null,
+      version: 2,
+    };
+    mocks.changeCustomerAssignment.mockResolvedValue(independent);
+    const onChanged = vi.fn();
+    const { container } = render(
+      <CustomerAssignmentActions
+        assignment={assignment}
+        admins={[admin, secondAdmin]}
+        mode="confirm"
+        onChanged={onChanged}
+      />,
+    );
+
+    fireEvent.mouseDown(screen.getByRole("combobox"));
+    const option = await waitFor(() => {
+      const candidate = Array.from(
+        document.querySelectorAll<HTMLElement>(".ant-select-item-option"),
+      ).find((item) => item.textContent?.includes("独立用户"));
+      if (!candidate) throw new Error("independent option not rendered");
+      return candidate;
+    });
+    await userEvent.click(option);
+    await userEvent.click(container.querySelector("button") as HTMLButtonElement);
+    await userEvent.type(screen.getByLabelText("操作原因"), "解除代理关联");
+    await userEvent.click(screen.getByRole("button", { name: "确认执行" }));
+
+    await waitFor(() =>
+      expect(mocks.changeCustomerAssignment).toHaveBeenCalledWith(
+        "customer-1",
+        null,
+        1,
+        "解除代理关联",
+        {
+          confirmed: true,
+          current_password: "",
+          reason: "解除代理关联",
+        },
+      ),
+    );
+    expect(onChanged).toHaveBeenCalledWith(independent);
+  });
+
   it.each([403, 404, 409, 422, 429, 503])(
     "shows unified Chinese error for status %s",
     async (status) => {

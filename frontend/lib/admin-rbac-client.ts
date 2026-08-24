@@ -79,9 +79,9 @@ export type RiskCredentials = Readonly<{
 export type CustomerAssignment = Readonly<{
   id: string;
   customer_id: string;
-  owner_admin_id: string;
-  owner_nickname: string;
-  owner_phone_masked: string;
+  owner_admin_id: string | null;
+  owner_nickname: string | null;
+  owner_phone_masked: string | null;
   version: number;
   assigned_at: string | null;
 }>;
@@ -91,7 +91,7 @@ export const getCustomerAssignment = (customerId: string) =>
 
 export const changeCustomerAssignment = (
   customerId: string,
-  ownerAdminId: string,
+  ownerAdminId: string | null,
   expectedVersion: number,
   reason: string,
   credentials: RiskCredentials,

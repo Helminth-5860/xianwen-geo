@@ -30,7 +30,9 @@ export default function RegisterPage() {
   const [error, setError] = useState("");
   const [registrationRef, setRegistrationRef] = useState("");
   const [channelName, setChannelName] = useState("");
-  const [channelStatus, setChannelStatus] = useState<"checking" | "valid" | "invalid">("checking");
+  const [channelStatus, setChannelStatus] = useState<"none" | "checking" | "valid" | "invalid">(
+    "none",
+  );
 
   useEffect(() => {
     let current = true;
@@ -38,9 +40,9 @@ export default function RegisterPage() {
       const ref = new URLSearchParams(window.location.search).get("ref") ?? "";
       setRegistrationRef(ref);
       if (!ref) {
-        setChannelStatus("invalid");
         return;
       }
+      setChannelStatus("checking");
       void validateRegistrationReference(ref)
         .then((result) => {
           if (!current) return;
@@ -58,7 +60,6 @@ export default function RegisterPage() {
   }, []);
 
   const submit = async (values: RegistrationValues) => {
-    if (channelStatus !== "valid" || !registrationRef) return;
     setError("");
     setSubmitting(true);
     try {
@@ -88,18 +89,21 @@ export default function RegisterPage() {
         </Text>
       }
     >
+      {channelStatus === "none" && (
+        <Alert type="info" showIcon message="无需邀请，完成验证即可注册独立用户。" />
+      )}
       {channelStatus === "checking" && (
-        <Alert type="info" showIcon message="正在验证代理注册链接" />
+        <Alert type="info" showIcon message="正在验证管理员邀请关系" />
       )}
       {channelStatus === "valid" && (
-        <Alert type="success" showIcon message={`已验证代理渠道：${channelName}`} />
+        <Alert type="success" showIcon message={`注册后将关联管理员：${channelName}`} />
       )}
       {channelStatus === "invalid" && (
         <Alert
-          type="error"
+          type="warning"
           showIcon
-          message="注册链接无效或已过期"
-          description="请向你的代理管理员获取新的专属注册链接。"
+          message="邀请或推荐关系已失效"
+          description="你仍可继续注册，账号将作为独立用户使用。"
         />
       )}
       {error && <Alert type="error" showIcon message={error} role="alert" />}
@@ -110,7 +114,7 @@ export default function RegisterPage() {
         onFinish={submit}
         onFinishFailed={focusFirstInvalidField(form)}
         autoComplete="on"
-        disabled={submitting || channelStatus !== "valid"}
+        disabled={submitting}
       >
         <Form.Item name="phone" label="手机号" rules={phoneRules}>
           <Input

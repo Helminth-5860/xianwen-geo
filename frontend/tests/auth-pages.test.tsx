@@ -15,7 +15,7 @@ describe("认证页面", () => {
     expect(html).toContain("昵称");
     expect(html).toContain("短信验证码");
     expect(html).toContain("完成短信验证后，账号立即启用");
-    expect(html).toContain("正在验证代理注册链接");
+    expect(html).toContain("无需邀请，完成验证即可注册独立用户");
   });
 
   it("登录页提供账号密码入口", () => {

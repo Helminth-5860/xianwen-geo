@@ -29,11 +29,6 @@ def start_browser_session(request, user_id) -> User:
         user
     ) is None:
         raise AccountUnavailable
-    if not (has_admin_profile or user.is_staff or user.is_superuser):
-        from apps.admin_rbac.scopes import has_customer_owner
-
-        if not has_customer_owner(user):
-            raise AccountUnavailable
     login(
         request,
         user,

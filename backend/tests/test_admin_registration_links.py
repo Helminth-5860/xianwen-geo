@@ -132,7 +132,9 @@ def test_only_super_admin_can_read_admin_registration_link():
 
 
 @pytest.mark.django_db
-def test_registration_api_requires_valid_ref_and_rejects_admin_id_override(monkeypatch):
+def test_registration_api_allows_optional_or_invalid_ref_and_rejects_admin_override(
+    monkeypatch,
+):
     _, first, second = create_hierarchy()
     first_ref = issue_registration_ref(first)
     consumed = 0
@@ -160,16 +162,24 @@ def test_registration_api_requires_valid_ref_and_rejects_admin_id_override(monke
             HTTP_X_CSRFTOKEN=csrf,
         )
 
-    assert submit("13800000110").status_code == 422
-    assert submit("13800000111", ref="invalid").status_code == 422
+    public = submit("13800000110")
+    assert public.status_code == 201
+    public_user = User.objects.get(phone="+8613800000110")
+    assert public_user.customer_assignment.owner_admin is None
+    assert public.json()["data"]["home_route"] == "/workspace"
+
+    invalid = submit("13800000111", ref="invalid")
+    assert invalid.status_code == 201
+    invalid_ref_user = User.objects.get(phone="+8613800000111")
+    assert invalid_ref_user.customer_assignment.owner_admin is None
+
     assert submit("13800000112", ref=first_ref, admin_id=str(second.pk)).status_code == 422
-    assert consumed == 0
 
     created = submit("13800000113", ref=first_ref)
     assert created.status_code == 201
     user = User.objects.get(phone="+8613800000113")
     assert user.customer_assignment.owner_admin == first
-    assert consumed == 1
+    assert consumed == 3
 
 
 @pytest.mark.django_db
@@ -189,13 +199,52 @@ def test_admin_cannot_change_customer_owner_but_super_admin_can():
             request_id=uuid.uuid4(),
         )
 
+    independent = assign_customer(
+        actor=root,
+        context=resolve_admin_context(root),
+        customer=customer,
+        owner_admin_id=None,
+        expected_version=assignment.version,
+        reason="解除管理员关联",
+        request_id=uuid.uuid4(),
+    )
+    assert independent.owner_admin is None
+    assert customer.pk not in set(
+        scoped_customers(first.user, resolve_admin_context(first.user)).values_list("pk", flat=True)
+    )
+
     changed = assign_customer(
         actor=root,
         context=resolve_admin_context(root),
         customer=customer,
         owner_admin_id=second.pk,
-        expected_version=assignment.version,
-        reason="平台变更",
+        expected_version=independent.version,
+        reason="平台重新分配",
         request_id=uuid.uuid4(),
     )
     assert changed.owner_admin == second
+
+
+@pytest.mark.django_db
+def test_super_admin_assignment_api_can_release_user_to_independent_status():
+    root, first, _ = create_hierarchy()
+    customer = register_user("+8613800000121", "待解除归属客户", issue_registration_ref(first))
+    assignment = CustomerAssignment.objects.get(customer=customer)
+    client = authenticate_admin_client(APIClient(), root, step_up=True)
+
+    response = client.put(
+        f"/api/v1/admin/users/{customer.pk}/assignment",
+        {
+            "owner_admin_id": None,
+            "expected_version": assignment.version,
+            "reason": "转为独立用户",
+            "confirmed": True,
+            "current_password": PASSWORD,
+        },
+        format="json",
+    )
+
+    assert response.status_code == 200
+    assignment.refresh_from_db()
+    assert assignment.owner_admin is None
+    assert response.json()["data"]["owner_admin_id"] is None

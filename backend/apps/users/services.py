@@ -139,28 +139,36 @@ def should_deliver_sms(normalized_phone: str, purpose: SmsPurpose | str) -> bool
 
 
 def create_registered_user(
-    *, phone: str, nickname: str, password: str, registration_ref: str
+    *, phone: str, nickname: str, password: str, registration_ref: str = ""
 ) -> User:
     if User.objects.filter(phone=phone).exists():
         raise AccountAlreadyExists
     try:
         with transaction.atomic():
             from apps.admin_rbac.models import CustomerAssignment
-            from apps.admin_rbac.registration_links import resolve_registration_admin
+            from apps.admin_rbac.registration_links import (
+                InvalidRegistrationReference,
+                resolve_registration_admin,
+            )
 
-            owner = resolve_registration_admin(registration_ref, for_update=True)
+            owner = None
+            if registration_ref:
+                try:
+                    owner = resolve_registration_admin(registration_ref, for_update=True)
+                except InvalidRegistrationReference:
+                    owner = None
             user = User.objects.create_user(
                 phone=phone,
                 nickname=nickname,
                 password=password,
-                tenant=owner.user.tenant,
+                tenant=owner.user.tenant if owner else None,
                 account_status=User.AccountStatus.ACTIVE,
                 is_active=True,
             )
             assignment = CustomerAssignment(
                 customer=user,
                 owner_admin=owner,
-                assigned_at=timezone.now(),
+                assigned_at=timezone.now() if owner else None,
             )
             assignment.full_clean()
             assignment.save()

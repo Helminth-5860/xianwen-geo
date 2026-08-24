@@ -49,7 +49,7 @@ describe("集中认证客户端", () => {
     });
   });
 
-  it("注册请求不发送确认密码，也不持久化认证令牌", async () => {
+  it("公开注册请求不要求 ref、不发送确认密码，也不持久化认证令牌", async () => {
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(
@@ -73,7 +73,6 @@ describe("集中认证客户端", () => {
       nickname: "测试用户",
       smsCode: "438921",
       password: "Correct-Horse-Battery-2026!",
-      ref: "signed-agent-ref",
     });
 
     const requestBody = JSON.parse(String(fetchMock.mock.calls[1][1]?.body));
@@ -82,9 +81,9 @@ describe("集中认证客户端", () => {
       nickname: "测试用户",
       sms_code: "438921",
       password: "Correct-Horse-Battery-2026!",
-      ref: "signed-agent-ref",
     });
     expect(requestBody).not.toHaveProperty("passwordConfirmation");
+    expect(requestBody).not.toHaveProperty("ref");
   });
 
   it("注册链接验证使用编码后的 opaque ref 且不发起写请求", async () => {

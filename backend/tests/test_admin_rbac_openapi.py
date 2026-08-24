@@ -41,6 +41,7 @@ def test_xw0105_write_operations_document_csrf_and_versions():
     assert "expected_version" in schemas["AdminUpdateRequest"]["required"]
     assert schemas["AssignmentUpdateRequest"]["properties"]["expected_version"]["minimum"] == 1
     assert schemas["AssignmentUpdateRequest"]["properties"]["owner_admin_id"]["type"] == "string"
+    assert schemas["AssignmentUpdateRequest"]["properties"]["owner_admin_id"]["nullable"] is True
 
 
 def test_admin_schemas_do_not_expose_credentials_or_full_phone():

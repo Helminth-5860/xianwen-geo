@@ -39,14 +39,14 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("代理专属注册页", () => {
-  it("缺少 ref 时拒绝启用注册表单且不请求短信", async () => {
+describe("公开注册页", () => {
+  it("缺少 ref 时允许独立注册且不请求邀请验证", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch");
     render(<RegisterPage />);
 
-    expect(await screen.findByText("注册链接无效或已过期")).toBeTruthy();
+    expect(await screen.findByText("无需邀请，完成验证即可注册独立用户。")).toBeTruthy();
     expect((screen.getByRole("button", { name: "注册并登录" }) as HTMLButtonElement).disabled).toBe(
-      true,
+      false,
     );
     expect(fetchMock).not.toHaveBeenCalled();
   });
@@ -63,12 +63,33 @@ describe("代理专属注册页", () => {
 
     render(<RegisterPage />);
 
-    expect(await screen.findByText("已验证代理渠道：代理甲")).toBeTruthy();
+    expect(await screen.findByText("注册后将关联管理员：代理甲")).toBeTruthy();
     await waitFor(() =>
       expect(
         (screen.getByRole("button", { name: "注册并登录" }) as HTMLButtonElement).disabled,
       ).toBe(false),
     );
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("无效 ref 显示提示但仍允许独立注册", async () => {
+    window.history.replaceState({}, "", "/register?ref=invalid");
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      jsonResponse(
+        {
+          success: false,
+          error: { code: "VALIDATION_ERROR", message: "无效邀请", details: {} },
+          request_id: "r-invalid",
+        },
+        422,
+      ),
+    );
+
+    render(<RegisterPage />);
+
+    expect(await screen.findByText("邀请或推荐关系已失效")).toBeTruthy();
+    expect((screen.getByRole("button", { name: "注册并登录" }) as HTMLButtonElement).disabled).toBe(
+      false,
+    );
   });
 });

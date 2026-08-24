@@ -15,7 +15,6 @@ from rest_framework.status import (
 )
 from rest_framework.views import APIView
 
-from apps.admin_rbac.registration_links import InvalidRegistrationReference
 from apps.core.error_codes import ErrorCode
 from apps.core.responses import error_response
 
@@ -194,14 +193,6 @@ class RegistrationView(APIView):
                 status_code=HTTP_409_CONFLICT,
                 request=request,
             )
-        except InvalidRegistrationReference:
-            return error_response(
-                ErrorCode.VALIDATION_ERROR,
-                status_code=HTTP_422_UNPROCESSABLE_ENTITY,
-                request=request,
-                details={"ref": ["注册链接无效、已过期或所属代理不可用。"]},
-            )
-
         try:
             user = start_browser_session(request, user.pk)
         except AccountUnavailable:

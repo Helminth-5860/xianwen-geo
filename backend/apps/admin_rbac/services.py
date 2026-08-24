@@ -356,22 +356,24 @@ def assign_customer(
     )
     if customer.is_staff or customer.is_superuser:
         raise NotFound
-    try:
-        owner = (
-            AdminProfile.objects.select_for_update()
-            .select_related("user", "role")
-            .get(
-                pk=owner_admin_id,
-                admin_status=AdminProfile.Status.ACTIVE,
-                user__is_active=True,
-                user__is_staff=True,
-                user__is_superuser=False,
-                role__isnull=False,
-                role__status=AdminRole.Status.ACTIVE,
+    owner = None
+    if owner_admin_id is not None:
+        try:
+            owner = (
+                AdminProfile.objects.select_for_update()
+                .select_related("user", "role")
+                .get(
+                    pk=owner_admin_id,
+                    admin_status=AdminProfile.Status.ACTIVE,
+                    user__is_active=True,
+                    user__is_staff=True,
+                    user__is_superuser=False,
+                    role__isnull=False,
+                    role__status=AdminRole.Status.ACTIVE,
+                )
             )
-        )
-    except AdminProfile.DoesNotExist as exc:
-        raise NotFound from exc
+        except AdminProfile.DoesNotExist as exc:
+            raise NotFound from exc
     try:
         assignment = CustomerAssignment.objects.select_for_update().get(customer=customer)
     except CustomerAssignment.DoesNotExist as exc:
@@ -380,11 +382,11 @@ def assign_customer(
         raise AssignmentVersionConflict from None
     before = {
         "version": assignment.version,
-        "owner_admin_id": str(assignment.owner_admin_id),
+        "owner_admin_id": (str(assignment.owner_admin_id) if assignment.owner_admin_id else None),
     }
     assignment.owner_admin = owner
     assignment.assigned_by = actor
-    assignment.assigned_at = timezone.now()
+    assignment.assigned_at = timezone.now() if owner else None
     assignment.version += 1
     assignment.full_clean()
     assignment.save()
@@ -392,11 +394,11 @@ def assign_customer(
         actor=actor,
         target=assignment,
         target_type="assignment",
-        event_type="customer_assignment_changed",
+        event_type=("customer_assignment_changed" if owner else "customer_assignment_removed"),
         before=before,
         after={
             "version": assignment.version,
-            "owner_admin_id": str(owner.pk),
+            "owner_admin_id": str(owner.pk) if owner else None,
             "reason_provided": bool(clean_reason),
         },
         request_id=request_id,
