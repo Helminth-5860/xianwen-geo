@@ -49,14 +49,9 @@ class Tenant(models.Model):  # noqa: DJ008
 
 
 class User(AbstractBaseUser, PermissionsMixin):
-    class ApprovalStatus(models.TextChoices):
-        PENDING = "pending", "待审核"
-        APPROVED = "approved", "审核通过"
-        REJECTED = "rejected", "审核拒绝"
-
     class AccountStatus(models.TextChoices):
         ACTIVE = "active", "正常"
-        FROZEN = "frozen", "冻结"
+        FROZEN = "frozen", "禁用"
         CANCEL_PENDING = "cancel_pending", "注销冷静期"
         CANCELLED = "cancelled", "已注销"
 
@@ -77,26 +72,11 @@ class User(AbstractBaseUser, PermissionsMixin):
     )
     phone: models.CharField = models.CharField(max_length=14, unique=True)
     nickname: models.CharField = models.CharField(max_length=50)
-    approval_status: models.CharField = models.CharField(
-        max_length=16,
-        choices=ApprovalStatus.choices,
-        default=ApprovalStatus.PENDING,
-        db_index=True,
-    )
     account_status: models.CharField = models.CharField(
         max_length=16,
         choices=AccountStatus.choices,
         default=AccountStatus.ACTIVE,
         db_index=True,
-    )
-    approval_reason: models.TextField = models.TextField(blank=True)
-    approved_at: models.DateTimeField = models.DateTimeField(null=True, blank=True)
-    approved_by: models.ForeignKey = models.ForeignKey(
-        "self",
-        null=True,
-        blank=True,
-        on_delete=models.SET_NULL,
-        related_name="approved_users",
     )
     session_version: models.PositiveBigIntegerField = models.PositiveBigIntegerField(default=1)
     status_version: models.PositiveBigIntegerField = models.PositiveBigIntegerField(default=1)
@@ -193,15 +173,11 @@ class LoginEvent(models.Model):
 
 class UserStatusEvent(models.Model):
     class StatusDomain(models.TextChoices):
-        APPROVAL = "approval", "审核状态"
         ACCOUNT = "account", "账号状态"
 
     class EventType(models.TextChoices):
-        APPROVED = "approved", "审核通过"
-        REJECTED = "rejected", "审核拒绝"
-        RESUBMITTED = "resubmitted", "重新提交"
-        FROZEN = "frozen", "账号冻结"
-        UNFROZEN = "unfrozen", "账号解冻"
+        FROZEN = "frozen", "账号禁用"
+        UNFROZEN = "unfrozen", "账号恢复"
 
     id: models.UUIDField = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user: models.ForeignKey = models.ForeignKey(
@@ -234,17 +210,10 @@ class UserStatusEvent(models.Model):
         ]
         constraints = [
             models.CheckConstraint(
-                condition=(
-                    models.Q(
-                        status_domain="approval",
-                        from_value__in=["pending", "approved", "rejected"],
-                        to_value__in=["pending", "approved", "rejected"],
-                    )
-                    | models.Q(
-                        status_domain="account",
-                        from_value__in=["active", "frozen", "cancel_pending", "cancelled"],
-                        to_value__in=["active", "frozen", "cancel_pending", "cancelled"],
-                    )
+                condition=models.Q(
+                    status_domain="account",
+                    from_value__in=["active", "frozen", "cancel_pending", "cancelled"],
+                    to_value__in=["active", "frozen", "cancel_pending", "cancelled"],
                 ),
                 name="status_event_domain_values_valid",
             )
@@ -256,10 +225,8 @@ class UserStatusEvent(models.Model):
 
 class Notification(models.Model):
     class NotificationType(models.TextChoices):
-        APPROVAL_APPROVED = "approval_approved", "审核通过"
-        APPROVAL_REJECTED = "approval_rejected", "审核拒绝"
-        ACCOUNT_FROZEN = "account_frozen", "账号冻结"
-        ACCOUNT_UNFROZEN = "account_unfrozen", "账号解冻"
+        ACCOUNT_FROZEN = "account_frozen", "账号禁用"
+        ACCOUNT_UNFROZEN = "account_unfrozen", "账号恢复"
         PLAN_APPLICATION_SUBMITTED = "plan_application_submitted", "套餐申请已提交"
         PLAN_APPLICATION_CONTACTED = "plan_application_contacted", "套餐申请已联系"
         PLAN_APPLICATION_CLOSED = "plan_application_closed", "套餐申请已关闭"

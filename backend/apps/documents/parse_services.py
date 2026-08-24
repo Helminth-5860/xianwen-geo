@@ -168,11 +168,7 @@ def _effective_subscription_exists(user, moment) -> bool:
 
 
 def _parse_write_allowed(user: User) -> bool:
-    return (
-        user.is_active
-        and user.account_status == User.AccountStatus.ACTIVE
-        and user.approval_status == User.ApprovalStatus.APPROVED
-    )
+    return user.is_active and user.account_status == User.AccountStatus.ACTIVE
 
 
 def _confirm_write_allowed(user: User) -> bool:

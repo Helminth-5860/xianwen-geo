@@ -5,8 +5,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.admin_rbac.audit_services import validate_safe_json
-from apps.admin_rbac.models import ApprovalRequest, AuditEvent
-from apps.admin_rbac.risk_services import canonical_payload
+from apps.admin_rbac.models import AuditEvent
 from apps.quotas.lifecycle import (
     apply_expiry_dispositions,
     catch_up_subscription_cycles,
@@ -33,7 +32,6 @@ RENEWAL_SOURCE_TERMINATED = "RENEWAL_SOURCE_TERMINATED"
 RENEWAL_PLAN_ARCHIVED = "RENEWAL_PLAN_ARCHIVED"
 RENEWAL_CONFIRMATION_INVALID = "RENEWAL_CONFIRMATION_INVALID"
 RENEWAL_DIGEST_MISMATCH = "RENEWAL_DIGEST_MISMATCH"
-RENEWAL_APPROVAL_INVALID = "RENEWAL_APPROVAL_INVALID"
 SUBJECT_LIMIT_RECONCILIATION_REQUIRED = "SUBJECT_LIMIT_RECONCILIATION_REQUIRED"
 
 
@@ -44,7 +42,8 @@ def _audit(
     target_id,
     request_id,
     subject=None,
-    approval=None,
+    requester=None,
+    target_type="subscription",
     safe_after=None,
     stable_error_code="",
 ):
@@ -54,45 +53,25 @@ def _audit(
         outcome=outcome,
         actor=None,
         subject=subject,
-        requester=approval.requester if approval else None,
-        approver=approval.approved_by if approval else None,
-        target_type="subscription_change" if approval else "subscription",
+        requester=requester,
+        target_type=target_type,
         target_id=target_id,
         request_id=request_id,
-        approval_request=approval,
         safe_before={},
         safe_after=validate_safe_json(safe_after or {}),
         stable_error_code=stable_error_code,
     )
 
 
-def _approval_payload(change):
-    approval = change.source_approval
-    if (
-        approval is None
-        or approval.action_key != "subscription.change"
-        or approval.status != ApprovalRequest.Status.EXECUTED
-        or (approval.execution_result or {}).get("change_id") != str(change.pk)
-    ):
-        raise ValueError(RENEWAL_APPROVAL_INVALID)
-    payload, digest = canonical_payload(
-        approval.action_key,
-        approval.target_type,
-        approval.target_id,
-        approval.target_version,
-        approval.sanitized_payload,
-    )
-    if digest != approval.payload_digest:
-        raise ValueError(RENEWAL_DIGEST_MISMATCH)
-    expected = {
+def _renewal_payload(change):
+    return {
         "target_plan_version_id": str(change.target_plan_version_id),
         "change_type": SubscriptionChange.ChangeType.RENEWAL,
         "quota_policy": change.quota_policy,
+        "confirm_unavailable": bool(change.unavailable_reason),
+        "unavailable_reason": change.unavailable_reason,
         "request_digest": change.request_digest,
     }
-    if any(str(payload.get(key)) != str(value) for key, value in expected.items()):
-        raise ValueError(RENEWAL_DIGEST_MISMATCH)
-    return approval, payload
 
 
 def _change_event(change, event_type, from_status, request_id, summary):
@@ -139,7 +118,8 @@ def _mark_failed_locked(change, code, request_id):
         target_id=change.pk,
         request_id=request_id,
         subject=change.user,
-        approval=change.source_approval,
+        requester=change.requested_by,
+        target_type="subscription_change",
         safe_after={"status": "failed"},
         stable_error_code=code,
     )
@@ -237,13 +217,7 @@ def execute_due_renewal(*, change_id, request_id, now=None):
         user_id = Subscription.objects.only("user_id").get(pk=binding.from_subscription_id).user_id
         user = User.objects.select_for_update().get(pk=user_id)
         source = Subscription.objects.select_for_update().get(pk=binding.from_subscription_id)
-        change = (
-            SubscriptionChange.objects.select_for_update(of=("self",))
-            .select_related(
-                "source_approval", "source_approval__requester", "source_approval__approved_by"
-            )
-            .get(pk=change_id)
-        )
+        change = SubscriptionChange.objects.select_for_update(of=("self",)).get(pk=change_id)
         if change.status != SubscriptionChange.Status.SCHEDULED:
             return change
         if change.effective_at > moment or (
@@ -257,15 +231,7 @@ def execute_due_renewal(*, change_id, request_id, now=None):
             request_id=request_id,
             moment=moment,
         )
-        try:
-            approval, payload = _approval_payload(change)
-        except ValueError as exc:
-            code = (
-                str(exc)
-                if str(exc) in {RENEWAL_APPROVAL_INVALID, RENEWAL_DIGEST_MISMATCH}
-                else RENEWAL_APPROVAL_INVALID
-            )
-            return _fail_expired_renewal_locked(change, code, request_id)
+        payload = _renewal_payload(change)
         if plan.status == Plan.Status.ARCHIVED:
             return _fail_expired_renewal_locked(change, RENEWAL_PLAN_ARCHIVED, request_id)
         confirmed = bool(payload.get("confirm_unavailable")) and bool(
@@ -366,7 +332,8 @@ def execute_due_renewal(*, change_id, request_id, now=None):
             target_id=change.pk,
             request_id=request_id,
             subject=user,
-            approval=approval,
+            requester=change.requested_by,
+            target_type="subscription_change",
             safe_after={"status": "executed", "subscription_id": str(target.pk)},
         )
         return change

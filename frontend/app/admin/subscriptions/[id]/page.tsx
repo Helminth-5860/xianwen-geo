@@ -8,7 +8,6 @@ import { useAdminCapabilities } from "@/components/admin/admin-capability";
 import { SubscriptionChangeAction } from "@/components/admin/subscription-change-action";
 import { userMessage } from "@/lib/auth-client";
 import { getAdminSubscription, terminateSubscription, type Subscription } from "@/lib/plans-client";
-import type { ApprovalCreated } from "@/lib/risk-client";
 
 export default function AdminSubscriptionDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -16,7 +15,6 @@ export default function AdminSubscriptionDetailPage() {
   const [item, setItem] = useState<Subscription | null>(null);
   const [reason, setReason] = useState("");
   const [open, setOpen] = useState(false);
-  const [approval, setApproval] = useState<ApprovalCreated | null>(null);
   const [error, setError] = useState("");
   useEffect(() => {
     void getAdminSubscription(id)
@@ -28,8 +26,8 @@ export default function AdminSubscriptionDetailPage() {
   const canTerminate = capabilities?.permission_keys.includes("subscriptions.terminate") ?? false;
   const submit = async () => {
     try {
-      const result = await terminateSubscription(item.id, item.version, reason);
-      if ("approval_required" in result) setApproval(result as ApprovalCreated);
+      await terminateSubscription(item.id, item.version, reason);
+      setItem(await getAdminSubscription(id));
       setOpen(false);
     } catch (value) {
       setError(userMessage(value));
@@ -38,14 +36,6 @@ export default function AdminSubscriptionDetailPage() {
   return (
     <main className="admin-page">
       <Typography.Title>订阅详情</Typography.Title>
-      {approval && (
-        <Alert
-          type="warning"
-          showIcon
-          message="已发起双人审批"
-          description={"审批编号：" + approval.approval_id}
-        />
-      )}
       <Card>
         <Descriptions column={1}>
           <Descriptions.Item label="订阅编号">{item.id}</Descriptions.Item>
@@ -66,15 +56,20 @@ export default function AdminSubscriptionDetailPage() {
           ) : (
             <Alert type="info" showIcon message="当前账号没有终止订阅权限" />
           ))}
-        <SubscriptionChangeAction subscription={item} onApproval={setApproval} onError={setError} />
+        <SubscriptionChangeAction
+          subscription={item}
+          onCompleted={() => void getAdminSubscription(id).then(setItem)}
+          onError={setError}
+        />
       </Card>
       <Modal
-        title="终止订阅（需要双人审批）"
+        title="确认终止订阅"
         open={open}
         onCancel={() => setOpen(false)}
         onOk={() => void submit()}
-        okText="发起审批"
+        okText="确认终止"
       >
+        <Alert type="warning" showIcon message="确认后将立即终止，并写入操作记录。" />
         <Input.TextArea
           aria-label="终止原因"
           value={reason}

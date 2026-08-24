@@ -12,7 +12,7 @@ describe("XW-0403 API credential admin frontend security contract", () => {
   it("renders credential management only behind superuser credential capability", () => {
     expect(pageSource).toContain("capabilities?.is_superuser");
     expect(pageSource).toContain('"api_credentials.manage"');
-    expect(pageSource).toContain("API 密钥安全管理");
+    expect(pageSource).toContain('title="接口凭据"');
   });
 
   it("uses password inputs, resets plaintext forms, and never references ciphertext", () => {

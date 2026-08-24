@@ -90,7 +90,7 @@ operation, user, account, business target, and canonical request digest.
 
 Production requires a separate strong `QUOTA_IDEMPOTENCY_HMAC_KEY`. It may not
 reuse Django, SMS, database, or Redis secrets. The raw key is never persisted or
-placed in logs, errors, AuditEvent, Notification, or ApprovalRequest payloads.
+placed in logs, errors, AuditEvent, or Notification payloads.
 Risk handlers receive derived digests only.
 
 ## Public APIs
@@ -110,8 +110,8 @@ Administrator Session APIs:
 
 The three administrator adjustments require `quotas.adjust`, CSRF,
 `expected_version`, a positive integer amount, a normalized reason, and an
-Idempotency-Key. Their RiskAction minimum and current modes are fixed to
-`two_person`.
+Idempotency-Key. Their RiskAction mode requires the current超级管理员 password;
+successful requests execute directly and write an operation record.
 
 Administrator reads apply CustomerAssignment `own/role/all` scope before
 filters; out-of-scope objects return 404. User serializers omit business IDs,
@@ -128,7 +128,7 @@ Migration order:
    validate immutable snapshots and idempotently initialize existing
    Subscriptions.
 4. `admin_rbac.0012_seed_quota_catalog` seeds permissions, menu capability,
-   RiskAction, and fixed two-person policies.
+   RiskAction, and fixed password policies.
 
 The backfill reverse is intentionally a no-op so quota evidence is not silently
 deleted. Reversing the initial schema deletes ledger evidence and is destructive.
@@ -152,5 +152,5 @@ Real isolated PostgreSQL/Redis guard and concurrency checks:
 The dedicated suite verifies concurrent contiguous sequences, unique business
 holds across different idempotency keys, raw SQL guards, irreversible settlement,
 post-termination settlement, migration idempotency, transaction rollback, and
-two-person exactly-once execution. The GitHub Actions Docker Compose job runs the
+direct exactly-once execution. The GitHub Actions Docker Compose job runs the
 same core command and cleans isolated containers, networks, and volumes.

@@ -358,7 +358,6 @@ def test_api_generation_draft_confirm_versions_and_owner_scope(
         phone=f"136{uuid.uuid4().int % 100000000:08d}",
         nickname="Question outsider",
         password="Correct-Horse-Battery-2026!",
-        approval_status=User.ApprovalStatus.APPROVED,
     )
     other = APIClient()
     other.force_authenticate(outsider)

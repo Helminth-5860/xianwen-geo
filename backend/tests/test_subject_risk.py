@@ -3,7 +3,7 @@ from django.apps import apps as django_apps
 from django.core.management import call_command
 from rest_framework.test import APIClient
 
-from apps.admin_rbac.models import ApprovalRequest, AuditEvent, RiskAction
+from apps.admin_rbac.models import AuditEvent, RiskAction
 from apps.subjects import version_services
 from apps.subjects.models import (
     Subject,
@@ -113,26 +113,14 @@ def publish_matching_catalog(*, pattern="flagged"):
 
     requested = requester_client.post(
         "/api/v1/admin/subject-risk-catalog/publish",
-        {"expected_catalog_version": 3},
+        {"expected_catalog_version": 3, "confirmed": True},
         format="json",
     )
-    assert requested.status_code == 202
-    approval_id = payload(requested)["approval_id"]
-    assert ApprovalRequest.objects.get(pk=approval_id).status == ApprovalRequest.Status.PENDING
-    assert not SubjectRiskCatalogRevision.objects.exists()
-
-    approved = admin_client(approver).post(
-        f"/api/v1/admin/approvals/{approval_id}/approve",
-        {"current_password": PASSWORD},
-        format="json",
-    )
-    assert approved.status_code == 200
-    approval = ApprovalRequest.objects.get(pk=approval_id)
-    assert approval.status == ApprovalRequest.Status.EXECUTED
+    assert requested.status_code == 200
     revision = SubjectRiskCatalogState.objects.get(pk=1).published_revision
-    assert revision.approval_request_id == approval.id
-    assert revision.draft_version == approval.target_version == 3
-    assert approval.sanitized_payload == {"draft_digest": revision.snapshot_digest}
+    assert revision.draft_version == 3
+    assert payload(requested)["revision_id"] == str(revision.id)
+    assert AuditEvent.objects.get(action_key="subject_risk.catalog.publish").outcome == "executed"
     return requester, approver, revision
 
 
@@ -141,7 +129,6 @@ def create_flagged_subject(phone="13800138000"):
         phone=phone,
         nickname="Subject owner",
         password=PASSWORD,
-        approval_status=User.ApprovalStatus.PENDING,
     )
     client = user_client(user)
     subject_type = SubjectType.objects.get(key="enterprise")
@@ -170,14 +157,14 @@ def create_and_commit_flagged_subject(phone="13800138000"):
 
 
 @pytest.mark.django_db
-def test_catalog_is_draft_until_two_person_publish_and_only_fixed_action_can_activate():
+def test_catalog_is_draft_until_confirmed_direct_publish():
     requester, _, revision = publish_matching_catalog()
 
     action = RiskAction.objects.get(pk="subject_risk.catalog.publish")
-    assert action.supported_modes == ["two_person"]
-    assert action.default_mode == "two_person"
-    assert action.minimum_mode == "two_person"
-    assert action.policy.current_mode == "two_person"
+    assert action.supported_modes == ["confirm"]
+    assert action.default_mode == "confirm"
+    assert action.minimum_mode == "confirm"
+    assert action.policy.current_mode == "confirm"
     assert revision.revision_no == 1
     assert revision.snapshot["rules"][0]["operator"] == "contains_any"
 
@@ -186,7 +173,7 @@ def test_catalog_is_draft_until_two_person_publish_and_only_fixed_action_can_act
         {"action_key": "subject_risk.catalog.publish", "payload": {}},
         format="json",
     )
-    assert generic.status_code == 405
+    assert generic.status_code == 404
 
 
 @pytest.mark.django_db
@@ -253,7 +240,6 @@ def test_commit_binds_immutable_revision_and_direct_review_supersedes_only_pendi
     assert decision.status_code == 200
     review.refresh_from_db()
     assert review.status == SubjectReview.Status.APPROVED
-    assert not ApprovalRequest.objects.filter(target_id=review.id).exists()
     assert AuditEvent.objects.filter(
         action_key="subject_risk.review.approved", target_id=review.id
     ).exists()
@@ -375,7 +361,7 @@ def test_commit_without_published_catalog_returns_503_and_rolls_back_all_version
 
 
 @pytest.mark.django_db
-def test_draft_changes_do_not_affect_runtime_and_pending_publish_becomes_stale():
+def test_draft_changes_do_not_affect_runtime_until_confirmed_publish():
     requester, approver, revision = publish_matching_catalog()
     _, _, subject_data = create_and_commit_flagged_subject()
     review = SubjectReview.objects.get(subject_id=subject_data["id"])
@@ -403,37 +389,28 @@ def test_draft_changes_do_not_affect_runtime_and_pending_publish_becomes_stale()
 
     requested = admin_client(requester).post(
         "/api/v1/admin/subject-risk-catalog/publish",
-        {"expected_catalog_version": 5},
+        {"expected_catalog_version": 5, "confirmed": True},
         format="json",
     )
-    assert requested.status_code == 202
-    approval = ApprovalRequest.objects.get(pk=payload(requested)["approval_id"])
-    assert approval.target_version == 5
-    assert set(approval.sanitized_payload) == {"draft_digest"}
+    assert requested.status_code == 200
+    second_revision = SubjectRiskCatalogRevision.objects.get(pk=payload(requested)["revision_id"])
+    assert second_revision.draft_version == 5
 
     risk_type.refresh_from_db()
     changed_again = admin_client(requester).patch(
         f"/api/v1/admin/subject-risk-types/{risk_type.id}",
         {
-            "expected_catalog_version": 5,
+            "expected_catalog_version": 6,
             "expected_version": risk_type.version,
             "allow_article_generation": True,
         },
         format="json",
     )
     assert changed_again.status_code == 200
-    stale = admin_client(approver).post(
-        f"/api/v1/admin/approvals/{approval.id}/approve",
-        {"current_password": PASSWORD},
-        format="json",
-    )
-    assert stale.status_code == 409
-    assert stale.json()["error"]["code"] == "APPROVAL_STALE"
-    approval.refresh_from_db()
-    assert approval.status == ApprovalRequest.Status.STALE
     state = SubjectRiskCatalogState.objects.get(pk=1)
-    assert state.published_revision_id == revision.id
-    assert SubjectRiskCatalogRevision.objects.count() == 1
+    assert state.published_revision_id == second_revision.id
+    assert state.published_revision_id != revision.id
+    assert SubjectRiskCatalogRevision.objects.count() == 2
 
 
 @pytest.mark.django_db

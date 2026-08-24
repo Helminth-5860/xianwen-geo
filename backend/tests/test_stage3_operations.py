@@ -50,7 +50,6 @@ def make_customer(phone="13800000001"):
         phone=phone,
         nickname="Stage3 客户",
         password=PASSWORD,
-        approval_status=User.ApprovalStatus.APPROVED,
     )
 
 

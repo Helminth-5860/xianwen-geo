@@ -84,7 +84,6 @@ def _facts(
         phone=f"139{uuid.uuid4().int % 100000000:08d}",
         nickname="Distillation user",
         password=PASSWORD,
-        approval_status=User.ApprovalStatus.APPROVED,
         account_status=User.AccountStatus.ACTIVE,
     )
     subject_type = SubjectType.objects.get(key="enterprise")
@@ -501,7 +500,6 @@ def test_distillation_api_async_draft_confirm_owner_scope_and_safe_payloads():
         phone=f"136{uuid.uuid4().int % 100000000:08d}",
         nickname="Outsider",
         password=PASSWORD,
-        approval_status=User.ApprovalStatus.APPROVED,
     )
     outsider_client = APIClient()
     outsider_client.force_authenticate(outsider)

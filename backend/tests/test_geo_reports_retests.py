@@ -411,7 +411,6 @@ def test_report_read_model_lazy_details_history_trends_exports_and_permissions(r
         phone=f"138{uuid.uuid4().int % 100000000:08d}",
         nickname="Other",
         password="Other-user-password-1!",
-        approval_status=user.ApprovalStatus.APPROVED,
     )
     other.account_status = other.AccountStatus.ACTIVE
     other.save(update_fields=("account_status", "updated_at"))

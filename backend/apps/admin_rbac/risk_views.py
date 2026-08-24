@@ -8,7 +8,6 @@ from rest_framework.status import (
     HTTP_200_OK,
     HTTP_403_FORBIDDEN,
     HTTP_409_CONFLICT,
-    HTTP_410_GONE,
     HTTP_422_UNPROCESSABLE_ENTITY,
     HTTP_500_INTERNAL_SERVER_ERROR,
 )
@@ -17,30 +16,16 @@ from rest_framework.views import APIView
 from apps.core.error_codes import ErrorCode
 from apps.core.responses import error_response
 
-from .models import ApprovalRequest, AuditEvent, RiskAction, RiskPolicy
+from .models import AuditEvent, RiskAction, RiskPolicy
 from .permissions import HasAdminPermission
 from .risk_handlers import HANDLER_SPECS
 from .risk_serializers import (
-    ApprovalApproveSerializer,
-    ApprovalRejectSerializer,
-    ApprovalSerializer,
     AuditEventSerializer,
     RiskActionSerializer,
     RiskPolicySerializer,
     RiskPolicyUpdateSerializer,
 )
-from .risk_services import (
-    ApprovalExpired,
-    ApprovalSelfNotAllowed,
-    ApprovalStateConflict,
-    RiskError,
-    approve_request,
-    cancel_request,
-    expire_pending_approvals,
-    get_approval_for_user,
-    reject_request,
-    update_risk_policy,
-)
+from .risk_services import RiskError, update_risk_policy
 from .security import AdminReauthFailed, AdminReauthRateLimited, AdminSecurityUnavailable
 
 ERROR_STATUS = {
@@ -48,13 +33,9 @@ ERROR_STATUS = {
     "RISK_POLICY_VERSION_CONFLICT": HTTP_409_CONFLICT,
     "RISK_SECURITY_MODE_NOT_SUPPORTED": HTTP_422_UNPROCESSABLE_ENTITY,
     "RISK_SECURITY_MODE_BELOW_MINIMUM": HTTP_422_UNPROCESSABLE_ENTITY,
-    "APPROVAL_STATE_CONFLICT": HTTP_409_CONFLICT,
-    "APPROVAL_SELF_NOT_ALLOWED": HTTP_403_FORBIDDEN,
-    "APPROVAL_APPROVER_UNAVAILABLE": HTTP_409_CONFLICT,
-    "APPROVAL_EXPIRED": HTTP_410_GONE,
-    "APPROVAL_STALE": HTTP_409_CONFLICT,
-    "APPROVAL_PAYLOAD_INVALID": HTTP_422_UNPROCESSABLE_ENTITY,
-    "APPROVAL_EXECUTION_FAILED": HTTP_500_INTERNAL_SERVER_ERROR,
+    "RISK_TARGET_STALE": HTTP_409_CONFLICT,
+    "RISK_PAYLOAD_INVALID": HTTP_422_UNPROCESSABLE_ENTITY,
+    "RISK_ACTION_EXECUTION_FAILED": HTTP_500_INTERNAL_SERVER_ERROR,
 }
 
 
@@ -69,7 +50,7 @@ def risk_error_response(exc, request):
         return error_response(
             ErrorCode.SERVICE_TEMPORARILY_UNAVAILABLE, status_code=503, request=request
         )
-    code = getattr(exc, "code", "APPROVAL_EXECUTION_FAILED")
+    code = getattr(exc, "code", "RISK_ACTION_EXECUTION_FAILED")
     return error_response(ErrorCode(code), status_code=ERROR_STATUS[code], request=request)
 
 
@@ -144,102 +125,6 @@ class RiskPolicyDetailView(APIView):
         ) as exc:
             return risk_error_response(exc, request)
         return Response(RiskPolicySerializer(policy).data)
-
-
-class ApprovalListView(APIView):
-    required_permission = "approvals.list"
-    permission_classes = [HasAdminPermission]
-
-    def get(self, request):
-        expire_pending_approvals(request=request)
-        queryset = ApprovalRequest.objects.select_related("requester", "action")
-        if not request.user.is_superuser:
-            queryset = queryset.filter(requester=request.user)
-        status_value = request.query_params.get("status")
-        if status_value:
-            if status_value not in ApprovalRequest.Status.values:
-                raise ValidationError({"status": ["审批状态不正确。"]})
-            queryset = queryset.filter(status=status_value)
-        return Response(_page(queryset, ApprovalSerializer, request))
-
-
-class ApprovalDetailView(APIView):
-    required_permission = "approvals.view"
-    permission_classes = [HasAdminPermission]
-
-    def get(self, request, approval_id):
-        approval = get_approval_for_user(request=request, approval_id=approval_id)
-        return Response(ApprovalSerializer(approval).data)
-
-
-@method_decorator(csrf_protect, name="dispatch")
-class ApprovalApproveView(APIView):
-    required_permission = "approvals.approve"
-    permission_classes = [HasAdminPermission]
-
-    def post(self, request, approval_id):
-        serializer = ApprovalApproveSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        try:
-            approval = approve_request(
-                request=request, approval_id=approval_id, **serializer.validated_data
-            )
-        except (
-            RiskError,
-            AdminReauthFailed,
-            AdminReauthRateLimited,
-            AdminSecurityUnavailable,
-        ) as exc:
-            return risk_error_response(exc, request)
-        if approval.status == ApprovalRequest.Status.EXPIRED:
-            return error_response(
-                ErrorCode.APPROVAL_EXPIRED, status_code=HTTP_410_GONE, request=request
-            )
-        if approval.status == ApprovalRequest.Status.STALE:
-            return error_response(
-                ErrorCode.APPROVAL_STALE, status_code=HTTP_409_CONFLICT, request=request
-            )
-        return Response(ApprovalSerializer(approval).data)
-
-
-@method_decorator(csrf_protect, name="dispatch")
-class ApprovalRejectView(APIView):
-    required_permission = "approvals.reject"
-    permission_classes = [HasAdminPermission]
-
-    def post(self, request, approval_id):
-        serializer = ApprovalRejectSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        try:
-            approval = reject_request(
-                request=request, approval_id=approval_id, **serializer.validated_data
-            )
-        except (ApprovalSelfNotAllowed, ApprovalStateConflict) as exc:
-            return risk_error_response(exc, request)
-        if approval.status == ApprovalRequest.Status.EXPIRED:
-            return error_response(
-                ErrorCode.APPROVAL_EXPIRED, status_code=HTTP_410_GONE, request=request
-            )
-        return Response(ApprovalSerializer(approval).data)
-
-
-@method_decorator(csrf_protect, name="dispatch")
-class ApprovalCancelView(APIView):
-    required_permission = "approvals.cancel"
-    permission_classes = [HasAdminPermission]
-
-    def post(self, request, approval_id):
-        try:
-            approval = cancel_request(request=request, approval_id=approval_id)
-        except ApprovalExpired:
-            return error_response(
-                ErrorCode.APPROVAL_EXPIRED,
-                status_code=HTTP_410_GONE,
-                request=request,
-            )
-        except ApprovalStateConflict as exc:
-            return risk_error_response(exc, request)
-        return Response(ApprovalSerializer(approval).data)
 
 
 class AuditEventListView(APIView):

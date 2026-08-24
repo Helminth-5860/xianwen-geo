@@ -11,10 +11,10 @@ hold-release API. User and administrator GET endpoints remain read-only.
 
 ## Scheduled renewal
 
-A scheduled renewal has already completed two-person approval. System execution
-validates its immutable ApprovalRequest binding, canonical digest, target
-PlanVersion, and recorded unavailable confirmation. It does not depend on the
-requester's current role, permission, or customer assignment.
+A scheduled renewal has already completed direct confirmation. System execution
+validates its canonical digest, target PlanVersion, and recorded unavailable
+confirmation. It does not depend on the requester's current role, permission,
+or customer assignment.
 
 The target window is deterministic:
 
@@ -23,7 +23,7 @@ The target window is deterministic:
 - a delayed worker never restarts the duration from its actual execution time.
 - an entirely elapsed target window fails with RENEWAL_WINDOW_ELAPSED.
 - archived targets fail; offline or retired targets require the confirmation
-  captured by the original approval; no version is substituted.
+  captured by the original confirmation; no version is substituted.
 
 SubscriptionChange adds the terminal failed state. scheduled may transition only
 to executed, cancelled, or failed; terminal states cannot be restored. Permanent

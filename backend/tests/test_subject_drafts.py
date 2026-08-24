@@ -34,7 +34,6 @@ def make_user(*, phone="13800138000", account_status=User.AccountStatus.ACTIVE):
         phone=phone,
         nickname="Subject user",
         password=PASSWORD,
-        approval_status=User.ApprovalStatus.PENDING,
         account_status=account_status,
     )
 

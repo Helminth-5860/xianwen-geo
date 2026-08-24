@@ -112,7 +112,6 @@ class PasswordResetSerializer(SmsCodeSerializer):
 
 class CurrentUserSerializer(serializers.ModelSerializer):
     phone_masked = serializers.SerializerMethodField()
-    approval_reason = serializers.SerializerMethodField()
     commercial_identity = serializers.SerializerMethodField()
     home_route = serializers.SerializerMethodField()
     tenant = serializers.SerializerMethodField()
@@ -123,9 +122,7 @@ class CurrentUserSerializer(serializers.ModelSerializer):
             "id",
             "nickname",
             "phone_masked",
-            "approval_status",
             "account_status",
-            "approval_reason",
             "commercial_identity",
             "home_route",
             "tenant",
@@ -133,11 +130,6 @@ class CurrentUserSerializer(serializers.ModelSerializer):
 
     def get_phone_masked(self, user: User) -> str:
         return mask_phone(user.phone)
-
-    def get_approval_reason(self, user: User) -> str | None:
-        if user.approval_status == User.ApprovalStatus.REJECTED:
-            return user.approval_reason
-        return None
 
     def get_commercial_identity(self, user: User) -> str:
         return commercial_identity(user).value
@@ -149,27 +141,6 @@ class CurrentUserSerializer(serializers.ModelSerializer):
         tenant = user.tenant if user.tenant_id else None
         return tenant_branding(tenant)
 
-    def to_representation(self, instance):
-        representation = super().to_representation(instance)
-        if representation["approval_reason"] is None:
-            representation.pop("approval_reason")
-        return representation
-
-
-class ApprovalResubmitSerializer(serializers.Serializer):
-    nickname = serializers.CharField(max_length=50, required=False, trim_whitespace=False)
-
-    def validate(self, attrs):
-        unexpected_fields = set(self.initial_data) - {"nickname"}
-        if unexpected_fields:
-            raise serializers.ValidationError(
-                {"non_field_errors": ["重新提交不能修改手机号或其他账号字段。"]}
-            )
-        return attrs
-
-    def validate_nickname(self, value: str) -> str:
-        return validate_nickname(value)
-
 
 class PaginationSerializer(serializers.Serializer):
     page = serializers.IntegerField(min_value=1, default=1)
@@ -178,10 +149,6 @@ class PaginationSerializer(serializers.Serializer):
 
 class AdminUserListQuerySerializer(NormalizedPhoneSerializer):
     phone = serializers.CharField(max_length=32, required=False, trim_whitespace=True)
-    approval_status = serializers.ChoiceField(
-        choices=User.ApprovalStatus.values,
-        required=False,
-    )
     account_status = serializers.ChoiceField(
         choices=User.AccountStatus.values,
         required=False,
@@ -199,10 +166,8 @@ class AdminUserListSerializer(serializers.ModelSerializer):
             "id",
             "nickname",
             "phone_masked",
-            "approval_status",
             "account_status",
             "status_version",
-            "approved_at",
             "created_at",
         )
 
@@ -211,26 +176,7 @@ class AdminUserListSerializer(serializers.ModelSerializer):
 
 
 class AdminUserDetailSerializer(AdminUserListSerializer):
-    approval_reason = serializers.SerializerMethodField()
-
-    class Meta:
-        model = User
-        fields = (
-            "id",
-            "nickname",
-            "phone_masked",
-            "approval_status",
-            "account_status",
-            "status_version",
-            "approved_at",
-            "created_at",
-            "approval_reason",
-        )
-
-    def get_approval_reason(self, user: User) -> str | None:
-        if user.approval_status == User.ApprovalStatus.REJECTED:
-            return user.approval_reason
-        return None
+    pass
 
 
 class UserStatusEventSerializer(serializers.ModelSerializer):
@@ -249,37 +195,6 @@ class UserStatusEventSerializer(serializers.ModelSerializer):
             "request_id",
             "created_at",
         )
-
-
-class ReviewUserSerializer(serializers.Serializer):
-    decision = serializers.ChoiceField(choices=("approve", "reject"))
-    reason = serializers.CharField(
-        max_length=500,
-        required=False,
-        allow_blank=True,
-        trim_whitespace=False,
-    )
-    expected_version = serializers.IntegerField(min_value=1, required=False)
-    confirmed = serializers.BooleanField(required=False, default=False)
-    current_password = serializers.CharField(
-        max_length=128, write_only=True, required=False, default=""
-    )
-
-    def validate(self, attrs):
-        decision = attrs["decision"]
-        if decision == "reject" and "expected_version" not in attrs:
-            raise serializers.ValidationError({"expected_version": ["拒绝审核时必须提供。"]})
-        reason = attrs.get("reason", "")
-        if decision == "reject" and not reason.strip():
-            attrs["reason_required"] = True
-            return attrs
-        attrs["reason"] = validate_safe_plain_text(
-            reason,
-            field_label="拒绝原因",
-            max_length=500,
-            required=decision == "reject",
-        )
-        return attrs
 
 
 class AccountStatusActionSerializer(serializers.Serializer):

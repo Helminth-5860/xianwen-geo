@@ -6,7 +6,6 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.status import (
     HTTP_201_CREATED,
-    HTTP_202_ACCEPTED,
     HTTP_401_UNAUTHORIZED,
     HTTP_403_FORBIDDEN,
     HTTP_409_CONFLICT,
@@ -314,7 +313,7 @@ class RoleSecurityView(APIView):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
         try:
-            result = perform_risk_action(
+            perform_risk_action(
                 request=request,
                 action_key="role.security.update",
                 target_id=role_id,
@@ -326,8 +325,6 @@ class RoleSecurityView(APIView):
                 },
                 current_password=data["current_password"],
             )
-            if result.approval_required:
-                return Response(result.data, status=HTTP_202_ACCEPTED)
             role = AdminRole.objects.get(pk=role_id)
         except RiskError as exc:
             return risk_error_response(exc, request)
@@ -381,8 +378,6 @@ class RoleIpAllowlistView(APIView):
                 },
                 current_password=data["current_password"],
             )
-            if result.approval_required:
-                return Response(result.data, status=HTTP_202_ACCEPTED)
             entry = RoleIpAllowlistEntry.objects.get(pk=result.data["entry_id"], role_id=role_id)
             role = AdminRole.objects.get(pk=role_id)
         except RiskError as exc:
@@ -417,7 +412,7 @@ class RoleIpAllowlistDetailView(APIView):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
         try:
-            result = perform_risk_action(
+            perform_risk_action(
                 request=request,
                 action_key="role.ip_allowlist.update",
                 target_id=role_id,
@@ -431,8 +426,6 @@ class RoleIpAllowlistDetailView(APIView):
                 },
                 current_password=data["current_password"],
             )
-            if result.approval_required:
-                return Response(result.data, status=HTTP_202_ACCEPTED)
             entry = RoleIpAllowlistEntry.objects.get(pk=entry_id, role_id=role_id)
             role = AdminRole.objects.get(pk=role_id)
         except RiskError as exc:
@@ -472,7 +465,7 @@ class SuperuserSecurityView(APIView):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
         try:
-            result = perform_risk_action(
+            perform_risk_action(
                 request=request,
                 action_key="superuser.ip_allowlist.update",
                 target_id=request.user.pk,
@@ -484,8 +477,6 @@ class SuperuserSecurityView(APIView):
                 },
                 current_password=data["current_password"],
             )
-            if result.approval_required:
-                return Response(result.data, status=HTTP_202_ACCEPTED)
             policy = SuperuserSecurityPolicy.objects.get(user=request.user)
         except RiskError as exc:
             return risk_error_response(exc, request)
@@ -532,8 +523,6 @@ class SuperuserIpAllowlistView(APIView):
                 },
                 current_password=data["current_password"],
             )
-            if result.approval_required:
-                return Response(result.data, status=HTTP_202_ACCEPTED)
             entry = SuperuserIpAllowlistEntry.objects.get(pk=result.data["entry_id"])
             policy = SuperuserSecurityPolicy.objects.get(user=request.user)
         except RiskError as exc:
@@ -566,7 +555,7 @@ class SuperuserIpAllowlistDetailView(APIView):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
         try:
-            result = perform_risk_action(
+            perform_risk_action(
                 request=request,
                 action_key="superuser.ip_allowlist.update",
                 target_id=request.user.pk,
@@ -580,8 +569,6 @@ class SuperuserIpAllowlistDetailView(APIView):
                 },
                 current_password=data["current_password"],
             )
-            if result.approval_required:
-                return Response(result.data, status=HTTP_202_ACCEPTED)
             entry = SuperuserIpAllowlistEntry.objects.get(pk=entry_id)
             policy = SuperuserSecurityPolicy.objects.get(user=request.user)
         except RiskError as exc:
@@ -635,6 +622,4 @@ class AdminForceLogoutView(APIView):
             return risk_error_response(exc, request)
         except AdminProfile.DoesNotExist as exc:
             raise NotFound from exc
-        if result.approval_required:
-            return Response(result.data, status=HTTP_202_ACCEPTED)
         return Response(result.data)

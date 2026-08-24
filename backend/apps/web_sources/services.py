@@ -38,7 +38,6 @@ def _eligible_locked(*, user: User, subject: Subject) -> Subscription:
         not settings.WEB_IMPORT_ENABLED
         or not user.is_active
         or user.account_status != User.AccountStatus.ACTIVE
-        or user.approval_status != User.ApprovalStatus.APPROVED
         or subject.user_id != user.pk
         or subject.status not in {Subject.Status.DRAFT, Subject.Status.ACTIVE}
     ):

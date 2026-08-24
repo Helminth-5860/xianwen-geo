@@ -62,7 +62,6 @@ describe("集中认证客户端", () => {
             id: "5d8fc11d-e52d-49db-93c0-eea241dd99e6",
             nickname: "测试用户",
             phone_masked: "+86 138****8000",
-            approval_status: "approved",
             account_status: "active",
           },
           request_id: "r2",

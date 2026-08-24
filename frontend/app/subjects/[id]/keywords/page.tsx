@@ -65,7 +65,6 @@ const priorityOptions = [
 ];
 
 const readOnlyReasons: Record<string, string> = {
-  approval_required: "账号审核通过后才能编辑关键词。",
   account_unavailable: "当前账号状态不允许编辑关键词。",
   subject_archived: "已归档主体只能查看关键词历史。",
   subject_version_required: "请先提交主体正式版本，再维护关键词。",

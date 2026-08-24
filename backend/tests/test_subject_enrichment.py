@@ -52,7 +52,6 @@ def _facts():
         phone=f"139{uuid.uuid4().int % 100000000:08d}",
         nickname="Enrichment user",
         password="Correct-Horse-Battery-2026!",
-        approval_status=User.ApprovalStatus.APPROVED,
         account_status=User.AccountStatus.ACTIVE,
     )
     subject_type = SubjectType.objects.get(key="enterprise")
@@ -453,7 +452,6 @@ def test_enrichment_api_is_owner_scoped_async_and_never_exposes_prompt_or_digest
         phone=f"136{uuid.uuid4().int % 100000000:08d}",
         nickname="Outsider",
         password="Correct-Horse-Battery-2026!",
-        approval_status=User.ApprovalStatus.APPROVED,
     )
     outsider_client = APIClient()
     outsider_client.force_authenticate(outsider)

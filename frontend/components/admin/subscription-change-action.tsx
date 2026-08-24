@@ -13,15 +13,14 @@ import {
   type SubscriptionChangeType,
   type SubscriptionQuotaPolicy,
 } from "@/lib/plans-client";
-import type { ApprovalCreated } from "@/lib/risk-client";
 
 type Props = Readonly<{
   subscription: Subscription;
-  onApproval: (approval: ApprovalCreated) => void;
+  onCompleted: () => void;
   onError: (message: string) => void;
 }>;
 
-export function SubscriptionChangeAction({ subscription, onApproval, onError }: Props) {
+export function SubscriptionChangeAction({ subscription, onCompleted, onError }: Props) {
   const capabilities = useAdminCapabilities();
   const [open, setOpen] = useState(false);
   const [targetVersionId, setTargetVersionId] = useState("");
@@ -35,7 +34,7 @@ export function SubscriptionChangeAction({ subscription, onApproval, onError }: 
   const allowed = capabilities?.permission_keys.includes("subscriptions.change") ?? false;
 
   if (!allowed) {
-    return <Alert type="info" showIcon message="当前账号没有变更套餐权限" />;
+    return <Alert type="info" showIcon title="当前账号没有变更套餐权限" />;
   }
   if (subscription.status !== "active") return null;
 
@@ -74,7 +73,7 @@ export function SubscriptionChangeAction({ subscription, onApproval, onError }: 
     }
     setSubmitting(true);
     try {
-      const result = await requestSubscriptionChange(
+      await requestSubscriptionChange(
         subscription.id,
         {
           expectedVersion: subscription.version,
@@ -87,7 +86,7 @@ export function SubscriptionChangeAction({ subscription, onApproval, onError }: 
         },
         crypto.randomUUID(),
       );
-      if ("approval_required" in result) onApproval(result as ApprovalCreated);
+      onCompleted();
       setOpen(false);
     } catch (value) {
       onError(userMessage(value));
@@ -100,19 +99,15 @@ export function SubscriptionChangeAction({ subscription, onApproval, onError }: 
     <>
       <Button onClick={() => setOpen(true)}>变更套餐</Button>
       <Modal
-        title="变更套餐（固定双人审批）"
+        title="变更套餐"
         open={open}
         onCancel={() => !submitting && setOpen(false)}
         onOk={() => void submit()}
-        okText="发起审批"
+        okText="确认变更"
         confirmLoading={submitting}
       >
-        <Space direction="vertical" style={{ width: "100%" }}>
-          <Alert
-            type="warning"
-            showIcon
-            message="提交后由另一名有效超级管理员审批，当前不会直接执行"
-          />
+        <Space orientation="vertical" style={{ width: "100%" }}>
+          <Alert type="info" showIcon title="确认后将直接执行并写入操作记录" />
           <Input
             aria-label="目标套餐版本 ID"
             value={targetVersionId}
@@ -160,7 +155,7 @@ export function SubscriptionChangeAction({ subscription, onApproval, onError }: 
             <Alert
               type="info"
               showIcon
-              message={`服务端分类：${preview.change_type}`}
+              title={`服务端分类：${preview.change_type}`}
               description={`生效时间：${preview.effective_at}；额度策略：${preview.quota_policy}`}
             />
           )}

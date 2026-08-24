@@ -34,11 +34,10 @@ def seed_catalogs():
     call_command("sync_admin_rbac", "--apply", verbosity=0)
 
 
-def make_user(phone="13800138000", *, approval="pending", account="active", staff=False):
+def make_user(phone="13800138000", *, account="active", staff=False):
     user = User(
         phone=phone,
         nickname="申请用户",
-        approval_status=approval,
         account_status=account,
         is_staff=staff,
         is_superuser=False,
@@ -53,7 +52,6 @@ def make_admin(phone="13900139000"):
     user = User(
         phone=phone,
         nickname="套餐管理员",
-        approval_status="approved",
         account_status="active",
         is_staff=True,
         is_superuser=True,
@@ -111,11 +109,10 @@ def create_application(client, plan, version, *, key=None, note="请联系我"):
 
 
 @pytest.mark.django_db
-@pytest.mark.parametrize("approval", ["pending", "approved"])
-def test_pending_and_approved_user_can_apply_with_bound_public_snapshot(approval):
+def test_active_user_can_apply_with_bound_public_snapshot():
     admin = make_admin()
     plan, version = make_published_plan(admin)
-    response = create_application(user_client(make_user(approval=approval)), plan, version)
+    response = create_application(user_client(make_user()), plan, version)
     assert response.status_code == 201
     data = response.json()["data"]
     assert data["status"] == "pending"
@@ -132,20 +129,17 @@ def test_pending_and_approved_user_can_apply_with_bound_public_snapshot(approval
 
 @pytest.mark.django_db
 @pytest.mark.parametrize(
-    ("approval", "account"),
+    "account",
     [
-        ("rejected", "active"),
-        ("pending", "cancel_pending"),
-        ("pending", "frozen"),
-        ("pending", "cancelled"),
+        "cancel_pending",
+        "frozen",
+        "cancelled",
     ],
 )
-def test_ineligible_approval_and_account_states_are_rejected(approval, account):
+def test_ineligible_account_states_are_rejected(account):
     admin = make_admin()
     plan, version = make_published_plan(admin)
-    response = create_application(
-        user_client(make_user(approval=approval, account=account)), plan, version
-    )
+    response = create_application(user_client(make_user(account=account)), plan, version)
     assert response.status_code == 403
     assert response.json()["error"]["code"] == "PLAN_APPLICATION_NOT_ELIGIBLE"
     assert not PlanApplication.objects.exists()

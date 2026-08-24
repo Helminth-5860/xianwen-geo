@@ -11,7 +11,6 @@ import {
   getAdminSubscriptionChange,
   type SubscriptionChange,
 } from "@/lib/plans-client";
-import type { ApprovalCreated } from "@/lib/risk-client";
 
 export default function AdminSubscriptionChangeDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -19,7 +18,6 @@ export default function AdminSubscriptionChangeDetailPage() {
   const [item, setItem] = useState<SubscriptionChange | null>(null);
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState("");
-  const [approval, setApproval] = useState<ApprovalCreated | null>(null);
   const [error, setError] = useState("");
   useEffect(() => {
     void getAdminSubscriptionChange(id)
@@ -30,13 +28,8 @@ export default function AdminSubscriptionChangeDetailPage() {
   const canChange = capabilities?.permission_keys.includes("subscriptions.change") ?? false;
   const submit = async () => {
     try {
-      const result = await cancelSubscriptionChange(
-        item.id,
-        item.version,
-        reason,
-        crypto.randomUUID(),
-      );
-      if ("approval_required" in result) setApproval(result as ApprovalCreated);
+      await cancelSubscriptionChange(item.id, item.version, reason, crypto.randomUUID());
+      setItem(await getAdminSubscriptionChange(id));
       setOpen(false);
     } catch (value) {
       setError(userMessage(value));
@@ -46,14 +39,6 @@ export default function AdminSubscriptionChangeDetailPage() {
     <main className="admin-page">
       <Typography.Title>套餐变更详情</Typography.Title>
       {error && <Alert type="error" showIcon message={error} />}
-      {approval && (
-        <Alert
-          type="warning"
-          showIcon
-          message="已发起双人审批"
-          description={`审批编号：${approval.approval_id}`}
-        />
-      )}
       <Card>
         <Descriptions column={1}>
           <Descriptions.Item label="变更编号">{item.id}</Descriptions.Item>
@@ -81,12 +66,13 @@ export default function AdminSubscriptionChangeDetailPage() {
           ))}
       </Card>
       <Modal
-        title="取消续费排期（固定双人审批）"
+        title="确认取消续费排期"
         open={open}
         onCancel={() => setOpen(false)}
         onOk={() => void submit()}
-        okText="发起审批"
+        okText="确认取消"
       >
+        <Alert type="warning" showIcon message="确认后将立即取消，并写入操作记录。" />
         <Input.TextArea
           aria-label="取消排期原因"
           value={reason}

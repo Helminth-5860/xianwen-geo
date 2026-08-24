@@ -47,7 +47,6 @@ const user = {
   id: "user-1",
   nickname: "预览用户",
   phone_masked: "masked",
-  approval_status: "approved" as const,
   account_status: "active" as const,
   commercial_identity: "USER" as const,
   home_route: "/workspace" as const,

@@ -20,7 +20,7 @@ from django.utils import timezone
 from django_redis import get_redis_connection
 from rest_framework.test import APIClient
 
-from apps.admin_rbac.models import AdminRole, ApprovalRequest, AuditEvent, CustomerAssignment
+from apps.admin_rbac.models import AdminRole, AuditEvent, CustomerAssignment
 from apps.admin_rbac.permissions import resolve_admin_context
 from apps.admin_rbac.services import create_admin
 from apps.plans import lifecycle as plan_lifecycle
@@ -59,7 +59,7 @@ from apps.quotas.models import (
 from apps.quotas.services import freeze_quota, release_hold
 from apps.users.models import Notification
 from tests.admin_session_helpers import authenticate_admin_client
-from tests.test_cycle_reset import approved_renewal
+from tests.test_cycle_reset import confirmed_renewal
 from tests.test_cycle_reset_postgres import grant_one
 from tests.test_plan_changes import activate_formal, admin, customer
 from tests.test_subscriptions import PASSWORD
@@ -148,7 +148,7 @@ def _raise_late_failure(monkeypatch, failure_point):
 def test_renewal_late_failure_rolls_back_source_expiry_and_all_successor_facts(
     monkeypatch, failure_point
 ):
-    source, change = approved_renewal(valid_days=180)
+    source, change = confirmed_renewal(valid_days=180)
     baseline = {
         "subscriptions": Subscription.objects.filter(user=source.user).count(),
         "subscription_events": SubscriptionEvent.objects.count(),
@@ -183,7 +183,7 @@ def test_renewal_late_failure_rolls_back_source_expiry_and_all_successor_facts(
 
 
 def test_worker_redelivery_after_commit_is_exactly_once_for_all_renewal_facts():
-    source, change = approved_renewal(valid_days=180)
+    source, change = confirmed_renewal(valid_days=180)
     moment = change.effective_at + timedelta(days=65)
     execute_due_renewal(change_id=change.pk, request_id=uuid.uuid4(), now=moment)
     counts = {
@@ -214,7 +214,7 @@ def test_worker_redelivery_after_commit_is_exactly_once_for_all_renewal_facts():
 
 
 def test_renewal_and_expiry_race_is_exactly_once():
-    source, change = approved_renewal(valid_days=180)
+    source, change = confirmed_renewal(valid_days=180)
     moment = change.effective_at + timedelta(days=1)
     results = parallel(
         lambda: execute_due_renewal(change_id=change.pk, request_id=uuid.uuid4(), now=moment),
@@ -235,7 +235,7 @@ def test_renewal_and_expiry_race_is_exactly_once():
 
 
 def test_expiry_and_termination_race_has_one_terminal_winner():
-    source, _change = approved_renewal()
+    source, _change = confirmed_renewal()
     actor_id = source.opened_by_id
     expected_version = source.version
     moment = source.ends_at + timedelta(seconds=1)
@@ -269,7 +269,7 @@ def test_expiry_and_termination_race_has_one_terminal_winner():
 
 
 def test_renewal_and_cancel_race_has_one_terminal_winner():
-    source, change = approved_renewal()
+    source, change = confirmed_renewal()
     actor_id = source.opened_by_id
     expected_version = change.version
     reason = "renewal cancel race"
@@ -335,7 +335,7 @@ def test_month_end_anchor_leap_year_and_cross_year_are_deterministic(anchor, bou
 
 
 def test_broker_enqueue_failure_creates_no_postgresql_lifecycle_fact(monkeypatch):
-    source, change = approved_renewal()
+    source, change = confirmed_renewal()
     before = (
         source.status,
         change.status,
@@ -361,9 +361,8 @@ def test_broker_enqueue_failure_creates_no_postgresql_lifecycle_fact(monkeypatch
     ) == before
 
 
-def approved_unavailable_renewal(kind):
+def confirmed_unavailable_renewal(kind):
     requester = admin()
-    approver = admin("13700137031")
     user = customer()
     source, plan, version = activate_formal(
         requester,
@@ -383,22 +382,15 @@ def approved_unavailable_renewal(kind):
             "change_type": "renewal",
             "quota_policy": "retain",
             "confirm_unavailable": True,
-            "unavailable_reason": "approved unavailable target",
+            "unavailable_reason": "confirmed unavailable target",
             "reason": "scheduled renewal with explicit confirmation",
+            "confirmed": True,
         },
         format="json",
         HTTP_IDEMPOTENCY_KEY=f"confirmed-{kind}-renewal-0115",
     )
-    assert submitted.status_code == 202
-    approval = ApprovalRequest.objects.get(pk=submitted.json()["data"]["approval_id"])
-    approved = authenticate_admin_client(APIClient(), approver, "198.51.100.116").post(
-        f"/api/v1/admin/approvals/{approval.pk}/approve",
-        {"current_password": PASSWORD},
-        format="json",
-        REMOTE_ADDR="198.51.100.116",
-    )
-    assert approved.status_code == 200
-    return source, SubscriptionChange.objects.get(source_approval=approval)
+    assert submitted.status_code == 200
+    return source, SubscriptionChange.objects.get(pk=submitted.json()["data"]["change_id"])
 
 
 @pytest.mark.parametrize(
@@ -413,7 +405,7 @@ def approved_unavailable_renewal(kind):
 def test_permanent_target_and_digest_failures_are_terminal_and_apply_final_expiry(
     monkeypatch, failure_kind, expected_code
 ):
-    source, change = approved_renewal()
+    source, change = confirmed_renewal()
     if failure_kind == "archived":
         Plan.objects.filter(pk=change.target_plan_id).update(status=Plan.Status.ARCHIVED)
     elif failure_kind == "offline":
@@ -451,8 +443,8 @@ def test_permanent_target_and_digest_failures_are_terminal_and_apply_final_expir
 
 
 @pytest.mark.parametrize("kind", ["offline", "retired"])
-def test_approved_unavailable_confirmation_survives_until_scheduled_execution(kind):
-    source, change = approved_unavailable_renewal(kind)
+def test_confirmed_unavailable_target_survives_until_scheduled_execution(kind):
+    source, change = confirmed_unavailable_renewal(kind)
     execute_due_renewal(
         change_id=change.pk,
         request_id=uuid.uuid4(),
@@ -465,9 +457,8 @@ def test_approved_unavailable_confirmation_survives_until_scheduled_execution(ki
     assert Subscription.objects.filter(source_change=change).count() == 1
 
 
-def test_scheduled_execution_ignores_later_requester_approver_and_scope_changes():
-    source, change = approved_renewal(valid_days=180)
-    approval = change.source_approval
+def test_scheduled_execution_ignores_later_requester_and_scope_changes():
+    source, change = confirmed_renewal(valid_days=180)
     role = AdminRole.objects.create(name="续费归属测试", data_scope=AdminRole.DataScope.OWN)
     first_owner = create_admin(
         actor_id=source.opened_by_id,
@@ -488,16 +479,16 @@ def test_scheduled_execution_ignores_later_requester_approver_and_scope_changes(
     CustomerAssignment.objects.create(
         customer=source.user,
         owner_admin=first_owner,
-        assigned_by=approval.requester,
+        assigned_by=source.opened_by,
         assigned_at=timezone.now(),
     )
     CustomerAssignment.objects.filter(customer=source.user).update(
         owner_admin=second_owner,
         version=2,
     )
-    type(approval.requester).objects.filter(
-        pk__in=(approval.requester_id, approval.approved_by_id)
-    ).update(is_staff=False, is_superuser=False)
+    type(source.opened_by).objects.filter(pk=source.opened_by_id).update(
+        is_staff=False, is_superuser=False
+    )
     execute_due_renewal(
         change_id=change.pk,
         request_id=uuid.uuid4(),
@@ -511,13 +502,11 @@ def test_scheduled_execution_ignores_later_requester_approver_and_scope_changes(
     )
     assert change.status == SubscriptionChange.Status.EXECUTED
     assert audit.actor is None
-    assert audit.approval_request_id == approval.pk
-    assert audit.requester_id == approval.requester_id
-    assert audit.approver_id == approval.approved_by_id
+    assert audit.requester_id == source.opened_by_id
 
 
 def test_cancelled_renewal_allows_final_expiry_disposition():
-    source, change = approved_renewal()
+    source, change = confirmed_renewal()
     actor = source.opened_by
     reason = "cancel before effective boundary"
     cancel_scheduled_change(
@@ -542,7 +531,7 @@ def test_cancelled_renewal_allows_final_expiry_disposition():
 
 
 def test_scheduled_renewal_defers_final_expiry_disposition_while_blocked():
-    source, change = approved_renewal()
+    source, change = confirmed_renewal()
     account = QuotaAccount.objects.get(subscription=source, quota_type="detection_points")
     grant_one(source.opened_by, account)
     freeze_quota(
@@ -564,7 +553,7 @@ def test_scheduled_renewal_defers_final_expiry_disposition_while_blocked():
 
 
 def test_final_zero_expiry_late_release_uses_expiry_forfeit_not_cycle_forfeit():
-    source, change = approved_renewal()
+    source, change = confirmed_renewal()
     actor = source.opened_by
     reason = "cancel before final expiry"
     cancel_scheduled_change(
@@ -610,7 +599,7 @@ def test_final_zero_expiry_late_release_uses_expiry_forfeit_not_cycle_forfeit():
 
 
 def test_carryover_batch_is_never_selected_for_monthly_reset():
-    _source, change = approved_renewal(valid_days=180)
+    _source, change = confirmed_renewal(valid_days=180)
     execute_due_renewal(
         change_id=change.pk,
         request_id=uuid.uuid4(),
@@ -640,7 +629,7 @@ def test_carryover_batch_is_never_selected_for_monthly_reset():
 
 
 def test_cycle_windows_use_half_open_boundaries():
-    _source, change = approved_renewal(valid_days=180)
+    _source, change = confirmed_renewal(valid_days=180)
     execute_due_renewal(
         change_id=change.pk,
         request_id=uuid.uuid4(),
@@ -669,7 +658,7 @@ def test_cycle_windows_use_half_open_boundaries():
 
 
 def test_permanent_domain_failure_does_not_request_celery_retry():
-    _source, change = approved_renewal()
+    _source, change = confirmed_renewal()
     Plan.objects.filter(pk=change.target_plan_id).update(status=Plan.Status.ARCHIVED)
     with (
         patch(

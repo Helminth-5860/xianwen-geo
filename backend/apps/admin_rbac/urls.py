@@ -1,11 +1,6 @@
 from django.urls import path
 
 from .risk_views import (
-    ApprovalApproveView,
-    ApprovalCancelView,
-    ApprovalDetailView,
-    ApprovalListView,
-    ApprovalRejectView,
     AuditEventDetailView,
     AuditEventListView,
     RiskActionListView,
@@ -135,25 +130,6 @@ urlpatterns = [
         "admin/risk-policies/<str:action_key>",
         RiskPolicyDetailView.as_view(),
         name="risk-policy-detail",
-    ),
-    path("admin/approvals", ApprovalListView.as_view(), name="approval-list"),
-    path(
-        "admin/approvals/<uuid:approval_id>", ApprovalDetailView.as_view(), name="approval-detail"
-    ),
-    path(
-        "admin/approvals/<uuid:approval_id>/approve",
-        ApprovalApproveView.as_view(),
-        name="approval-approve",
-    ),
-    path(
-        "admin/approvals/<uuid:approval_id>/reject",
-        ApprovalRejectView.as_view(),
-        name="approval-reject",
-    ),
-    path(
-        "admin/approvals/<uuid:approval_id>/cancel",
-        ApprovalCancelView.as_view(),
-        name="approval-cancel",
     ),
     path("admin/audit-events", AuditEventListView.as_view(), name="audit-event-list"),
     path(

@@ -55,17 +55,13 @@ entityRelationshipDiagram
 | phone | varchar unique | 手机号，按规范化值唯一 |
 | nickname | varchar | 昵称 |
 | password_hash | varchar | 密码哈希 |
-| approval_status | varchar | pending/approved/rejected |
 | account_status | varchar | active/frozen/cancel_pending/cancelled |
-| approval_reason | text nullable | 拒绝原因 |
-| approved_at | timestamptz nullable | 审核时间 |
-| approved_by_id | uuid nullable | 管理员 |
 | cancel_requested_at | timestamptz nullable | 注销申请时间 |
 | cancel_effective_at | timestamptz nullable | 注销执行时间 |
 | last_login_at | timestamptz nullable | 最近登录 |
 | trial_ever_granted | boolean | 是否曾获得试用 |
 
-索引：`phone`、`approval_status`、`account_status`、`created_at`。
+索引：`phone`、`account_status`、`created_at`。
 
 ### 4.2 `user_sessions`
 
@@ -97,7 +93,6 @@ entityRelationshipDiagram
 
 稳定权限键，如：
 
-- `users.review`
 - `users.freeze`
 - `plans.manage`
 - `quotas.adjust`
@@ -114,17 +109,13 @@ entityRelationshipDiagram
 
 管理员或角色允许的 IP／CIDR。
 
-### 5.6 `approval_workflows`
+### 5.6 `risk_policies`
 
-操作类型、所需安全级别、是否双人审批、是否启用。
+操作类型与所需安全级别，只允许页面确认或当前密码复核。
 
-### 5.7 `approval_requests`
+### 5.7 `audit_events`
 
-发起人、操作类型、目标、变更载荷、状态、审批人、意见、执行结果。
-
-### 5.8 `admin_audit_logs`
-
-不可删除追加表：管理员、动作、对象、前后值摘要、原因、IP、设备、审批请求和结果。
+不可删除追加表：管理员、动作、对象、前后值安全摘要、结果、IP 与设备指纹。
 
 ## 6. 套餐与订阅
 

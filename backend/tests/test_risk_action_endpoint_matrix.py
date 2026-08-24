@@ -10,7 +10,6 @@ from apps.admin_rbac.models import (
     AdminPermission,
     AdminProfile,
     AdminRole,
-    ApprovalRequest,
     CustomerAssignment,
     RiskPolicy,
 )
@@ -36,7 +35,7 @@ from tests.admin_session_helpers import authenticate_admin_client
 from tests.test_subscriptions import published_plan
 
 PASSWORD = "Correct-Horse-Battery-2026!"
-MODES = ("confirm", "password", "two_person")
+MODES = ("confirm", "password")
 
 
 @dataclass
@@ -278,7 +277,6 @@ def build_quota_case(action_key, actor):
         phone="13800138000",
         nickname="Quota target",
         password=PASSWORD,
-        approval_status=User.ApprovalStatus.APPROVED,
     )
     plan, _ = published_plan(
         actor,
@@ -513,20 +511,6 @@ def build_case(action_key, actor):
                 User.objects.get(pk=customer.pk).status_version,
             ),
         )
-    if action_key == "user.review.reject":
-        return EndpointCase(
-            f"/api/v1/admin/users/{customer.id}/review",
-            "post",
-            {
-                "decision": "reject",
-                "expected_version": customer.status_version,
-                "reason": "资料不完整",
-            },
-            lambda: (
-                User.objects.get(pk=customer.pk).approval_status,
-                User.objects.get(pk=customer.pk).status_version,
-            ),
-        )
     raise AssertionError(action_key)
 
 
@@ -539,7 +523,6 @@ def build_case(action_key, actor):
 def test_each_existing_high_risk_endpoint_enforces_policy_without_bypass(action_key, mode):
     requester = superuser("13900139000")
     cache.clear()
-    approver = superuser("13700137000")
     case = build_case(action_key, requester)
     policy = RiskPolicy.objects.get(action_id=action_key)
     policy.current_mode = mode
@@ -583,45 +566,5 @@ def test_each_existing_high_risk_endpoint_enforces_policy_without_bypass(action_
             case,
             {**case.body, "current_password": PASSWORD},
         )
-    else:
-        response = send(
-            client,
-            case,
-            {
-                **case.body,
-                "confirmed": True,
-                "current_password": PASSWORD,
-            },
-        )
-        assert response.status_code == 202
-        data = response.json()["data"]
-        assert set(data) == {
-            "approval_required",
-            "approval_id",
-            "status",
-            "expires_at",
-        }
-        assert data["approval_required"] is True
-        assert data["status"] == "pending"
-        assert case.snapshot() == before
-        approval = ApprovalRequest.objects.get(pk=data["approval_id"])
-        approved = admin_client(approver).post(
-            f"/api/v1/admin/approvals/{approval.id}/approve",
-            {"current_password": PASSWORD},
-            format="json",
-        )
-        assert approved.status_code == 200
-        approval.refresh_from_db()
-        assert approval.status == ApprovalRequest.Status.EXECUTED
-        assert case.snapshot() != before
-        replay = admin_client(approver).post(
-            f"/api/v1/admin/approvals/{approval.id}/approve",
-            {"current_password": PASSWORD},
-            format="json",
-        )
-        assert replay.status_code == 409
-        return
-
     assert response.status_code in {200, 201}
     assert case.snapshot() != before
-    assert ApprovalRequest.objects.count() == 0

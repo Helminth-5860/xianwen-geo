@@ -81,7 +81,6 @@ def _ensure_user_eligible(user: User) -> None:
     if (
         not user.is_active
         or user.account_status != User.AccountStatus.ACTIVE
-        or user.approval_status != User.ApprovalStatus.APPROVED
         or user.is_staff
         or user.is_superuser
         or hasattr(user, "admin_profile")

@@ -10,13 +10,13 @@ if ([string]::IsNullOrWhiteSpace($env:WEB_IMPORT_IDEMPOTENCY_HMAC_KEY)) {
 }
 
 $defaults = @{
-    POSTGRES_DB = "risk_approval_test_db"
-    POSTGRES_USER = "risk_approval_test_user"
-    POSTGRES_PASSWORD = "risk-approval-test-only-password"
-    DJANGO_SECRET_KEY = "risk-approval-test-only-django-key-with-more-than-fifty-characters-000000"
+    POSTGRES_DB = "risk_action_test_db"
+    POSTGRES_USER = "risk_action_test_user"
+    POSTGRES_PASSWORD = "risk-action-test-only-password"
+    DJANGO_SECRET_KEY = "risk-action-test-only-django-key-with-more-than-fifty-characters-000000"
     REDIS_URL = "redis://redis:6379/0"
     CELERY_BROKER_URL = "redis://redis:6379/1"
-    SMS_VERIFICATION_HMAC_KEY = "risk-approval-test-only-sms-hmac-key-with-more-than-fifty-characters-000000"
+    SMS_VERIFICATION_HMAC_KEY = "risk-action-test-only-sms-hmac-key-with-more-than-fifty-characters-000000"
 }
 foreach ($item in $defaults.GetEnumerator()) {
     if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($item.Key))) {
@@ -28,11 +28,11 @@ if ([string]::IsNullOrWhiteSpace($env:DATABASE_URL)) {
 }
 
 try {
-    docker compose --project-name xianwen-risk-approval-test --profile risk-approval-test run --rm --build risk-approval-tests
+    docker compose --project-name xianwen-risk-action-test --profile risk-action-test run --rm --build risk-action-tests
     if ($LASTEXITCODE -ne 0) {
-        throw "PostgreSQL/Redis high-risk approval tests failed."
+        throw "PostgreSQL/Redis direct risk-action tests failed."
     }
 }
 finally {
-    docker compose --project-name xianwen-risk-approval-test --profile risk-approval-test down --volumes --remove-orphans
+    docker compose --project-name xianwen-risk-action-test --profile risk-action-test down --volumes --remove-orphans
 }

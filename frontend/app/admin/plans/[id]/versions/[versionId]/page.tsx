@@ -12,7 +12,7 @@ import {
   Switch,
   Typography,
 } from "antd";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { RiskActionButton } from "@/components/admin/risk-action-button";
 import { userMessage } from "@/lib/auth-client";
@@ -39,7 +39,6 @@ const MODELS: ModelKey[] = [
 ];
 export default function PlanVersionPage() {
   const { versionId } = useParams<{ id: string; versionId: string }>();
-  const router = useRouter();
   const [version, setVersion] = useState<PlanVersion | null>(null);
   const [definitions, setDefinitions] = useState<LimitDefinition[]>([]);
   const [modes, setModes] = useState<Record<string, RiskMode>>({});
@@ -75,8 +74,6 @@ export default function PlanVersionPage() {
     );
   }, [load]);
   if (!version) return <main className="admin-page">加载中…</main>;
-  const approval = (item: { approval_id: string }) =>
-    router.push(`/admin/approvals/${item.approval_id}`);
   return (
     <main className="admin-page">
       <Typography.Title>版本 V{version.version_no}</Typography.Title>
@@ -183,7 +180,6 @@ export default function PlanVersionPage() {
             )
           }
           onExecuted={() => void load()}
-          onApproval={approval}
         >
           发布
         </RiskActionButton>
@@ -193,7 +189,6 @@ export default function PlanVersionPage() {
           disabled={version.status === "retired"}
           execute={(credentials) => retirePlanVersion(version.id, version.version, credentials)}
           onExecuted={() => void load()}
-          onApproval={approval}
         >
           退役
         </RiskActionButton>

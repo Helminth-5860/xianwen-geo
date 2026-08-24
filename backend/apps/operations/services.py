@@ -81,7 +81,6 @@ def customer_payload(customer: User) -> dict:
         "id": str(customer.pk),
         "phone": customer.phone,
         "nickname": customer.nickname,
-        "approval_status": customer.approval_status,
         "account_status": customer.account_status,
         "registered_at": customer.created_at,
         "profile": {
@@ -610,7 +609,6 @@ def support_view_summary(*, request, support_id) -> dict:
     summary.update(
         {
             "nickname": row.customer.nickname,
-            "approval_status": row.customer.approval_status,
             "account_status": row.customer.account_status,
             "read_only": True,
             "expires_at": row.expires_at,

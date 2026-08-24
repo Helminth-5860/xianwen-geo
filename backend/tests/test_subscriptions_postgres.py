@@ -65,7 +65,6 @@ def customer(phone="13800138000"):
         phone=phone,
         nickname="订阅用户",
         password="Test-2026!",
-        approval_status=User.ApprovalStatus.APPROVED,
     )
 
 

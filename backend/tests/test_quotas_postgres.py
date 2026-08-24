@@ -9,7 +9,7 @@ from django.core.management import call_command
 from django.db import DatabaseError, connection, transaction
 from django_redis import get_redis_connection
 
-from apps.admin_rbac.models import ApprovalRequest, AuditEvent
+from apps.admin_rbac.models import AuditEvent
 from apps.admin_rbac.permissions import resolve_admin_context
 from apps.plans.models import Subscription, SubscriptionEvent
 from apps.plans.subscription_services import terminate_subscription
@@ -50,7 +50,6 @@ def provision():
         phone="13800138000",
         nickname="????",
         password=PASSWORD,
-        approval_status=User.ApprovalStatus.APPROVED,
     )
     plan, _ = published_plan(admin, code=f"quota-pg-{uuid.uuid4().hex[:8]}", trial=True)
     from apps.plans.subscription_services import grant_trial
@@ -446,7 +445,6 @@ def test_postgresql_quota_initialization_failure_rolls_back_subscription():
         phone="13800138000",
         nickname="????",
         password=PASSWORD,
-        approval_status=User.ApprovalStatus.APPROVED,
     )
     plan, _ = published_plan(admin, code="quota-rollback", trial=True)
     from apps.plans.subscription_services import grant_trial
@@ -494,13 +492,11 @@ def test_postgresql_backfill_invalid_snapshot_rolls_back_valid_rows_atomically()
         phone="13500135000",
         nickname="有效快照用户",
         password=PASSWORD,
-        approval_status=User.ApprovalStatus.APPROVED,
     )
     invalid_user = User.objects.create_user(
         phone="13600136000",
         nickname="非法快照用户",
         password=PASSWORD,
-        approval_status=User.ApprovalStatus.APPROVED,
     )
     common = {
         "plan": template.plan,
@@ -548,69 +544,58 @@ def test_postgresql_quota_adjustment_audit_failure_rolls_back_business():
     from tests.admin_session_helpers import authenticate_admin_client
 
     requester, _, _, account = provision()
-    approver = User.objects.create_superuser(
-        phone="13700137000", nickname="审批管理员", password=PASSWORD
-    )
-    response = authenticate_admin_client(APIClient(), requester).post(
-        f"/api/v1/admin/quota-accounts/{account.pk}/adjust/grant",
-        {"expected_version": account.version, "amount": 2, "reason": "审计失败回滚"},
-        format="json",
-        HTTP_IDEMPOTENCY_KEY="audit-rollback-grant-key-0001",
-    )
-    assert response.status_code == 202
-    approval = ApprovalRequest.objects.get(pk=response.json()["data"]["approval_id"])
     before = (account.available, account.version)
     grant_count = QuotaLedgerEntry.objects.filter(account=account, action="grant").count()
     with patch(
         "apps.admin_rbac.risk_services.record_audit_event",
         side_effect=RuntimeError("audit unavailable"),
     ):
-        approved = authenticate_admin_client(APIClient(), approver).post(
-            f"/api/v1/admin/approvals/{approval.pk}/approve",
-            {"current_password": PASSWORD},
+        response = authenticate_admin_client(APIClient(), requester).post(
+            f"/api/v1/admin/quota-accounts/{account.pk}/adjust/grant",
+            {
+                "expected_version": account.version,
+                "amount": 2,
+                "reason": "审计失败回滚",
+                "current_password": PASSWORD,
+            },
             format="json",
+            HTTP_IDEMPOTENCY_KEY="audit-rollback-grant-key-0001",
         )
-    assert approved.status_code == 500
-    approval.refresh_from_db()
+    assert response.status_code == 500
     account.refresh_from_db()
-    assert approval.status == ApprovalRequest.Status.PENDING
     assert (account.available, account.version) == before
     assert QuotaLedgerEntry.objects.filter(account=account, action="grant").count() == grant_count
-    assert not AuditEvent.objects.filter(approval_request=approval, outcome="executed").exists()
+    assert not AuditEvent.objects.filter(action_key="quota.grant", outcome="executed").exists()
 
 
-def test_postgresql_quota_adjustment_two_person_executes_exactly_once():
+def test_postgresql_quota_adjustment_direct_execution_is_exactly_once():
     from rest_framework.test import APIClient
 
     from tests.admin_session_helpers import authenticate_admin_client
 
     requester, _, _, account = provision()
-    approver = User.objects.create_superuser(
-        phone="13700137000", nickname="?????", password=PASSWORD
-    )
-    response = authenticate_admin_client(APIClient(), requester).post(
-        f"/api/v1/admin/quota-accounts/{account.pk}/adjust/compensate",
-        {"expected_version": account.version, "amount": 2, "reason": "????"},
-        format="json",
-        HTTP_IDEMPOTENCY_KEY="approval-compensate-" + "key-0001",
-    )
-    assert response.status_code == 202
-    approval = ApprovalRequest.objects.get(pk=response.json()["data"]["approval_id"])
-    first = authenticate_admin_client(APIClient(), approver)
-    second = authenticate_admin_client(APIClient(), approver)
+    first = authenticate_admin_client(APIClient(), requester)
+    second = authenticate_admin_client(APIClient(), requester)
+    path = f"/api/v1/admin/quota-accounts/{account.pk}/adjust/compensate"
+    payload = {
+        "expected_version": account.version,
+        "amount": 2,
+        "reason": "直接补偿",
+        "current_password": PASSWORD,
+    }
     responses = parallel(
         lambda: first.post(
-            f"/api/v1/admin/approvals/{approval.pk}/approve",
-            {"current_password": PASSWORD},
+            path,
+            payload,
             format="json",
+            HTTP_IDEMPOTENCY_KEY="direct-" + "compensate-key-0001",
         ),
         lambda: second.post(
-            f"/api/v1/admin/approvals/{approval.pk}/approve",
-            {"current_password": PASSWORD},
+            path,
+            payload,
             format="json",
+            HTTP_IDEMPOTENCY_KEY="direct-" + "compensate-key-0001",
         ),
     )
-    assert sorted(item.status_code for item in responses) == [200, 409]
-    approval.refresh_from_db()
-    assert approval.status == ApprovalRequest.Status.EXECUTED
+    assert all(item.status_code == 200 for item in responses)
     assert QuotaLedgerEntry.objects.filter(account=account, action="compensate").count() == 1

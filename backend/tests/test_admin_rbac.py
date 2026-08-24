@@ -117,7 +117,6 @@ def test_admin_create_uses_user_identity_and_version_conflicts():
     )
     assert profile.user.is_staff is True
     assert profile.user.is_superuser is False
-    assert profile.user.approval_status == User.ApprovalStatus.APPROVED
     assert profile.user.check_password(PASSWORD)
     with pytest.raises(AdminVersionConflict):
         update_admin(
@@ -347,7 +346,7 @@ def test_role_scope_never_widens_direct_customer_ownership():
 
 
 @pytest.mark.django_db
-def test_admin_me_and_xw0104_permissions_are_enforced():
+def test_admin_me_and_user_list_permission_are_enforced():
     actor = superuser()
     client = APIClient()
     authenticate_admin_client(client, actor)
@@ -367,14 +366,6 @@ def test_admin_me_and_xw0104_permissions_are_enforced():
     ordinary = APIClient()
     authenticate_admin_client(ordinary, profile.user)
     assert ordinary.get("/api/v1/admin/users").status_code == 200
-    assert (
-        ordinary.post(
-            f"/api/v1/admin/users/{customer().id}/review",
-            {"decision": "approve"},
-            format="json",
-        ).status_code
-        == 403
-    )
 
 
 @pytest.mark.django_db

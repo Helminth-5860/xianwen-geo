@@ -59,7 +59,6 @@ def _customer():
         phone=f"138{uuid.uuid4().int % 100000000:08d}",
         nickname="Enrichment customer",
         password="Test-2026!",
-        approval_status=User.ApprovalStatus.APPROVED,
         account_status=User.AccountStatus.ACTIVE,
     )
 

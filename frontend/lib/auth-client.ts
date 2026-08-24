@@ -4,9 +4,7 @@ export type AccountUser = Readonly<{
   id: string;
   nickname: string;
   phone_masked: string;
-  approval_status: "pending" | "approved" | "rejected";
   account_status: "active" | "frozen" | "cancel_pending" | "cancelled";
-  approval_reason?: string;
   commercial_identity: "SUPER_ADMIN" | "ADMIN" | "USER";
   home_route: "/admin" | "/workspace";
   tenant: Readonly<{
@@ -216,18 +214,15 @@ export type AdminUser = Readonly<{
   id: string;
   nickname: string;
   phone_masked: string;
-  approval_status: AccountUser["approval_status"];
   account_status: AccountUser["account_status"];
   status_version: number;
-  approval_reason?: string | null;
-  approved_at: string | null;
   created_at: string;
 }>;
 
 export type StatusEvent = Readonly<{
   id: string;
-  status_domain: "approval" | "account";
-  event_type: "approved" | "rejected" | "resubmitted" | "frozen" | "unfrozen";
+  status_domain: "account";
+  event_type: "frozen" | "unfrozen";
   from_value: string;
   to_value: string;
   reason: string;
@@ -239,8 +234,6 @@ export type StatusEvent = Readonly<{
 export type AccountNotification = Readonly<{
   id: string;
   notification_type:
-    | "approval_approved"
-    | "approval_rejected"
     | "account_frozen"
     | "account_unfrozen"
     | "plan_application_submitted"
@@ -268,10 +261,6 @@ export function getCurrentUser() {
   return get<AccountUser>("/me");
 }
 
-export function resubmitApproval(nickname?: string) {
-  return post<AccountUser>("/me/approval/resubmit", nickname === undefined ? {} : { nickname });
-}
-
 export function getNotifications(page = 1) {
   return get<PageData<AccountNotification>>(`/notifications?page=${page}`);
 }
@@ -280,14 +269,8 @@ export function markNotificationRead(notificationId: string) {
   return post<AccountNotification>(`/notifications/${notificationId}/read`, {});
 }
 
-export function getAdminUsers(params: {
-  approvalStatus?: string;
-  accountStatus?: string;
-  phone?: string;
-  page?: number;
-}) {
+export function getAdminUsers(params: { accountStatus?: string; phone?: string; page?: number }) {
   const query = new URLSearchParams();
-  if (params.approvalStatus) query.set("approval_status", params.approvalStatus);
   if (params.accountStatus) query.set("account_status", params.accountStatus);
   if (params.phone) query.set("phone", params.phone);
   query.set("page", String(params.page ?? 1));
@@ -302,28 +285,15 @@ export function getAdminUserHistory(userId: string) {
   return get<PageData<StatusEvent>>(`/admin/users/${userId}/history`);
 }
 
-export function reviewAdminUser(
-  userId: string,
-  decision: "approve" | "reject",
-  reason = "",
-  expectedVersion?: number,
-  credentials: { confirmed?: true; current_password?: string } = {},
-) {
-  return post<AdminUser | import("./risk-client").ApprovalCreated>(
-    `/admin/users/${userId}/review`,
-    { decision, reason, expected_version: expectedVersion, ...credentials },
-  );
-}
-
 export function freezeAdminUser(
   userId: string,
   expectedVersion: number,
   credentials: { confirmed: true; current_password: string },
 ) {
-  return post<AdminUser | import("./risk-client").ApprovalCreated>(
-    `/admin/users/${userId}/freeze`,
-    { expected_version: expectedVersion, ...credentials },
-  );
+  return post<AdminUser>(`/admin/users/${userId}/freeze`, {
+    expected_version: expectedVersion,
+    ...credentials,
+  });
 }
 
 export function unfreezeAdminUser(userId: string) {

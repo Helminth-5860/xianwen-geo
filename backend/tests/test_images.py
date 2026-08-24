@@ -331,7 +331,6 @@ def test_ownership_free_derivative_and_private_zip(image_facts):
         phone=f"137{uuid.uuid4().int % 100000000:08d}",
         nickname="other image user",
         password="Correct-Horse-Battery-2026!",
-        approval_status=User.ApprovalStatus.APPROVED,
         account_status=User.AccountStatus.ACTIVE,
     )
     with pytest.raises(Http404):
@@ -569,7 +568,6 @@ def test_image_api_requires_owner_and_rejects_unsafe_reference_url(image_facts):
         phone=f"136{uuid.uuid4().int % 100000000:08d}",
         nickname="other image API user",
         password="Correct-Horse-Battery-2026!",
-        approval_status=User.ApprovalStatus.APPROVED,
         account_status=User.AccountStatus.ACTIVE,
     )
     denied = APIClient()

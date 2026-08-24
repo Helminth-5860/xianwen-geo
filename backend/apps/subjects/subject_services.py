@@ -5,7 +5,6 @@ from django.db import transaction
 from django.utils import timezone
 from rest_framework.exceptions import NotFound
 
-from apps.admin_rbac.models import ApprovalRequest
 from apps.plans.models import Subscription, SubscriptionChange
 from apps.users.models import User
 
@@ -137,8 +136,6 @@ def _future_scheduled_limit(*, user: User, current: Subscription) -> int | None:
             from_subscription=current,
             status=SubscriptionChange.Status.SCHEDULED,
             change_type=SubscriptionChange.ChangeType.RENEWAL,
-            source_approval__action_key="subscription.change",
-            source_approval__status=ApprovalRequest.Status.EXECUTED,
         )
         .select_related("target_plan_version")
         .order_by("effective_at", "id")

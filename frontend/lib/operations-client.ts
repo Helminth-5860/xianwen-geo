@@ -12,7 +12,7 @@ export type OperationsPage<T> = Readonly<{
 }>;
 
 export type OperationsDashboard = Readonly<{
-  customers: { total: number; pending_review: number; active: number };
+  customers: { total: number; active: number };
   followups: { open: number; overdue: number };
   feedback_open: number;
   moderation: { articles: number; images: number };
@@ -40,7 +40,6 @@ export type OperationsCustomer = Readonly<{
   id: string;
   phone: string;
   nickname: string;
-  approval_status: string;
   account_status: string;
   profile: {
     status: { id: string; key: string; name: string } | null;

@@ -4,19 +4,18 @@ import { Alert, Button, Input, Modal, Space } from "antd";
 import { useState } from "react";
 
 import { grantTrialSubscription } from "@/lib/plans-client";
-import type { ApprovalCreated } from "@/lib/risk-client";
 
 import { useAdminCapabilities } from "./admin-capability";
 
 export function TrialGrantAction({
   userId,
   expectedVersion,
-  onApproval,
+  onCompleted,
   onError,
 }: {
   userId: string;
   expectedVersion: number;
-  onApproval: (approval: ApprovalCreated) => void;
+  onCompleted: () => void;
   onError: (message: string) => void;
 }) {
   const capabilities = useAdminCapabilities();
@@ -25,7 +24,7 @@ export function TrialGrantAction({
   const [note, setNote] = useState("");
   const allowed = capabilities?.permission_keys.includes("subscriptions.grant_trial") ?? false;
   if (!allowed) {
-    return <Alert type="info" showIcon message="当前账号没有发放试用套餐权限" />;
+    return <Alert type="info" showIcon title="当前账号没有发放试用套餐权限" />;
   }
   const submit = async () => {
     if (!planId.trim()) {
@@ -33,26 +32,24 @@ export function TrialGrantAction({
       return;
     }
     try {
-      const result = await grantTrialSubscription(userId, expectedVersion, planId.trim(), note);
-      if ("approval_required" in result) {
-        onApproval(result as ApprovalCreated);
-      }
+      await grantTrialSubscription(userId, expectedVersion, planId.trim(), note);
+      onCompleted();
       setOpen(false);
     } catch (error) {
-      onError(error instanceof Error ? error.message : "发起试用审批失败");
+      onError(error instanceof Error ? error.message : "发放试用套餐失败");
     }
   };
   return (
     <>
       <Button onClick={() => setOpen(true)}>发放试用套餐</Button>
       <Modal
-        title="发放试用套餐（固定双人审批）"
+        title="发放试用套餐"
         open={open}
         onCancel={() => setOpen(false)}
         onOk={() => void submit()}
-        okText="发起审批"
+        okText="确认发放"
       >
-        <Space direction="vertical" style={{ width: "100%" }}>
+        <Space orientation="vertical" style={{ width: "100%" }}>
           <Input
             aria-label="试用套餐 ID"
             value={planId}
@@ -67,7 +64,7 @@ export function TrialGrantAction({
           <Alert
             type="info"
             showIcon
-            message="套餐版本和试用标志由服务端校验并选择，客户端不能覆盖"
+            title="套餐版本和试用标志由服务端校验并选择，客户端不能覆盖"
           />
         </Space>
       </Modal>

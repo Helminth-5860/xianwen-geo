@@ -4,7 +4,6 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { userMessage } from "@/lib/auth-client";
 import { createPlan } from "@/lib/plans-client";
-import { isApprovalCreated } from "@/lib/risk-client";
 
 type Values = {
   code: string;
@@ -33,8 +32,7 @@ export default function NewPlanPage() {
               display_price: values.price_display_mode === "fixed" ? values.display_price : null,
               confirmed: true,
             });
-            if (isApprovalCreated(result)) router.push(`/admin/approvals/${result.approval_id}`);
-            else router.push(`/admin/plans/${result.id}`);
+            router.push(`/admin/plans/${result.id}`);
           } catch (reason) {
             setError(userMessage(reason));
           }

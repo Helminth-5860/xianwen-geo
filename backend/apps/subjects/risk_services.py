@@ -10,7 +10,6 @@ from django.utils import timezone
 from rest_framework.exceptions import NotFound
 
 from apps.admin_rbac.audit_services import record_audit_event
-from apps.admin_rbac.models import ApprovalRequest
 from apps.admin_rbac.scopes import scoped_customers
 from apps.users.models import Notification, User
 
@@ -331,7 +330,6 @@ def publish_catalog(
     request,
     expected_version: int,
     expected_digest: str,
-    approval_request: ApprovalRequest,
 ) -> SubjectRiskCatalogRevision:
     state = _locked_catalog_state()
     if state.version != expected_version:
@@ -356,7 +354,6 @@ def publish_catalog(
         snapshot=copy.deepcopy(snapshot),
         snapshot_digest=digest,
         published_by=request.user,
-        approval_request=approval_request,
     )
     state.published_revision = revision
     state.save(update_fields=["published_revision", "updated_at"])

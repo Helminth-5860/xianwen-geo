@@ -109,13 +109,17 @@ beforeEach(() => {
     removed_model_keys: [],
   });
   requestSubscriptionChange.mockResolvedValue({
-    approval_required: true,
-    approval_id: "approval-change",
+    change_id: "change-1",
+    status: "scheduled",
+    change_type: "renewal",
+    effective_at: "2026-09-01T00:00:00Z",
+    version: 1,
   });
   getAdminSubscriptionChange.mockResolvedValue(change);
   cancelSubscriptionChange.mockResolvedValue({
-    approval_required: true,
-    approval_id: "approval-cancel",
+    change_id: "change-1",
+    status: "cancelled",
+    version: 2,
   });
   getUserSubscriptionChanges.mockResolvedValue({ results: [change] });
 });
@@ -128,8 +132,8 @@ afterEach(() => {
 });
 
 describe("套餐变更真实交互", () => {
-  it("具备权限时先预览服务端分类再用内存幂等键发起双人审批", async () => {
-    const onApproval = vi.fn();
+  it("具备权限时先预览服务端分类再用内存幂等键直接变更", async () => {
+    const onCompleted = vi.fn();
     const onError = vi.fn();
     const setItem = vi.spyOn(Storage.prototype, "setItem");
     render(
@@ -138,7 +142,7 @@ describe("套餐变更真实交互", () => {
       >
         <SubscriptionChangeAction
           subscription={subscription}
-          onApproval={onApproval}
+          onCompleted={onCompleted}
           onError={onError}
         />
       </AdminCapabilityContext.Provider>,
@@ -151,7 +155,7 @@ describe("套餐变更真实交互", () => {
     await userEvent.click(screen.getByRole("button", { name: "预览变更" }));
     expect(await screen.findByText("服务端分类：upgrade")).toBeTruthy();
     await userEvent.type(screen.getByLabelText("套餐变更原因"), "客户确认升级专业套餐");
-    await userEvent.click(screen.getByRole("button", { name: "发起审批" }));
+    await userEvent.click(screen.getByRole("button", { name: "确认变更" }));
 
     await waitFor(() =>
       expect(requestSubscriptionChange).toHaveBeenCalledWith(
@@ -165,9 +169,7 @@ describe("套餐变更真实交互", () => {
         idempotencyKey,
       ),
     );
-    expect(onApproval).toHaveBeenCalledWith(
-      expect.objectContaining({ approval_id: "approval-change" }),
-    );
+    expect(onCompleted).toHaveBeenCalledOnce();
     expect(onError).not.toHaveBeenCalled();
     expect(setItem).not.toHaveBeenCalled();
     expect(window.location.href).not.toContain(idempotencyKey);
@@ -179,7 +181,7 @@ describe("套餐变更真实交互", () => {
       <AdminCapabilityContext.Provider value={{ permission_keys: [], menu_keys: [] } as never}>
         <SubscriptionChangeAction
           subscription={subscription}
-          onApproval={vi.fn()}
+          onCompleted={vi.fn()}
           onError={vi.fn()}
         />
       </AdminCapabilityContext.Provider>,
@@ -197,7 +199,7 @@ describe("套餐变更真实交互", () => {
       >
         <SubscriptionChangeAction
           subscription={subscription}
-          onApproval={vi.fn()}
+          onCompleted={vi.fn()}
           onError={onError}
         />
       </AdminCapabilityContext.Provider>,
@@ -209,7 +211,7 @@ describe("套餐变更真实交互", () => {
     expect(document.body.textContent).not.toMatch(/Cookie|Idempotency-Key|request_digest/);
   });
 
-  it("scheduled 变更可通过独立幂等键发起取消双人审批", async () => {
+  it("scheduled 变更可通过独立幂等键确认后直接取消", async () => {
     render(
       <AdminCapabilityContext.Provider
         value={{ permission_keys: ["subscriptions.change"], menu_keys: [] } as never}
@@ -219,7 +221,7 @@ describe("套餐变更真实交互", () => {
     );
     await userEvent.click(await screen.findByRole("button", { name: "取消排期" }));
     await userEvent.type(screen.getByLabelText("取消排期原因"), "客户撤销续费计划");
-    await userEvent.click(screen.getByRole("button", { name: "发起审批" }));
+    await userEvent.click(screen.getByRole("button", { name: "确认取消" }));
     await waitFor(() =>
       expect(cancelSubscriptionChange).toHaveBeenCalledWith(
         "change-1",
@@ -228,7 +230,7 @@ describe("套餐变更真实交互", () => {
         idempotencyKey,
       ),
     );
-    expect(await screen.findByText(/approval-cancel/)).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/审批|approval-cancel/);
   });
 
   it("用户变更记录只展示安全摘要，不暴露内部批次或迁移字段", async () => {

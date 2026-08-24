@@ -13,23 +13,6 @@ OPERATIONS = {
         "/admin/risk-policies/{actionKey}",
         "patch",
     ): {"200", "401", "403", "404", "409", "422", "429", "503"},
-    ("/admin/approvals", "get"): {"200", "401", "403", "422"},
-    (
-        "/admin/approvals/{approvalId}",
-        "get",
-    ): {"200", "401", "403", "404"},
-    (
-        "/admin/approvals/{approvalId}/approve",
-        "post",
-    ): {"200", "401", "403", "404", "409", "410", "422", "429", "503"},
-    (
-        "/admin/approvals/{approvalId}/reject",
-        "post",
-    ): {"200", "401", "403", "404", "409", "410", "422"},
-    (
-        "/admin/approvals/{approvalId}/cancel",
-        "post",
-    ): {"200", "401", "403", "404", "409", "410"},
     ("/admin/audit-events", "get"): {"200", "401", "403"},
     (
         "/admin/audit-events/{eventId}",
@@ -44,26 +27,10 @@ def test_every_high_risk_operation_declares_auth_and_real_response_matrix():
         assert expected <= responses, (path, method, expected - responses)
 
 
-def test_approval_and_audit_schemas_are_minimal_and_never_expose_payload():
+def test_retired_workflow_is_absent_and_audit_schema_never_exposes_payload():
     schemas = SPEC["components"]["schemas"]
-    assert set(schemas["ApprovalCreated"]["properties"]) == {
-        "approval_required",
-        "approval_id",
-        "status",
-        "expires_at",
-    }
-    approval_fields = set(schemas["ApprovalRequest"]["properties"])
-    assert (
-        not {
-            "sanitized_payload",
-            "payload_digest",
-            "current_password",
-            "sms_code",
-            "cookie",
-            "session_id",
-        }
-        & approval_fields
-    )
+    assert not any(path.startswith("/admin/approvals") for path in SPEC["paths"])
+    assert "ApprovalRequest" not in schemas
     audit_fields = set(schemas["AuditEvent"]["properties"])
     assert (
         not {
@@ -76,13 +43,12 @@ def test_approval_and_audit_schemas_are_minimal_and_never_expose_payload():
         }
         & audit_fields
     )
-    assert set(SPEC["paths"]["/admin/approvals"]) == {"get"}
+    assert {"approver_id", "approval_request_id"}.isdisjoint(audit_fields)
 
 
 def test_password_and_composite_patch_contracts_match_runtime_security_boundary():
     schemas = SPEC["components"]["schemas"]
     assert schemas["RiskPolicyUpdateRequest"]["properties"]["current_password"]["writeOnly"]
-    assert schemas["ApprovalApproveRequest"]["properties"]["current_password"]["writeOnly"]
     assert "data_scope" not in schemas["RoleUpdateRequest"]["properties"]
     assert not {
         "role_id",
@@ -106,7 +72,6 @@ def test_customer_assignment_read_and_risk_mutation_are_documented():
     assert {"200", "401", "403", "404"} <= set(path["get"]["responses"])
     assert {
         "200",
-        "202",
         "401",
         "403",
         "404",

@@ -13,7 +13,7 @@ XW-0101 建立后续账号功能复用的用户身份基础：
 - 只追加登录事件
 
 本任务不实现注册、短信发送、短信登录、密码重置、设备管理、手机号修改、
-账号注销、审核后台、套餐、额度或主体业务。
+账号注销、套餐、额度或主体业务。
 
 ## 手机号
 
@@ -25,14 +25,13 @@ XW-0101 建立后续账号功能复用的用户身份基础：
 
 ## 用户状态
 
-审核状态与账号状态是两个独立字段：
+账号可登录性由 `account_status` 与 `is_active` 共同约束：
 
-- `approval_status`: `pending/approved/rejected`
 - `account_status`: `active/frozen/cancel_pending/cancelled`
 
 `active` 和 `cancel_pending` 对应 `is_active=True`；`frozen` 和 `cancelled`
 对应 `is_active=False`。Manager 状态服务、模型保存逻辑和数据库约束共同防止
-两个字段漂移。审核状态不影响是否允许登录。
+两个字段漂移。系统没有人工账号审核状态。
 
 ## Session 和 CSRF
 
@@ -54,9 +53,9 @@ XW-0101 建立后续账号功能复用的用户身份基础：
 - `GET /api/v1/me`
 
 所有 JSON 响应使用统一 Envelope，并返回相同的 `X-Request-ID`。不存在手机号、
-错误密码、冻结和已注销账号均使用相同的外部凭证错误提示。
+错误密码、禁用和已注销账号均使用相同的外部凭证错误提示。
 
-`/api/v1/me` 只返回 ID、昵称、脱敏手机号、审核状态和账号状态。
+`/api/v1/me` 只返回 ID、昵称、脱敏手机号、账号状态、登录角色、首页路由和品牌信息。
 
 ## 登录限流
 

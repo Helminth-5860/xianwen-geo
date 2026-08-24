@@ -13,11 +13,11 @@ import {
   Switch,
   Table,
   Tag,
-  Typography,
 } from "antd";
 import { useCallback, useEffect, useState } from "react";
 
 import { useAdminCapabilities } from "@/components/admin/admin-capability";
+import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import {
   changeAIModelEnabled,
   getAIModels,
@@ -236,21 +236,23 @@ export default function AdminAIModelsPage() {
   }));
 
   const credentialColumns = [
-    { title: "Provider", dataIndex: "provider_name" },
+    { title: "接口服务商", dataIndex: "provider_name" },
     {
       title: "环境",
       render: (_: unknown, row: APICredential) => (
         <Tag color={row.environment === "production" ? "red" : "blue"}>
-          {row.environment === "production" ? "Production" : "Staging"}
+          {row.environment === "production" ? "正式环境" : "测试环境"}
         </Tag>
       ),
     },
-    { title: "掩码", dataIndex: "secret_mask" },
+    { title: "密钥标识", dataIndex: "secret_mask" },
     { title: "版本", dataIndex: "version_no" },
     {
       title: "状态",
       render: (_: unknown, row: APICredential) => (
-        <Tag color={row.status === "active" ? "green" : "default"}>{row.status}</Tag>
+        <Tag color={row.status === "active" ? "green" : "default"}>
+          {row.status === "active" ? "正常" : "已停用"}
+        </Tag>
       ),
     },
     {
@@ -270,7 +272,7 @@ export default function AdminAIModelsPage() {
             disabled={!canManageCredentials || credentialBusy}
             onClick={() => void runStorageTest(row)}
           >
-            本地测试
+            测试连接
           </Button>
         </Space>
       ),
@@ -278,10 +280,8 @@ export default function AdminAIModelsPage() {
   ];
 
   const columns = [
-    { title: "模型", dataIndex: "display_name" },
-    { title: "稳定 key", dataIndex: "model_key" },
-    { title: "Provider", dataIndex: "provider_key" },
-    { title: "排序", dataIndex: "sort_order" },
+    { title: "模型名称", dataIndex: "display_name" },
+    { title: "接口服务商", dataIndex: "provider_key" },
     {
       title: "状态",
       render: (_: unknown, row: AIModelRuntimeConfig) => (
@@ -292,12 +292,12 @@ export default function AdminAIModelsPage() {
       ),
     },
     {
-      title: "运行参数",
+      title: "调用设置",
       render: (_: unknown, row: AIModelRuntimeConfig) =>
         `${row.timeout_seconds}s / 重试 ${row.max_retries} / 并发 ${row.max_concurrency}`,
     },
     {
-      title: "联网",
+      title: "网络访问",
       render: (_: unknown, row: AIModelRuntimeConfig) =>
         row.network_access_enabled ? "允许" : "关闭",
     },
@@ -336,20 +336,20 @@ export default function AdminAIModelsPage() {
 
   return (
     <main className="admin-page">
-      <Typography.Title>模型和运行配置</Typography.Title>
-      <Typography.Paragraph>
-        固定 8 个检测模型；停用或暂停都会阻止新任务使用。API 密钥仅超级管理员可在本页下方管理。
-      </Typography.Paragraph>
+      <AdminPageHeader
+        title="模型与接口"
+        description="查看模型运行状态、配置调用参数、维护接口凭据并测试连接。停用或暂停后，新任务将不再使用该模型。"
+      />
       {!canManage && <Alert type="info" showIcon title="当前账号只有查看权限" />}
       {message && <Alert type="success" showIcon title={message} />}
       {error && <Alert type="error" showIcon title={error} />}
-      <Card>
+      <Card className="admin-surface">
         <Table rowKey="model_id" dataSource={rows} columns={columns} pagination={false} />
       </Card>
 
       {canManageCredentials && (
         <Card
-          title="API 密钥安全管理"
+          title="接口凭据"
           extra={
             <Button
               type="primary"
@@ -358,15 +358,15 @@ export default function AdminAIModelsPage() {
                 setCredentialOpen(true);
               }}
             >
-              新增密钥
+              新增接口凭据
             </Button>
           }
         >
           <Alert
             type="warning"
             showIcon
-            title="保存后仅显示掩码"
-            description="密钥使用独立主密钥加密保存；“本地测试”只验证存储/解密链路，不访问真实 Provider。"
+            title="保存后仅显示部分内容"
+            description="接口密钥会加密保存；测试连接只返回安全结果，不展示完整密钥。"
           />
           {credentialMessage && (
             <Alert type="success" showIcon title={credentialMessage} style={{ marginTop: 12 }} />
@@ -398,10 +398,10 @@ export default function AdminAIModelsPage() {
             <Form.Item label="显示名称" name="display_name_override">
               <Input placeholder="留空使用内置名称" />
             </Form.Item>
-            <Form.Item label="Provider 模型 ID" name="provider_model_id">
+            <Form.Item label="接口模型标识" name="provider_model_id">
               <Input />
             </Form.Item>
-            <Form.Item label="API 版本" name="api_version">
+            <Form.Item label="接口版本" name="api_version">
               <Input />
             </Form.Item>
             <Form.Item label="排序" name="sort_order" rules={[{ required: true }]}>
@@ -493,7 +493,7 @@ export default function AdminAIModelsPage() {
       </Modal>
 
       <Modal
-        title="新增 API 密钥"
+        title="新增接口凭据"
         open={credentialOpen}
         onCancel={() => {
           credentialForm.resetFields();
@@ -504,8 +504,8 @@ export default function AdminAIModelsPage() {
         okText="加密保存"
       >
         <Form form={credentialForm} layout="vertical">
-          <Form.Item label="Provider" name="provider_key" rules={[{ required: true }]}>
-            <Select options={providerOptions} placeholder="选择固定 Provider" />
+          <Form.Item label="接口服务商" name="provider_key" rules={[{ required: true }]}>
+            <Select options={providerOptions} placeholder="选择接口服务商" />
           </Form.Item>
           <Form.Item
             label="环境"
@@ -520,7 +520,11 @@ export default function AdminAIModelsPage() {
               ]}
             />
           </Form.Item>
-          <Form.Item label="API Key" name="api_key" rules={[{ required: true, min: 8, max: 4096 }]}>
+          <Form.Item
+            label="接口密钥"
+            name="api_key"
+            rules={[{ required: true, min: 8, max: 4096 }]}
+          >
             <Input.Password
               autoComplete="new-password"
               placeholder="保存后只显示掩码，不可再次查看明文"
@@ -530,7 +534,7 @@ export default function AdminAIModelsPage() {
       </Modal>
 
       <Modal
-        title={`轮换 ${rotatingCredential?.provider_name ?? ""} API 密钥`}
+        title={`更新 ${rotatingCredential?.provider_name ?? ""} 接口密钥`}
         open={rotatingCredential !== null}
         onCancel={() => {
           rotateForm.resetFields();
@@ -548,7 +552,7 @@ export default function AdminAIModelsPage() {
         />
         <Form form={rotateForm} layout="vertical">
           <Form.Item
-            label="新 API Key"
+            label="新接口密钥"
             name="api_key"
             rules={[{ required: true, min: 8, max: 4096 }]}
           >

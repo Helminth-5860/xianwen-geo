@@ -1,12 +1,11 @@
 from django.urls import path
 
-from .account_views import ApprovalResubmitView, NotificationListView, NotificationReadView
+from .account_views import NotificationListView, NotificationReadView
 from .admin_views import (
     AdminUserDetailView,
     AdminUserFreezeView,
     AdminUserHistoryView,
     AdminUserListView,
-    AdminUserReviewView,
     AdminUserUnfreezeView,
 )
 from .views import (
@@ -37,11 +36,6 @@ urlpatterns = [
     path("auth/password/reset", PasswordResetView.as_view(), name="password-reset"),
     path("auth/logout", LogoutView.as_view(), name="logout"),
     path("me", MeView.as_view(), name="me"),
-    path(
-        "me/approval/resubmit",
-        ApprovalResubmitView.as_view(),
-        name="approval-resubmit",
-    ),
     path("notifications", NotificationListView.as_view(), name="notification-list"),
     path(
         "notifications/<uuid:notification_id>/read",
@@ -54,11 +48,6 @@ urlpatterns = [
         "admin/users/<uuid:user_id>/history",
         AdminUserHistoryView.as_view(),
         name="admin-user-history",
-    ),
-    path(
-        "admin/users/<uuid:user_id>/review",
-        AdminUserReviewView.as_view(),
-        name="admin-user-review",
     ),
     path(
         "admin/users/<uuid:user_id>/freeze",

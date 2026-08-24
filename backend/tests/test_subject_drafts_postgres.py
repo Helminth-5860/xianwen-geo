@@ -79,7 +79,6 @@ def make_user(phone=None):
         phone=phone or f"138{uuid.uuid4().int % 100000000:08d}",
         nickname="Subject PostgreSQL user",
         password="Correct-Horse-Battery-2026!",
-        approval_status=User.ApprovalStatus.PENDING,
     )
 
 
@@ -547,8 +546,6 @@ def test_scheduled_renewal_future_cap_blocks_activation_and_cancel_restores_curr
         change_type="renewal",
     )
     assert change.status == SubscriptionChange.Status.SCHEDULED
-    assert change.source_approval is not None
-    assert change.source_approval.status == "executed"
     source.refresh_from_db()
     assert effective_subject_activation_limit(user=user, subscription=source) == 5
     with pytest.raises(SubjectLimitReached):

@@ -348,4 +348,4 @@ class AdminSecurityEvent(models.Model):  # noqa: DJ008
 
 
 # Imported here so Django discovers the XW-0107 models under this application.
-from .risk_models import ApprovalRequest, AuditEvent, RiskAction, RiskPolicy  # noqa: E402,F401
+from .risk_models import AuditEvent, RiskAction, RiskPolicy  # noqa: E402,F401

@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import { useAdminCapabilities } from "@/components/admin/admin-capability";
+import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { CustomerAssignmentActions } from "@/components/admin/customer-assignment-actions";
 import { TrialGrantAction } from "@/components/admin/trial-grant-action";
 import {
@@ -23,19 +24,22 @@ import {
   freezeAdminUser,
   getAdminUser,
   getAdminUserHistory,
-  reviewAdminUser,
   unfreezeAdminUser,
   userMessage,
 } from "@/lib/auth-client";
 
-const { Text, Title } = Typography;
+const { Text } = Typography;
 
 const eventLabels: Record<StatusEvent["event_type"], string> = {
-  approved: "审核通过",
-  rejected: "审核拒绝",
-  resubmitted: "用户重新提交",
-  frozen: "账号冻结",
-  unfrozen: "账号解冻",
+  frozen: "账号已禁用",
+  unfrozen: "账号已恢复",
+};
+
+const accountValueLabels: Record<string, string> = {
+  active: "正常",
+  frozen: "禁用",
+  cancel_pending: "禁用",
+  cancelled: "禁用",
 };
 
 export default function AdminUserDetailPage() {
@@ -99,13 +103,16 @@ export default function AdminUserDetailPage() {
 
   return (
     <main className="admin-page">
-      <Button type="link" href="/admin/users" icon={<ArrowLeftOutlined />}>
-        返回审核列表
-      </Button>
-      <Title>用户审核详情</Title>
-      {error && (
-        <Alert type="error" showIcon message={error} closable onClose={() => setError("")} />
-      )}
+      <AdminPageHeader
+        title="用户详情"
+        description="查看用户基础信息、所属管理员、账号状态和可用套餐。"
+        actions={
+          <Button href="/admin/users" icon={<ArrowLeftOutlined />}>
+            返回用户列表
+          </Button>
+        }
+      />
+      {error && <Alert type="error" showIcon title={error} closable onClose={() => setError("")} />}
       <Card loading={loading}>
         {user && (
           <>
@@ -113,38 +120,19 @@ export default function AdminUserDetailPage() {
               <Descriptions.Item label="用户 ID">{user.id}</Descriptions.Item>
               <Descriptions.Item label="昵称">{user.nickname}</Descriptions.Item>
               <Descriptions.Item label="手机号">{user.phone_masked}</Descriptions.Item>
-              <Descriptions.Item label="审核状态">
-                <Tag>{user.approval_status}</Tag>
-              </Descriptions.Item>
               <Descriptions.Item label="账号状态">
-                <Tag>{user.account_status}</Tag>
+                <Tag color={user.account_status === "active" ? "green" : "orange"}>
+                  {user.account_status === "active" ? "正常" : "禁用"}
+                </Tag>
               </Descriptions.Item>
               <Descriptions.Item label="注册时间">
                 {new Date(user.created_at).toLocaleString("zh-CN")}
               </Descriptions.Item>
-              {user.approval_status === "rejected" && (
-                <Descriptions.Item label="当前拒绝原因" span={2}>
-                  <Text>{user.approval_reason}</Text>
-                </Descriptions.Item>
-              )}
             </Descriptions>
             <UserStatusActions
               user={user}
               submitting={submitting}
-              rejectMode={riskModes["user.review.reject"] ?? "confirm"}
               freezeMode={riskModes["user.freeze"] ?? "confirm"}
-              onApprove={() =>
-                void act(() => reviewAdminUser(userId, "approve") as Promise<AdminUser>)
-              }
-              executeReject={(credentials) =>
-                reviewAdminUser(
-                  userId,
-                  "reject",
-                  credentials.reason,
-                  user.status_version,
-                  credentials,
-                )
-              }
               executeFreeze={(credentials) =>
                 freezeAdminUser(userId, user.status_version, credentials)
               }
@@ -152,18 +140,13 @@ export default function AdminUserDetailPage() {
                 setUser(result);
                 void load();
               }}
-              onApproval={(approval) =>
-                setError(`已创建审批请求 ${approval.approval_id}，当前尚未执行。`)
-              }
               onUnfreeze={() => void act(() => unfreezeAdminUser(userId))}
             />
-            {user.approval_status === "approved" && user.account_status === "active" && (
+            {user.account_status === "active" && (
               <TrialGrantAction
                 userId={user.id}
                 expectedVersion={user.status_version}
-                onApproval={(approval) =>
-                  setError("已创建试用审批请求 " + approval.approval_id + "，当前尚未执行。")
-                }
+                onCompleted={() => void load()}
                 onError={setError}
               />
             )}
@@ -180,12 +163,9 @@ export default function AdminUserDetailPage() {
             setAssignment(changed);
             void load();
           }}
-          onApproval={(approval) =>
-            setError(`已创建审批请求 ${approval.approval_id}，客户负责人尚未变更。`)
-          }
         />
       )}
-      <Card title="审核与账号状态历史">
+      <Card title="账号变更记录">
         <List
           dataSource={history}
           locale={{ emptyText: "暂无状态历史" }}
@@ -194,14 +174,15 @@ export default function AdminUserDetailPage() {
               <List.Item.Meta
                 title={
                   <Space>
-                    <Tag>{event.status_domain}</Tag>
+                    <Tag>账号状态</Tag>
                     {eventLabels[event.event_type]}
                   </Space>
                 }
                 description={
-                  <Space direction="vertical" size={2}>
+                  <Space orientation="vertical" size={2}>
                     <Text>
-                      {event.from_value} → {event.to_value}
+                      {accountValueLabels[event.from_value] ?? event.from_value} →{" "}
+                      {accountValueLabels[event.to_value] ?? event.to_value}
                     </Text>
                     {event.reason && <Text>原因：{event.reason}</Text>}
                     <Text type="secondary">

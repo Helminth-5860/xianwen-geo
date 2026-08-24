@@ -40,7 +40,6 @@ def _facts():
         phone=f"138{uuid.uuid4().int % 100000000:08d}",
         nickname="Web source user",
         password=PASSWORD,
-        approval_status=User.ApprovalStatus.APPROVED,
     )
     assign_test_customer(user)
     subject_type = SubjectType.objects.create(

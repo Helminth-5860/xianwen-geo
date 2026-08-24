@@ -67,150 +67,8 @@ class RiskPolicy(models.Model):  # noqa: DJ008
                 condition=models.Q(version__gte=1), name="risk_policy_version_gte_1"
             ),
             models.CheckConstraint(
-                condition=models.Q(current_mode__in=("confirm", "password", "two_person")),
+                condition=models.Q(current_mode__in=("confirm", "password")),
                 name="risk_policy_valid_mode",
-            ),
-        ]
-
-
-class ApprovalRequest(models.Model):  # noqa: DJ008
-    class Status(models.TextChoices):
-        PENDING = "pending", "待审批"
-        REJECTED = "rejected", "已拒绝"
-        CANCELLED = "cancelled", "已取消"
-        EXPIRED = "expired", "已过期"
-        STALE = "stale", "已失效"
-        EXECUTED = "executed", "已执行"
-        EXECUTION_FAILED = "execution_failed", "执行失败"
-
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    action = models.ForeignKey(RiskAction, on_delete=models.PROTECT, related_name="approvals")
-    action_key = models.CharField(max_length=100)
-    policy_version = models.PositiveBigIntegerField()
-    requester = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="requested_approvals"
-    )
-    target_type = models.CharField(max_length=50)
-    target_id = models.UUIDField()
-    target_version = models.PositiveBigIntegerField(default=0)
-    sanitized_payload = models.JSONField(default=dict)
-    payload_digest = models.CharField(max_length=64)
-    safe_summary = models.CharField(max_length=500)
-    status = models.CharField(max_length=32, choices=Status.choices, default=Status.PENDING)
-    expires_at = models.DateTimeField()
-    approved_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        null=True,
-        blank=True,
-        on_delete=models.SET_NULL,
-        related_name="approved_risk_requests",
-    )
-    approved_at = models.DateTimeField(null=True, blank=True)
-    rejected_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        null=True,
-        blank=True,
-        on_delete=models.SET_NULL,
-        related_name="rejected_risk_requests",
-    )
-    rejected_at = models.DateTimeField(null=True, blank=True)
-    rejection_reason = models.CharField(max_length=500, blank=True)
-    cancelled_at = models.DateTimeField(null=True, blank=True)
-    executed_at = models.DateTimeField(null=True, blank=True)
-    execution_result = models.JSONField(default=dict)
-    stable_error_code = models.CharField(max_length=64, blank=True)
-    request_id = models.UUIDField(db_index=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        db_table = "approval_requests"
-        ordering = ("-created_at", "-id")
-        indexes = [
-            models.Index(fields=("status", "expires_at"), name="approval_status_expiry_idx"),
-            models.Index(fields=("requester", "created_at"), name="approval_requester_idx"),
-            models.Index(fields=("target_type", "target_id"), name="approval_target_idx"),
-        ]
-        constraints = [
-            models.CheckConstraint(
-                condition=models.Q(target_version__gte=0), name="approval_target_version_gte_0"
-            ),
-            models.CheckConstraint(
-                condition=~models.Q(approved_by=models.F("requester")),
-                name="approval_requester_not_approver",
-            ),
-            models.CheckConstraint(
-                condition=~models.Q(rejected_by=models.F("requester")),
-                name="approval_requester_not_rejecter",
-            ),
-            models.CheckConstraint(
-                condition=models.Q(expires_at__gt=models.F("created_at")),
-                name="approval_expiry_after_created",
-            ),
-            models.CheckConstraint(
-                condition=(
-                    models.Q(
-                        status="pending",
-                        approved_by__isnull=True,
-                        approved_at__isnull=True,
-                        rejected_by__isnull=True,
-                        rejected_at__isnull=True,
-                        cancelled_at__isnull=True,
-                        executed_at__isnull=True,
-                    )
-                    | models.Q(
-                        status="rejected",
-                        approved_by__isnull=True,
-                        approved_at__isnull=True,
-                        rejected_by__isnull=False,
-                        rejected_at__isnull=False,
-                        cancelled_at__isnull=True,
-                        executed_at__isnull=True,
-                    )
-                    | models.Q(
-                        status="cancelled",
-                        approved_by__isnull=True,
-                        approved_at__isnull=True,
-                        rejected_by__isnull=True,
-                        rejected_at__isnull=True,
-                        cancelled_at__isnull=False,
-                        executed_at__isnull=True,
-                    )
-                    | models.Q(
-                        status__in=("expired", "stale"),
-                        approved_by__isnull=True,
-                        approved_at__isnull=True,
-                        rejected_by__isnull=True,
-                        rejected_at__isnull=True,
-                        cancelled_at__isnull=True,
-                        executed_at__isnull=True,
-                    )
-                    | models.Q(
-                        status__in=("executed", "execution_failed"),
-                        approved_by__isnull=False,
-                        approved_at__isnull=False,
-                        rejected_by__isnull=True,
-                        rejected_at__isnull=True,
-                        cancelled_at__isnull=True,
-                        executed_at__isnull=False,
-                    )
-                ),
-                name="approval_status_times_consistent",
-            ),
-            models.UniqueConstraint(
-                fields=("requester", "action", "target_type", "target_id", "payload_digest"),
-                condition=models.Q(status="pending"),
-                name="approval_unique_pending_payload",
-            ),
-            models.UniqueConstraint(
-                fields=("action_key", "target_id"),
-                condition=models.Q(status="pending", action_key="subscription.change"),
-                name="approval_single_pending_subscription_change",
-            ),
-            models.UniqueConstraint(
-                fields=("action_key", "target_id"),
-                condition=models.Q(status="pending", action_key="subscription.change.cancel"),
-                name="approval_single_pending_subscription_cancel",
             ),
         ]
 
@@ -241,23 +99,9 @@ class AuditEvent(models.Model):  # noqa: DJ008
         on_delete=models.SET_NULL,
         related_name="audit_events_as_requester",
     )
-    approver = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        null=True,
-        blank=True,
-        on_delete=models.SET_NULL,
-        related_name="audit_events_as_approver",
-    )
     target_type = models.CharField(max_length=50)
     target_id = models.UUIDField()
     request_id = models.UUIDField(db_index=True)
-    approval_request = models.ForeignKey(
-        ApprovalRequest,
-        null=True,
-        blank=True,
-        on_delete=models.PROTECT,
-        related_name="audit_events",
-    )
     safe_before = models.JSONField(default=dict)
     safe_after = models.JSONField(default=dict)
     stable_error_code = models.CharField(max_length=64, blank=True)

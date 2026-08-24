@@ -6,7 +6,7 @@ XW-0114 实现管理员发起的续费、升级、降级、替换和试用转正
 它不实现 Beat、自动到期、自动周期推进、scheduled change 自动执行、订单或支付。
 
 套餐变更事实保存在 `SubscriptionChange`，状态只有 `scheduled`、`executed`、`cancelled`。
-它只保存批准后的领域事实，不复制 `ApprovalRequest` 的 pending/rejected 状态。执行后的新订阅通过
+它只保存确认后的领域事实，不创建等待队列。执行后的新订阅通过
 `Subscription.source_change -> SubscriptionChange.from_subscription` 形成不可变链，不伪造
 `PlanApplication`。
 
@@ -19,17 +19,16 @@ XW-0114 实现管理员发起的续费、升级、降级、替换和试用转正
 - 目标 PlanVersion 必须明确提交。archived/draft 拒绝；offline/retired 必须额外确认和原因。
 
 `SubscriptionChange` 的 executed/cancelled 是不可逆终态，`SubscriptionChangeEvent` 只追加。
-同一来源订阅最多一个 scheduled/executed 后继；同一来源最多一个 pending 的
-`subscription.change` 审批。相同派生幂等摘要重放原结果，不同 payload 稳定冲突。
+同一来源订阅最多一个 scheduled/executed 后继。相同派生幂等摘要重放原结果，不同 payload 稳定冲突。
 
-## 权限、审批与安全
+## 权限、确认与安全
 
 公开管理员动作只有 `subscription.change` 和 `subscription.change.cancel`，两项
-supported/default/minimum 都固定为 `two_person`，不能由 RiskPolicy 降级。执行阶段重新校验完整
+supported/default/minimum 都固定为 `confirm`。执行阶段重新校验完整
 管理员 Session、`subscriptions.change`、own/role/all 客户范围、对象级 404、来源状态和版本。
 所有 POST 要求真实 CSRF；change/cancel 还要求 `Idempotency-Key` 与 `expected_version`。
 
-原始 Idempotency-Key 只在请求调用栈内使用。数据库、ApprovalRequest、AuditEvent、Notification、
+原始 Idempotency-Key 只在请求调用栈内使用。数据库、AuditEvent、Notification、
 日志和响应只接收带 key version 的 HMAC 摘要及 canonical request digest。前端每次动作在内存生成
 随机键，不写 URL、localStorage 或 sessionStorage。
 
@@ -39,7 +38,7 @@ supported/default/minimum 都固定为 `two_person`，不能由 RiskPolicy 降�
 
 `Plan -> PlanVersion -> User -> Subscription -> QuotaAccount(UUID) -> QuotaHoldGroup -> QuotaHold(UUID)`
 
-审批 Handler 是静态 action-key 注册表。执行前重新计算分类和快照 digest，并拒绝存在
+风险 Handler 是静态 action-key 注册表。执行前重新计算分类和快照 digest，并拒绝存在
 open/partially-settled Hold 或 `frozen != 0` 的来源订阅；系统不会自动释放 Hold。
 Subscription、SubscriptionChange/Event、QuotaAccount/Ledger/Transfer、Notification 和 AuditEvent
 处于一个 PostgreSQL 事务；失败注入时整体回滚。

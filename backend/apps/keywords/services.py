@@ -39,8 +39,6 @@ class KeywordWriteState:
 
 
 def keyword_write_state(*, user: User, subject: Subject) -> KeywordWriteState:
-    if user.approval_status != User.ApprovalStatus.APPROVED:
-        return KeywordWriteState(False, "approval_required")
     if not user.is_active or user.account_status != User.AccountStatus.ACTIVE:
         return KeywordWriteState(False, "account_unavailable")
     if subject.status == Subject.Status.ARCHIVED:
@@ -59,8 +57,6 @@ def keyword_write_state(*, user: User, subject: Subject) -> KeywordWriteState:
 
 
 def _assert_user_write_allowed(user: User) -> None:
-    if user.approval_status != User.ApprovalStatus.APPROVED:
-        raise KeywordAccountUnavailable
     if not user.is_active or user.account_status != User.AccountStatus.ACTIVE:
         raise KeywordAccountUnavailable
 

@@ -1,19 +1,16 @@
 import uuid
-from datetime import timedelta
 
 import pytest
 from django.core.management import call_command
-from django.db import IntegrityError, transaction
-from django.utils import timezone
 from rest_framework.test import APIClient
 
-from apps.admin_rbac.models import AdminProfile, ApprovalRequest, AuditEvent, RiskAction, RiskPolicy
+from apps.admin_rbac.models import AdminProfile, AuditEvent, RiskAction, RiskPolicy
 from apps.admin_rbac.risk_catalog import (
     RISK_ACTION_CATALOG,
     SMS_STEP_UP_REQUIRED_ACTIONS,
     mode_is_valid,
 )
-from apps.admin_rbac.risk_services import ApprovalPayloadInvalid, canonical_payload
+from apps.admin_rbac.risk_services import RiskPayloadInvalid, canonical_payload
 from apps.users.models import User
 from tests.admin_session_helpers import authenticate_admin_client
 
@@ -63,7 +60,6 @@ def test_sms_step_up_policy_is_narrow_and_explicit():
     }
     business_high_risk = {
         "customer.assignment.change",
-        "user.review.reject",
         "plan.create",
         "plan.update",
         "plan.version.create",
@@ -83,7 +79,7 @@ def test_sms_step_up_policy_is_narrow_and_explicit():
         "subscription.change.cancel",
     }
 
-    assert len(RISK_ACTION_CATALOG) == 33
+    assert len(RISK_ACTION_CATALOG) == 32
     assert SMS_STEP_UP_REQUIRED_ACTIONS == expected_security_critical
     assert len(SMS_STEP_UP_REQUIRED_ACTIONS) == 14
     assert SMS_STEP_UP_REQUIRED_ACTIONS.isdisjoint(business_high_risk)
@@ -112,7 +108,7 @@ def test_catalog_sync_repairs_metadata_and_invalid_policy_without_deleting_unkno
 
     action.refresh_from_db()
     policy.refresh_from_db()
-    assert action.name == "冻结用户"
+    assert action.name == "禁用用户"
     assert policy.current_mode == "password"
     assert RiskAction.objects.filter(pk="future.safe.action").exists()
 
@@ -137,7 +133,7 @@ def test_canonical_payload_is_stable_bound_and_rejects_sensitive_or_executable_v
         {"reason": "import os"},
         {"reason": "line\ncontrol"},
     ):
-        with pytest.raises(ApprovalPayloadInvalid):
+        with pytest.raises(RiskPayloadInvalid):
             canonical_payload("user.freeze", "user", target, 1, payload)
 
 
@@ -174,7 +170,7 @@ def test_confirm_mode_requires_confirmation_and_executes_with_audit():
 
 
 @pytest.mark.django_db
-def test_password_mode_reauthenticates_and_two_person_creates_minimal_request():
+def test_password_mode_reauthenticates_and_executes_without_creating_request():
     requester = superuser("13900139000")
     superuser("13700137000")
     target = superuser("13600136000")
@@ -201,16 +197,15 @@ def test_password_mode_reauthenticates_and_two_person_creates_minimal_request():
 
     assert locked.status_code == 403
     assert locked.json()["error"]["code"] == "ADMIN_REAUTH_FAILED"
-    assert requested.status_code == 202
-    body = requested.json()["data"]
-    assert body["approval_required"] is True
-    assert set(body) == {"approval_required", "approval_id", "status", "expires_at"}
+    assert requested.status_code == 200
     target.refresh_from_db()
-    assert target.is_active is True
+    assert target.is_staff is False
+    assert target.admin_profile.admin_status == AdminProfile.Status.DISABLED
+    assert AuditEvent.objects.get(action_key="admin.disable").outcome == "executed"
 
 
 @pytest.mark.django_db
-def test_two_person_requires_another_valid_superuser_and_cannot_self_approve():
+def test_single_superuser_can_execute_and_retired_workflow_route_is_unavailable():
     requester = superuser("13900139000")
     target = User.objects.create_user(
         phone="13800138000", nickname="管理员", password=PASSWORD, is_staff=True
@@ -219,158 +214,88 @@ def test_two_person_requires_another_valid_superuser_and_cannot_self_approve():
     client = admin_client(requester)
     path = f"/api/v1/admin/admins/{target.admin_profile.id}/disable"
 
-    unavailable = client.post(
+    missing_password = client.post(
         path,
         {"expected_version": target.admin_profile.version, "confirmed": True},
         format="json",
     )
-    assert unavailable.status_code == 409
-    assert unavailable.json()["error"]["code"] == "APPROVAL_APPROVER_UNAVAILABLE"
-
-    superuser("13700137000")
-    requested = client.post(
+    executed = client.post(
         path,
-        {"expected_version": target.admin_profile.version, "confirmed": True},
+        {
+            "expected_version": target.admin_profile.version,
+            "confirmed": True,
+            "current_password": PASSWORD,
+        },
         format="json",
     )
-    approval_id = requested.json()["data"]["approval_id"]
-    self_approval = client.post(
-        f"/api/v1/admin/approvals/{approval_id}/approve",
-        {"current_password": PASSWORD},
-        format="json",
-    )
-    assert self_approval.status_code == 403
-    assert self_approval.json()["error"]["code"] == "APPROVAL_SELF_NOT_ALLOWED"
+    assert missing_password.status_code == 422
+    assert executed.status_code == 200
+    assert client.get("/api/v1/admin/approvals").status_code == 404
 
 
 @pytest.mark.django_db
-def test_approval_approve_executes_exactly_once_and_replay_conflicts():
+def test_direct_action_executes_exactly_once_and_stale_replay_conflicts():
     requester = superuser("13900139000")
-    approver = superuser("13700137000")
     target = superuser("13600136000")
     request_client = admin_client(requester)
-    approve_client = admin_client(approver)
+    original_version = target.admin_profile.version
     response = request_client.post(
         f"/api/v1/admin/admins/{target.admin_profile.id}/disable",
-        {"expected_version": target.admin_profile.version, "confirmed": True},
+        {
+            "expected_version": original_version,
+            "confirmed": True,
+            "current_password": PASSWORD,
+        },
         format="json",
     )
-    approval_id = response.json()["data"]["approval_id"]
+    replay = request_client.post(
+        f"/api/v1/admin/admins/{target.admin_profile.id}/disable",
+        {
+            "expected_version": original_version,
+            "confirmed": True,
+            "current_password": PASSWORD,
+        },
+        format="json",
+    )
 
-    executed = approve_client.post(
-        f"/api/v1/admin/approvals/{approval_id}/approve",
-        {"current_password": PASSWORD},
-        format="json",
-    )
-    replay = approve_client.post(
-        f"/api/v1/admin/approvals/{approval_id}/approve",
-        {"current_password": PASSWORD},
-        format="json",
-    )
-
-    assert executed.status_code == 200
-    assert executed.json()["data"]["status"] == "executed"
+    assert response.status_code == 200
     assert replay.status_code == 409
-    assert replay.json()["error"]["code"] == "APPROVAL_STATE_CONFLICT"
     target.refresh_from_db()
     assert target.is_staff is False
     assert target.admin_profile.admin_status == AdminProfile.Status.DISABLED
-    assert (
-        AuditEvent.objects.filter(approval_request_id=approval_id, outcome="executed").count() == 1
-    )
+    assert AuditEvent.objects.filter(action_key="admin.disable", outcome="executed").count() == 1
 
 
 @pytest.mark.django_db
-def test_approval_cancel_reject_expire_and_no_generic_create_route():
+def test_all_retired_workflow_routes_are_unavailable():
     requester = superuser("13900139000")
-    approver = superuser("13700137000")
-    target = superuser("13600136000")
-    requester_client = admin_client(requester)
-    approver_client = admin_client(approver)
+    client = admin_client(requester)
+    request_id = uuid.uuid4()
 
-    def create_request():
-        response = requester_client.post(
-            f"/api/v1/admin/admins/{target.admin_profile.id}/disable",
-            {"expected_version": target.admin_profile.version, "confirmed": True},
-            format="json",
-        )
-        return ApprovalRequest.objects.get(pk=response.json()["data"]["approval_id"])
-
-    cancelled = create_request()
-    cancel_response = requester_client.post(
-        f"/api/v1/admin/approvals/{cancelled.id}/cancel", {}, format="json"
-    )
-    assert cancel_response.status_code == 200
-    assert cancel_response.json()["data"]["status"] == "cancelled"
-
-    rejected = create_request()
-    reject_response = approver_client.post(
-        f"/api/v1/admin/approvals/{rejected.id}/reject",
-        {"reason": "当前变更不符合安全要求"},
-        format="json",
-    )
-    assert reject_response.status_code == 200
-    assert reject_response.json()["data"]["status"] == "rejected"
-
-    expired = create_request()
-    now = timezone.now()
-    ApprovalRequest.objects.filter(pk=expired.pk).update(
-        created_at=now - timedelta(hours=2), expires_at=now - timedelta(hours=1)
-    )
-    expired_response = approver_client.post(
-        f"/api/v1/admin/approvals/{expired.id}/approve",
-        {"current_password": PASSWORD},
-        format="json",
-    )
-    assert expired_response.status_code == 410
-    expired.refresh_from_db()
-    assert expired.status == ApprovalRequest.Status.EXPIRED
-    assert requester_client.post("/api/v1/admin/approvals", {}, format="json").status_code == 405
+    assert client.get("/api/v1/admin/approvals").status_code == 404
+    assert client.post("/api/v1/admin/approvals", {}, format="json").status_code == 404
+    for suffix in ("", "/approve", "/reject", "/cancel"):
+        assert client.post(f"/api/v1/admin/approvals/{request_id}{suffix}", {}).status_code == 404
 
 
 @pytest.mark.django_db
-def test_pending_duplicate_has_database_uniqueness():
+def test_direct_action_audit_visibility_and_append_only_guards():
     requester = superuser("13900139000")
-    action = RiskAction.objects.get(pk="admin.disable")
-    target = uuid.uuid4()
-    fields = {
-        "action": action,
-        "action_key": action.key,
-        "policy_version": action.policy.version,
-        "requester": requester,
-        "target_type": action.target_type,
-        "target_id": target,
-        "target_version": 1,
-        "sanitized_payload": {},
-        "payload_digest": "a" * 64,
-        "safe_summary": "安全摘要",
-        "expires_at": timezone.now() + timedelta(hours=1),
-        "request_id": uuid.uuid4(),
-    }
-    ApprovalRequest.objects.create(**fields)
-    with pytest.raises(IntegrityError), transaction.atomic():
-        ApprovalRequest.objects.create(**fields)
-
-
-@pytest.mark.django_db
-def test_approval_visibility_audit_visibility_and_append_only_guards():
-    requester = superuser("13900139000")
-    other = superuser("13700137000")
     target = superuser("13600136000")
     request_client = admin_client(requester)
-    other_client = admin_client(other)
     response = request_client.post(
         f"/api/v1/admin/admins/{target.admin_profile.id}/disable",
-        {"expected_version": target.admin_profile.version, "confirmed": True},
+        {
+            "expected_version": target.admin_profile.version,
+            "confirmed": True,
+            "current_password": PASSWORD,
+        },
         format="json",
     )
-    approval_id = response.json()["data"]["approval_id"]
-
-    assert request_client.get("/api/v1/admin/approvals").status_code == 200
-    assert other_client.get(f"/api/v1/admin/approvals/{approval_id}").status_code == 200
-    assert request_client.patch(f"/api/v1/admin/approvals/{approval_id}", {}).status_code == 405
-    event = AuditEvent.objects.filter(approval_request_id=approval_id).first()
+    assert response.status_code == 200
+    event = AuditEvent.objects.filter(action_key="admin.disable", outcome="executed").first()
     assert event is not None
+    assert request_client.get("/api/v1/admin/audit-events").status_code == 200
     with pytest.raises(TypeError):
         AuditEvent.objects.filter(pk=event.pk).update(outcome="tampered")
     with pytest.raises(TypeError):

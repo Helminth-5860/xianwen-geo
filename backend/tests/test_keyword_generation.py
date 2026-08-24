@@ -75,7 +75,6 @@ def _facts(*, regenerations=2, generation_limit=5):
         phone=f"139{uuid.uuid4().int % 100000000:08d}",
         nickname="Keyword generation user",
         password=PASSWORD,
-        approval_status=User.ApprovalStatus.APPROVED,
         account_status=User.AccountStatus.ACTIVE,
     )
     subject_type = SubjectType.objects.get(key="enterprise")
@@ -567,7 +566,6 @@ def test_generation_api_is_strict_async_owner_scoped_and_hides_internal_data():
         phone=f"136{uuid.uuid4().int % 100000000:08d}",
         nickname="Outsider",
         password=PASSWORD,
-        approval_status=User.ApprovalStatus.APPROVED,
     )
     outsider_client = APIClient()
     outsider_client.force_authenticate(outsider)

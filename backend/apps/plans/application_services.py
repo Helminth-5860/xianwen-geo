@@ -138,7 +138,6 @@ def _ensure_create_eligible(user: User) -> None:
         or user.is_superuser
         or not user.is_active
         or user.account_status != User.AccountStatus.ACTIVE
-        or user.approval_status not in (User.ApprovalStatus.PENDING, User.ApprovalStatus.APPROVED)
         or AdminProfile.objects.filter(user=user).exists()
     ):
         raise PlanApplicationNotEligible

@@ -6,6 +6,8 @@ import type { ReactNode } from "react";
 import { AdminCapabilityProvider } from "@/components/admin/admin-capability";
 import { AdminStepUpProvider } from "@/components/admin/admin-step-up";
 
+import "./admin-console.css";
+
 export default function AdminLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   if (pathname === "/admin/login") return children;

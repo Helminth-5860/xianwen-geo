@@ -2,28 +2,25 @@ import hashlib
 import json
 import re
 from dataclasses import dataclass
-from datetime import timedelta
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from django.conf import settings
-from django.db import IntegrityError, transaction
-from django.utils import timezone
+from django.db import transaction
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 
 from apps.core.redaction import is_sensitive_field, normalize_field_name
 from apps.users.models import User
 
 from .audit_services import record_audit_event
-from .models import AdminProfile, ApprovalRequest, RiskAction, RiskPolicy, SuperuserSecurityPolicy
+from .models import AdminProfile, RiskAction, RiskPolicy, SuperuserSecurityPolicy
 from .permissions import resolve_admin_context
-from .risk_catalog import MODE_STRENGTH, PASSWORD, TWO_PERSON, requires_sms_step_up
+from .risk_catalog import MODE_STRENGTH, PASSWORD, requires_sms_step_up
 from .risk_handlers import HandlerContext, handler_spec
 from .security import require_admin_step_up
 from .security_services import _reauth
 
-MAX_APPROVAL_PAYLOAD_BYTES = 16_384
+MAX_RISK_PAYLOAD_BYTES = 16_384
 FORBIDDEN_TEXT_MARKERS = (
     "http://",
     "https://",
@@ -64,7 +61,7 @@ FORBIDDEN_PAYLOAD_KEYS = {
 
 
 class RiskError(Exception):
-    code = "APPROVAL_EXECUTION_FAILED"
+    code = "RISK_ACTION_EXECUTION_FAILED"
 
 
 class RiskConfirmationRequired(RiskError):
@@ -83,35 +80,17 @@ class RiskModeBelowMinimum(RiskError):
     code = "RISK_SECURITY_MODE_BELOW_MINIMUM"
 
 
-class ApprovalStateConflict(RiskError):
-    code = "APPROVAL_STATE_CONFLICT"
+class RiskTargetStale(RiskError):
+    code = "RISK_TARGET_STALE"
 
 
-class ApprovalSelfNotAllowed(RiskError):
-    code = "APPROVAL_SELF_NOT_ALLOWED"
-
-
-class ApprovalApproverUnavailable(RiskError):
-    code = "APPROVAL_APPROVER_UNAVAILABLE"
-
-
-class ApprovalExpired(RiskError):
-    code = "APPROVAL_EXPIRED"
-
-
-class ApprovalStale(RiskError):
-    code = "APPROVAL_STALE"
-
-
-class ApprovalPayloadInvalid(RiskError):
-    code = "APPROVAL_PAYLOAD_INVALID"
+class RiskPayloadInvalid(RiskError):
+    code = "RISK_PAYLOAD_INVALID"
 
 
 @dataclass(frozen=True)
 class RiskResult:
-    approval_required: bool
     data: dict[str, Any]
-    approval: ApprovalRequest | None = None
     error: Exception | None = None
 
 
@@ -125,7 +104,7 @@ def _json_value(value):
         for key, item in value.items():
             normalized_key = normalize_field_name(key)
             if is_sensitive_field(key) or normalized_key in FORBIDDEN_PAYLOAD_KEYS:
-                raise ApprovalPayloadInvalid
+                raise RiskPayloadInvalid
             output[str(key)] = _json_value(item)
         return output
     if isinstance(value, (list, tuple)):
@@ -134,13 +113,13 @@ def _json_value(value):
         if isinstance(value, str):
             lowered = value.casefold()
             if any(marker in lowered for marker in FORBIDDEN_TEXT_MARKERS):
-                raise ApprovalPayloadInvalid
+                raise RiskPayloadInvalid
             if HTML_TAG_PATTERN.search(value):
-                raise ApprovalPayloadInvalid
+                raise RiskPayloadInvalid
             if any(ord(character) < 32 for character in value):
-                raise ApprovalPayloadInvalid
+                raise RiskPayloadInvalid
         return value
-    raise ApprovalPayloadInvalid
+    raise RiskPayloadInvalid
 
 
 def canonical_payload(action_key, target_type, target_id, target_version, payload):
@@ -155,16 +134,14 @@ def canonical_payload(action_key, target_type, target_id, target_version, payloa
     encoded = json.dumps(
         document, ensure_ascii=False, sort_keys=True, separators=(",", ":")
     ).encode()
-    if len(encoded) > MAX_APPROVAL_PAYLOAD_BYTES:
-        raise ApprovalPayloadInvalid
+    if len(encoded) > MAX_RISK_PAYLOAD_BYTES:
+        raise RiskPayloadInvalid
     return safe_payload, hashlib.sha256(encoded).hexdigest()
 
 
-def _context_with_permission(user, permission_key, *, request_permission=False):
+def _context_with_permission(user, permission_key):
     context = resolve_admin_context(user)
     if context is None or permission_key not in context.permission_keys:
-        raise PermissionDenied
-    if request_permission and "approvals.request" not in context.permission_keys:
         raise PermissionDenied
     return context
 
@@ -192,17 +169,6 @@ def _valid_superuser(user):
     return True
 
 
-def _ensure_other_approver(requester):
-    candidates = User.objects.filter(
-        is_superuser=True,
-        is_staff=True,
-        is_active=True,
-        account_status__in=User.ACTIVE_ACCOUNT_STATUSES,
-    ).exclude(pk=requester.pk)
-    if not any(_valid_superuser(candidate) for candidate in candidates):
-        raise ApprovalApproverUnavailable
-
-
 def _validated_payload(spec, raw_payload):
     serializer = spec.payload_serializer(data=raw_payload)
     serializer.is_valid(raise_exception=True)
@@ -219,26 +185,6 @@ def _policy(action_key, *, lock):
     except RiskPolicy.DoesNotExist as exc:
         raise NotFound from exc
     return policy
-
-
-def _mark_stale(approval, request, code="APPROVAL_STALE"):
-    approval.status = ApprovalRequest.Status.STALE
-    approval.stable_error_code = code
-    approval.save(update_fields=["status", "stable_error_code", "updated_at"])
-    record_audit_event(
-        request=request,
-        category="approval",
-        action_key=approval.action_key,
-        outcome="stale",
-        actor=request.user,
-        requester=approval.requester,
-        approver=request.user if request.user.is_superuser else None,
-        target_type=approval.target_type,
-        target_id=approval.target_id,
-        approval_request=approval,
-        safe_after={"status": "stale"},
-        stable_error_code=code,
-    )
 
 
 @transaction.atomic
@@ -261,73 +207,15 @@ def _perform_risk_action_transactional(
         raise PermissionDenied
     actual_version = spec.target_version(request.user, context, target_id, True)
     if actual_version != target_version:
-        raise ApprovalStale
+        raise RiskTargetStale
     payload = _validated_payload(spec, raw_payload)
-    safe_payload, digest = canonical_payload(
-        action_key, policy.action.target_type, target_id, target_version, payload
-    )
+    canonical_payload(action_key, policy.action.target_type, target_id, target_version, payload)
     mode = policy.current_mode
     if mode not in policy.action.supported_modes:
         raise RiskModeNotSupported
     definition_minimum = policy.action.minimum_mode
     if MODE_STRENGTH.get(mode, 0) < MODE_STRENGTH.get(definition_minimum, 99):
         raise RiskModeBelowMinimum
-    if mode == TWO_PERSON:
-        _context_with_permission(request.user, spec.permission_key, request_permission=True)
-        _ensure_other_approver(request.user)
-        expires_at = timezone.now() + timedelta(
-            seconds=getattr(settings, "RISK_APPROVAL_TTL_SECONDS", 86_400)
-        )
-        try:
-            with transaction.atomic():
-                approval = ApprovalRequest.objects.create(
-                    action=policy.action,
-                    action_key=action_key,
-                    policy_version=policy.version,
-                    requester=request.user,
-                    target_type=policy.action.target_type,
-                    target_id=target_id,
-                    target_version=target_version,
-                    sanitized_payload=safe_payload,
-                    payload_digest=digest,
-                    safe_summary=f"{policy.action.name}（目标记录）",
-                    expires_at=expires_at,
-                    request_id=request.request_id,
-                )
-        except IntegrityError as exc:
-            existing_approval = ApprovalRequest.objects.filter(
-                requester=request.user,
-                action=policy.action,
-                target_type=policy.action.target_type,
-                target_id=target_id,
-                payload_digest=digest,
-                status=ApprovalRequest.Status.PENDING,
-            ).first()
-            if existing_approval is None:
-                raise ApprovalStateConflict from exc
-            approval = existing_approval
-        record_audit_event(
-            request=request,
-            category="approval",
-            action_key=action_key,
-            outcome="requested",
-            actor=request.user,
-            requester=request.user,
-            target_type=policy.action.target_type,
-            target_id=target_id,
-            approval_request=approval,
-            safe_after={"status": approval.status, "policy_version": policy.version},
-        )
-        return RiskResult(
-            True,
-            {
-                "approval_required": True,
-                "approval_id": str(approval.pk),
-                "status": approval.status,
-                "expires_at": approval.expires_at,
-            },
-            approval,
-        )
     if mode == PASSWORD:
         if not current_password:
             raise ValidationError({"current_password": ["密码模式必须提供当前密码。"]})
@@ -360,7 +248,7 @@ def _perform_risk_action_transactional(
             safe_after={"executed": False},
             stable_error_code=stable_code[:64],
         )
-        return RiskResult(False, {}, error=exc)
+        return RiskResult({}, error=exc)
     record_audit_event(
         request=request,
         category="high_risk_action",
@@ -374,7 +262,7 @@ def _perform_risk_action_transactional(
         safe_before=result.safe_before,
         safe_after=result.safe_after,
     )
-    return RiskResult(False, result.safe_result)
+    return RiskResult(result.safe_result)
 
 
 def perform_risk_action(**kwargs):
@@ -382,251 +270,6 @@ def perform_risk_action(**kwargs):
     if result.error is not None:
         raise result.error
     return result
-
-
-def _expire_locked_approval(*, approval, request, now=None):
-    now = now or timezone.now()
-    if approval.status != ApprovalRequest.Status.PENDING or approval.expires_at > now:
-        return False
-    approval.status = ApprovalRequest.Status.EXPIRED
-    approval.save(update_fields=["status", "updated_at"])
-    record_audit_event(
-        request=request,
-        category="approval",
-        action_key=approval.action_key,
-        outcome="expired",
-        actor=request.user,
-        requester=approval.requester,
-        target_type=approval.target_type,
-        target_id=approval.target_id,
-        approval_request=approval,
-        safe_after={"status": "expired"},
-    )
-    return True
-
-
-@transaction.atomic
-def expire_pending_approvals(*, request):
-    now = timezone.now()
-    approvals = list(
-        ApprovalRequest.objects.select_for_update()
-        .select_related("requester", "action")
-        .filter(status=ApprovalRequest.Status.PENDING, expires_at__lte=now)
-    )
-    return sum(
-        _expire_locked_approval(approval=approval, request=request, now=now)
-        for approval in approvals
-    )
-
-
-@transaction.atomic
-def get_approval_for_user(*, request, approval_id, permission_key="approvals.view"):
-    approval = (
-        ApprovalRequest.objects.select_for_update()
-        .select_related("requester", "action")
-        .filter(pk=approval_id)
-        .first()
-    )
-    if approval is None:
-        raise NotFound
-    _context_with_permission(request.user, permission_key)
-    if not request.user.is_superuser and approval.requester_id != request.user.pk:
-        raise NotFound
-    _expire_locked_approval(approval=approval, request=request)
-    return approval
-
-
-@transaction.atomic
-def approve_request(*, request, approval_id, current_password):
-    approval = get_approval_for_user(
-        request=request, approval_id=approval_id, permission_key="approvals.approve"
-    )
-    if approval.status == ApprovalRequest.Status.EXPIRED:
-        return approval
-    if approval.status != ApprovalRequest.Status.PENDING:
-        raise ApprovalStateConflict
-    if approval.requester_id == request.user.pk:
-        raise ApprovalSelfNotAllowed
-    if not _valid_superuser(request.user):
-        raise PermissionDenied
-    if requires_sms_step_up(approval.action_key):
-        require_admin_step_up(request)
-    _reauth(request.user, current_password, request)
-    policy = _policy(approval.action_key, lock=True)
-    spec = handler_spec(approval.action_key)
-    if policy.version != approval.policy_version or policy.current_mode != TWO_PERSON:
-        _mark_stale(approval, request)
-        return approval
-    requester = User.objects.select_for_update().get(pk=approval.requester_id)
-    try:
-        requester_context = _context_with_permission(
-            requester, spec.permission_key, request_permission=True
-        )
-        if spec.superuser_only and not requester.is_superuser:
-            raise PermissionDenied
-        actual_version = spec.target_version(requester, requester_context, approval.target_id, True)
-    except (PermissionDenied, NotFound):
-        _mark_stale(approval, request)
-        return approval
-    safe_payload, digest = canonical_payload(
-        approval.action_key,
-        approval.target_type,
-        approval.target_id,
-        approval.target_version,
-        approval.sanitized_payload,
-    )
-    if digest != approval.payload_digest or actual_version != approval.target_version:
-        _mark_stale(approval, request)
-        return approval
-    approved_at = timezone.now()
-    try:
-        with transaction.atomic():
-            result = spec.execute(
-                HandlerContext(
-                    requester=requester,
-                    request=request,
-                    target_id=approval.target_id,
-                    target_version=approval.target_version,
-                    payload=safe_payload,
-                    approval_request=approval,
-                )
-            )
-    except Exception as exc:
-        stable_code = getattr(exc, "code", "APPROVAL_EXECUTION_FAILED")
-        approval.status = ApprovalRequest.Status.EXECUTION_FAILED
-        approval.approved_by = request.user
-        approval.approved_at = approved_at
-        approval.executed_at = timezone.now()
-        approval.stable_error_code = stable_code
-        approval.save(
-            update_fields=[
-                "status",
-                "approved_by",
-                "approved_at",
-                "executed_at",
-                "stable_error_code",
-                "updated_at",
-            ]
-        )
-        record_audit_event(
-            request=request,
-            category="approval",
-            action_key=approval.action_key,
-            outcome="execution_failed",
-            actor=request.user,
-            requester=requester,
-            approver=request.user,
-            target_type=approval.target_type,
-            target_id=approval.target_id,
-            approval_request=approval,
-            safe_after={"status": "execution_failed"},
-            stable_error_code=stable_code,
-        )
-        return approval
-    approval.status = ApprovalRequest.Status.EXECUTED
-    approval.approved_by = request.user
-    approval.approved_at = approved_at
-    approval.executed_at = timezone.now()
-    approval.execution_result = result.safe_result
-    approval.save(
-        update_fields=[
-            "status",
-            "approved_by",
-            "approved_at",
-            "executed_at",
-            "execution_result",
-            "updated_at",
-        ]
-    )
-    record_audit_event(
-        request=request,
-        category="approval",
-        action_key=approval.action_key,
-        outcome="executed",
-        actor=request.user,
-        subject=result.subject,
-        requester=requester,
-        approver=request.user,
-        target_type=approval.target_type,
-        target_id=approval.target_id,
-        approval_request=approval,
-        safe_before=result.safe_before,
-        safe_after=result.safe_after,
-    )
-    return approval
-
-
-@transaction.atomic
-def reject_request(*, request, approval_id, reason):
-    approval = get_approval_for_user(
-        request=request, approval_id=approval_id, permission_key="approvals.reject"
-    )
-    if approval.status == ApprovalRequest.Status.EXPIRED:
-        return approval
-    if approval.status != ApprovalRequest.Status.PENDING:
-        raise ApprovalStateConflict
-    if approval.requester_id == request.user.pk:
-        raise ApprovalSelfNotAllowed
-    if not _valid_superuser(request.user):
-        raise PermissionDenied
-    approval.status = ApprovalRequest.Status.REJECTED
-    approval.rejected_by = request.user
-    approval.rejected_at = timezone.now()
-    approval.rejection_reason = reason
-    approval.save(
-        update_fields=["status", "rejected_by", "rejected_at", "rejection_reason", "updated_at"]
-    )
-    record_audit_event(
-        request=request,
-        category="approval",
-        action_key=approval.action_key,
-        outcome="rejected",
-        actor=request.user,
-        requester=approval.requester,
-        approver=request.user,
-        target_type=approval.target_type,
-        target_id=approval.target_id,
-        approval_request=approval,
-        safe_after={"status": "rejected", "reason_provided": True},
-    )
-    return approval
-
-
-@transaction.atomic
-def _cancel_request_transactional(*, request, approval_id):
-    approval = get_approval_for_user(
-        request=request, approval_id=approval_id, permission_key="approvals.cancel"
-    )
-    if approval.status == ApprovalRequest.Status.EXPIRED:
-        return approval
-    if (
-        approval.status != ApprovalRequest.Status.PENDING
-        or approval.requester_id != request.user.pk
-    ):
-        raise ApprovalStateConflict
-    approval.status = ApprovalRequest.Status.CANCELLED
-    approval.cancelled_at = timezone.now()
-    approval.save(update_fields=["status", "cancelled_at", "updated_at"])
-    record_audit_event(
-        request=request,
-        category="approval",
-        action_key=approval.action_key,
-        outcome="cancelled",
-        actor=request.user,
-        requester=request.user,
-        target_type=approval.target_type,
-        target_id=approval.target_id,
-        approval_request=approval,
-        safe_after={"status": "cancelled"},
-    )
-    return approval
-
-
-def cancel_request(*, request, approval_id):
-    approval = _cancel_request_transactional(request=request, approval_id=approval_id)
-    if approval.status == ApprovalRequest.Status.EXPIRED:
-        raise ApprovalExpired
-    return approval
 
 
 @transaction.atomic

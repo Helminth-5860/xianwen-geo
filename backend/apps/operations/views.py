@@ -174,7 +174,6 @@ class AdminCustomerExportView(APIView):
                 "customer_id",
                 "phone_masked",
                 "nickname",
-                "approval_status",
                 "account_status",
                 "customer_status",
                 "subject_count",
@@ -189,7 +188,6 @@ class AdminCustomerExportView(APIView):
                     customer.pk,
                     mask_phone(customer.phone),
                     _csv_safe(customer.nickname),
-                    customer.approval_status,
                     customer.account_status,
                     status_key,
                     customer.subject_total,
@@ -646,7 +644,6 @@ class AdminDashboardView(APIView):
         payload = {
             "customers": {
                 "total": customers.count(),
-                "pending_review": customers.filter(approval_status="pending").count(),
                 "active": customers.filter(account_status="active").count(),
             },
             "followups": {

@@ -5,12 +5,12 @@
 XW-0111 只建立 `PlanApplication` 与追加式 `PlanApplicationEvent`，统一 API 为
 `/api/v1/plan-applications` 和 `/api/v1/admin/plan-applications`。本任务没有
 Subscription、QuotaAccount、订单、支付、退款、发票或合同，也不会因申请、联系或关闭
-自动授予、撤销任何套餐权益。试用套餐只公开展示“由管理员审核后发放”，不能通过本 API 申请。
+自动授予、撤销任何套餐权益。试用套餐只公开展示“由管理员确认后发放”，不能通过本 API 申请。
 
 ## 资格与状态机
 
-只有已认证普通用户、`is_active=true`、`account_status=active` 且审核状态为
-pending/approved 可以创建申请。rejected、cancel_pending、frozen、cancelled、staff、
+只有已认证普通用户、`is_active=true` 且 `account_status=active` 可以创建申请。
+cancel_pending、frozen、cancelled、staff、
 superuser 或存在 AdminProfile 的身份均失败关闭。active/cancel_pending 用户可以取消自己的
 pending/contacted 申请；历史读取继续服从既有 Session 与账号状态边界。
 
@@ -38,7 +38,7 @@ SUPER_ADMIN 可见全部 USER；手机号筛选在 scoped QuerySet 后执行，�
 申请表不复制负责人，SUPER_ADMIN 转交负责人后可见性立即随归属变化。
 
 `plan_application.contact` 与 `plan_application.close` 的默认及最低模式均为 confirm，可由
-RiskPolicy 提高为 password/two_person。旧 HTTP 写入口必须经过统一风险编排、静态 Handler、严格
+RiskPolicy 可提高为 password。旧 HTTP 写入口必须经过统一风险编排、静态 Handler、严格
 payload Serializer、scope 与 expected_version 重检。领域事件、固定模板 Notification、AuditEvent
 与状态变化处于同一 PostgreSQL 事务；任一写入失败会回滚。完整手机号仅管理员详情按最小业务需要
 返回，不进入 Event、AuditEvent、Notification 或日志；密码、Cookie、Session、幂等原文和摘要均
@@ -48,7 +48,7 @@ payload Serializer、scope 与 expected_version 重检。领域事件、固定�
 
 plans 0004 创建申请、事件、索引和约束，0005 安装 PostgreSQL 不可变/追加式触发器；users 0005
 增加固定通知类型与可空关联；admin_rbac 0010 幂等 Seed 权限、RiskAction 与默认 RiskPolicy。
-Seed reverse 使用 noop，不单独删除可能已被审批或审计引用的代码目录证据；trigger reverse 只移除
+Seed reverse 使用 noop，不单独删除可能已被操作记录引用的代码目录证据；trigger reverse 只移除
 数据库保护，不恢复或改写数据。完整回退基础迁移会丢失申请和历史证据。生产逆向迁移前必须审查
 并备份，优先前向修复或备份恢复。本任务没有连接腾讯云 PostgreSQL/Redis。
 
@@ -58,4 +58,4 @@ Seed reverse 使用 noop，不单独删除可能已被审批或审计引用的�
 事务回滚和 trigger 使用 `./scripts/test-plan-applications.sh` 或
 `.\scripts\test-plan-applications.ps1`；脚本使用随机本地凭证并在结束时执行
 `docker compose down --volumes --remove-orphans`。Docker Compose Job 继续运行 RBAC、管理员安全、
-高风险审批、套餐版本和套餐申请五层专属套件。
+直接风险动作、套餐版本和套餐申请五层专属套件。

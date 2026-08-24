@@ -2,10 +2,10 @@ import uuid
 
 import pytest
 
-from apps.admin_rbac.models import ApprovalRequest, AuditEvent
+from apps.admin_rbac.models import AuditEvent
 from apps.admin_rbac.risk_services import (
-    MAX_APPROVAL_PAYLOAD_BYTES,
-    ApprovalPayloadInvalid,
+    MAX_RISK_PAYLOAD_BYTES,
+    RiskPayloadInvalid,
     canonical_payload,
 )
 
@@ -37,10 +37,9 @@ from apps.admin_rbac.risk_services import (
     ],
 )
 def test_sensitive_payload_fields_are_explicitly_rejected(field):
-    with pytest.raises(ApprovalPayloadInvalid) as captured:
+    with pytest.raises(RiskPayloadInvalid) as captured:
         canonical_payload("user.freeze", "user", uuid.uuid4(), 1, {field: "do-not-store"})
-    assert captured.value.code == "APPROVAL_PAYLOAD_INVALID"
-    assert not ApprovalRequest.objects.exists()
+    assert captured.value.code == "RISK_PAYLOAD_INVALID"
     assert not AuditEvent.objects.exists()
 
 
@@ -48,7 +47,7 @@ def test_sensitive_payload_fields_are_explicitly_rejected(field):
 @pytest.mark.parametrize(
     "payload",
     [
-        {"reason": "x" * MAX_APPROVAL_PAYLOAD_BYTES},
+        {"reason": "x" * MAX_RISK_PAYLOAD_BYTES},
         {"reason": "safe\u0000unsafe"},
         {"reason": "<script>alert(1)</script>"},
         {"operation": "create", "sql": "select secret"},
@@ -58,7 +57,7 @@ def test_sensitive_payload_fields_are_explicitly_rejected(field):
 def test_payload_size_control_html_mixed_operation_and_nested_aliases_are_rejected(
     payload,
 ):
-    with pytest.raises(ApprovalPayloadInvalid):
+    with pytest.raises(RiskPayloadInvalid):
         canonical_payload("user.freeze", "user", uuid.uuid4(), 1, payload)
 
 
@@ -69,12 +68,12 @@ def test_payload_invalid_maps_to_stable_422_envelope_without_echoing_value():
 
     request = APIRequestFactory().post("/api/v1/admin/users/target/freeze")
     request.request_id = str(uuid.uuid4())
-    response = risk_error_response(ApprovalPayloadInvalid(), request)
+    response = risk_error_response(RiskPayloadInvalid(), request)
 
     assert response.status_code == 422
     assert response.data["success"] is False
     assert response.data["error"] == {
-        "code": "APPROVAL_PAYLOAD_INVALID",
+        "code": "RISK_PAYLOAD_INVALID",
         "message": response.data["error"]["message"],
         "details": {},
     }

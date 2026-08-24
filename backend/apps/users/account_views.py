@@ -2,42 +2,14 @@ from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_protect
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from rest_framework.status import HTTP_409_CONFLICT
 from rest_framework.views import APIView
-
-from apps.core.error_codes import ErrorCode
-from apps.core.responses import error_response
 
 from .models import Notification
 from .serializers import (
-    ApprovalResubmitSerializer,
-    CurrentUserSerializer,
     NotificationSerializer,
     PaginationSerializer,
 )
-from .status_services import ApprovalStateConflict, mark_notification_read, resubmit_approval
-
-
-@method_decorator(csrf_protect, name="dispatch")
-class ApprovalResubmitView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def post(self, request):
-        serializer = ApprovalResubmitSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        try:
-            result = resubmit_approval(
-                user_id=request.user.pk,
-                nickname=serializer.validated_data.get("nickname"),
-                request_id=request.request_id,
-            )
-        except ApprovalStateConflict:
-            return error_response(
-                ErrorCode.APPROVAL_STATE_CONFLICT,
-                status_code=HTTP_409_CONFLICT,
-                request=request,
-            )
-        return Response(CurrentUserSerializer(result.user).data)
+from .status_services import mark_notification_read
 
 
 class NotificationListView(APIView):

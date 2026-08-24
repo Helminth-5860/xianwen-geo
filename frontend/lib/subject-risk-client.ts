@@ -1,5 +1,4 @@
 import { get, post, type PageData, write } from "./auth-client";
-import type { ApprovalCreated } from "./risk-client";
 
 export type SubjectRiskType = Readonly<{
   id: string;
@@ -120,9 +119,13 @@ export const updateSubjectRiskRule = (
   });
 
 export const publishSubjectRiskCatalog = (expectedCatalogVersion: number) =>
-  post<ApprovalCreated>("/admin/subject-risk-catalog/publish", {
-    expected_catalog_version: expectedCatalogVersion,
-  });
+  post<{ catalog_version: number; revision_id: string; revision_no: number }>(
+    "/admin/subject-risk-catalog/publish",
+    {
+      expected_catalog_version: expectedCatalogVersion,
+      confirmed: true,
+    },
+  );
 
 export const getSubjectReviews = (page = 1, status = "") => {
   const query = new URLSearchParams({ page: String(page) });

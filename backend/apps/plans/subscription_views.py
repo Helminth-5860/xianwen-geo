@@ -6,7 +6,7 @@ from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_protect
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
-from rest_framework.status import HTTP_200_OK, HTTP_202_ACCEPTED
+from rest_framework.status import HTTP_200_OK
 from rest_framework.views import APIView
 
 from apps.admin_rbac.permissions import HasAdminPermission
@@ -159,7 +159,7 @@ class AdminSubscriptionDetailView(APIView):
         return Response(AdminSubscriptionDetailSerializer(subscription).data)
 
 
-def _perform(request, *, action_key, target_id, target_version, raw_payload):
+def _perform(request, *, action_key, target_id, target_version, raw_payload, confirmed=False):
     try:
         result = perform_risk_action(
             request=request,
@@ -167,6 +167,7 @@ def _perform(request, *, action_key, target_id, target_version, raw_payload):
             target_id=target_id,
             target_version=target_version,
             raw_payload=raw_payload,
+            confirmed=confirmed,
         )
     except SubscriptionError as exc:
         return subscription_error_response(exc, request)
@@ -177,10 +178,7 @@ def _perform(request, *, action_key, target_id, target_version, raw_payload):
         AdminSecurityUnavailable,
     ) as exc:
         return risk_error_response(exc, request)
-    return Response(
-        result.data,
-        status=HTTP_202_ACCEPTED if result.approval_required else HTTP_200_OK,
-    )
+    return Response(result.data, status=HTTP_200_OK)
 
 
 class AdminOpenSubscriptionView(APIView):
@@ -203,12 +201,14 @@ class AdminOpenSubscriptionView(APIView):
             ):
                 raise PermissionDenied
         expected_version = payload.pop("expected_version")
+        confirmed = payload.pop("confirmed")
         return _perform(
             request,
             action_key="subscription.open",
             target_id=application_id,
             target_version=expected_version,
             raw_payload=payload,
+            confirmed=confirmed,
         )
 
 
@@ -222,12 +222,14 @@ class AdminGrantTrialView(APIView):
         serializer.is_valid(raise_exception=True)
         payload = dict(serializer.validated_data)
         expected_version = payload.pop("expected_version")
+        confirmed = payload.pop("confirmed")
         return _perform(
             request,
             action_key="subscription.grant_trial",
             target_id=user_id,
             target_version=expected_version,
             raw_payload=payload,
+            confirmed=confirmed,
         )
 
 
@@ -241,12 +243,14 @@ class AdminTerminateSubscriptionView(APIView):
         serializer.is_valid(raise_exception=True)
         payload = dict(serializer.validated_data)
         expected_version = payload.pop("expected_version")
+        confirmed = payload.pop("confirmed")
         return _perform(
             request,
             action_key="subscription.terminate",
             target_id=subscription_id,
             target_version=expected_version,
             raw_payload=payload,
+            confirmed=confirmed,
         )
 
 
@@ -330,6 +334,7 @@ class AdminSubscriptionChangeCreateView(APIView):
         serializer.is_valid(raise_exception=True)
         data = dict(serializer.validated_data)
         expected_version = data.pop("expected_version")
+        confirmed = data.pop("confirmed")
         source = scoped_subscription_or_404(
             request.user,
             request.admin_context,
@@ -373,6 +378,7 @@ class AdminSubscriptionChangeCreateView(APIView):
             target_id=subscription_id,
             target_version=expected_version,
             raw_payload=risk_payload,
+            confirmed=confirmed,
         )
 
 
@@ -408,6 +414,7 @@ class AdminSubscriptionChangeCancelView(APIView):
         serializer = CancelSubscriptionChangeRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         expected_version = serializer.validated_data["expected_version"]
+        confirmed = serializer.validated_data["confirmed"]
         payload = {"reason": serializer.validated_data["reason"]}
         risk_payload, error = _derived_change_payload(
             request,
@@ -423,6 +430,7 @@ class AdminSubscriptionChangeCancelView(APIView):
             target_id=change_id,
             target_version=expected_version,
             raw_payload=risk_payload,
+            confirmed=confirmed,
         )
 
 

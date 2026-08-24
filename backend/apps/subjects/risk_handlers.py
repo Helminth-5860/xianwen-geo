@@ -30,7 +30,6 @@ def handle_catalog_publish(context: HandlerContext) -> HandlerResult:
     revision = publish_catalog(
         request=context.request,
         expected_version=context.target_version,
-        approval_request=context.approval_request,
         expected_digest=context.payload["draft_digest"],
     )
     after = {

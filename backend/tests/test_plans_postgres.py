@@ -8,7 +8,7 @@ from django.core.management import call_command
 from django.db import DatabaseError, close_old_connections, connection, connections, transaction
 from rest_framework.test import APIClient
 
-from apps.admin_rbac.models import ApprovalRequest, AuditEvent, RiskPolicy
+from apps.admin_rbac.models import AuditEvent, RiskPolicy
 from apps.admin_rbac.risk_handlers import HANDLER_SPECS
 from apps.plans.models import Plan, PlanLimit, PlanModelPermission, PlanVersion
 from apps.plans.services import (
@@ -227,10 +227,9 @@ def test_postgresql_entitlement_triggers_block_child_mutations():
         cursor.execute("DELETE FROM plan_limits WHERE id = %s", [limit_row.pk])
 
 
-def test_postgresql_snapshot_digest_and_shared_approval_orchestrator():
+def test_postgresql_snapshot_digest_and_direct_risk_orchestrator():
     require_postgresql()
     requester = actor(password=TEST_PASSWORD)
-    approver = actor("13700137000", password=TEST_PASSWORD)
     plan = plan_for(requester)
     version = publish(requester, draft_for(requester, plan))
     snapshot, digest = build_effective_config(version, version.snapshot_generated_at)
@@ -238,34 +237,25 @@ def test_postgresql_snapshot_digest_and_shared_approval_orchestrator():
     plan.refresh_from_db()
     plan = set_plan_offline(plan_id=plan.pk, actor=requester, expected_version=plan.version)
 
-    requested = admin_client(requester).post(
-        f"/api/v1/admin/plans/{plan.pk}/archive",
-        {"expected_version": plan.version, "confirmed": True},
-        format="json",
-    )
-    assert requested.status_code == 202
-    approval = ApprovalRequest.objects.get(pk=requested.json()["data"]["approval_id"])
-    first = admin_client(approver)
-    second = admin_client(approver)
+    first = admin_client(requester)
+    second = admin_client(requester)
     responses = parallel(
         lambda: first.post(
-            f"/api/v1/admin/approvals/{approval.pk}/approve",
-            {"current_password": TEST_PASSWORD},
+            f"/api/v1/admin/plans/{plan.pk}/archive",
+            {"expected_version": plan.version, "current_password": TEST_PASSWORD},
             format="json",
         ),
         lambda: second.post(
-            f"/api/v1/admin/approvals/{approval.pk}/approve",
-            {"current_password": TEST_PASSWORD},
+            f"/api/v1/admin/plans/{plan.pk}/archive",
+            {"expected_version": plan.version, "current_password": TEST_PASSWORD},
             format="json",
         ),
     )
 
     assert sorted(item[1].status_code for item in responses if item[0] == "ok") == [200, 409]
-    approval.refresh_from_db()
     plan.refresh_from_db()
-    assert approval.status == ApprovalRequest.Status.EXECUTED
     assert plan.status == Plan.Status.ARCHIVED
-    assert AuditEvent.objects.filter(approval_request=approval, outcome="executed").count() == 1
+    assert AuditEvent.objects.filter(action_key="plan.archive", outcome="executed").count() == 1
     assert HANDLER_SPECS["plan.archive"].execute is not None
-    assert RiskPolicy.objects.get(action_id="plan.archive").current_mode == "two_person"
+    assert RiskPolicy.objects.get(action_id="plan.archive").current_mode == "password"
     assert issubclass(PlanDomainError, Exception)

@@ -36,6 +36,7 @@ class TerminateSubscriptionPayloadSerializer(StrictPayloadSerializer):
 
 class OpenSubscriptionRequestSerializer(StrictSerializer):
     expected_version = serializers.IntegerField(min_value=1)
+    confirmed = serializers.BooleanField(required=False, default=False)
     selected_plan_version_id = serializers.UUIDField(required=False, allow_null=True, default=None)
     confirm_unavailable = serializers.BooleanField(required=False, default=False)
     unavailable_reason = serializers.CharField(
@@ -52,6 +53,7 @@ class OpenSubscriptionRequestSerializer(StrictSerializer):
 
 class GrantTrialRequestSerializer(StrictSerializer):
     expected_version = serializers.IntegerField(min_value=1)
+    confirmed = serializers.BooleanField(required=False, default=False)
     plan_id = serializers.UUIDField()
     opening_note = serializers.CharField(
         required=False, allow_blank=True, default="", max_length=500, trim_whitespace=False
@@ -60,6 +62,7 @@ class GrantTrialRequestSerializer(StrictSerializer):
 
 class TerminateSubscriptionRequestSerializer(StrictSerializer):
     expected_version = serializers.IntegerField(min_value=1)
+    confirmed = serializers.BooleanField(required=False, default=False)
     reason = serializers.CharField(max_length=500, trim_whitespace=False)
 
 
@@ -173,6 +176,7 @@ class SubscriptionChangePreviewRequestSerializer(StrictSerializer):
 
 
 class SubscriptionChangeRequestSerializer(SubscriptionChangePreviewRequestSerializer):
+    confirmed = serializers.BooleanField(required=False, default=False)
     confirm_unavailable = serializers.BooleanField(required=False, default=False)
     unavailable_reason = serializers.CharField(
         required=False, allow_blank=True, default="", max_length=500, trim_whitespace=False
@@ -197,6 +201,7 @@ class SubscriptionChangePayloadSerializer(StrictPayloadSerializer):
 
 class CancelSubscriptionChangeRequestSerializer(StrictSerializer):
     expected_version = serializers.IntegerField(min_value=1)
+    confirmed = serializers.BooleanField(required=False, default=False)
     reason = serializers.CharField(max_length=500, trim_whitespace=False)
 
 

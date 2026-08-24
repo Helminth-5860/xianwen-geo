@@ -400,7 +400,6 @@ def handle_subscription_change(context):
         reason=context.payload["reason"],
         digests=_change_digests(context.payload),
         request_id=context.request.request_id,
-        source_approval=context.approval_request,
     )
     result = {
         "change_id": str(change.pk),

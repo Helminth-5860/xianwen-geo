@@ -1,10 +1,11 @@
 "use client";
 
-import { ArrowLeftOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
+import { PlusOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 import {
   Alert,
   Button,
   Card,
+  Empty,
   Form,
   Input,
   Pagination,
@@ -12,39 +13,33 @@ import {
   Space,
   Table,
   Tag,
-  Typography,
 } from "antd";
 import type { TableProps } from "antd";
 import { useCallback, useEffect, useState } from "react";
 
-import { useAdminCapabilities } from "@/components/admin/admin-capability";
-
+import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { type AdminUser, type PageData, getAdminUsers, userMessage } from "@/lib/auth-client";
 
-const { Title } = Typography;
+type Filters = { accountStatus?: string; phone?: string };
 
-type Filters = {
-  approvalStatus?: string;
-  accountStatus?: string;
-  phone?: string;
+const accountStatusLabel: Record<string, { text: string; color: string }> = {
+  active: { text: "正常", color: "green" },
+  frozen: { text: "禁用", color: "orange" },
 };
 
 const columns: TableProps<AdminUser>["columns"] = [
-  { title: "昵称", dataIndex: "nickname" },
-  { title: "手机号", dataIndex: "phone_masked" },
+  { title: "用户", dataIndex: "nickname" },
+  { title: "登录手机号", dataIndex: "phone_masked" },
+  { title: "所属管理员", render: () => <span title="请进入详情查看归属管理员">进入详情查看</span> },
+  { title: "当前套餐", render: () => <span title="套餐汇总接口待接入">—</span> },
+  { title: "剩余额度", render: () => <span title="额度汇总接口待接入">—</span> },
   {
-    title: "审核状态",
-    dataIndex: "approval_status",
-    render: (value: string) => (
-      <Tag color={value === "approved" ? "green" : value === "rejected" ? "red" : "blue"}>
-        {value === "approved" ? "已通过" : value === "rejected" ? "已拒绝" : "待审核"}
-      </Tag>
-    ),
-  },
-  {
-    title: "账号状态",
+    title: "状态",
     dataIndex: "account_status",
-    render: (value: string) => <Tag>{value}</Tag>,
+    render: (value: string) => {
+      const status = accountStatusLabel[value] ?? { text: "禁用", color: "orange" };
+      return <Tag color={status.color}>{status.text}</Tag>;
+    },
   },
   {
     title: "注册时间",
@@ -53,10 +48,9 @@ const columns: TableProps<AdminUser>["columns"] = [
   },
   {
     title: "操作",
-    key: "action",
     render: (_, user) => (
       <Button type="link" href={`/admin/users/${user.id}`}>
-        查看与审核
+        管理
       </Button>
     ),
   },
@@ -64,22 +58,19 @@ const columns: TableProps<AdminUser>["columns"] = [
 
 export default function AdminUsersPage() {
   const [form] = Form.useForm<Filters>();
-  const [filters, setFilters] = useState<Filters>({ approvalStatus: "pending" });
+  const [filters, setFilters] = useState<Filters>({});
   const [page, setPage] = useState(1);
   const [data, setData] = useState<PageData<AdminUser> | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const capabilities = useAdminCapabilities();
-  const canReview = Boolean(capabilities?.permission_keys.includes("users.review"));
-  const canFreeze = Boolean(capabilities?.permission_keys.includes("users.freeze"));
 
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
       setData(await getAdminUsers({ ...filters, page }));
-    } catch (loadError) {
-      setError(userMessage(loadError));
+    } catch (reason) {
+      setError(userMessage(reason));
     } finally {
       setLoading(false);
     }
@@ -90,87 +81,71 @@ export default function AdminUsersPage() {
     return () => window.clearTimeout(timer);
   }, [load]);
 
-  const submit = (values: Filters) => {
-    setPage(1);
-    setFilters(values);
-  };
-
   return (
-    <main className="admin-page">
-      <Button type="link" href="/" icon={<ArrowLeftOutlined />}>
-        返回首页
-      </Button>
-      <Space className="admin-title" align="center">
-        <Title>用户审核</Title>
-        <Button icon={<ReloadOutlined />} onClick={() => void load()}>
-          刷新
-        </Button>
-      </Space>
-      {error && <Alert type="error" showIcon message="无法加载审核数据" description={error} />}
-      {(!canReview || !canFreeze) && (
-        <Alert
-          type="info"
-          showIcon
-          message="部分用户管理操作不可用"
-          description={
-            !canReview && !canFreeze
-              ? "当前账号没有用户审核和账号冻结权限。"
-              : !canReview
-                ? "当前账号没有用户审核权限。"
-                : "当前账号没有账号冻结权限。"
-          }
-        />
-      )}
-      <Card>
+    <div className="admin-page">
+      <AdminPageHeader
+        title="用户"
+        description="查看实际使用显问 GEO 的企业用户，管理账号状态并快速进入详情处理套餐和额度问题。"
+        actions={
+          <Space wrap>
+            <Button icon={<ReloadOutlined />} onClick={() => void load()} loading={loading}>
+              刷新
+            </Button>
+            <Button type="primary" icon={<PlusOutlined />} disabled title="创建用户接口待接入">
+              创建用户
+            </Button>
+          </Space>
+        }
+      />
+      {error ? <Alert type="error" showIcon title="用户数据加载失败" description={error} /> : null}
+      <Card className="admin-surface">
         <Form
           form={form}
           layout="inline"
-          initialValues={{ approvalStatus: "pending" }}
-          onFinish={submit}
+          onFinish={(values) => {
+            setPage(1);
+            setFilters(values);
+          }}
         >
-          <Form.Item name="approvalStatus" label="审核状态">
-            <Select
+          <Form.Item
+            name="phone"
+            label="手机号"
+            rules={[{ pattern: /^(?:\+?86)?1[3-9]\d{9}$/, message: "请输入正确的手机号" }]}
+          >
+            <Input
               allowClear
-              className="admin-filter"
-              options={[
-                { value: "pending", label: "待审核" },
-                { value: "approved", label: "已通过" },
-                { value: "rejected", label: "已拒绝" },
-              ]}
+              prefix={<SearchOutlined />}
+              maxLength={14}
+              placeholder="按手机号查询"
             />
           </Form.Item>
           <Form.Item name="accountStatus" label="账号状态">
             <Select
               allowClear
               className="admin-filter"
-              options={[
-                { value: "active", label: "正常" },
-                { value: "frozen", label: "冻结" },
-                { value: "cancel_pending", label: "注销冷静期" },
-                { value: "cancelled", label: "已注销" },
-              ]}
+              placeholder="全部状态"
+              options={Object.entries(accountStatusLabel).map(([value, status]) => ({
+                value,
+                label: status.text,
+              }))}
             />
-          </Form.Item>
-          <Form.Item
-            name="phone"
-            label="完整手机号"
-            rules={[{ pattern: /^(?:\+?86)?1[3-9]\d{9}$/, message: "请输入完整手机号" }]}
-          >
-            <Input allowClear maxLength={14} placeholder="仅精确匹配" />
           </Form.Item>
           <Button type="primary" htmlType="submit" icon={<SearchOutlined />}>
             查询
           </Button>
         </Form>
       </Card>
-      <Card>
+      <Card className="admin-surface">
         <Table
           rowKey="id"
           columns={columns}
           dataSource={data?.results ?? []}
           loading={loading}
           pagination={false}
-          scroll={{ x: 880 }}
+          scroll={{ x: 1050 }}
+          locale={{
+            emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无用户" />,
+          }}
         />
         <Pagination
           className="admin-pagination"
@@ -181,6 +156,6 @@ export default function AdminUsersPage() {
           onChange={setPage}
         />
       </Card>
-    </main>
+    </div>
   );
 }

@@ -681,7 +681,7 @@ def test_superuser_allowlist_full_api_and_every_request_enforcement(settings):
         REMOTE_ADDR="127.0.0.1",
     )
     assert conflict.status_code == 409
-    assert conflict.json()["error"]["code"] == "APPROVAL_STALE"
+    assert conflict.json()["error"]["code"] == "RISK_TARGET_STALE"
 
     lockout_user = make_superuser("13900139016")
     lockout_policy = lockout_user.superuser_security_policy

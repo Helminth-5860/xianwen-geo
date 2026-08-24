@@ -7,9 +7,9 @@ from django.urls import Resolver404, resolve
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from apps.admin_rbac.models import ApprovalRequest, RiskAction, RiskPolicy
+from apps.admin_rbac.models import RiskAction, RiskPolicy
 from apps.admin_rbac.permissions import resolve_admin_context
-from apps.admin_rbac.risk_catalog import RISK_ACTION_BY_KEY, TWO_PERSON
+from apps.admin_rbac.risk_catalog import CONFIRM, RISK_ACTION_BY_KEY
 from apps.plans.change_idempotency import derive_plan_change_digests
 from apps.plans.change_services import (
     SubscriptionChangeActiveHolds,
@@ -42,7 +42,6 @@ def customer(phone="13800138000"):
         phone=phone,
         nickname="套餐变更用户",
         password=PASSWORD,
-        approval_status=User.ApprovalStatus.APPROVED,
     )
 
 
@@ -107,10 +106,10 @@ def test_catalog_and_routes_are_fixed_without_manual_execution_endpoint():
         definition = RISK_ACTION_BY_KEY[key]
         action = RiskAction.objects.get(pk=key)
         policy = RiskPolicy.objects.get(action=action)
-        assert definition.supported_modes == (TWO_PERSON,)
-        assert definition.default_mode == definition.minimum_mode == TWO_PERSON
-        assert action.supported_modes == [TWO_PERSON]
-        assert policy.current_mode == TWO_PERSON
+        assert definition.supported_modes == (CONFIRM,)
+        assert definition.default_mode == definition.minimum_mode == CONFIRM
+        assert action.supported_modes == [CONFIRM]
+        assert policy.current_mode == CONFIRM
     expected = {
         "/api/v1/admin/subscriptions/00000000-0000-0000-0000-000000000001/change/preview",
         "/api/v1/admin/subscriptions/00000000-0000-0000-0000-000000000001/change",
@@ -328,7 +327,7 @@ def test_open_hold_blocks_change_without_automatic_release():
 
 
 @pytest.mark.django_db
-def test_change_api_stores_only_derived_idempotency_and_blocks_second_pending():
+def test_change_api_executes_directly_and_stores_only_derived_idempotency():
     requester, approver, user = admin(), admin("13700137000"), customer()
     source, _, _ = activate_formal(requester, user, code="api-source")
     target_plan, target_version = published_plan(requester, code="api-target")
@@ -341,6 +340,7 @@ def test_change_api_stores_only_derived_idempotency_and_blocks_second_pending():
         "change_type": "replacement",
         "quota_policy": "overwrite",
         "reason": "API 变更",
+        "confirmed": True,
     }
     response = client.post(
         f"/api/v1/admin/subscriptions/{source.pk}/change",
@@ -348,11 +348,10 @@ def test_change_api_stores_only_derived_idempotency_and_blocks_second_pending():
         format="json",
         HTTP_IDEMPOTENCY_KEY=raw_key,
     )
-    assert response.status_code == 202
-    approval = ApprovalRequest.objects.get(pk=response.json()["data"]["approval_id"])
-    assert approval.action_key == "subscription.change"
-    assert raw_key not in str(approval.sanitized_payload)
-    assert approval.sanitized_payload["idempotency_key_digest"]
+    assert response.status_code == 200
+    change = SubscriptionChange.objects.get(pk=response.json()["data"]["change_id"])
+    assert change.idempotency_key_digest
+    assert raw_key not in str(change.idempotency_key_digest)
     conflict = client.post(
         f"/api/v1/admin/subscriptions/{source.pk}/change",
         {**body, "reason": "不同请求"},
@@ -360,12 +359,10 @@ def test_change_api_stores_only_derived_idempotency_and_blocks_second_pending():
         HTTP_IDEMPOTENCY_KEY="plan-change-api-key-0002",
     )
     assert conflict.status_code == 409
-    assert conflict.json()["error"]["code"] == "APPROVAL_STATE_CONFLICT"
 
 
 @pytest.mark.django_db
-@pytest.mark.django_db
-def test_cancel_change_api_blocks_second_pending_request():
+def test_cancel_change_api_executes_directly_and_blocks_stale_replay():
     requester, approver, user = admin(), admin("13700137001"), customer()
     source, plan, version = activate_formal(requester, user, code="api-cancel-source")
     del approver
@@ -378,25 +375,26 @@ def test_cancel_change_api_blocks_second_pending_request():
     )
     client = authenticate_admin_client(APIClient(), requester)
     url = f"/api/v1/admin/subscription-changes/{change.pk}/cancel"
+    original_version = change.version
     first = client.post(
         url,
-        {"expected_version": change.version, "reason": "客户取消续费"},
+        {"expected_version": original_version, "reason": "客户取消续费", "confirmed": True},
         format="json",
         HTTP_IDEMPOTENCY_KEY="plan-change-cancel-api-key-0001",
     )
-    assert first.status_code == 202
-    approval = ApprovalRequest.objects.get(pk=first.json()["data"]["approval_id"])
-    assert approval.action_key == "subscription.change.cancel"
-    assert "plan-change-cancel-api-key-0001" not in str(approval.sanitized_payload)
+    assert first.status_code == 200
+    change.refresh_from_db()
+    assert change.status == SubscriptionChange.Status.CANCELLED
+    assert change.cancellation_idempotency_key_digest
+    assert "plan-change-cancel-api-key-0001" not in change.cancellation_idempotency_key_digest
 
     conflict = client.post(
         url,
-        {"expected_version": change.version, "reason": "另一项取消原因"},
+        {"expected_version": original_version, "reason": "另一项取消原因", "confirmed": True},
         format="json",
         HTTP_IDEMPOTENCY_KEY="plan-change-cancel-api-key-0002",
     )
     assert conflict.status_code == 409
-    assert conflict.json()["error"]["code"] == "APPROVAL_STATE_CONFLICT"
 
 
 def test_user_change_api_exposes_no_internal_payload_or_digests():

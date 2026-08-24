@@ -8,7 +8,7 @@ XW-0204 adds deterministic, local subject-risk classification and scoped manual 
 
 ## Publication and immutable evidence
 
-`subject_risk.catalog.publish` is the only activation path. Its supported, default, and minimum mode are all `two_person`. Successful execution creates an immutable `SubjectRiskCatalogRevision` containing a canonical snapshot and SHA-256 digest and advances the singleton catalog state. PostgreSQL requires the revision to reference an executed ApprovalRequest for that exact action. Draft edits never change the current published revision.
+`subject_risk.catalog.publish` is the only activation path. Its supported, default, and minimum mode are all `confirm`. Successful execution creates an immutable `SubjectRiskCatalogRevision` containing a canonical snapshot and SHA-256 digest, advances the singleton catalog state, and writes an operation record. Draft edits never change the current published revision.
 
 A SubjectVersion commit fails closed when no valid published revision exists. In the same PostgreSQL transaction it creates an immutable `SubjectRiskAssessment`, zero or more immutable `SubjectRiskHit` rows, and, when required, a pending `SubjectReview` plus requested event. The Assessment permanently references the revision used for classification. A later publication never reclassifies historical versions.
 
@@ -16,7 +16,7 @@ Feature enforcement is intentionally different: it resolves matched historical r
 
 ## Review
 
-Review list and detail use RBAC and CustomerAssignment `own`/`role`/`all` scope; an out-of-scope object is 404. Approve and reject use a complete secure administrator session, real CSRF, `subject_reviews.review`, `expected_version`, row locks, append-only ReviewEvent, Notification, and AuditEvent. They are direct single-administrator business decisions and do not create ApprovalRequest rows.
+Review list and detail use backend assignment scope; an out-of-scope object is 404. Approve and reject use a complete secure administrator session, real CSRF, `subject_reviews.review`, `expected_version`, row locks, append-only ReviewEvent, Notification, and AuditEvent. They are direct single-administrator business decisions and do not create waiting requests.
 
 When a new SubjectVersion becomes current, only an older pending Review is superseded. Approved and rejected history remains unchanged. A stale review cannot authorize a non-current version. Responses contain safe reason categories but not field values, matched values, schema snapshots, rule patterns, digests, or audit payloads.
 
@@ -37,9 +37,9 @@ Subject detail exposes only `{status, review_id, public_reason}` as its risk sum
 
 ## Migrations and rollback
 
-Subjects migrations create the draft catalog, immutable revisions, assessments, hits, reviews, events, singleton state, and PostgreSQL guards. The RBAC migration seeds only permissions and the fixed two-person RiskAction/RiskPolicy. The data migration initializes an empty singleton state but does not publish a revision or fabricate risk history.
+Subjects migrations create the draft catalog, immutable revisions, assessments, hits, reviews, events, singleton state, and PostgreSQL guards. The RBAC migration seeds permissions and the fixed confirm RiskAction/RiskPolicy. The data migration initializes an empty singleton state but does not publish a revision or fabricate risk history.
 
-Trigger rollback removes database guards only; it does not make already-created evidence safe to rewrite. Reversing the schema migration deletes risk and review evidence and must not be used as a routine production rollback. Before any reverse migration, stop writes, review ApprovalRequest/AuditEvent references, and take a verified backup. Prefer a forward fix or backup restore. No Tencent Cloud database or moderation provider is connected by this task.
+Trigger rollback removes database guards only; it does not make already-created evidence safe to rewrite. Reversing the schema migration deletes risk and review evidence and must not be used as a routine production rollback. Before any reverse migration, stop writes, review AuditEvent references, and take a verified backup. Prefer a forward fix or backup restore. No Tencent Cloud database or moderation provider is connected by this task.
 
 ## Verification
 

@@ -8,29 +8,31 @@ vi.mock("next/navigation", () => ({ useParams: () => ({ id: "user-id" }) }));
 import AdminUserDetailPage from "../app/admin/users/[id]/page";
 import AdminUsersPage from "../app/admin/users/page";
 
-describe("用户审核与账号状态页面", () => {
-  it("管理员列表提供冻结范围内的筛选和分页入口", () => {
+describe("用户与账号状态页面", () => {
+  it("用户列表提供直白的管理筛选和分页入口", () => {
     const html = renderToStaticMarkup(<AdminUsersPage />);
-    expect(html).toContain("用户审核");
-    expect(html).toContain("待审核");
-    expect(html).toContain("完整手机号");
-    expect(html).toContain("仅精确匹配");
+    expect(html).toContain(">用户</h2>");
+    expect(html).toContain("按手机号查询");
+    expect(html).toContain("所属管理员");
+    expect(html).toContain("暂无用户");
   });
 
-  it("管理员详情提供审核历史容器和安全操作文案", () => {
+  it("用户详情提供账号变更记录和返回入口", () => {
     const html = renderToStaticMarkup(<AdminUserDetailPage />);
-    expect(html).toContain("用户审核详情");
-    expect(html).toContain("审核与账号状态历史");
-    expect(html).toContain("返回审核列表");
+    expect(html).toContain("用户详情");
+    expect(html).toContain("账号变更记录");
+    expect(html).toContain("返回用户列表");
   });
 
-  it("用户侧源代码包含拒绝原因、昵称重提和通知入口", () => {
+  it("用户侧源代码只展示账号状态和通知入口", () => {
     const source = readFileSync(
       new URL("../components/account/account-overview.tsx", import.meta.url),
       "utf8",
     );
-    expect(source).toContain("approval_reason");
-    expect(source).toContain("重新提交审核");
+    expect(source).toContain("account_status");
+    expect(source).toContain("正常");
+    expect(source).toContain("禁用");
+    expect(source).not.toContain("approval_status");
     expect(source).toContain("站内通知");
     expect(source).toContain("markNotificationRead");
   });

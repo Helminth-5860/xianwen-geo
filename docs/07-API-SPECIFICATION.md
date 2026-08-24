@@ -71,8 +71,7 @@
 | RESOURCE_NOT_FOUND | 404 | 资源不存在或不可访问 |
 | METHOD_NOT_ALLOWED | 405 | 请求方法不允许 |
 | INVALID_JSON | 400 | JSON 请求体无法解析 |
-| ACCOUNT_PENDING_REVIEW | 403 | 账号待审核 |
-| ACCOUNT_FROZEN | 403 | 账号冻结 |
+| ACCOUNT_FROZEN | 403 | 账号已禁用 |
 | PLAN_REQUIRED | 403 | 未开套餐 |
 | PLAN_EXPIRED | 403 | 套餐到期 |
 | SUBJECT_LIMIT_REACHED | 409 | 主体数量超限 |
@@ -180,7 +179,7 @@
 
 后端必须校验：
 
-- 待审核用户允许创建草稿，但不能提交 AI 任务。
+- 正常用户可以创建草稿；执行 AI 任务仍需满足套餐与额度规则。
 - 无套餐用户最多一个草稿。
 - 有套餐用户总启用主体不超过上限。
 
@@ -687,6 +686,6 @@ XW-0403 实现：
 The OpenAPI 3.1 file is authoritative. XW-0113 implements user reads
 `GET /quotas` and `GET /quota-ledger`, administrator scoped reads
 `GET /admin/quota-accounts` and `GET /admin/quota-ledger`, plus fixed
-two-person grant/compensate/manual-deduct adjustment endpoints below
+direct confirmed grant/compensate/manual-deduct adjustment endpoints below
 `/admin/quota-accounts/{account_id}/adjust`. There is no public reset,
 freeze, consume, or release endpoint in XW-0113.

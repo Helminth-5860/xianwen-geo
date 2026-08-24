@@ -4,12 +4,7 @@ import { Alert, Button, Input, Modal, Space, Typography } from "antd";
 import { useState, type ReactNode } from "react";
 
 import { userMessage } from "@/lib/auth-client";
-import {
-  isApprovalCreated,
-  type ApprovalCreated,
-  type RiskExecution,
-  type RiskMode,
-} from "@/lib/risk-client";
+import type { RiskMode } from "@/lib/risk-client";
 
 export type RiskCredentials = Readonly<{
   confirmed: true;
@@ -24,15 +19,13 @@ type Props<T> = Readonly<{
   disabled?: boolean;
   reasonRequired?: boolean;
   children: ReactNode;
-  execute: (credentials: RiskCredentials) => Promise<RiskExecution<T>>;
+  execute: (credentials: RiskCredentials) => Promise<T>;
   onExecuted: (result: T) => void;
-  onApproval: (approval: ApprovalCreated) => void;
 }>;
 
 const modeText: Record<RiskMode, string> = {
   confirm: "确认后立即执行",
   password: "需要当前登录密码再次验证",
-  two_person: "提交后由另一名有效超级管理员审批，当前不会执行",
 };
 
 export function RiskActionButton<T>({
@@ -44,7 +37,6 @@ export function RiskActionButton<T>({
   children,
   execute,
   onExecuted,
-  onApproval,
 }: Props<T>) {
   const [open, setOpen] = useState(false);
   const [password, setPassword] = useState("");
@@ -70,8 +62,7 @@ export function RiskActionButton<T>({
         current_password: mode === "password" ? password : "",
         reason: reason.trim(),
       });
-      if (isApprovalCreated(result)) onApproval(result);
-      else onExecuted(result);
+      onExecuted(result);
       setPassword("");
       setReason("");
       setOpen(false);
@@ -90,23 +81,14 @@ export function RiskActionButton<T>({
       <Modal
         title={actionName}
         open={open}
-        okText={mode === "two_person" ? "发起审批" : "确认执行"}
+        okText="确认执行"
         cancelText="取消"
         confirmLoading={submitting}
         onOk={() => void submit()}
         onCancel={() => !submitting && setOpen(false)}
       >
-        <Space direction="vertical" style={{ width: "100%" }}>
-          <Alert
-            type={mode === "two_person" ? "warning" : "info"}
-            showIcon
-            message={modeText[mode]}
-            description={
-              mode === "two_person"
-                ? "如果没有第二名当前有效超级管理员，服务端会拒绝创建请求。"
-                : undefined
-            }
-          />
+        <Space orientation="vertical" style={{ width: "100%" }}>
+          <Alert type="info" showIcon title={modeText[mode]} />
           {reasonRequired && (
             <label>
               <Typography.Text>操作原因</Typography.Text>
@@ -129,7 +111,7 @@ export function RiskActionButton<T>({
               />
             </label>
           )}
-          {error && <Alert type="error" showIcon message={error} />}
+          {error && <Alert type="error" showIcon title={error} />}
         </Space>
       </Modal>
     </>

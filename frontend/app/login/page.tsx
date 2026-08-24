@@ -46,9 +46,7 @@ export default function LoginPage() {
     setSubmitting(true);
     try {
       const user = await loginWithPassword(values.phone, values.password);
-      router.push(
-        user.approval_status === "pending" ? "/workspace?account=pending" : user.home_route,
-      );
+      router.push(user.home_route);
     } catch (reason) {
       setAdminLoginRequired(
         reason instanceof AuthApiError && reason.code === "ADMIN_LOGIN_REQUIRED",

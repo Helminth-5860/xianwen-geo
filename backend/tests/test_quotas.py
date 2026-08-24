@@ -8,9 +8,9 @@ from django.test import override_settings
 from django.urls import Resolver404, resolve
 from rest_framework.test import APIClient
 
-from apps.admin_rbac.models import ApprovalRequest, AuditEvent, RiskAction, RiskPolicy
+from apps.admin_rbac.models import AuditEvent, RiskAction, RiskPolicy
 from apps.admin_rbac.permissions import resolve_admin_context
-from apps.admin_rbac.risk_catalog import RISK_ACTION_BY_KEY, TWO_PERSON
+from apps.admin_rbac.risk_catalog import CONFIRM, RISK_ACTION_BY_KEY
 from apps.plans.subscription_services import grant_trial, terminate_subscription
 from apps.quotas.catalog import CURRENT_ACCOUNT_DEFINITIONS, snapshot_quota_values
 from apps.quotas.exceptions import (
@@ -27,7 +27,7 @@ from apps.quotas.services import (
     release_hold,
     replay_account,
 )
-from apps.users.models import Notification, User
+from apps.users.models import User
 from tests.admin_session_helpers import authenticate_admin_client
 from tests.test_subscriptions import PASSWORD, published_plan
 
@@ -44,7 +44,6 @@ def provision(*, phone="13800138000"):
         phone=phone,
         nickname="????",
         password=PASSWORD,
-        approval_status=User.ApprovalStatus.APPROVED,
     )
     plan, _ = published_plan(admin, code=f"quota-{uuid.uuid4().hex[:8]}", trial=True)
     subscription = grant_trial(
@@ -321,57 +320,46 @@ def test_user_quota_apis_do_not_leak_business_or_idempotency_fields():
         "actor_id",
         "entitlement_snapshot",
         "sanitized_payload",
-        "approval_request",
         "internal_actor",
     ):
         assert forbidden not in serialized
 
 
 @pytest.mark.django_db
-def test_adjustment_approval_stores_only_derived_idempotency_values(caplog):
+def test_direct_adjustment_keeps_idempotency_secret_out_of_response_and_audit(caplog):
     requester, _, subscription = provision()
     User.objects.create_superuser(phone="13700137000", nickname="?????", password=PASSWORD)
     account = QuotaAccount.objects.get(subscription=subscription, quota_type="detection_points")
     client_header_value = "repeatable-test-request"
     response = authenticate_admin_client(APIClient(), requester).post(
         f"/api/v1/admin/quota-accounts/{account.pk}/adjust/grant",
-        {"expected_version": account.version, "amount": 1, "reason": "????"},
+        {
+            "expected_version": account.version,
+            "amount": 1,
+            "reason": "????",
+            "confirmed": True,
+        },
         format="json",
         HTTP_IDEMPOTENCY_KEY=client_header_value,
     )
-    assert response.status_code == 202
-    approval = ApprovalRequest.objects.get(pk=response.json()["data"]["approval_id"])
-    assert approval.action_key == "quota.grant"
+    assert response.status_code == 200
     assert client_header_value not in str(response.json())
-    assert client_header_value not in str(approval.sanitized_payload)
-    assert client_header_value not in approval.payload_digest
     assert client_header_value not in caplog.text
+    event = AuditEvent.objects.get(action_key="quota.grant", outcome="executed")
     assert client_header_value not in str(
-        list(
-            AuditEvent.objects.filter(approval_request=approval).values(
-                "safe_before", "safe_after", "stable_error_code"
-            )
-        )
+        {"safe_before": event.safe_before, "safe_after": event.safe_after}
     )
-    assert client_header_value not in str(
-        list(
-            Notification.objects.filter(recipient=approval.requester).values(
-                "title", "safe_summary"
-            )
-        )
-    )
-    assert len(approval.sanitized_payload["idempotency_key_digest"]) == 64
 
 
 @pytest.mark.django_db
-def test_risk_catalog_is_fixed_two_person_and_has_no_reset():
+def test_risk_catalog_uses_direct_confirmation_and_has_no_reset():
     for key in ("quota.grant", "quota.compensate", "quota.manual_deduct"):
         definition = RISK_ACTION_BY_KEY[key]
         action = RiskAction.objects.get(key=key)
         policy = RiskPolicy.objects.get(action=action)
-        assert definition.supported_modes == (TWO_PERSON,)
-        assert definition.default_mode == definition.minimum_mode == TWO_PERSON
-        assert action.minimum_mode == policy.current_mode == TWO_PERSON
+        assert definition.supported_modes == (CONFIRM,)
+        assert definition.default_mode == definition.minimum_mode == CONFIRM
+        assert action.minimum_mode == policy.current_mode == CONFIRM
     assert "quota.reset" not in RISK_ACTION_BY_KEY
     assert not RiskAction.objects.filter(key="quota.reset").exists()
 

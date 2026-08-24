@@ -17,7 +17,6 @@ def make_admin(phone, tenant):
         password=PASSWORD,
         tenant=tenant,
         is_staff=True,
-        approval_status=User.ApprovalStatus.APPROVED,
     )
     return AdminProfile.objects.create(user=admin, role=role)
 

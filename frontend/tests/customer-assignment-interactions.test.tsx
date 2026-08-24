@@ -78,22 +78,22 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("customer assignment high-risk entry", () => {
-  it("submits two-person transfer with expected_version and keeps payload in memory", async () => {
-    const approval = {
-      approval_required: true as const,
-      approval_id: "approval-assignment-1",
-      status: "pending" as const,
-      expires_at: "2026-08-02T00:00:00Z",
+  it("confirms transfer with expected_version and keeps payload in memory", async () => {
+    const transferred = {
+      ...assignment,
+      owner_admin_id: secondAdmin.id,
+      owner_nickname: secondAdmin.nickname,
+      owner_phone_masked: secondAdmin.phone_masked,
+      version: 2,
     };
-    mocks.changeCustomerAssignment.mockResolvedValue(approval);
-    const onApproval = vi.fn();
+    mocks.changeCustomerAssignment.mockResolvedValue(transferred);
+    const onChanged = vi.fn();
     const { container } = render(
       <CustomerAssignmentActions
         assignment={assignment}
         admins={[admin, secondAdmin]}
-        mode="two_person"
-        onChanged={vi.fn()}
-        onApproval={onApproval}
+        mode="confirm"
+        onChanged={onChanged}
       />,
     );
 
@@ -112,7 +112,7 @@ describe("customer assignment high-risk entry", () => {
     expect(document.body.textContent).toContain("139****9000");
     await userEvent.click(container.querySelector("button") as HTMLButtonElement);
     await userEvent.type(screen.getByLabelText("操作原因"), "客户归属调整");
-    await userEvent.click(screen.getByRole("button", { name: "发起审批" }));
+    await userEvent.click(screen.getByRole("button", { name: "确认执行" }));
 
     await waitFor(() =>
       expect(mocks.changeCustomerAssignment).toHaveBeenCalledWith(
@@ -127,7 +127,7 @@ describe("customer assignment high-risk entry", () => {
         },
       ),
     );
-    expect(onApproval).toHaveBeenCalledWith(approval);
+    expect(onChanged).toHaveBeenCalledWith(transferred);
     expect(localStorage.length).toBe(0);
     expect(sessionStorage.length).toBe(0);
   });
@@ -148,7 +148,6 @@ describe("customer assignment high-risk entry", () => {
         admins={[admin, secondAdmin]}
         mode="confirm"
         onChanged={onChanged}
-        onApproval={vi.fn()}
       />,
     );
 
@@ -178,7 +177,6 @@ describe("customer assignment high-risk entry", () => {
           admins={[admin, secondAdmin]}
           mode="confirm"
           onChanged={vi.fn()}
-          onApproval={vi.fn()}
         />,
       );
       fireEvent.mouseDown(screen.getByRole("combobox"));

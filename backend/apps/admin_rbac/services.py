@@ -234,9 +234,6 @@ def create_admin(*, actor_id, phone, nickname, password, role_id, request_id, te
         tenant=tenant,
         is_staff=True,
         is_superuser=False,
-        approval_status=User.ApprovalStatus.APPROVED,
-        approved_at=timezone.now(),
-        approved_by=actor,
         account_status=User.AccountStatus.ACTIVE,
     )
     profile = AdminProfile.objects.create(user=user, role=role)

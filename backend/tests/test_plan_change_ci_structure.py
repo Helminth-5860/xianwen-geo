@@ -30,7 +30,7 @@ def test_docker_job_runs_reproducible_postgresql_redis_plan_change_suite():
     shared_compose_scripts = [
         "test-postgres-rbac",
         "test-admin-security",
-        "test-risk-approval",
+        "test-risk-action",
         "test-plans",
         "test-plan-applications",
         "test-subscriptions",
@@ -61,9 +61,9 @@ def test_docker_job_runs_reproducible_postgresql_redis_plan_change_suite():
     for required_test in (
         "test_postgresql_renewal_is_scheduled_without_future_facts_and_cancel_is_safe",
         "test_postgresql_change_and_cancel_idempotency_conflict_matrix",
-        "test_postgresql_preview_submit_and_concurrent_two_person_approval_are_exactly_once",
+        "test_postgresql_preview_and_concurrent_direct_submit_are_exactly_once",
         "test_postgresql_transfer_ledger_pair_is_deferred_complete_and_atomic",
-        "test_postgresql_audit_failure_rolls_back_approved_plan_change",
+        "test_postgresql_audit_failure_rolls_back_direct_plan_change",
         "test_postgresql_submission_recomputes_and_rejects_untrusted_preview_fields",
         "test_postgresql_trial_conversion_boundaries_are_server_enforced",
         "test_postgresql_http_change_and_cancel_idempotency_matrix",

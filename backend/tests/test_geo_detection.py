@@ -504,8 +504,6 @@ def test_progress_apis_hide_other_users_jobs_and_missing_jobs(geo_facts):
         phone="13500135042",
         nickname="Progress reader",
         password="progress-test-password",
-        approval_status="approved",
-        approved_at=timezone.now(),
     )
     client = APIClient()
     client.force_authenticate(other)

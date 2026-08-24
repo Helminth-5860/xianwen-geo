@@ -25,14 +25,13 @@ import {
   type AdminPlanApplication,
   openSubscriptionFromApplication,
 } from "@/lib/plans-client";
-import { getRiskActions, type ApprovalCreated, type RiskMode } from "@/lib/risk-client";
+import { getRiskActions, type RiskMode } from "@/lib/risk-client";
 
 export default function AdminPlanApplicationDetailPage() {
   const { id } = useParams<{ id: string }>();
   const capabilities = useAdminCapabilities();
   const [item, setItem] = useState<AdminPlanApplication | null>(null);
   const [modes, setModes] = useState<Record<string, RiskMode>>({});
-  const [approval, setApproval] = useState<ApprovalCreated | null>(null);
   const [activateOpen, setActivateOpen] = useState(false);
   const [unavailable, setUnavailable] = useState(false);
   const [unavailableReason, setUnavailableReason] = useState("");
@@ -48,7 +47,7 @@ export default function AdminPlanApplicationDetailPage() {
       })
       .catch((reason) => setError(userMessage(reason)));
   }, [id]);
-  if (error) return <Alert type="error" showIcon message={error} />;
+  if (error) return <Alert type="error" showIcon title={error} />;
   if (!item) return <Spin description="正在加载套餐申请" />;
   const canContact = capabilities?.permission_keys.includes("plan_applications.contact") ?? false;
   const canClose = capabilities?.permission_keys.includes("plan_applications.close") ?? false;
@@ -58,16 +57,8 @@ export default function AdminPlanApplicationDetailPage() {
   return (
     <main className="admin-page">
       <Typography.Title>套餐申请详情</Typography.Title>
-      {approval && (
-        <Alert
-          type="warning"
-          showIcon
-          message="已发起双人审批"
-          description={`审批编号：${approval.approval_id}`}
-        />
-      )}
       {!canContact && !canClose && (
-        <Alert type="info" showIcon message="当前账号没有处理此申请的权限" />
+        <Alert type="info" showIcon title="当前账号没有处理此申请的权限" />
       )}
       <Card>
         <Descriptions column={1}>
@@ -94,7 +85,6 @@ export default function AdminPlanApplicationDetailPage() {
                 changeAdminPlanApplication(item.id, "contact", item.version, credentials)
               }
               onExecuted={setItem}
-              onApproval={setApproval}
             >
               标记已联系
             </RiskActionButton>
@@ -108,7 +98,6 @@ export default function AdminPlanApplicationDetailPage() {
                 changeAdminPlanApplication(item.id, "close", item.version, credentials)
               }
               onExecuted={setItem}
-              onApproval={setApproval}
             >
               关闭申请
             </RiskActionButton>
@@ -121,27 +110,28 @@ export default function AdminPlanApplicationDetailPage() {
         </Space>
       </Card>
       <Modal
-        title="开通订阅（固定双人审批）"
+        title="确认开通订阅"
         open={activateOpen}
         onCancel={() => setActivateOpen(false)}
         onOk={async () => {
           try {
-            const result = await openSubscriptionFromApplication(item.id, item.version, {
+            await openSubscriptionFromApplication(item.id, item.version, {
               selectedPlanVersionId: overrideVersion || null,
               confirmUnavailable: unavailable,
               unavailableReason,
               confirmVersionOverride: overrideConfirmed,
               overrideReason,
             });
-            if ("approval_required" in result) setApproval(result as ApprovalCreated);
+            setItem(await getAdminPlanApplication(id));
             setActivateOpen(false);
           } catch (reason) {
             setError(userMessage(reason));
           }
         }}
-        okText="发起审批"
+        okText="确认开通"
       >
-        <Space direction="vertical" style={{ width: "100%" }}>
+        <Space orientation="vertical" style={{ width: "100%" }}>
+          <Alert type="warning" showIcon title="确认后将立即开通，并写入操作记录。" />
           <Checkbox
             checked={unavailable}
             onChange={(event) => setUnavailable(event.target.checked)}

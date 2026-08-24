@@ -50,7 +50,6 @@ def scope_fixture():
         "users.list",
         "users.view",
         "users.history.view",
-        "users.review",
         "users.freeze",
     ]
     permissions = list(AdminPermission.objects.filter(key__in=permission_keys))
@@ -149,29 +148,15 @@ def test_user_history_cannot_bypass_scoped_queryset(scope_fixture):
 
 
 @pytest.mark.django_db
-def test_user_review_uses_role_scope_and_separate_permission(scope_fixture):
+def test_user_review_route_and_permission_are_removed(scope_fixture):
     data = scope_fixture
-    visible = data.role_client.post(
+    assert not AdminPermission.objects.filter(key="users.review").exists()
+    response = data.role_client.post(
         f"/api/v1/admin/users/{data.role_customer.id}/review",
         {"decision": "approve"},
         format="json",
     )
-    hidden = data.role_client.post(
-        f"/api/v1/admin/users/{data.other_customer.id}/review",
-        {"decision": "approve"},
-        format="json",
-    )
-    assert visible.status_code == 200
-    assert hidden.status_code == 404
-
-    permission = AdminPermission.objects.get(key="users.review")
-    AdminRolePermission.objects.filter(role=data.role_admin.role, permission=permission).delete()
-    denied = data.role_client.post(
-        f"/api/v1/admin/users/{data.role_customer.id}/review",
-        {"decision": "approve"},
-        format="json",
-    )
-    assert denied.status_code == 403
+    assert response.status_code == 404
 
 
 @pytest.mark.django_db

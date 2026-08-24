@@ -86,12 +86,13 @@ beforeEach(() => {
   });
   getAdminSubscription.mockResolvedValue(subscription);
   grantTrialSubscription.mockResolvedValue({
-    approval_required: true,
-    approval_id: "approval-trial",
+    subscription_id: "subscription-trial",
+    status: "active",
   });
   terminateSubscription.mockResolvedValue({
-    approval_required: true,
-    approval_id: "approval-terminate",
+    subscription_id: "subscription-1",
+    status: "terminated",
+    version: 2,
   });
 });
 afterEach(() => {
@@ -123,7 +124,7 @@ describe("订阅页面真实交互", () => {
     );
   });
 
-  it("有终止权限时填写原因并发起双人审批", async () => {
+  it("有终止权限时二次确认后直接终止", async () => {
     const context = { permission_keys: ["subscriptions.terminate"], menu_keys: [] } as never;
     render(
       <AdminCapabilityContext.Provider value={context}>
@@ -132,11 +133,11 @@ describe("订阅页面真实交互", () => {
     );
     await userEvent.click(await screen.findByRole("button", { name: "终止订阅" }));
     await userEvent.type(screen.getByLabelText("终止原因"), "客户书面申请终止");
-    await userEvent.click(screen.getByRole("button", { name: "发起审批" }));
+    await userEvent.click(screen.getByRole("button", { name: "确认终止" }));
     await waitFor(() =>
       expect(terminateSubscription).toHaveBeenCalledWith("subscription-1", 1, "客户书面申请终止"),
     );
-    expect(await screen.findByText(/approval-terminate/)).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/审批|approval-terminate/);
   });
 
   it("无终止权限时不渲染动作并给出中文提示", async () => {
@@ -150,8 +151,8 @@ describe("订阅页面真实交互", () => {
     expect(screen.queryByRole("button", { name: "终止订阅" })).toBeNull();
   });
 
-  it("有试用权限时仅提交 plan_id 和备注并发起双人审批", async () => {
-    const onApproval = vi.fn();
+  it("有试用权限时仅提交 plan_id 和备注并直接发放", async () => {
+    const onCompleted = vi.fn();
     const onError = vi.fn();
     const context = { permission_keys: ["subscriptions.grant_trial"], menu_keys: [] } as never;
     render(
@@ -159,7 +160,7 @@ describe("订阅页面真实交互", () => {
         <TrialGrantAction
           userId="user-1"
           expectedVersion={3}
-          onApproval={onApproval}
+          onCompleted={onCompleted}
           onError={onError}
         />
       </AdminCapabilityContext.Provider>,
@@ -167,7 +168,7 @@ describe("订阅页面真实交互", () => {
     await userEvent.click(screen.getByRole("button", { name: "发放试用套餐" }));
     await userEvent.type(screen.getByLabelText("试用套餐 ID"), "plan-trial-1");
     await userEvent.type(screen.getByLabelText("试用发放备注"), "人工审核后发放");
-    await userEvent.click(screen.getByRole("button", { name: "发起审批" }));
+    await userEvent.click(screen.getByRole("button", { name: "确认发放" }));
     await waitFor(() =>
       expect(grantTrialSubscription).toHaveBeenCalledWith(
         "user-1",
@@ -176,9 +177,7 @@ describe("订阅页面真实交互", () => {
         "人工审核后发放",
       ),
     );
-    expect(onApproval).toHaveBeenCalledWith(
-      expect.objectContaining({ approval_id: "approval-trial" }),
-    );
+    expect(onCompleted).toHaveBeenCalledOnce();
     expect(onError).not.toHaveBeenCalled();
   });
 
@@ -189,7 +188,7 @@ describe("订阅页面真实交互", () => {
         <TrialGrantAction
           userId="user-1"
           expectedVersion={3}
-          onApproval={vi.fn()}
+          onCompleted={vi.fn()}
           onError={vi.fn()}
         />
       </AdminCapabilityContext.Provider>,

@@ -6,18 +6,10 @@ from django.utils import timezone
 from rest_framework.exceptions import NotFound, PermissionDenied
 
 from .models import Notification, User, UserStatusEvent
-from .validators import validate_nickname, validate_safe_plain_text
-
-
-class ApprovalStateConflict(Exception):
-    pass
+from .validators import validate_safe_plain_text
 
 
 class AccountStateConflict(Exception):
-    pass
-
-
-class ApprovalReasonRequired(Exception):
     pass
 
 
@@ -28,20 +20,12 @@ class StatusChangeResult:
 
 
 NOTIFICATION_TEMPLATES = {
-    Notification.NotificationType.APPROVAL_APPROVED: (
-        "审核已通过",
-        "你的账号审核已通过，可以继续使用已开放的功能。",
-    ),
-    Notification.NotificationType.APPROVAL_REJECTED: (
-        "审核未通过",
-        "请查看当前审核状态并完善资料后重新提交。",
-    ),
     Notification.NotificationType.ACCOUNT_FROZEN: (
-        "账号已冻结",
-        "你的账号当前已被冻结，如有疑问请联系管理员。",
+        "账号已禁用",
+        "你的账号当前已被禁用，如有疑问请联系管理员。",
     ),
     Notification.NotificationType.ACCOUNT_UNFROZEN: (
-        "账号已解冻",
+        "账号已恢复",
         "你的账号已恢复使用，请重新登录。",
     ),
 }
@@ -113,105 +97,6 @@ def _create_notification(
         safe_summary=safe_summary,
         related_status_event=event,
     )
-
-
-@transaction.atomic
-def review_user(
-    *,
-    actor_id,
-    user_id,
-    decision: str,
-    reason: str,
-    request_id: UUID | str,
-) -> StatusChangeResult:
-    actor = _locked_active_staff(actor_id, "users.review")
-    user = _locked_target(user_id)
-    _ensure_business_target(user)
-    if user.approval_status != User.ApprovalStatus.PENDING:
-        raise ApprovalStateConflict
-
-    from_value = user.approval_status
-    if decision == "approve":
-        user.approval_status = User.ApprovalStatus.APPROVED
-        user.approval_reason = ""
-        user.approved_at = timezone.now()
-        user.approved_by = actor
-        event_type = UserStatusEvent.EventType.APPROVED
-        notification_type = Notification.NotificationType.APPROVAL_APPROVED
-        clean_reason = ""
-    elif decision == "reject":
-        if not reason.strip():
-            raise ApprovalReasonRequired
-        clean_reason = validate_safe_plain_text(
-            reason,
-            field_label="拒绝原因",
-            max_length=500,
-            required=True,
-        )
-        user.approval_status = User.ApprovalStatus.REJECTED
-        user.approval_reason = clean_reason
-        user.approved_at = None
-        user.approved_by = None
-        event_type = UserStatusEvent.EventType.REJECTED
-        notification_type = Notification.NotificationType.APPROVAL_REJECTED
-    else:
-        raise ApprovalStateConflict
-
-    user.status_version += 1
-    user.save(
-        update_fields=[
-            "approval_status",
-            "approval_reason",
-            "approved_at",
-            "approved_by",
-            "status_version",
-            "updated_at",
-        ]
-    )
-    event = _create_event(
-        user=user,
-        domain=UserStatusEvent.StatusDomain.APPROVAL,
-        event_type=event_type,
-        from_value=from_value,
-        to_value=user.approval_status,
-        reason=clean_reason,
-        actor=actor,
-        request_id=request_id,
-    )
-    _create_notification(recipient=user, notification_type=notification_type, event=event)
-    return StatusChangeResult(user=user, event=event)
-
-
-@transaction.atomic
-def resubmit_approval(
-    *,
-    user_id,
-    nickname: str | None,
-    request_id: UUID | str,
-) -> StatusChangeResult:
-    user = _locked_target(user_id)
-    if user.approval_status != User.ApprovalStatus.REJECTED:
-        raise ApprovalStateConflict
-    from_value = user.approval_status
-    update_fields = ["approval_status", "approval_reason", "status_version", "updated_at"]
-    if nickname is not None:
-        user.nickname = validate_nickname(nickname)
-        update_fields.append("nickname")
-    user.approval_status = User.ApprovalStatus.PENDING
-    user.approval_reason = ""
-    user.status_version += 1
-    user.save(update_fields=update_fields)
-    event = _create_event(
-        user=user,
-        domain=UserStatusEvent.StatusDomain.APPROVAL,
-        event_type=UserStatusEvent.EventType.RESUBMITTED,
-        from_value=from_value,
-        to_value=user.approval_status,
-        reason="",
-        actor=user,
-        request_id=request_id,
-    )
-    return StatusChangeResult(user=user, event=event)
 
 
 @transaction.atomic

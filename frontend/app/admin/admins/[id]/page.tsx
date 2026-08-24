@@ -1,36 +1,27 @@
 "use client";
 
-import { Alert, Button, Card, Form, Input, Select, Space, Tag, Typography } from "antd";
+import { Alert, Button, Card, Form, Input, Space, Tag, Typography } from "antd";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import { useAdminCapabilities } from "@/components/admin/admin-capability";
+import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { RiskActionButton } from "@/components/admin/risk-action-button";
 import {
-  changeAdminRole,
   changeAdminStatus,
   forceLogoutAdmin,
   getAdmin,
   getAdminRegistrationLink,
-  getRoles,
   updateAdmin,
   type AdminProfile,
-  type Role,
 } from "@/lib/admin-rbac-client";
 import { userMessage } from "@/lib/auth-client";
-import {
-  getRiskActions,
-  isApprovalCreated,
-  type ApprovalCreated,
-  type RiskMode,
-} from "@/lib/risk-client";
+import { getRiskActions, type RiskMode } from "@/lib/risk-client";
 
 export default function AdminAccountDetailPage() {
   const capabilities = useAdminCapabilities();
   const { id } = useParams<{ id: string }>();
   const [admin, setAdmin] = useState<AdminProfile | null>(null);
-  const [roles, setRoles] = useState<Role[]>([]);
-  const [roleId, setRoleId] = useState("");
   const [modes, setModes] = useState<Record<string, RiskMode>>({});
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -38,14 +29,8 @@ export default function AdminAccountDetailPage() {
   const [registrationLinkUsable, setRegistrationLinkUsable] = useState(true);
   const load = useCallback(async () => {
     try {
-      const [profile, rolePage, actions] = await Promise.all([
-        getAdmin(id),
-        getRoles(),
-        getRiskActions(),
-      ]);
+      const [profile, actions] = await Promise.all([getAdmin(id), getRiskActions()]);
       setAdmin(profile);
-      setRoleId(profile.role?.id ?? "");
-      setRoles(rolePage.results);
       setModes(Object.fromEntries(actions.map((action) => [action.key, action.current_mode])));
     } catch (reason) {
       setError(userMessage(reason));
@@ -56,36 +41,42 @@ export default function AdminAccountDetailPage() {
     return () => window.clearTimeout(timer);
   }, [load]);
 
-  const approvalCreated = (approval: ApprovalCreated) => {
-    setMessage(`已创建审批请求 ${approval.approval_id}，目标状态尚未改变。`);
-  };
   const refresh = () => void load();
   const restore = async (action: "enable" | "unlock") => {
     if (!admin) return;
     try {
-      const result = await changeAdminStatus(admin.id, action, admin.version);
-      if (!isApprovalCreated(result)) setAdmin(result);
+      setAdmin(await changeAdminStatus(admin.id, action, admin.version));
     } catch (reason) {
       setError(userMessage(reason));
     }
   };
 
   return (
-    <main className="auth-shell">
-      <Card>
-        <Space direction="vertical" size="large" style={{ width: "100%" }}>
-          <Button href="/admin/admins">返回管理员列表</Button>
-          <Typography.Title level={2}>管理员详情</Typography.Title>
-          {error && <Alert type="error" showIcon message={error} />}
-          {message && <Alert type="success" showIcon message={message} />}
+    <main className="admin-page">
+      <AdminPageHeader
+        title="管理员详情"
+        description="维护管理员基础信息、专属注册链接和账号启停状态。"
+        actions={<Button href="/admin/admins">返回管理员列表</Button>}
+      />
+      <Card className="admin-surface">
+        <Space orientation="vertical" size="large" style={{ width: "100%" }}>
+          {error && <Alert type="error" showIcon title={error} />}
+          {message && <Alert type="success" showIcon title={message} />}
           {admin && (
             <>
               <Typography.Text>
-                {admin.nickname} · {admin.phone_masked} · <Tag>{admin.admin_status}</Tag>
+                {admin.nickname} · {admin.phone_masked} ·{" "}
+                <Tag color={admin.admin_status === "active" ? "green" : "orange"}>
+                  {admin.admin_status === "active"
+                    ? "正常"
+                    : admin.admin_status === "disabled"
+                      ? "已停用"
+                      : "已锁定"}
+                </Tag>
               </Typography.Text>
               {!admin.is_superuser && capabilities?.commercial_identity === "SUPER_ADMIN" && (
-                <Card size="small" title="代理专属注册链接">
-                  <Space direction="vertical" style={{ width: "100%" }}>
+                <Card size="small" title="管理员专属注册链接">
+                  <Space orientation="vertical" style={{ width: "100%" }}>
                     <Button
                       onClick={async () => {
                         try {
@@ -110,7 +101,7 @@ export default function AdminAccountDetailPage() {
                       <Alert
                         type="warning"
                         showIcon
-                        message="该代理当前不可用，注册链接会拒绝注册"
+                        title="该管理员当前不可用，注册链接会拒绝注册"
                       />
                     )}
                   </Space>
@@ -134,34 +125,11 @@ export default function AdminAccountDetailPage() {
                       }
                     }}
                   >
-                    <Form.Item name="nickname" label="昵称">
+                    <Form.Item name="nickname" label="管理员名称">
                       <Input />
                     </Form.Item>
-                    <Button htmlType="submit">保存普通资料</Button>
+                    <Button htmlType="submit">保存基础信息</Button>
                   </Form>
-                  <Space>
-                    <Select
-                      aria-label="管理员角色"
-                      value={roleId}
-                      style={{ minWidth: 200 }}
-                      options={roles
-                        .filter((item) => item.status === "active")
-                        .map((item) => ({ value: item.id, label: item.name }))}
-                      onChange={setRoleId}
-                    />
-                    <RiskActionButton
-                      actionName="变更管理员角色"
-                      mode={modes["admin.role.change"] ?? "two_person"}
-                      disabled={!roleId}
-                      execute={(credentials) =>
-                        changeAdminRole(admin.id, roleId, admin.version, credentials)
-                      }
-                      onExecuted={setAdmin}
-                      onApproval={approvalCreated}
-                    >
-                      保存角色
-                    </RiskActionButton>
-                  </Space>
                 </>
               )}
               {capabilities?.permission_keys.includes("admins.disable") && (
@@ -181,7 +149,6 @@ export default function AdminAccountDetailPage() {
                       );
                       refresh();
                     }}
-                    onApproval={approvalCreated}
                   >
                     强制退出全部设备
                   </RiskActionButton>
@@ -189,13 +156,12 @@ export default function AdminAccountDetailPage() {
                     <>
                       <RiskActionButton
                         actionName="停用管理员"
-                        mode={modes["admin.disable"] ?? "two_person"}
+                        mode={modes["admin.disable"] ?? "password"}
                         danger
                         execute={(credentials) =>
                           changeAdminStatus(admin.id, "disable", admin.version, credentials)
                         }
                         onExecuted={setAdmin}
-                        onApproval={approvalCreated}
                       >
                         停用
                       </RiskActionButton>
@@ -207,7 +173,6 @@ export default function AdminAccountDetailPage() {
                           changeAdminStatus(admin.id, "lock", admin.version, credentials)
                         }
                         onExecuted={setAdmin}
-                        onApproval={approvalCreated}
                       >
                         紧急锁定
                       </RiskActionButton>

@@ -40,7 +40,7 @@ plans/0003 在 PostgreSQL 创建触发器：
 
 ## 风险、权限和 API
 
-10 个写动作全部进入 XW-0107 的 RiskPolicy、静态 Handler、ApprovalRequest 和 AuditEvent；没有旧写路径。默认模式遵循冻结表，其中 publish/online/offline/retire 为 password，archive 为 two_person。two_person 返回 202 且不先执行。
+10 个写动作全部进入 RiskPolicy、静态 Handler 和 AuditEvent；没有旧写路径。默认模式遵循冻结表，其中 publish/online/offline/retire/archive 为 password，其余动作使用 confirm。验证通过后直接执行并写入操作记录。
 
 菜单权限 `menu.admin.plans`，动作权限按 plans、plan_versions、plan_limits 分离；普通角色不会自动获得，superuser 只获得 active catalog 权限。管理员写请求要求完整安全 Session、真实 CSRF、RBAC、expected_version 和风险策略。
 

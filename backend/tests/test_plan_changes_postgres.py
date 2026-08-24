@@ -18,9 +18,8 @@ from django.utils import timezone
 from django_redis import get_redis_connection
 from rest_framework.test import APIClient
 
-from apps.admin_rbac.models import ApprovalRequest, AuditEvent, RiskAction
+from apps.admin_rbac.models import AuditEvent
 from apps.admin_rbac.permissions import resolve_admin_context
-from apps.admin_rbac.risk_services import canonical_payload
 from apps.plans.change_idempotency import derive_plan_change_digests
 from apps.plans.change_services import (
     SubscriptionChangeAlreadyExists,
@@ -56,7 +55,7 @@ from apps.quotas.services import (
 from apps.users.models import Notification, User
 from tests.admin_session_helpers import authenticate_admin_client
 from tests.test_plan_changes import activate_formal, admin, customer
-from tests.test_subscriptions import PASSWORD, application_for, published_plan
+from tests.test_subscriptions import application_for, published_plan
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -120,49 +119,6 @@ def change_operation(
         target_id=source.pk,
         request_payload=payload,
     )
-    existing = SubscriptionChange.objects.filter(idempotency_key_digest=digests.key_digest).first()
-    source_approval = existing.source_approval if existing is not None else None
-    if change_type == "renewal" and source_approval is None:
-        action = RiskAction.objects.get(pk="subscription.change")
-        approver = (
-            User.objects.filter(is_superuser=True).exclude(pk=actor.pk).order_by("pk").first()
-        )
-        if approver is None:
-            approver = admin("13700137989")
-        approval_payload = {
-            **payload,
-            "idempotency_key_version": digests.key_version,
-            "idempotency_key_digest": digests.key_digest,
-            "idempotency_scope_digest": digests.scope_digest,
-            "request_digest": digests.request_digest,
-        }
-        safe_payload, payload_digest = canonical_payload(
-            action.key,
-            action.target_type,
-            source.pk,
-            source.version,
-            approval_payload,
-        )
-        approved_at = timezone.now()
-        source_approval = ApprovalRequest.objects.create(
-            action=action,
-            action_key=action.key,
-            policy_version=action.policy.version,
-            requester=actor,
-            target_type=action.target_type,
-            target_id=source.pk,
-            target_version=source.version,
-            sanitized_payload=safe_payload,
-            payload_digest=payload_digest,
-            safe_summary="Scheduled renewal test approval.",
-            status=ApprovalRequest.Status.EXECUTED,
-            expires_at=approved_at + timedelta(hours=1),
-            approved_by=approver,
-            approved_at=approved_at,
-            executed_at=approved_at,
-            request_id=uuid.uuid4(),
-        )
-
     change = execute_subscription_change(
         requester=actor,
         admin_context=resolve_admin_context(actor),
@@ -177,11 +133,7 @@ def change_operation(
         reason=payload["reason"],
         digests=digests,
         request_id=uuid.uuid4(),
-        source_approval=source_approval,
     )
-    if source_approval is not None and not source_approval.execution_result:
-        source_approval.execution_result = {"change_id": str(change.pk)}
-        source_approval.save(update_fields=["execution_result", "updated_at"])
     return change
 
 
@@ -737,16 +689,17 @@ def test_postgresql_change_and_cancel_idempotency_conflict_matrix():
         )
 
 
-def test_postgresql_preview_submit_and_concurrent_two_person_approval_are_exactly_once():
-    requester, approver, user = admin(), admin("13700137991"), customer()
-    source, _, _ = activate_formal(requester, user, code="pg-two-person-source")
-    target_plan, target_version = published_plan(requester, code="pg-two-person-target")
+def test_postgresql_preview_and_concurrent_direct_submit_are_exactly_once():
+    requester, user = admin(), customer()
+    source, _, _ = activate_formal(requester, user, code="pg-direct-source")
+    target_plan, target_version = published_plan(requester, code="pg-direct-target")
     body = {
         "expected_version": source.version,
         "target_plan_version_id": str(target_version.pk),
         "change_type": "replacement",
         "quota_policy": "overwrite",
-        "reason": "双人审批套餐变更",
+        "reason": "直接套餐变更",
+        "confirmed": True,
     }
     requester_client = authenticate_admin_client(APIClient(), requester)
     before = {
@@ -754,7 +707,6 @@ def test_postgresql_preview_submit_and_concurrent_two_person_approval_are_exactl
         "subscriptions": Subscription.objects.filter(user=user).count(),
         "accounts": QuotaAccount.objects.filter(user=user).count(),
         "ledger": QuotaLedgerEntry.objects.filter(user=user).count(),
-        "approvals": ApprovalRequest.objects.count(),
     }
     preview = requester_client.post(
         f"/api/v1/admin/subscriptions/{source.pk}/change/preview",
@@ -771,48 +723,24 @@ def test_postgresql_preview_submit_and_concurrent_two_person_approval_are_exactl
     assert Subscription.objects.filter(user=user).count() == before["subscriptions"]
     assert QuotaAccount.objects.filter(user=user).count() == before["accounts"]
     assert QuotaLedgerEntry.objects.filter(user=user).count() == before["ledger"]
-    assert ApprovalRequest.objects.count() == before["approvals"]
 
-    submitted = requester_client.post(
-        f"/api/v1/admin/subscriptions/{source.pk}/change",
-        body,
-        format="json",
-        HTTP_IDEMPOTENCY_KEY="pg-two-person-submit-key-01",
-    )
-    assert submitted.status_code == 202
-    approval = ApprovalRequest.objects.get(pk=submitted.json()["data"]["approval_id"])
-    assert SubscriptionChange.objects.count() == before["changes"]
-    assert Subscription.objects.filter(user=user).count() == before["subscriptions"]
-    assert QuotaAccount.objects.filter(user=user).count() == before["accounts"]
-    assert QuotaLedgerEntry.objects.filter(user=user).count() == before["ledger"]
-
-    first = authenticate_admin_client(APIClient(), approver)
-    second = authenticate_admin_client(APIClient(), approver)
+    first = authenticate_admin_client(APIClient(), requester)
+    second = authenticate_admin_client(APIClient(), requester)
+    path = f"/api/v1/admin/subscriptions/{source.pk}/change"
     responses = parallel(
         lambda: first.post(
-            f"/api/v1/admin/approvals/{approval.pk}/approve",
-            {"current_password": PASSWORD},
-            format="json",
+            path, body, format="json", HTTP_IDEMPOTENCY_KEY="pg-direct-submit-key-01"
         ),
         lambda: second.post(
-            f"/api/v1/admin/approvals/{approval.pk}/approve",
-            {"current_password": PASSWORD},
-            format="json",
+            path, body, format="json", HTTP_IDEMPOTENCY_KEY="pg-direct-submit-key-01"
         ),
     )
     assert all(not isinstance(response, Exception) for response in responses)
     assert sorted(response.status_code for response in responses) == [200, 409]
-    approval.refresh_from_db()
-    assert approval.status == ApprovalRequest.Status.EXECUTED
     assert SubscriptionChange.objects.filter(from_subscription=source).count() == 1
     assert Subscription.objects.filter(user=user, source_type="plan_change").count() == 1
     assert (
-        AuditEvent.objects.filter(
-            approval_request=approval,
-            action_key="subscription.change",
-            outcome="executed",
-        ).count()
-        == 1
+        AuditEvent.objects.filter(action_key="subscription.change", outcome="executed").count() == 1
     )
 
 
@@ -895,8 +823,8 @@ def test_postgresql_transfer_ledger_pair_is_deferred_complete_and_atomic(corrupt
     assert_change_rolled_back(source, user, source_account, 3)
 
 
-def test_postgresql_audit_failure_rolls_back_approved_plan_change():
-    requester, approver, user = admin(), admin("13700137992"), customer()
+def test_postgresql_audit_failure_rolls_back_direct_plan_change():
+    requester, user = admin(), customer()
     source, _, _ = activate_formal(requester, user, code="pg-audit-fail-source")
     source_account = QuotaAccount.objects.get(
         subscription=source,
@@ -904,34 +832,25 @@ def test_postgresql_audit_failure_rolls_back_approved_plan_change():
     )
     target_plan, target_version = published_plan(requester, code="pg-audit-fail-target")
     requester_client = authenticate_admin_client(APIClient(), requester)
-    submitted = requester_client.post(
-        f"/api/v1/admin/subscriptions/{source.pk}/change",
-        {
-            "expected_version": source.version,
-            "target_plan_version_id": str(target_version.pk),
-            "change_type": "replacement",
-            "quota_policy": "overwrite",
-            "reason": "审计失败回滚",
-        },
-        format="json",
-        HTTP_IDEMPOTENCY_KEY="pg-audit-failure-key-0001",
-    )
-    assert submitted.status_code == 202
-    approval = ApprovalRequest.objects.get(pk=submitted.json()["data"]["approval_id"])
-    approver_client = authenticate_admin_client(APIClient(), approver)
-    approver_client.raise_request_exception = False
+    requester_client.raise_request_exception = False
     with patch(
         "apps.admin_rbac.risk_services.record_audit_event",
         side_effect=RuntimeError("injected audit failure"),
     ):
-        response = approver_client.post(
-            f"/api/v1/admin/approvals/{approval.pk}/approve",
-            {"current_password": PASSWORD},
+        response = requester_client.post(
+            f"/api/v1/admin/subscriptions/{source.pk}/change",
+            {
+                "expected_version": source.version,
+                "target_plan_version_id": str(target_version.pk),
+                "change_type": "replacement",
+                "quota_policy": "overwrite",
+                "reason": "审计失败回滚",
+                "confirmed": True,
+            },
             format="json",
+            HTTP_IDEMPOTENCY_KEY="pg-audit-failure-key-0001",
         )
     assert response.status_code == 500
-    approval.refresh_from_db()
-    assert approval.status == ApprovalRequest.Status.PENDING
     assert_change_rolled_back(
         source,
         user,
@@ -1056,7 +975,6 @@ def test_postgresql_submission_recomputes_and_rejects_untrusted_preview_fields()
         "reason": "server must recompute classification",
     }
     before = {
-        "approvals": ApprovalRequest.objects.count(),
         "changes": SubscriptionChange.objects.count(),
         "subscriptions": Subscription.objects.filter(user=user).count(),
         "accounts": QuotaAccount.objects.filter(user=user).count(),
@@ -1095,7 +1013,6 @@ def test_postgresql_submission_recomputes_and_rejects_untrusted_preview_fields()
         assert response.status_code == 422
         assert response.json()["error"]["code"] == "VALIDATION_ERROR"
 
-    assert ApprovalRequest.objects.count() == before["approvals"]
     assert SubscriptionChange.objects.count() == before["changes"]
     assert Subscription.objects.filter(user=user).count() == before["subscriptions"]
     assert QuotaAccount.objects.filter(user=user).count() == before["accounts"]
@@ -1176,19 +1093,18 @@ def test_postgresql_trial_conversion_boundaries_are_server_enforced():
             "change_type": "trial_conversion",
             "quota_policy": "overwrite",
             "reason": "valid trial conversion",
+            "confirmed": True,
         },
         format="json",
         HTTP_IDEMPOTENCY_KEY="test-test-test-test-0003",
     )
-    assert valid.status_code == 202
-    approval = ApprovalRequest.objects.get(pk=valid.json()["data"]["approval_id"])
-    assert approval.sanitized_payload["change_type"] == "trial_conversion"
-    assert not SubscriptionChange.objects.filter(from_subscription=trial_source).exists()
+    assert valid.status_code == 200
+    change = SubscriptionChange.objects.get(pk=valid.json()["data"]["change_id"])
+    assert change.change_type == "trial_conversion"
 
 
 def test_postgresql_http_change_and_cancel_idempotency_matrix():
-    requester, approver, user = admin(), admin("13700137995"), customer()
-    del approver
+    requester, user = admin(), customer()
     client = authenticate_admin_client(APIClient(), requester)
     source, plan, version = activate_formal(requester, user, code="pg-http-change-idem")
     change_url = f"/api/v1/admin/subscriptions/{source.pk}/change"
@@ -1198,6 +1114,7 @@ def test_postgresql_http_change_and_cancel_idempotency_matrix():
         "change_type": "renewal",
         "quota_policy": "overwrite",
         "reason": "canonical renewal",
+        "confirmed": True,
     }
     missing = client.post(change_url, change_body, format="json")
     assert missing.status_code == 422
@@ -1216,9 +1133,8 @@ def test_postgresql_http_change_and_cancel_idempotency_matrix():
         format="json",
         HTTP_IDEMPOTENCY_KEY=raw_change_key,
     )
-    assert first.status_code == replay.status_code == 202
-    assert first.json()["data"]["approval_id"] == replay.json()["data"]["approval_id"]
-    change_approval = ApprovalRequest.objects.get(pk=first.json()["data"]["approval_id"])
+    assert first.status_code == replay.status_code == 200
+    assert first.json()["data"]["change_id"] == replay.json()["data"]["change_id"]
 
     conflicts = (
         (raw_change_key, {**change_body, "reason": "different payload"}),
@@ -1236,7 +1152,10 @@ def test_postgresql_http_change_and_cancel_idempotency_matrix():
             HTTP_IDEMPOTENCY_KEY=key,
         )
         assert response.status_code == 409
-        assert response.json()["error"]["code"] == "APPROVAL_STATE_CONFLICT"
+        assert response.json()["error"]["code"] in {
+            "SUBSCRIPTION_CHANGE_IDEMPOTENCY_CONFLICT",
+            "SUBSCRIPTION_CHANGE_ALREADY_EXISTS",
+        }
 
     cancel_user = customer("13800138202")
     cancel_source, cancel_plan, cancel_version = activate_formal(
@@ -1256,6 +1175,7 @@ def test_postgresql_http_change_and_cancel_idempotency_matrix():
     cancel_body = {
         "expected_version": scheduled.version,
         "reason": "canonical cancellation",
+        "confirmed": True,
     }
     missing = client.post(cancel_url, cancel_body, format="json")
     assert missing.status_code == 422
@@ -1274,9 +1194,9 @@ def test_postgresql_http_change_and_cancel_idempotency_matrix():
         format="json",
         HTTP_IDEMPOTENCY_KEY=raw_cancel_key,
     )
-    assert first_cancel.status_code == replay_cancel.status_code == 202
-    assert first_cancel.json()["data"]["approval_id"] == replay_cancel.json()["data"]["approval_id"]
-    cancel_approval = ApprovalRequest.objects.get(pk=first_cancel.json()["data"]["approval_id"])
+    assert first_cancel.status_code == 200
+    assert replay_cancel.status_code == 409
+    assert replay_cancel.json()["error"]["code"] == "RISK_TARGET_STALE"
 
     cancel_conflicts = (
         (raw_cancel_key, {**cancel_body, "reason": "different cancellation"}),
@@ -1294,15 +1214,14 @@ def test_postgresql_http_change_and_cancel_idempotency_matrix():
             HTTP_IDEMPOTENCY_KEY=key,
         )
         assert response.status_code == 409
-        assert response.json()["error"]["code"] == "APPROVAL_STATE_CONFLICT"
+        assert response.json()["error"]["code"] in {
+            "SUBSCRIPTION_CHANGE_IDEMPOTENCY_CONFLICT",
+            "SUBSCRIPTION_CHANGE_STATE_CONFLICT",
+            "RISK_TARGET_STALE",
+        }
 
-    assert (
-        change_approval.sanitized_payload["idempotency_scope_digest"]
-        != cancel_approval.sanitized_payload["idempotency_scope_digest"]
-    )
     serialized_records = " ".join(
         (
-            str(list(ApprovalRequest.objects.values("sanitized_payload", "safe_summary"))),
             str(list(AuditEvent.objects.values("safe_before", "safe_after", "stable_error_code"))),
             str(list(Notification.objects.values("title", "safe_summary"))),
             str(first.json()),

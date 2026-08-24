@@ -9,7 +9,7 @@ from django.utils import timezone
 from django_redis import get_redis_connection
 from rest_framework.test import APIClient
 
-from apps.admin_rbac.models import ApprovalRequest, AuditEvent
+from apps.admin_rbac.models import AuditEvent
 from apps.admin_rbac.permissions import resolve_admin_context
 from apps.plans.application_services import admin_change_application, cancel_application
 from apps.plans.models import PlanApplication, Subscription, SubscriptionEvent
@@ -122,40 +122,26 @@ def test_postgresql_activation_application_transition_race_is_consistent(competi
         assert subscriptions.count() == (1 if application.status == "activated" else 0)
 
 
-def test_postgresql_subscription_two_person_concurrent_approval_executes_exactly_once():
+def test_postgresql_subscription_concurrent_direct_activation_executes_exactly_once():
     requester = admin("13900139000")
-    approver = admin("13700137000")
     user = customer()
-    plan, version = published(requester, "approval-exactly-once")
+    plan, version = published(requester, "direct-exactly-once")
     application = make_application(user, plan, version)
-    response = authenticate_admin_client(APIClient(), requester).post(
-        f"/api/v1/admin/plan-applications/{application.pk}/activate",
-        {"expected_version": application.version},
-        format="json",
-    )
-    assert response.status_code == 202
-    approval = ApprovalRequest.objects.get(pk=response.json()["data"]["approval_id"])
-    first = authenticate_admin_client(APIClient(), approver)
-    second = authenticate_admin_client(APIClient(), approver)
+    first = authenticate_admin_client(APIClient(), requester)
+    second = authenticate_admin_client(APIClient(), requester)
+    path = f"/api/v1/admin/plan-applications/{application.pk}/activate"
+    payload = {"expected_version": application.version, "confirmed": True}
 
     responses = parallel(
-        lambda: first.post(
-            f"/api/v1/admin/approvals/{approval.pk}/approve",
-            {"current_password": "Test-2026!"},
-            format="json",
-        ),
-        lambda: second.post(
-            f"/api/v1/admin/approvals/{approval.pk}/approve",
-            {"current_password": "Test-2026!"},
-            format="json",
-        ),
+        lambda: first.post(path, payload, format="json"),
+        lambda: second.post(path, payload, format="json"),
     )
 
     assert sorted(response.status_code for response in responses) == [200, 409]
-    approval.refresh_from_db()
-    assert approval.status == ApprovalRequest.Status.EXECUTED
     assert Subscription.objects.filter(source_application=application).count() == 1
-    assert AuditEvent.objects.filter(approval_request=approval, outcome="executed").count() == 1
+    assert (
+        AuditEvent.objects.filter(action_key="subscription.open", outcome="executed").count() == 1
+    )
 
 
 def test_postgresql_raw_sql_enforces_single_active_and_single_trial_history():
@@ -301,34 +287,27 @@ def test_postgresql_subscription_event_failure_rolls_back_everything():
     assert not Subscription.objects.filter(source_application=application).exists()
 
 
-def test_postgresql_audit_failure_rolls_back_approved_subscription_execution():
+def test_postgresql_audit_failure_rolls_back_direct_subscription_execution():
     requester = admin("13900139000")
-    approver = admin("13700137000")
     user = customer()
     plan, version = published(requester, "rollback-audit")
     application = make_application(user, plan, version)
-    requested = authenticate_admin_client(APIClient(), requester).post(
-        f"/api/v1/admin/plan-applications/{application.pk}/activate",
-        {"expected_version": application.version},
-        format="json",
-    )
-    approval = ApprovalRequest.objects.get(pk=requested.json()["data"]["approval_id"])
     with patch(
         "apps.admin_rbac.risk_services.record_audit_event",
         side_effect=RuntimeError("audit failed"),
     ):
-        response = authenticate_admin_client(APIClient(), approver).post(
-            f"/api/v1/admin/approvals/{approval.pk}/approve",
-            {"current_password": "Test-2026!"},
+        response = authenticate_admin_client(APIClient(), requester).post(
+            f"/api/v1/admin/plan-applications/{application.pk}/activate",
+            {"expected_version": application.version, "confirmed": True},
             format="json",
         )
     assert response.status_code == 500
-    approval.refresh_from_db()
     application.refresh_from_db()
-    assert approval.status == ApprovalRequest.Status.PENDING
     assert application.status == "pending"
     assert not Subscription.objects.filter(source_application=application).exists()
-    assert not AuditEvent.objects.filter(approval_request=approval, outcome="executed").exists()
+    assert not AuditEvent.objects.filter(
+        action_key="subscription.open", outcome="executed"
+    ).exists()
 
 
 def test_postgresql_expiry_rollover_failure_restores_old_active_and_events():

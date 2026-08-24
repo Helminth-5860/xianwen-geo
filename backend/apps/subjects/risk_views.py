@@ -6,7 +6,6 @@ from django.views.decorators.csrf import csrf_protect
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.status import (
-    HTTP_202_ACCEPTED,
     HTTP_409_CONFLICT,
     HTTP_422_UNPROCESSABLE_ENTITY,
     HTTP_503_SERVICE_UNAVAILABLE,
@@ -227,10 +226,7 @@ class AdminRiskCatalogPublishView(APIView):
             return risk_error_response(exc, request)
         except SubjectRiskError as exc:
             return _risk_error(exc, request)
-        return Response(
-            result.data,
-            status=HTTP_202_ACCEPTED if result.approval_required else 200,
-        )
+        return Response(result.data)
 
 
 class AdminSubjectReviewListView(APIView):

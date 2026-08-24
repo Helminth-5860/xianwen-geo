@@ -8,7 +8,7 @@ import {
   type AdminProfile,
   type CustomerAssignment,
 } from "@/lib/admin-rbac-client";
-import type { ApprovalCreated, RiskMode } from "@/lib/risk-client";
+import type { RiskMode } from "@/lib/risk-client";
 
 import { RiskActionButton } from "./risk-action-button";
 
@@ -17,16 +17,9 @@ type Props = Readonly<{
   admins: AdminProfile[];
   mode: RiskMode;
   onChanged: (assignment: CustomerAssignment) => void;
-  onApproval: (approval: ApprovalCreated) => void;
 }>;
 
-export function CustomerAssignmentActions({
-  assignment,
-  admins,
-  mode,
-  onChanged,
-  onApproval,
-}: Props) {
+export function CustomerAssignmentActions({ assignment, admins, mode, onChanged }: Props) {
   const [ownerId, setOwnerId] = useState(assignment.owner_admin_id);
   const options = useMemo(
     () =>
@@ -38,17 +31,17 @@ export function CustomerAssignmentActions({
         })),
     [admins],
   );
-  const actionName = "转交客户负责人";
+  const actionName = "更换所属管理员";
 
   return (
-    <Card size="small" title="客户负责人">
-      <Space direction="vertical" style={{ width: "100%" }}>
+    <Card size="small" title="所属管理员">
+      <Space orientation="vertical" style={{ width: "100%" }}>
         <Typography.Text>
-          当前负责人：
+          当前管理员：
           {`${assignment.owner_nickname}（${assignment.owner_phone_masked}）`}
         </Typography.Text>
         <Select
-          aria-label="选择客户负责人"
+          aria-label="选择所属管理员"
           value={ownerId}
           options={options}
           style={{ width: "100%" }}
@@ -58,7 +51,7 @@ export function CustomerAssignmentActions({
           <Alert
             type="info"
             showIcon
-            message="当前权限无法读取管理员候选列表，请联系具备管理员列表权限的超级管理员。"
+            title="当前权限无法读取管理员候选列表，请联系具备管理员列表权限的超级管理员。"
           />
         )}
         <RiskActionButton
@@ -76,7 +69,6 @@ export function CustomerAssignmentActions({
             )
           }
           onExecuted={onChanged}
-          onApproval={onApproval}
         >
           {actionName}
         </RiskActionButton>

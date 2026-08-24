@@ -3,7 +3,7 @@
 ## 边界
 
 管理员继续使用 `User` 的手机号、密码和 HttpOnly Session。`AdminProfile` 只保存独立管理
-状态、单一角色和并发版本，不复制认证凭证。管理员 2FA、IP 白名单、双人审批、密钥管理和
+状态、单一角色和并发版本，不复制认证凭证。管理员 Step-Up、IP 白名单、确认／密码复核、密钥管理和
 完整 CRM 不在本任务中。
 
 ## 权限与状态
@@ -22,7 +22,7 @@ Session 立即失效，恢复后也不会重新有效。disable 要求先转交�
 Permission 状态只能通过 `admin_rbac.services.set_permission_status()` 修改；运维入口为：
 
 ```bash
-python manage.py sync_admin_rbac --apply --permission-key users.review --permission-status inactive
+python manage.py sync_admin_rbac --apply --permission-key users.freeze --permission-status inactive
 ```
 
 禁止直接调用 `AdminPermission.save()` 修改状态。active -> inactive 会在同一 PostgreSQL 事务内锁定 Permission，并用数据库原子递增撤销实际绑定该权限的普通管理员 Session；重复停用幂等，重新启用不会恢复旧 Session。catalog 同步命令的状态选项复用同一服务，PostgreSQL 仍是唯一永久事实源。

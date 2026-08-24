@@ -310,7 +310,6 @@ def test_article_ownership_and_unsafe_publication_url_are_enforced(stage2_facts)
         phone=f"137{uuid.uuid4().int % 100000000:08d}",
         nickname="Other Stage2 user",
         password="Correct-Horse-Battery-2026!",
-        approval_status=User.ApprovalStatus.APPROVED,
         account_status=User.AccountStatus.ACTIVE,
     )
     with pytest.raises(Http404):

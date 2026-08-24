@@ -37,7 +37,6 @@ def user(phone: str, tenant_obj: Tenant | None = None, *, staff: bool = False) -
         password=PASSWORD,
         tenant=tenant_obj,
         is_staff=staff,
-        approval_status=User.ApprovalStatus.APPROVED,
     )
 
 

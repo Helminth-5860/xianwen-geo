@@ -13,7 +13,6 @@ import {
   Tag,
   Typography,
 } from "antd";
-import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import { useAdminCapabilities } from "@/components/admin/admin-capability";
@@ -43,7 +42,6 @@ type RuleValues = {
 };
 
 export default function SubjectRiskCatalogPage() {
-  const router = useRouter();
   const capabilities = useAdminCapabilities();
   const [catalog, setCatalog] = useState<SubjectRiskCatalog | null>(null);
   const [types, setTypes] = useState<SubjectRiskType[]>([]);
@@ -161,10 +159,12 @@ export default function SubjectRiskCatalogPage() {
     setBusy(true);
     setError("");
     try {
-      const result = await publishSubjectRiskCatalog(catalog.version);
-      router.push(`/admin/approvals/${result.approval_id}`);
+      await publishSubjectRiskCatalog(catalog.version);
+      setMessage("风险目录已发布，操作已写入操作记录。");
+      await load();
     } catch (reason) {
       setError(userMessage(reason));
+    } finally {
       setBusy(false);
     }
   };
@@ -173,12 +173,10 @@ export default function SubjectRiskCatalogPage() {
     <main className="admin-page">
       <Typography.Title>{"\u4e3b\u4f53\u98ce\u9669\u76ee\u5f55"}</Typography.Title>
       <Typography.Paragraph>
-        {
-          "\u7c7b\u578b\u4e0e\u89c4\u5219\u90fd\u662f\u8349\u7a3f\uff1b\u53ea\u6709\u53d1\u5e03\u5b8c\u6210\u53cc\u4eba\u5ba1\u6279\u540e\u624d\u4f1a\u751f\u6548\u3002"
-        }
+        类型与规则先保存为草稿；发布前会进行二次确认，发布后立即生效并写入操作记录。
       </Typography.Paragraph>
-      {error && <Alert type="error" showIcon message={error} />}
-      {message && <Alert type="success" showIcon message={message} />}
+      {error && <Alert type="error" showIcon title={error} />}
+      {message && <Alert type="success" showIcon title={message} />}
       <Card title={"\u53d1\u5e03\u72b6\u6001"}>
         <Space>
           <Tag>{`draft v${catalog?.version ?? "-"}`}</Tag>
@@ -193,11 +191,11 @@ export default function SubjectRiskCatalogPage() {
             loading={busy}
             onClick={() => void publish()}
           >
-            {"\u53d1\u8d77\u53cc\u4eba\u53d1\u5e03\u5ba1\u6279"}
+            {"\u786e\u8ba4\u53d1\u5e03"}
           </Button>
         </Space>
         {!canPublish && (
-          <Alert type="info" message={"\u5f53\u524d\u8d26\u53f7\u65e0\u53d1\u5e03\u6743\u9650"} />
+          <Alert type="info" title={"\u5f53\u524d\u8d26\u53f7\u65e0\u53d1\u5e03\u6743\u9650"} />
         )}
       </Card>
       <Card title={"\u65b0\u5efa\u98ce\u9669\u7c7b\u578b\u8349\u7a3f"}>

@@ -837,13 +837,6 @@ class SubscriptionChange(models.Model):  # noqa: DJ008
         on_delete=models.PROTECT,
         related_name="requested_subscription_changes",
     )
-    source_approval = models.OneToOneField(
-        "admin_rbac.ApprovalRequest",
-        null=True,
-        blank=True,
-        on_delete=models.PROTECT,
-        related_name="scheduled_subscription_change",
-    )
     executed_at = models.DateTimeField(null=True, blank=True)
     cancelled_at = models.DateTimeField(null=True, blank=True)
     failed_at = models.DateTimeField(null=True, blank=True)

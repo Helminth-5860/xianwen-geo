@@ -5,7 +5,7 @@ from typing import Any
 from rest_framework.exceptions import NotFound, PermissionDenied
 
 from apps.users.models import User
-from apps.users.status_services import change_account_status, review_user
+from apps.users.status_services import change_account_status
 
 from .models import (
     AdminProfile,
@@ -20,7 +20,6 @@ from .risk_serializers import (
     EmptyPayloadSerializer,
     IpAllowlistPayloadSerializer,
     ReasonPayloadSerializer,
-    RejectUserPayloadSerializer,
     RolePermissionsPayloadSerializer,
     RoleSecurityPayloadSerializer,
 )
@@ -53,7 +52,6 @@ class HandlerContext:
     target_version: int
     payload: dict[str, Any]
     current_password: str = ""
-    approval_request: Any = None
 
 
 @dataclass(frozen=True)
@@ -396,23 +394,6 @@ def handle_user_freeze(context):
     return HandlerResult(before, after, {"user_id": str(user.pk), **after}, user)
 
 
-def handle_user_review_reject(context):
-    user = User.objects.get(pk=context.target_id)
-    before = {"approval_status": user.approval_status, "status_version": user.status_version}
-    result = review_user(
-        actor_id=context.requester.pk,
-        user_id=user.pk,
-        decision="reject",
-        reason=context.payload["reason"],
-        request_id=context.request.request_id,
-    )
-    after = {
-        "approval_status": result.user.approval_status,
-        "status_version": result.user.status_version,
-    }
-    return HandlerResult(before, after, {"user_id": str(user.pk), **after}, user)
-
-
 HANDLER_REGISTRY = {
     "admin.disable": handle_admin_disable,
     "admin.lock": handle_admin_lock,
@@ -425,7 +406,6 @@ HANDLER_REGISTRY = {
     "superuser.ip_allowlist.update": handle_superuser_ip_allowlist,
     "customer.assignment.change": handle_customer_assignment,
     "user.freeze": handle_user_freeze,
-    "user.review.reject": handle_user_review_reject,
 }
 
 
@@ -490,13 +470,6 @@ HANDLER_SPECS = {
     ),
     "user.freeze": HandlerSpec(
         "users.freeze", False, ReasonPayloadSerializer, _user_status_version, handle_user_freeze
-    ),
-    "user.review.reject": HandlerSpec(
-        "users.review",
-        False,
-        RejectUserPayloadSerializer,
-        _user_status_version,
-        handle_user_review_reject,
     ),
 }
 from apps.plans.risk_handlers import (  # noqa: E402

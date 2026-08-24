@@ -14,14 +14,13 @@ from apps.admin_rbac.models import (
     AdminProfile,
     AdminRole,
     AdminRolePermission,
-    ApprovalRequest,
     AuditEvent,
     CustomerAssignment,
     RiskAction,
     RiskPolicy,
 )
 from apps.admin_rbac.permissions import resolve_admin_context
-from apps.admin_rbac.risk_catalog import RISK_ACTION_BY_KEY, TWO_PERSON
+from apps.admin_rbac.risk_catalog import CONFIRM, RISK_ACTION_BY_KEY
 from apps.plans.application_services import create_application
 from apps.plans.models import (
     PlanApplication,
@@ -69,7 +68,6 @@ def customer(phone="13800138000"):
         phone=phone,
         nickname="订阅用户",
         password=PASSWORD,
-        approval_status=User.ApprovalStatus.APPROVED,
     )
 
 
@@ -144,15 +142,15 @@ def admin_client(user):
 
 
 @pytest.mark.django_db
-def test_catalog_modes_are_fixed_two_person_and_handlers_exist():
+def test_catalog_modes_use_direct_confirmation_and_handlers_exist():
     for key in ("subscription.open", "subscription.grant_trial", "subscription.terminate"):
         definition = RISK_ACTION_BY_KEY[key]
         action = RiskAction.objects.get(key=key)
         policy = RiskPolicy.objects.get(action=action)
-        assert definition.supported_modes == (TWO_PERSON,)
-        assert definition.default_mode == definition.minimum_mode == TWO_PERSON
-        assert action.supported_modes == [TWO_PERSON]
-        assert policy.current_mode == TWO_PERSON
+        assert definition.supported_modes == (CONFIRM,)
+        assert definition.default_mode == definition.minimum_mode == CONFIRM
+        assert action.supported_modes == [CONFIRM]
+        assert policy.current_mode == CONFIRM
 
 
 @pytest.mark.django_db
@@ -332,35 +330,24 @@ def test_offline_bound_plan_requires_explicit_confirmation_and_reason():
 
 
 @pytest.mark.django_db
-def test_open_api_only_requests_approval_then_second_superuser_executes():
+def test_open_api_confirms_then_executes_directly_with_audit():
     requester = superuser("13900139000")
-    approver = superuser("13700137000")
     user = customer()
     plan, version = published_plan(requester)
     application = application_for(user, plan, version)
     requester_client = authenticate_admin_client(APIClient(), requester, step_up=False)
     response = requester_client.post(
         f"/api/v1/admin/plan-applications/{application.pk}/activate",
-        {"expected_version": application.version},
+        {"expected_version": application.version, "confirmed": True},
         format="json",
     )
-    assert response.status_code == 202
-    approval = ApprovalRequest.objects.get(pk=response.json()["data"]["approval_id"])
-    assert approval.action_key == "subscription.open"
-    assert not Subscription.objects.exists()
-    approver_client = authenticate_admin_client(APIClient(), approver, step_up=False)
-    approved = approver_client.post(
-        f"/api/v1/admin/approvals/{approval.pk}/approve",
-        {"current_password": PASSWORD},
-        format="json",
-    )
-    assert approved.status_code == 200
-    approval.refresh_from_db()
+    assert response.status_code == 200
     application.refresh_from_db()
-    assert approval.status == ApprovalRequest.Status.EXECUTED
     assert application.status == PlanApplication.Status.ACTIVATED
     assert Subscription.objects.filter(source_application=application).count() == 1
-    assert AuditEvent.objects.filter(approval_request=approval, outcome="executed").count() == 1
+    assert (
+        AuditEvent.objects.filter(action_key="subscription.open", outcome="executed").count() == 1
+    )
 
 
 @pytest.mark.django_db
@@ -380,7 +367,6 @@ def test_trial_api_rejects_client_controlled_trial_and_version_fields():
     )
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "VALIDATION_ERROR"
-    assert not ApprovalRequest.objects.filter(action_key="subscription.grant_trial").exists()
 
 
 @pytest.mark.django_db
@@ -455,21 +441,18 @@ def test_subscription_scope_is_consistent_for_own_role_all_and_object_404():
         nickname="客户经理甲",
         password=PASSWORD,
         is_staff=True,
-        approval_status=User.ApprovalStatus.APPROVED,
     )
     peer_user = User.objects.create_user(
         phone="13700137011",
         nickname="客户经理乙",
         password=PASSWORD,
         is_staff=True,
-        approval_status=User.ApprovalStatus.APPROVED,
     )
     outsider_user = User.objects.create_user(
         phone="13700137012",
         nickname="其他组管理员",
         password=PASSWORD,
         is_staff=True,
-        approval_status=User.ApprovalStatus.APPROVED,
     )
     manager = AdminProfile.objects.create(user=manager_user, role=role)
     peer = AdminProfile.objects.create(user=peer_user, role=role)
@@ -547,7 +530,7 @@ def test_formal_activation_rejects_bound_snapshot_digest_drift():
 
 
 @pytest.mark.django_db
-def test_version_override_requires_independent_permission_before_approval_creation():
+def test_version_override_requires_independent_permission_before_direct_execution():
     root = superuser("13900139000")
     user = customer()
     plan, requested_version = published_plan(root, code="override-permission")
@@ -563,13 +546,10 @@ def test_version_override_requires_independent_permission_before_approval_creati
         nickname="订阅开通员",
         password=PASSWORD,
         is_staff=True,
-        approval_status=User.ApprovalStatus.APPROVED,
     )
     manager = AdminProfile.objects.create(user=manager_user, role=role)
     CustomerAssignment.objects.create(customer=user, owner_admin=manager)
-    permissions = AdminPermission.objects.filter(
-        key__in=("subscriptions.open", "approvals.request")
-    )
+    permissions = AdminPermission.objects.filter(key="subscriptions.open")
     AdminRolePermission.objects.bulk_create(
         [AdminRolePermission(role=role, permission=permission) for permission in permissions]
     )
@@ -586,10 +566,6 @@ def test_version_override_requires_independent_permission_before_approval_creati
     )
     assert response.status_code == 403
     assert response.json()["error"]["code"] == "PERMISSION_DENIED"
-    assert not ApprovalRequest.objects.filter(
-        requester=manager_user,
-        action_key="subscription.open",
-    ).exists()
 
 
 @pytest.mark.django_db
@@ -629,7 +605,6 @@ def test_subscription_write_endpoint_requires_real_csrf():
     )
     assert response.status_code == 403
     assert response.json()["error"]["code"] == "CSRF_FAILED"
-    assert not ApprovalRequest.objects.filter(action_key="subscription.grant_trial").exists()
 
 
 @pytest.mark.django_db

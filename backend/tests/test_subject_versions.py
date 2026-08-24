@@ -28,12 +28,11 @@ def seed_subject_catalog():
     install_empty_published_risk_catalog()
 
 
-def make_user(*, phone="13800138000", approval_status=User.ApprovalStatus.PENDING):
+def make_user(*, phone="13800138000"):
     return User.objects.create_user(
         phone=phone,
         nickname="Version user",
         password=PASSWORD,
-        approval_status=approval_status,
     )
 
 
@@ -355,8 +354,8 @@ def test_all_name_roles_use_frozen_choice_labels_and_nfkc_casefold_normalization
 
 
 @pytest.mark.django_db
-def test_required_fields_archived_state_and_account_approval_boundaries():
-    user = make_user(approval_status=User.ApprovalStatus.REJECTED)
+def test_required_fields_and_archived_state_boundaries():
+    user = make_user()
     client = client_for(user)
     subject_type = SubjectType.objects.get(key="enterprise")
     incomplete = create_subject(client, subject_type, {})

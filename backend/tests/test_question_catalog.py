@@ -25,7 +25,6 @@ def make_user(*, phone="13800138000", account="active"):
         phone=phone,
         nickname="问题分类用户",
         password=PASSWORD,
-        approval_status=User.ApprovalStatus.APPROVED,
         account_status=account,
     )
 

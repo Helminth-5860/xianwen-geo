@@ -4,10 +4,7 @@ from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_protect
 from rest_framework.response import Response
 from rest_framework.status import (
-    HTTP_200_OK,
-    HTTP_202_ACCEPTED,
     HTTP_409_CONFLICT,
-    HTTP_422_UNPROCESSABLE_ENTITY,
 )
 from rest_framework.views import APIView
 
@@ -31,15 +28,11 @@ from .serializers import (
     AdminUserListSerializer,
     FreezeStatusActionSerializer,
     PaginationSerializer,
-    ReviewUserSerializer,
     UserStatusEventSerializer,
 )
 from .status_services import (
     AccountStateConflict,
-    ApprovalReasonRequired,
-    ApprovalStateConflict,
     change_account_status,
-    review_user,
 )
 
 
@@ -71,8 +64,6 @@ class AdminUserListView(APIView):
         query_serializer.is_valid(raise_exception=True)
         query = query_serializer.validated_data
         users = scoped_customers(request.user, request.admin_context)
-        if "approval_status" in query:
-            users = users.filter(approval_status=query["approval_status"])
         if "account_status" in query:
             users = users.filter(account_status=query["account_status"])
         if "phone" in query:
@@ -117,67 +108,6 @@ class AdminUserHistoryView(APIView):
         )
 
 
-@method_decorator(csrf_protect, name="dispatch")
-class AdminUserReviewView(APIView):
-    permission_classes = [HasAdminPermission]
-    required_permission = "users.review"
-
-    def post(self, request, user_id):
-        scoped_customer_or_404(request.user, request.admin_context, user_id)
-        serializer = ReviewUserSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        data = serializer.validated_data
-        if data.get("reason_required"):
-            return error_response(
-                ErrorCode.APPROVAL_REASON_REQUIRED,
-                status_code=HTTP_422_UNPROCESSABLE_ENTITY,
-                request=request,
-            )
-        try:
-            if data["decision"] == "reject":
-                risk_result = perform_risk_action(
-                    request=request,
-                    action_key="user.review.reject",
-                    target_id=user_id,
-                    target_version=data["expected_version"],
-                    raw_payload={"reason": data.get("reason", "")},
-                    confirmed=data["confirmed"],
-                    current_password=data["current_password"],
-                )
-                if risk_result.approval_required:
-                    return Response(risk_result.data, status=HTTP_202_ACCEPTED)
-                user = User.objects.get(pk=user_id)
-            else:
-                result = review_user(
-                    actor_id=request.user.pk,
-                    user_id=user_id,
-                    decision=data["decision"],
-                    reason=data.get("reason", ""),
-                    request_id=request.request_id,
-                )
-                user = result.user
-        except (
-            RiskError,
-            AdminReauthFailed,
-            AdminReauthRateLimited,
-            AdminSecurityUnavailable,
-        ) as exc:
-            return risk_error_response(exc, request)
-        except ApprovalReasonRequired:
-            return error_response(
-                ErrorCode.APPROVAL_REASON_REQUIRED,
-                status_code=HTTP_422_UNPROCESSABLE_ENTITY,
-                request=request,
-            )
-        except ApprovalStateConflict:
-            return error_response(
-                ErrorCode.APPROVAL_STATE_CONFLICT,
-                status_code=HTTP_409_CONFLICT,
-                request=request,
-            )
-        return Response(AdminUserDetailSerializer(user).data, status=HTTP_200_OK)
-
-
 class _AdminAccountStatusView(APIView):
     permission_classes = [HasAdminPermission]
     required_permission = "users.freeze"
@@ -196,7 +126,7 @@ class _AdminAccountStatusView(APIView):
         data = serializer.validated_data
         try:
             if self.action == "freeze":
-                risk_result = perform_risk_action(
+                perform_risk_action(
                     request=request,
                     action_key="user.freeze",
                     target_id=user_id,
@@ -205,8 +135,6 @@ class _AdminAccountStatusView(APIView):
                     confirmed=data["confirmed"],
                     current_password=data["current_password"],
                 )
-                if risk_result.approval_required:
-                    return Response(risk_result.data, status=HTTP_202_ACCEPTED)
                 user = User.objects.get(pk=user_id)
             else:
                 result = change_account_status(

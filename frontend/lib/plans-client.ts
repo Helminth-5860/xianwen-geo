@@ -259,30 +259,43 @@ export const openSubscriptionFromApplication = (
     openingNote?: string;
   } = {},
 ) =>
-  post<RiskExecution<{ approval_required: true }>>("/admin/plan-applications/" + id + "/activate", {
-    expected_version: expectedVersion,
-    selected_plan_version_id: input.selectedPlanVersionId ?? null,
-    confirm_unavailable: input.confirmUnavailable ?? false,
-    unavailable_reason: input.unavailableReason ?? "",
-    confirm_version_override: input.confirmVersionOverride ?? false,
-    override_reason: input.overrideReason ?? "",
-    opening_note: input.openingNote ?? "",
-  });
+  post<RiskExecution<{ subscription_id: string; application_id: string; status: string }>>(
+    "/admin/plan-applications/" + id + "/activate",
+    {
+      expected_version: expectedVersion,
+      selected_plan_version_id: input.selectedPlanVersionId ?? null,
+      confirm_unavailable: input.confirmUnavailable ?? false,
+      unavailable_reason: input.unavailableReason ?? "",
+      confirm_version_override: input.confirmVersionOverride ?? false,
+      override_reason: input.overrideReason ?? "",
+      opening_note: input.openingNote ?? "",
+      confirmed: true,
+    },
+  );
 export const grantTrialSubscription = (
   userId: string,
   expectedVersion: number,
   planId: string,
   openingNote = "",
 ) =>
-  post<RiskExecution<{ approval_required: true }>>(
+  post<RiskExecution<{ subscription_id: string; status: string }>>(
     "/admin/users/" + userId + "/subscriptions/trial",
-    { expected_version: expectedVersion, plan_id: planId, opening_note: openingNote },
+    {
+      expected_version: expectedVersion,
+      plan_id: planId,
+      opening_note: openingNote,
+      confirmed: true,
+    },
   );
 export const terminateSubscription = (id: string, expectedVersion: number, reason: string) =>
-  post<RiskExecution<{ approval_required: true }>>("/admin/subscriptions/" + id + "/terminate", {
-    expected_version: expectedVersion,
-    reason,
-  });
+  post<RiskExecution<{ subscription_id: string; status: string; version: number }>>(
+    "/admin/subscriptions/" + id + "/terminate",
+    {
+      expected_version: expectedVersion,
+      reason,
+      confirmed: true,
+    },
+  );
 export const previewSubscriptionChange = (
   id: string,
   input: Omit<SubscriptionChangeInput, "reason" | "confirmUnavailable" | "unavailableReason">,
@@ -298,7 +311,15 @@ export const requestSubscriptionChange = (
   input: SubscriptionChangeInput,
   idempotencyKey: string,
 ) =>
-  post<RiskExecution<{ approval_required: true }>>(
+  post<
+    RiskExecution<{
+      change_id: string;
+      status: string;
+      change_type: string;
+      effective_at: string;
+      version: number;
+    }>
+  >(
     "/admin/subscriptions/" + id + "/change",
     {
       expected_version: input.expectedVersion,
@@ -308,6 +329,7 @@ export const requestSubscriptionChange = (
       confirm_unavailable: input.confirmUnavailable ?? false,
       unavailable_reason: input.unavailableReason ?? "",
       reason: input.reason,
+      confirmed: true,
     },
     { "Idempotency-Key": idempotencyKey },
   );
@@ -324,9 +346,9 @@ export const cancelSubscriptionChange = (
   reason: string,
   idempotencyKey: string,
 ) =>
-  post<RiskExecution<{ approval_required: true }>>(
+  post<RiskExecution<{ change_id: string; status: string; version: number }>>(
     "/admin/subscription-changes/" + id + "/cancel",
-    { expected_version: expectedVersion, reason },
+    { expected_version: expectedVersion, reason, confirmed: true },
     { "Idempotency-Key": idempotencyKey },
   );
 export const getUserSubscriptionChanges = () =>

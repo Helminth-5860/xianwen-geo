@@ -338,7 +338,6 @@ def test_stage_1e_endpoints_require_authentication_and_enforce_report_ownership(
         phone=f"138{uuid.uuid4().int % 100000000:08d}",
         nickname="API outsider",
         password="Other-user-password-1!",
-        approval_status=user.ApprovalStatus.APPROVED,
     )
     outsider.account_status = outsider.AccountStatus.ACTIVE
     outsider.save(update_fields=("account_status", "updated_at"))

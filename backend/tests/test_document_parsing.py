@@ -56,7 +56,6 @@ def _facts(
         phone=f"138{uuid.uuid4().int % 100000000:08d}",
         nickname="Parser user",
         password="correct-test-password",
-        approval_status=User.ApprovalStatus.APPROVED,
         account_status=account_status,
     )
     subject_type = SubjectType.objects.create(

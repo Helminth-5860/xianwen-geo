@@ -320,7 +320,6 @@ def execute_subscription_change(
     reason,
     digests: PlanChangeDigests,
     request_id,
-    source_approval=None,
 ):
     existing = SubscriptionChange.objects.filter(idempotency_key_digest=digests.key_digest).first()
     if existing is not None:
@@ -404,7 +403,6 @@ def execute_subscription_change(
                 ),
                 requested_by=requester,
                 idempotency_key_version=digests.key_version,
-                source_approval=source_approval,
                 next_attempt_at=source.ends_at,
                 idempotency_key_digest=digests.key_digest,
                 idempotency_scope_digest=digests.scope_digest,

@@ -9,7 +9,6 @@ from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.status import (
-    HTTP_202_ACCEPTED,
     HTTP_409_CONFLICT,
     HTTP_422_UNPROCESSABLE_ENTITY,
 )
@@ -115,7 +114,7 @@ def _perform(request, *, serializer, action_key, target_id, target_version, raw_
         return risk_error_response(exc, request)
     except PlanDomainError as exc:
         return _domain_error_response(exc, request)
-    return Response(result.data, status=HTTP_202_ACCEPTED if result.approval_required else 200)
+    return Response(result.data)
 
 
 class AdminPlanListView(APIView):

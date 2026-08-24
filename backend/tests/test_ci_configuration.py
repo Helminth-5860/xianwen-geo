@@ -181,40 +181,38 @@ def test_docker_job_runs_reproducible_postgresql_redis_admin_security_suite():
     assert "down --volumes --remove-orphans" in powershell_script
 
 
-def test_docker_job_runs_reproducible_postgresql_redis_risk_approval_suite():
+def test_docker_job_runs_reproducible_postgresql_redis_direct_risk_action_suite():
     workflow = load_workflow()
     docker_steps = workflow["jobs"]["docker"]["steps"]
     runs = [step.get("run") for step in docker_steps]
     names = [step["name"] for step in docker_steps]
 
-    assert "Run PostgreSQL/Redis high-risk approval tests" in names
-    assert "bash scripts/test-risk-approval.sh" in runs
-    shell_script = (REPO_ROOT / "scripts" / "test-risk-approval.sh").read_text(encoding="utf-8")
-    powershell_script = (REPO_ROOT / "scripts" / "test-risk-approval.ps1").read_text(
-        encoding="utf-8"
-    )
+    assert "Run PostgreSQL/Redis direct risk-action tests" in names
+    assert "bash scripts/test-risk-action.sh" in runs
+    shell_script = (REPO_ROOT / "scripts" / "test-risk-action.sh").read_text(encoding="utf-8")
+    powershell_script = (REPO_ROOT / "scripts" / "test-risk-action.ps1").read_text(encoding="utf-8")
     compose = (REPO_ROOT / "docker-compose.yml").read_text(encoding="utf-8")
     core_command = (
-        "docker compose --project-name xianwen-risk-approval-test "
-        "--profile risk-approval-test run --rm --build risk-approval-tests"
+        "docker compose --project-name xianwen-risk-action-test "
+        "--profile risk-action-test run --rm --build risk-action-tests"
     )
-    assert "tests/test_risk_approval_postgres.py" in compose
+    assert "tests/test_risk_action_postgres.py" in compose
+    assert "tests/test_risk_action_migrations.py" in compose
     assert core_command in " ".join(shell_script.replace(chr(92) + chr(10), "").split())
     assert core_command in " ".join(powershell_script.split())
     assert "down --volumes --remove-orphans" in shell_script
     assert "down --volumes --remove-orphans" in powershell_script
 
 
-def test_risk_approval_remote_suite_keeps_expiration_and_approver_regressions():
-    suite = (REPO_ROOT / "backend" / "tests" / "test_risk_approval_postgres.py").read_text(
+def test_direct_risk_action_remote_suite_keeps_queue_retirement_and_exactly_once_regressions():
+    suite = (REPO_ROOT / "backend" / "tests" / "test_risk_action_postgres.py").read_text(
         encoding="utf-8"
     )
     required_tests = (
-        "test_postgresql_approve_expire_race_has_exactly_one_terminal_winner",
-        "test_postgresql_policy_change_marks_pending_request_stale_with_one_audit",
-        "test_postgresql_disabled_or_locked_approver_cannot_win_pending_request",
-        "test_postgresql_concurrent_expiration_writes_exactly_one_audit_event",
-        "test_postgresql_expiration_audit_failure_rolls_back_to_pending",
+        "test_postgresql_catalog_has_only_confirmation_and_password_modes",
+        "test_postgresql_retired_queue_routes_are_unavailable",
+        "test_postgresql_concurrent_direct_action_executes_and_audits_exactly_once",
+        "test_postgresql_stale_target_fails_closed_without_queue_or_execution_audit",
     )
     for test_name in required_tests:
         assert f"def {test_name}" in suite
@@ -222,13 +220,14 @@ def test_risk_approval_remote_suite_keeps_expiration_and_approver_regressions():
     workflow = load_workflow()
     docker_steps = workflow["jobs"]["docker"]["steps"]
     assert any(
-        step.get("name") == "Run PostgreSQL/Redis high-risk approval tests"
-        and step.get("run") == "bash scripts/test-risk-approval.sh"
+        step.get("name") == "Run PostgreSQL/Redis direct risk-action tests"
+        and step.get("run") == "bash scripts/test-risk-action.sh"
         for step in docker_steps
     )
     compose = (REPO_ROOT / "docker-compose.yml").read_text(encoding="utf-8")
     assert (
-        '["python", "-m", "pytest", "tests/test_risk_approval_postgres.py", '
+        '["python", "-m", "pytest", "tests/test_risk_action_postgres.py", '
+        '"tests/test_risk_action_migrations.py", '
         '"--ds=config.settings", "-q", "-p", "no:cacheprovider"]'
     ) in compose
 
@@ -369,7 +368,7 @@ def test_docker_job_runs_reproducible_postgresql_redis_quota_suite():
         "test_postgresql_backfill_is_idempotent",
         "test_postgresql_backfill_invalid_snapshot_rolls_back_valid_rows_atomically",
         "test_postgresql_quota_adjustment_audit_failure_rolls_back_business",
-        "test_postgresql_quota_adjustment_two_person_executes_exactly_once",
+        "test_postgresql_quota_adjustment_direct_execution_is_exactly_once",
     )
     for test_name in required_tests:
         assert f"def {test_name}" in suite

@@ -154,9 +154,7 @@ def create_registered_user(
                 nickname=nickname,
                 password=password,
                 tenant=owner.user.tenant,
-                approval_status=User.ApprovalStatus.APPROVED,
                 account_status=User.AccountStatus.ACTIVE,
-                approved_at=timezone.now(),
                 is_active=True,
             )
             assignment = CustomerAssignment(

@@ -130,7 +130,11 @@ beforeEach(() => {
   mocks.getTypes.mockResolvedValue({ catalog_version: 4, risk_types: [riskType] });
   mocks.getRules.mockResolvedValue({ catalog_version: 4, rules: [] });
   mocks.createType.mockResolvedValue(riskType);
-  mocks.publish.mockResolvedValue({ approval_id: "approval-9" });
+  mocks.publish.mockResolvedValue({
+    catalog_version: 5,
+    revision_id: "revision-1",
+    revision_no: 1,
+  });
   mocks.getReview.mockResolvedValue(review);
   mocks.approve.mockResolvedValue({ ...review, status: "approved", version: 4 });
   mocks.reject.mockResolvedValue({ ...review, status: "rejected", version: 4 });
@@ -139,7 +143,7 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("subject risk catalog interactions", () => {
-  it("creates only a restrictive draft type and sends publication through two-person approval", async () => {
+  it("creates only a restrictive draft type and publishes directly after confirmation", async () => {
     render(<SubjectRiskCatalogPage />);
     expect(await screen.findByText("test.restricted")).toBeTruthy();
     await userEvent.type(screen.getByPlaceholderText("machine.key"), "test.new");
@@ -156,11 +160,14 @@ describe("subject risk catalog interactions", () => {
         }),
       ),
     );
-    await userEvent.click(
-      screen.getByRole("button", { name: "\u53d1\u8d77\u53cc\u4eba\u53d1\u5e03\u5ba1\u6279" }),
-    );
+    await userEvent.click(screen.getByRole("button", { name: "\u786e\u8ba4\u53d1\u5e03" }));
     await waitFor(() => expect(mocks.publish).toHaveBeenCalledWith(4));
-    expect(mocks.push).toHaveBeenCalledWith("/admin/approvals/approval-9");
+    expect(
+      await screen.findByText(
+        "\u98ce\u9669\u76ee\u5f55\u5df2\u53d1\u5e03\uff0c\u64cd\u4f5c\u5df2\u5199\u5165\u64cd\u4f5c\u8bb0\u5f55\u3002",
+      ),
+    ).toBeTruthy();
+    expect(mocks.push).not.toHaveBeenCalled();
   });
 
   it("disables draft mutation and publication without capability keys", async () => {
@@ -172,7 +179,7 @@ describe("subject risk catalog interactions", () => {
     expect(
       (
         screen.getByRole("button", {
-          name: "\u53d1\u8d77\u53cc\u4eba\u53d1\u5e03\u5ba1\u6279",
+          name: "\u786e\u8ba4\u53d1\u5e03",
         }) as HTMLButtonElement
       ).disabled,
     ).toBe(true);
@@ -183,7 +190,7 @@ describe("subject risk catalog interactions", () => {
 });
 
 describe("direct subject review interactions", () => {
-  it("approves directly with expected_version instead of creating an ApprovalRequest", async () => {
+  it("publishes directly with expected_version and confirmation", async () => {
     render(<SubjectReviewDetailPage />);
     expect(await screen.findByText("\u6d4b\u8bd5\u4e3b\u4f53")).toBeTruthy();
     await userEvent.click(screen.getByRole("button", { name: /\u901a\s*\u8fc7/ }));

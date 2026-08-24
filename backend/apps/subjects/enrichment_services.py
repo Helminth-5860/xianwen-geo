@@ -89,7 +89,6 @@ def _ensure_create_eligible(*, user: User, subject: Subject) -> Subscription:
     if (
         not user.is_active
         or user.account_status != User.AccountStatus.ACTIVE
-        or user.approval_status != User.ApprovalStatus.APPROVED
         or subject.user_id != user.pk
         or subject.status not in {Subject.Status.DRAFT, Subject.Status.ACTIVE}
     ):

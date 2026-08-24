@@ -2,7 +2,7 @@ from rest_framework import serializers
 
 from apps.users.validators import validate_safe_plain_text
 
-from .models import ApprovalRequest, AuditEvent, RiskAction, RiskPolicy
+from .models import AuditEvent, RiskAction, RiskPolicy
 from .security import normalize_network
 
 
@@ -96,15 +96,6 @@ class ReasonPayloadSerializer(StrictPayloadSerializer):
         )
 
 
-class RejectUserPayloadSerializer(ReasonPayloadSerializer):
-    reason = serializers.CharField(max_length=500, allow_blank=False)
-
-    def validate_reason(self, value):
-        return validate_safe_plain_text(
-            value, field_label="拒绝原因", max_length=500, required=True
-        )
-
-
 class RiskActionSerializer(serializers.ModelSerializer):
     current_mode = serializers.CharField(source="policy.current_mode")
     policy_version = serializers.IntegerField(source="policy.version")
@@ -146,56 +137,10 @@ class RiskPolicySerializer(serializers.ModelSerializer):
 
 
 class RiskPolicyUpdateSerializer(StrictPayloadSerializer):
-    current_mode = serializers.ChoiceField(choices=("confirm", "password", "two_person"))
+    current_mode = serializers.ChoiceField(choices=("confirm", "password"))
     expected_version = serializers.IntegerField(min_value=1)
     current_password = serializers.CharField(max_length=128, write_only=True, trim_whitespace=False)
     confirmed = serializers.BooleanField()
-
-
-class ApprovalSerializer(serializers.ModelSerializer):
-    requester_id = serializers.UUIDField()
-    approved_by_id = serializers.UUIDField(allow_null=True)
-    rejected_by_id = serializers.UUIDField(allow_null=True)
-
-    class Meta:
-        model = ApprovalRequest
-        fields = (
-            "id",
-            "action_key",
-            "policy_version",
-            "requester_id",
-            "target_type",
-            "target_id",
-            "target_version",
-            "safe_summary",
-            "status",
-            "expires_at",
-            "approved_by_id",
-            "approved_at",
-            "rejected_by_id",
-            "rejected_at",
-            "rejection_reason",
-            "cancelled_at",
-            "executed_at",
-            "execution_result",
-            "stable_error_code",
-            "request_id",
-            "created_at",
-            "updated_at",
-        )
-
-
-class ApprovalApproveSerializer(StrictPayloadSerializer):
-    current_password = serializers.CharField(max_length=128, write_only=True, trim_whitespace=False)
-
-
-class ApprovalRejectSerializer(StrictPayloadSerializer):
-    reason = serializers.CharField(max_length=500, trim_whitespace=False)
-
-    def validate_reason(self, value):
-        return validate_safe_plain_text(
-            value, field_label="拒绝原因", max_length=500, required=True
-        )
 
 
 class AuditEventSerializer(serializers.ModelSerializer):
@@ -209,11 +154,9 @@ class AuditEventSerializer(serializers.ModelSerializer):
             "actor_id",
             "subject_id",
             "requester_id",
-            "approver_id",
             "target_type",
             "target_id",
             "request_id",
-            "approval_request_id",
             "safe_before",
             "safe_after",
             "stable_error_code",

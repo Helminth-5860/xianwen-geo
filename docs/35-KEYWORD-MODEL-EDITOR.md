@@ -25,7 +25,6 @@ XW-0301 建立人工维护关键词的独立领域。它不实现 AI 生成、Ce
 
 人工关键词写操作要求：
 
-- 用户审核通过；
 - 账号 active；
 - 有当前有效 Subscription；
 - Subject 为 draft 或 active；

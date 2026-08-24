@@ -1,23 +1,19 @@
 import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from datetime import timedelta
 from types import SimpleNamespace
 
 import pytest
 from django.core.management import call_command
 from django.db import DatabaseError, close_old_connections, connection, connections, transaction
-from django.utils import timezone
 from django_redis import get_redis_connection
 
 from apps.admin_rbac.models import (
     AdminPermission,
     AdminRole,
     AdminRolePermission,
-    ApprovalRequest,
     AuditEvent,
     CustomerAssignment,
-    RiskAction,
 )
 from apps.admin_rbac.permissions import resolve_admin_context
 from apps.admin_rbac.services import create_admin, create_role
@@ -30,14 +26,12 @@ from apps.subjects.models import (
     SubjectReview,
     SubjectReviewEvent,
     SubjectRiskAssessment,
-    SubjectRiskCatalogRevision,
     SubjectRiskCatalogState,
     SubjectRiskHit,
     SubjectRiskType,
     SubjectType,
     SubjectVersion,
 )
-from apps.subjects.risk_engine import catalog_digest
 from apps.subjects.risk_services import (
     SubjectReviewStateConflict,
     SubjectReviewVersionConflict,
@@ -93,12 +87,7 @@ def parallel(*operations):
         return [future.result(timeout=30) for future in futures]
 
 
-def force_constraints():
-    with connection.cursor() as cursor:
-        cursor.execute("SET CONSTRAINTS ALL IMMEDIATE")
-
-
-def test_subject_risk_guards_and_publish_approval_are_database_enforced():
+def test_subject_risk_guards_and_direct_publish_are_database_enforced():
     _, _, revision = publish_matching_catalog()
     _, _, subject_data = create_and_commit_flagged_subject()
     review = SubjectReview.objects.get(subject_id=subject_data["id"])
@@ -115,7 +104,6 @@ def test_subject_risk_guards_and_publish_approval_are_database_enforced():
         "subjects_review_guard",
         "subjects_risk_assessment_binding",
         "subjects_review_binding",
-        "subjects_catalog_revision_approval",
     }
     with connection.cursor() as cursor:
         cursor.execute(
@@ -141,18 +129,6 @@ def test_subject_risk_guards_and_publish_approval_are_database_enforced():
         with pytest.raises(DatabaseError), transaction.atomic():
             with connection.cursor() as cursor:
                 cursor.execute(sql, params)
-
-    invalid_snapshot = {"format_version": 1, "risk_types": [], "rules": []}
-    with pytest.raises(DatabaseError), transaction.atomic():
-        SubjectRiskCatalogRevision.objects.create(
-            revision_no=2,
-            draft_version=1,
-            snapshot=invalid_snapshot,
-            snapshot_digest=catalog_digest(invalid_snapshot),
-            published_by=None,
-            approval_request=None,
-        )
-        force_constraints()
 
 
 def test_review_binding_terminal_state_and_concurrent_decision_are_exactly_once():
@@ -373,19 +349,11 @@ def test_historical_assessment_keeps_revision_while_current_policy_controls_feat
     assert updated.status_code == 200
     requested = admin_client(requester).post(
         "/api/v1/admin/subject-risk-catalog/publish",
-        {"expected_catalog_version": 5},
+        {"expected_catalog_version": 5, "confirmed": True},
         format="json",
     )
-    assert requested.status_code == 202
-    approver = User.objects.create_superuser(
-        phone="13500135000", nickname="Second publisher", password=PASSWORD
-    )
-    approved = admin_client(approver).post(
-        f"/api/v1/admin/approvals/{payload(requested)['approval_id']}/approve",
-        {"current_password": PASSWORD},
-        format="json",
-    )
-    assert approved.status_code == 200
+    assert requested.status_code == 200
+    assert payload(requested)["revision_id"]
 
     assessment.refresh_from_db()
     assert assessment.catalog_revision_id == first_revision.id
@@ -393,42 +361,15 @@ def test_historical_assessment_keeps_revision_while_current_policy_controls_feat
     assert capabilities_for_subject(subject).geo_detection is True
 
 
-@pytest.mark.parametrize("mismatch", ["draft_version", "draft_digest"])
-def test_catalog_revision_database_guard_binds_approval_version_and_digest(mismatch):
-    requester, approver, revision = publish_matching_catalog()
-    snapshot = {"format_version": 1, "risk_types": [], "rules": []}
-    digest = catalog_digest(snapshot)
-    now = timezone.now()
-    action = RiskAction.objects.get(pk="subject_risk.catalog.publish")
-    approval = ApprovalRequest.objects.create(
-        action=action,
-        action_key=action.key,
-        policy_version=action.policy.version,
-        requester=requester,
-        target_type=action.target_type,
-        target_id=uuid.UUID("00000000-0000-0000-0000-000000000001"),
-        target_version=99 if mismatch == "draft_version" else 7,
-        sanitized_payload={"draft_digest": "f" * 64 if mismatch == "draft_digest" else digest},
-        payload_digest="e" * 64,
-        safe_summary="Test-only invalid catalog binding",
-        status=ApprovalRequest.Status.EXECUTED,
-        expires_at=now + timedelta(hours=1),
-        approved_by=approver,
-        approved_at=now,
-        executed_at=now,
-        request_id=uuid.uuid4(),
-    )
-
-    with pytest.raises(DatabaseError), transaction.atomic():
-        SubjectRiskCatalogRevision.objects.create(
-            revision_no=revision.revision_no + 1,
-            draft_version=7,
-            snapshot=snapshot,
-            snapshot_digest=digest,
-            published_by=requester,
-            approval_request=approval,
+def test_catalog_revision_has_no_queue_binding_after_direct_publish():
+    _requester, _review_operator, revision = publish_matching_catalog()
+    assert revision.published_by_id is not None
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT 1 FROM pg_trigger WHERE NOT tgisinternal "
+            "AND tgname = 'subjects_catalog_revision_approval'"
         )
-        force_constraints()
+        assert cursor.fetchone() is None
 
 
 @pytest.mark.parametrize(
@@ -443,7 +384,6 @@ def test_subject_commit_failure_injection_rolls_back_current_version_and_all_ris
         phone="13400134000",
         nickname="Atomic subject owner",
         password=PASSWORD,
-        approval_status=User.ApprovalStatus.PENDING,
     )
     subject_type = SubjectType.objects.get(key="enterprise")
     from apps.subjects.subject_services import create_subject
@@ -557,7 +497,6 @@ def test_commit_without_published_catalog_rolls_back_on_real_postgresql():
         phone="13400134001",
         nickname="No catalog owner",
         password=PASSWORD,
-        approval_status=User.ApprovalStatus.PENDING,
     )
     subject_type = SubjectType.objects.get(key="enterprise")
     subject = create_subject(
@@ -593,7 +532,6 @@ def test_existing_version_batch_uses_one_published_revision_and_reviews_only_cur
         phone="13400134002",
         nickname="Batch assessment owner",
         password=PASSWORD,
-        approval_status=User.ApprovalStatus.PENDING,
     )
     subject_type = SubjectType.objects.get(key="enterprise")
     subject = create_subject(

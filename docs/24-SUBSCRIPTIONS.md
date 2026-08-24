@@ -32,17 +32,17 @@ effective_config 并重算验证 SHA-256 digest。不会静默切换最新版本
 - archived 套餐禁止激活。
 - offline 套餐或 retired 版本要求额外确认和原因。
 - override 仅允许同一 Plan 的 published/retired 版本，需要独立权限、显式确认、
-  原因及双人审批。
+  原因及页面二次确认。
 - 原申请版本绑定永不修改。
 
 ## 风险、权限和数据范围
 
 subscription.open、subscription.grant_trial、subscription.terminate 的
-supported/default/minimum mode 均固定为 two_person，策略不能降级。换版另需
+supported/default/minimum mode 均固定为 confirm，换版另需
 subscriptions.override_version。
 
 订阅列表、详情和动作复用 CustomerAssignment own/role/all 数据范围，越权对象返回
-404。批准执行阶段重新验证发起人权限、数据范围、目标版本、状态和单 active 约束。
+404。直接执行阶段重新验证操作人权限、数据范围、目标版本、状态和单 active 约束。
 
 ## API
 

@@ -63,8 +63,12 @@ beforeEach(() => {
     pagination: { page: 1, page_size: 20, count: 1, total_pages: 1 },
   });
   adjustQuotaAccount.mockResolvedValue({
-    approval_required: true,
-    approval_id: "approval-quota-1",
+    account_id: "account-1",
+    ledger_entry_id: "ledger-4",
+    available: 83,
+    frozen: 20,
+    version: 5,
+    replayed: false,
   });
 });
 afterEach(() => {
@@ -86,13 +90,13 @@ describe("quota administrator interactions", () => {
       </AdminCapabilityContext.Provider>,
     );
     expect(await screen.findByText("\u6d4b\u8bd5\u7528\u6237")).toBeTruthy();
-    await userEvent.click(screen.getByRole("button", { name: "\u8d60\u9001" }));
+    await userEvent.click(screen.getByRole("button", { name: "增加额度" }));
     await userEvent.type(screen.getByLabelText("\u8c03\u6574\u6570\u91cf"), "3");
     await userEvent.type(
       screen.getByLabelText("\u8c03\u6574\u539f\u56e0"),
       "\u4eba\u5de5\u5ba1\u6838\u8865\u507f",
     );
-    await userEvent.click(screen.getByRole("button", { name: "\u53d1\u8d77\u5ba1\u6279" }));
+    await userEvent.click(screen.getByRole("button", { name: "确认调整" }));
     await waitFor(() => expect(adjustQuotaAccount).toHaveBeenCalledTimes(1));
     const call = adjustQuotaAccount.mock.calls[0];
     expect(call.slice(0, 5)).toEqual([
@@ -103,7 +107,8 @@ describe("quota administrator interactions", () => {
       "\u4eba\u5de5\u5ba1\u6838\u8865\u507f",
     ]);
     expect(call[5]).toMatch(/^[0-9a-f-]{36}$/);
-    expect(await screen.findByText("approval-quota-1")).toBeTruthy();
+    expect(await screen.findByText("额度调整完成")).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/审批|approval-quota-1/);
     expect(localStorage.length).toBe(0);
     expect(sessionStorage.length).toBe(0);
     expect(window.location.href).not.toContain(call[5]);
@@ -121,7 +126,7 @@ describe("quota administrator interactions", () => {
         "\u5f53\u524d\u8d26\u53f7\u6ca1\u6709\u989d\u5ea6\u8c03\u6574\u6743\u9650",
       ),
     ).toBeTruthy();
-    for (const name of ["\u8d60\u9001", "\u8865\u507f", "\u4eba\u5de5\u6263\u51cf"]) {
+    for (const name of ["增加额度", "补充额度", "扣减额度"]) {
       expect(screen.queryByRole("button", { name })).toBeNull();
     }
     expect(adjustQuotaAccount).not.toHaveBeenCalled();

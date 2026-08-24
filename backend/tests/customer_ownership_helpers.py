@@ -19,7 +19,6 @@ def create_test_admin(*, tenant=None, phone="18899999999") -> AdminProfile:
         password=TEST_ADMIN_PASSWORD,
         tenant=tenant,
         is_staff=True,
-        approval_status=User.ApprovalStatus.APPROVED,
     )
     return AdminProfile.objects.create(user=admin, role=role)
 

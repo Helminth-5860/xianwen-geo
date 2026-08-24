@@ -166,7 +166,7 @@ paths:
       summary: 手机号与短信验证码登录
       description: |
         使用 login 用途验证码并原子消费。错误验证码、过期、重放和不存在账号统一返回
-        AUTH_CREDENTIALS_INVALID；不会自动创建用户。审核状态不影响登录。
+        AUTH_CREDENTIALS_INVALID；不会自动创建用户。账号是否可登录由账号状态控制。
       parameters:
         - $ref: '#/components/parameters/CsrfToken'
       requestBody:
@@ -315,37 +315,6 @@ paths:
                 $ref: '#/components/schemas/UserEnvelope'
         '401':
           $ref: '#/components/responses/AuthRequired'
-  /me/approval/resubmit:
-    post:
-      tags: [Me]
-      summary: 审核拒绝用户重新提交资料
-      description: 仅 rejected 用户可调用；可选更新昵称，不能修改手机号。
-      parameters:
-        - $ref: '#/components/parameters/CsrfToken'
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ApprovalResubmitRequest'
-      responses:
-        '200':
-          description: 已重新提交，审核状态变为 pending
-          headers:
-            X-Request-ID:
-              $ref: '#/components/headers/RequestId'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/UserEnvelope'
-        '401':
-          $ref: '#/components/responses/AuthRequired'
-        '403':
-          $ref: '#/components/responses/CsrfFailed'
-        '409':
-          $ref: '#/components/responses/ApprovalStateConflict'
-        '422':
-          $ref: '#/components/responses/ValidationError'
   /notifications:
     get:
       tags: [Me]
@@ -2281,15 +2250,11 @@ paths:
   /admin/users:
     get:
       tags: [Admin]
-      summary: 管理员用户审核列表
+      summary: 管理员用户列表
       description: 仅有效 staff 可访问；完整手机号只用于精确筛选，响应始终脱敏。
       parameters:
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/PageSize'
-        - name: approval_status
-          in: query
-          schema:
-            $ref: '#/components/schemas/ApprovalStatus'
         - name: account_status
           in: query
           schema:
@@ -2319,10 +2284,10 @@ paths:
       - $ref: '#/components/parameters/UserId'
     get:
       tags: [Admin]
-      summary: 管理员查看用户审核详情
+      summary: 管理员查看用户详情
       responses:
         '200':
-          description: 用户最小详情；仅 rejected 状态展示当前拒绝原因
+          description: 用户最小详情和账号状态
           headers:
             X-Request-ID:
               $ref: '#/components/headers/RequestId'
@@ -2341,7 +2306,7 @@ paths:
       - $ref: '#/components/parameters/UserId'
     get:
       tags: [Admin]
-      summary: 用户审核及账号状态追加式历史
+      summary: 用户账号状态追加式历史
       description: 普通 API 只读，不提供更新或删除操作。
       parameters:
         - $ref: '#/components/parameters/Page'
@@ -2364,54 +2329,6 @@ paths:
           $ref: '#/components/responses/ResourceNotFound'
         '422':
           $ref: '#/components/responses/ValidationError'
-  /admin/users/{userId}/review:
-    parameters:
-      - $ref: '#/components/parameters/UserId'
-    post:
-      tags: [Admin]
-      summary: 通过或拒绝待审核用户
-      parameters:
-        - $ref: '#/components/parameters/CsrfToken'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ReviewUserRequest'
-      responses:
-        '200':
-          description: 审核状态、历史和通知已在同一事务提交
-          headers:
-            X-Request-ID:
-              $ref: '#/components/headers/RequestId'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AdminUserEnvelope'
-        '401':
-          $ref: '#/components/responses/AuthRequired'
-        '403':
-          description: CSRF 失败、非有效 staff 或目标为 staff/superuser
-          headers:
-            X-Request-ID:
-              $ref: '#/components/headers/RequestId'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorEnvelope'
-        '404':
-          $ref: '#/components/responses/ResourceNotFound'
-        '409':
-          $ref: '#/components/responses/ApprovalStateConflict'
-        '422':
-          description: 参数校验失败或拒绝原因缺失
-          headers:
-            X-Request-ID:
-              $ref: '#/components/headers/RequestId'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorEnvelope'
   /admin/users/{userId}/freeze:
     parameters:
       - $ref: '#/components/parameters/UserId'
@@ -2668,7 +2585,7 @@ paths:
       summary: administrator security session_version administrator security Session
       parameters: [{$ref: '#/components/parameters/CsrfToken'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/RiskControlFields'}}}}
-      responses: {'200': {description: 当前或目标管理员的既有 Session 已撤销}, '202': {description: 已创建双人审批请求}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '500': {$ref: '#/components/responses/InternalError'}}
+      responses: {'200': {description: 当前或目标管理员的既有 Session 已撤销并写入操作记录}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '422': {$ref: '#/components/responses/ValidationError'}, '500': {$ref: '#/components/responses/InternalError'}}
   /admin/admins/{adminId}/disable:
     $ref: '#/components/pathItems/AdminStatusAction'
   /admin/admins/{adminId}/enable:
@@ -2791,11 +2708,10 @@ paths:
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AssignmentUpdateRequest'}}}}
       responses:
         '200': {description: 当前归属}
-        '202': {description: 已创建双人审批请求, content: {application/json: {schema: {$ref: '#/components/schemas/ApprovalCreatedEnvelope'}}}}
         '401': {$ref: '#/components/responses/AuthRequired'}
         '403': {$ref: '#/components/responses/PermissionDenied'}
         '404': {$ref: '#/components/responses/ResourceNotFound'}
-        '409': {description: ASSIGNMENT_VERSION_CONFLICT、APPROVAL_STATE_CONFLICT 或 APPROVAL_STALE}
+        '409': {description: ASSIGNMENT_VERSION_CONFLICT 或 RISK_TARGET_STALE}
         '422': {$ref: '#/components/responses/ValidationError'}
         '429': {$ref: '#/components/responses/RateLimited'}
         '503': {$ref: '#/components/responses/ServiceUnavailable'}
@@ -2808,22 +2724,20 @@ paths:
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AdminRoleChangeRiskRequest'}}}}
       responses:
         '200': {description: 角色已同步变更}
-        '202': {description: 已创建双人审批请求, content: {application/json: {schema: {$ref: '#/components/schemas/ApprovalCreatedEnvelope'}}}}
         '403': {$ref: '#/components/responses/PermissionDenied'}
-        '409': {description: 目标版本、策略或审批可用性冲突}
+        '409': {description: 目标版本或策略冲突}
         '422': {$ref: '#/components/responses/ValidationError'}
   /admin/roles/{roleId}/permissions:
     parameters: [{$ref: '#/components/parameters/RoleId'}]
     put:
       tags: [Admin]
-      summary: 通过固定双人审批替换角色权限
+      summary: 密码确认后直接替换角色权限并写入操作记录
       parameters: [{$ref: '#/components/parameters/CsrfToken'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/RolePermissionsRiskRequest'}}}}
       responses:
         '200': {description: 权限已替换}
-        '202': {description: 已创建双人审批请求, content: {application/json: {schema: {$ref: '#/components/schemas/ApprovalCreatedEnvelope'}}}}
         '403': {$ref: '#/components/responses/PermissionDenied'}
-        '409': {description: 目标版本、策略或审批可用性冲突}
+        '409': {description: 目标版本或策略冲突}
         '422': {$ref: '#/components/responses/ValidationError'}
   /admin/risk-actions:
     get:
@@ -2862,93 +2776,6 @@ paths:
         '422': {description: 不支持模式、低于最低模式或缺少确认}
         '429': {$ref: '#/components/responses/RateLimited'}
         '503': {$ref: '#/components/responses/ServiceUnavailable'}
-  /admin/approvals:
-    get:
-      tags: [Admin]
-      summary: 审批请求列表
-      description: 普通管理员只看到自己发起的请求；超级管理员看到全部。V1 不提供通用 POST 创建。
-      parameters:
-        - $ref: '#/components/parameters/Page'
-        - $ref: '#/components/parameters/PageSize'
-        - name: status
-          in: query
-          schema: {$ref: '#/components/schemas/ApprovalRequestStatus'}
-      responses:
-        '200': {description: 审批分页, content: {application/json: {schema: {$ref: '#/components/schemas/ApprovalPageEnvelope'}}}}
-        '401': {$ref: '#/components/responses/AuthRequired'}
-        '403': {$ref: '#/components/responses/PermissionDenied'}
-        '422': {$ref: '#/components/responses/ValidationError'}
-  /admin/approvals/{approvalId}:
-    parameters:
-      - name: approvalId
-        in: path
-        required: true
-        schema: {type: string, format: uuid}
-    get:
-      tags: [Admin]
-      summary: 审批安全详情
-      responses:
-        '200': {description: 不含 sanitized_payload 全文的详情, content: {application/json: {schema: {$ref: '#/components/schemas/ApprovalEnvelope'}}}}
-        '401': {$ref: '#/components/responses/AuthRequired'}
-        '403': {$ref: '#/components/responses/PermissionDenied'}
-        '404': {$ref: '#/components/responses/ResourceNotFound'}
-  /admin/approvals/{approvalId}/approve:
-    parameters:
-      - name: approvalId
-        in: path
-        required: true
-        schema: {type: string, format: uuid}
-    post:
-      tags: [Admin]
-      summary: 另一名有效超级管理员批准并同步执行一次
-      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
-      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ApprovalApproveRequest'}}}}
-      responses:
-        '200': {description: 最终 executed 或 execution_failed, content: {application/json: {schema: {$ref: '#/components/schemas/ApprovalEnvelope'}}}}
-        '401': {$ref: '#/components/responses/AuthRequired'}
-        '403': {description: 自批、权限、CSRF 或当前密码失败}
-        '404': {$ref: '#/components/responses/ResourceNotFound'}
-        '409': {description: APPROVAL_STATE_CONFLICT 或 APPROVAL_STALE}
-        '410': {description: APPROVAL_EXPIRED}
-        '422': {$ref: '#/components/responses/ValidationError'}
-        '429': {$ref: '#/components/responses/RateLimited'}
-        '503': {$ref: '#/components/responses/ServiceUnavailable'}
-  /admin/approvals/{approvalId}/reject:
-    parameters:
-      - name: approvalId
-        in: path
-        required: true
-        schema: {type: string, format: uuid}
-    post:
-      tags: [Admin]
-      summary: 另一名有效超级管理员拒绝待审批请求
-      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
-      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ApprovalRejectRequest'}}}}
-      responses:
-        '200': {description: 已拒绝}
-        '401': {$ref: '#/components/responses/AuthRequired'}
-        '403': {description: 自拒绝、权限或 CSRF 失败}
-        '404': {$ref: '#/components/responses/ResourceNotFound'}
-        '409': {description: APPROVAL_STATE_CONFLICT}
-        '410': {description: APPROVAL_EXPIRED}
-        '422': {$ref: '#/components/responses/ValidationError'}
-  /admin/approvals/{approvalId}/cancel:
-    parameters:
-      - name: approvalId
-        in: path
-        required: true
-        schema: {type: string, format: uuid}
-    post:
-      tags: [Admin]
-      summary: 发起人取消待审批请求
-      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
-      responses:
-        '200': {description: 已取消}
-        '401': {$ref: '#/components/responses/AuthRequired'}
-        '403': {$ref: '#/components/responses/PermissionDenied'}
-        '404': {$ref: '#/components/responses/ResourceNotFound'}
-        '409': {description: APPROVAL_STATE_CONFLICT}
-        '410': {description: APPROVAL_EXPIRED}
   /admin/audit-events:
     get:
       tags: [Admin]
@@ -2970,7 +2797,7 @@ paths:
         schema: {type: string, format: uuid}
     get:
       tags: [Admin]
-      summary: 超级管理员查看统一审计安全详情
+      summary: 超级管理员查看操作记录安全详情
       responses:
         '200': {description: 不含完整 payload、手机号、IP 或原始异常, content: {application/json: {schema: {$ref: '#/components/schemas/AuditEventEnvelope'}}}}
         '401': {$ref: '#/components/responses/AuthRequired'}
@@ -2996,7 +2823,6 @@ paths:
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/PlanCreateRequest'}}}}
       responses:
         '200': {description: 已创建, content: {application/json: {schema: {$ref: '#/components/schemas/PlanEnvelope'}}}}
-        '202': {$ref: '#/components/responses/ApprovalRequired'}
         '401': {$ref: '#/components/responses/AuthRequired'}
         '403': {$ref: '#/components/responses/PermissionDenied'}
         '404': {$ref: '#/components/responses/ResourceNotFound'}
@@ -3015,7 +2841,7 @@ paths:
       summary: 修改套餐展示资料；不能修改版本权益
       parameters: [{$ref: '#/components/parameters/CsrfToken'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/PlanUpdateRequest'}}}}
-      responses: {'200': {description: 已修改}, '202': {$ref: '#/components/responses/ApprovalRequired'}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}, '429': {$ref: '#/components/responses/RateLimited'}, '503': {$ref: '#/components/responses/ServiceUnavailable'}}
+      responses: {'200': {description: 已修改并写入操作记录}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}, '429': {$ref: '#/components/responses/RateLimited'}, '503': {$ref: '#/components/responses/ServiceUnavailable'}}
   /admin/plans/{planId}/copy:
     parameters: [{$ref: '#/components/parameters/PlanId'}]
     post:
@@ -3023,7 +2849,7 @@ paths:
       summary: 深复制套餐到新草稿
       parameters: [{$ref: '#/components/parameters/CsrfToken'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/PlanCopyRequest'}}}}
-      responses: {'200': {description: 已复制}, '202': {$ref: '#/components/responses/ApprovalRequired'}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}, '429': {$ref: '#/components/responses/RateLimited'}, '503': {$ref: '#/components/responses/ServiceUnavailable'}}
+      responses: {'200': {description: 已复制并写入操作记录}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}, '429': {$ref: '#/components/responses/RateLimited'}, '503': {$ref: '#/components/responses/ServiceUnavailable'}}
   /admin/plans/{planId}/online:
     $ref: '#/components/pathItems/PlanStateAction'
   /admin/plans/{planId}/offline:
@@ -3041,7 +2867,7 @@ paths:
       summary: 创建唯一草稿版本
       parameters: [{$ref: '#/components/parameters/CsrfToken'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/PlanVersionCreateRequest'}}}}
-      responses: {'200': {description: 已创建}, '202': {$ref: '#/components/responses/ApprovalRequired'}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}, '429': {$ref: '#/components/responses/RateLimited'}, '503': {$ref: '#/components/responses/ServiceUnavailable'}}
+      responses: {'200': {description: 已创建并写入操作记录}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}, '429': {$ref: '#/components/responses/RateLimited'}, '503': {$ref: '#/components/responses/ServiceUnavailable'}}
   /admin/plan-versions/{versionId}:
     parameters: [{$ref: '#/components/parameters/PlanVersionId'}]
     get:
@@ -3053,7 +2879,7 @@ paths:
       summary: 修改草稿 typed limits 和八模型；不接受 effective_config/config_digest
       parameters: [{$ref: '#/components/parameters/CsrfToken'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/PlanVersionUpdateRequest'}}}}
-      responses: {'200': {description: 已修改}, '202': {$ref: '#/components/responses/ApprovalRequired'}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}, '429': {$ref: '#/components/responses/RateLimited'}, '503': {$ref: '#/components/responses/ServiceUnavailable'}}
+      responses: {'200': {description: 已修改并写入操作记录}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}, '429': {$ref: '#/components/responses/RateLimited'}, '503': {$ref: '#/components/responses/ServiceUnavailable'}}
   /admin/plan-versions/{versionId}/publish:
     $ref: '#/components/pathItems/PlanVersionPublishAction'
   /admin/plan-versions/{versionId}/retire:
@@ -3167,7 +2993,6 @@ paths:
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/PlanApplicationAdminActionRequest'}}}}
       responses:
         '200': {description: 已联系}
-        '202': {$ref: '#/components/responses/ApprovalRequired'}
         '401': {$ref: '#/components/responses/AuthRequired'}
         '403': {$ref: '#/components/responses/PermissionDenied'}
         '404': {$ref: '#/components/responses/ResourceNotFound'}
@@ -3184,7 +3009,6 @@ paths:
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/PlanApplicationAdminActionRequest'}}}}
       responses:
         '200': {description: 已关闭}
-        '202': {$ref: '#/components/responses/ApprovalRequired'}
         '401': {$ref: '#/components/responses/AuthRequired'}
         '403': {$ref: '#/components/responses/PermissionDenied'}
         '404': {$ref: '#/components/responses/ResourceNotFound'}
@@ -3229,11 +3053,11 @@ paths:
       - $ref: '#/components/parameters/PlanApplicationId'
     post:
       tags: [Admin, Subscriptions]
-      summary: 从正式套餐申请发起固定双人审批开通
+      summary: 二次确认后直接开通正式订阅并写入操作记录
       parameters: [{$ref: '#/components/parameters/CsrfToken'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/OpenSubscriptionRequest'}}}}
       responses:
-        '202': {$ref: '#/components/responses/ApprovalRequired'}
+        '200': {description: 订阅已开通}
         '401': {$ref: '#/components/responses/AuthRequired'}
         '403': {$ref: '#/components/responses/PermissionDenied'}
         '404': {$ref: '#/components/responses/ResourceNotFound'}
@@ -3246,11 +3070,11 @@ paths:
       - {name: userId, in: path, required: true, schema: {type: string, format: uuid}}
     post:
       tags: [Admin, Subscriptions]
-      summary: 发起固定双人审批试用发放
+      summary: 二次确认后直接发放试用并写入操作记录
       parameters: [{$ref: '#/components/parameters/CsrfToken'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/GrantTrialRequest'}}}}
       responses:
-        '202': {$ref: '#/components/responses/ApprovalRequired'}
+        '200': {description: 试用已发放}
         '401': {$ref: '#/components/responses/AuthRequired'}
         '403': {$ref: '#/components/responses/PermissionDenied'}
         '404': {$ref: '#/components/responses/ResourceNotFound'}
@@ -3263,11 +3087,11 @@ paths:
       - {name: subscriptionId, in: path, required: true, schema: {type: string, format: uuid}}
     post:
       tags: [Admin, Subscriptions]
-      summary: 发起固定双人审批终止订阅
+      summary: 二次确认后直接终止订阅并写入操作记录
       parameters: [{$ref: '#/components/parameters/CsrfToken'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/TerminateSubscriptionRequest'}}}}
       responses:
-        '202': {$ref: '#/components/responses/ApprovalRequired'}
+        '200': {description: 订阅已终止}
         '401': {$ref: '#/components/responses/AuthRequired'}
         '403': {$ref: '#/components/responses/PermissionDenied'}
         '404': {$ref: '#/components/responses/ResourceNotFound'}
@@ -3278,7 +3102,7 @@ paths:
   /subscription/changes:
     get:
       tags: [Subscriptions]
-      summary: 读取当前用户套餐变更历史，不暴露审批 payload、幂等摘要或额度批次
+      summary: 读取当前用户套餐变更历史，不暴露幂等摘要或额度批次
       responses:
         '200': {description: 套餐变更历史, content: {application/json: {schema: {$ref: '#/components/schemas/UserSubscriptionChangeListEnvelope'}}}}
         '401': {$ref: '#/components/responses/AuthRequired'}
@@ -3291,7 +3115,7 @@ paths:
       parameters: [{$ref: '#/components/parameters/CsrfToken'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/SubscriptionChangePreviewRequest'}}}}
       responses:
-        '200': {description: 不创建变更或审批, content: {application/json: {schema: {$ref: '#/components/schemas/SubscriptionChangePreviewEnvelope'}}}}
+        '200': {description: 只读预览，不创建套餐变更, content: {application/json: {schema: {$ref: '#/components/schemas/SubscriptionChangePreviewEnvelope'}}}}
         '401': {$ref: '#/components/responses/AuthRequired'}
         '403': {$ref: '#/components/responses/PermissionDenied'}
         '404': {$ref: '#/components/responses/ResourceNotFound'}
@@ -3302,13 +3126,13 @@ paths:
       - {name: subscriptionId, in: path, required: true, schema: {type: string, format: uuid}}
     post:
       tags: [Admin, Subscriptions]
-      summary: 发起固定双人审批套餐变更；renewal 仅创建 current-end 排期
+      summary: 二次确认后直接执行套餐变更；renewal 仅创建 current-end 排期
       parameters:
         - $ref: '#/components/parameters/CsrfToken'
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/SubscriptionChangeRequest'}}}}
       responses:
-        '202': {$ref: '#/components/responses/ApprovalRequired'}
+        '200': {description: 套餐变更已执行或已排期}
         '401': {$ref: '#/components/responses/AuthRequired'}
         '403': {$ref: '#/components/responses/PermissionDenied'}
         '404': {$ref: '#/components/responses/ResourceNotFound'}
@@ -3344,13 +3168,13 @@ paths:
       - {name: changeId, in: path, required: true, schema: {type: string, format: uuid}}
     post:
       tags: [Admin, Subscriptions]
-      summary: 发起固定双人审批取消尚未生效的 renewal 排期
+      summary: 二次确认后直接取消尚未生效的 renewal 排期
       parameters:
         - $ref: '#/components/parameters/CsrfToken'
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/CancelSubscriptionChangeRequest'}}}}
       responses:
-        '202': {$ref: '#/components/responses/ApprovalRequired'}
+        '200': {description: 续费排期已取消}
         '401': {$ref: '#/components/responses/AuthRequired'}
         '403': {$ref: '#/components/responses/PermissionDenied'}
         '404': {$ref: '#/components/responses/ResourceNotFound'}
@@ -3409,15 +3233,14 @@ paths:
       - {name: action, in: path, required: true, schema: {type: string, enum: [grant, compensate, manual-deduct]}}
     post:
       tags: [Admin, Quotas]
-      summary: Request a fixed two-person quota grant compensation or manual deduction
-      description: The raw Idempotency-Key is only used to derive HMAC digests and is never persisted, logged, or stored in approval payloads.
+      summary: 二次确认后直接增加、补充或扣减额度
+      description: 原始 Idempotency-Key 仅用于派生 HMAC 摘要，不持久化、不写日志；操作结果写入操作记录。
       parameters:
         - $ref: '#/components/parameters/CsrfToken'
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/QuotaAdjustmentRequest'}}}}
       responses:
         '200': {description: Safe replay for the same Idempotency-Key and canonical request, content: {application/json: {schema: {$ref: '#/components/schemas/QuotaAdjustmentEnvelope'}}}}
-        '202': {$ref: '#/components/responses/ApprovalRequired'}
         '401': {$ref: '#/components/responses/AuthRequired'}
         '403': {$ref: '#/components/responses/PermissionDenied'}
         '404': {$ref: '#/components/responses/ResourceNotFound'}
@@ -3472,11 +3295,11 @@ paths:
   /admin/subject-risk-catalog/publish:
     post:
       tags: [Admin, Subjects]
-      summary: Request fixed two-person publication of the draft catalog
+      summary: 二次确认后直接发布风险目录
       description: This is the only operation that can create and activate an immutable SubjectRiskCatalogRevision.
       parameters: [{$ref: '#/components/parameters/CsrfToken'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/SubjectRiskCatalogPublishRequest'}}}}
-      responses: {'202': {description: Two-person approval requested, content: {application/json: {schema: {$ref: '#/components/schemas/ApprovalCreatedEnvelope'}}}}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/PermissionDenied'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}, '503': {$ref: '#/components/responses/ServiceUnavailable'}}
+      responses: {'200': {description: 风险目录已发布并写入操作记录}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/PermissionDenied'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}, '503': {$ref: '#/components/responses/ServiceUnavailable'}}
   /admin/subject-reviews:
     get:
       tags: [Admin, Subjects]
@@ -3494,7 +3317,7 @@ paths:
     post:
       tags: [Admin, Subjects]
       summary: Direct single-administrator subject review approval
-      description: Requires a secure administrator session, CSRF, permission, scoped object access and expected_version. It does not create an ApprovalRequest.
+      description: Requires a secure administrator session, CSRF, permission, scoped object access and expected_version.
       parameters: [{$ref: '#/components/parameters/CsrfToken'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/SubjectReviewDecisionRequest'}}}}
       responses: {'200': {description: Review approved, content: {application/json: {schema: {$ref: '#/components/schemas/SubjectReviewEnvelope'}}}}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/CsrfFailed'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}}
@@ -3889,7 +3712,7 @@ components:
         summary: 套餐状态动作（online/offline/archive）
         parameters: [{$ref: '#/components/parameters/CsrfToken'}]
         requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/PlanExpectedVersionRequest'}}}}
-        responses: {'200': {description: 已执行}, '202': {$ref: '#/components/responses/ApprovalRequired'}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}, '429': {$ref: '#/components/responses/RateLimited'}, '503': {$ref: '#/components/responses/ServiceUnavailable'}}
+        responses: {'200': {description: 已执行并写入操作记录}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}, '429': {$ref: '#/components/responses/RateLimited'}, '503': {$ref: '#/components/responses/ServiceUnavailable'}}
     PlanVersionStateAction:
       parameters: [{$ref: '#/components/parameters/PlanVersionId'}]
       post:
@@ -3897,7 +3720,7 @@ components:
         summary: 退役套餐版本；已发布/retired 权益不可变
         parameters: [{$ref: '#/components/parameters/CsrfToken'}]
         requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/PlanExpectedVersionRequest'}}}}
-        responses: {'200': {description: 已执行}, '202': {$ref: '#/components/responses/ApprovalRequired'}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}, '429': {$ref: '#/components/responses/RateLimited'}, '503': {$ref: '#/components/responses/ServiceUnavailable'}}
+        responses: {'200': {description: 已执行并写入操作记录}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}, '429': {$ref: '#/components/responses/RateLimited'}, '503': {$ref: '#/components/responses/ServiceUnavailable'}}
     PlanVersionPublishAction:
       parameters: [{$ref: '#/components/parameters/PlanVersionId'}]
       post:
@@ -3905,7 +3728,7 @@ components:
         summary: 发布服务端 canonical snapshot
         parameters: [{$ref: '#/components/parameters/CsrfToken'}]
         requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/PlanPublishRequest'}}}}
-        responses: {'200': {description: 已发布}, '202': {$ref: '#/components/responses/ApprovalRequired'}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}, '429': {$ref: '#/components/responses/RateLimited'}, '503': {$ref: '#/components/responses/ServiceUnavailable'}}
+        responses: {'200': {description: 已发布并写入操作记录}, '401': {$ref: '#/components/responses/AuthRequired'}, '403': {$ref: '#/components/responses/PermissionDenied'}, '404': {$ref: '#/components/responses/ResourceNotFound'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}, '429': {$ref: '#/components/responses/RateLimited'}, '503': {$ref: '#/components/responses/ServiceUnavailable'}}
   securitySchemes:
     cookieAuth:
       type: apiKey
@@ -4023,15 +3846,6 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorEnvelope'
-    ApprovalStateConflict:
-      description: 当前审核状态不允许此操作
-      headers:
-        X-Request-ID:
-          $ref: '#/components/headers/RequestId'
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/ErrorEnvelope'
     AccountStateConflict:
       description: 当前账号状态不允许此操作
       headers:
@@ -4068,11 +3882,6 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorEnvelope'
-    ApprovalRequired:
-      description: 高风险策略要求双人审批，原动作尚未执行
-      content:
-        application/json:
-          schema: {$ref: '#/components/schemas/ApprovalCreatedEnvelope'}
     Conflict:
       description: PLAN_STATE_CONFLICT、PLAN_VERSION_STATE_CONFLICT、PLAN_VERSION_CONFLICT、PLAN_DRAFT_ALREADY_EXISTS 或 PLAN_IMMUTABLE
       content:
@@ -4199,19 +4008,14 @@ components:
         - SECURITY_POLICY_VERSION_CONFLICT
         - IP_ALLOWLIST_LOCKOUT_CONFIRMATION_REQUIRED
         - ACCOUNT_ALREADY_EXISTS
-        - APPROVAL_STATE_CONFLICT
         - RISK_CONFIRMATION_REQUIRED
         - RISK_POLICY_VERSION_CONFLICT
         - RISK_SECURITY_MODE_NOT_SUPPORTED
         - RISK_SECURITY_MODE_BELOW_MINIMUM
-        - APPROVAL_SELF_NOT_ALLOWED
-        - APPROVAL_APPROVER_UNAVAILABLE
-        - APPROVAL_EXPIRED
-        - APPROVAL_STALE
-        - APPROVAL_PAYLOAD_INVALID
-        - APPROVAL_EXECUTION_FAILED
+        - RISK_TARGET_STALE
+        - RISK_PAYLOAD_INVALID
+        - RISK_ACTION_EXECUTION_FAILED
         - ACCOUNT_STATE_CONFLICT
-        - APPROVAL_REASON_REQUIRED
         - PERMISSION_DENIED
         - CSRF_FAILED
         - RESOURCE_NOT_FOUND
@@ -4432,16 +4236,13 @@ components:
     User:
       type: object
       required:
-        [id, phone_masked, nickname, approval_status, account_status, commercial_identity, home_route, tenant]
+        [id, phone_masked, nickname, account_status, commercial_identity, home_route, tenant]
       properties:
         id: {type: string, format: uuid}
         phone_masked: {type: string}
         nickname: {type: string}
-        approval_status:
-          $ref: '#/components/schemas/ApprovalStatus'
         account_status:
           $ref: '#/components/schemas/AccountStatus'
-        approval_reason: {type: [string, 'null'], maxLength: 500}
         commercial_identity:
           type: string
           enum: [SUPER_ADMIN, ADMIN, USER]
@@ -4469,33 +4270,21 @@ components:
           properties:
             data:
               $ref: '#/components/schemas/User'
-    ApprovalStatus:
-      type: string
-      enum: [pending, approved, rejected]
     AccountStatus:
       type: string
       enum: [active, frozen, cancel_pending, cancelled]
-    ApprovalResubmitRequest:
-      type: object
-      additionalProperties: false
-      properties:
-        nickname: {type: string, minLength: 1, maxLength: 50}
     AdminUser:
       type: object
       additionalProperties: false
       required:
-        [id, nickname, phone_masked, approval_status, account_status, status_version, approved_at, created_at]
+        [id, nickname, phone_masked, account_status, status_version, created_at]
       properties:
         id: {type: string, format: uuid}
         nickname: {type: string, maxLength: 50}
         phone_masked: {type: string, example: '+86 138****8000'}
-        approval_status:
-          $ref: '#/components/schemas/ApprovalStatus'
         account_status:
           $ref: '#/components/schemas/AccountStatus'
         status_version: {type: integer, minimum: 1}
-        approval_reason: {type: [string, 'null'], maxLength: 500}
-        approved_at: {type: [string, 'null'], format: date-time}
         created_at: {type: string, format: date-time}
     Pagination:
       type: object
@@ -4540,8 +4329,8 @@ components:
         [id, status_domain, event_type, from_value, to_value, reason, actor_id, request_id, created_at]
       properties:
         id: {type: string, format: uuid}
-        status_domain: {type: string, enum: [approval, account]}
-        event_type: {type: string, enum: [approved, rejected, resubmitted, frozen, unfrozen]}
+        status_domain: {type: string, enum: [account]}
+        event_type: {type: string, enum: [frozen, unfrozen]}
         from_value: {type: string}
         to_value: {type: string}
         reason: {type: string, maxLength: 500}
@@ -4566,23 +4355,6 @@ components:
                     $ref: '#/components/schemas/UserStatusEvent'
                 pagination:
                   $ref: '#/components/schemas/Pagination'
-    ReviewUserRequest:
-      oneOf:
-        - type: object
-          additionalProperties: false
-          required: [decision]
-          properties:
-            decision: {type: string, const: approve}
-            reason: {type: string, maxLength: 500}
-        - type: object
-          additionalProperties: false
-          required: [decision, reason]
-          properties:
-            decision: {type: string, const: reject}
-            reason: {type: string, minLength: 1, maxLength: 500}
-            expected_version: {type: integer, minimum: 1}
-            confirmed: {type: boolean}
-            current_password: {type: string, format: password, writeOnly: true}
     AccountStatusActionRequest:
       type: object
       additionalProperties: false
@@ -4599,12 +4371,12 @@ components:
         id: {type: string, format: uuid}
         notification_type:
           type: string
-          enum: [approval_approved, approval_rejected, account_frozen, account_unfrozen]
+          enum: [account_frozen, account_unfrozen]
         title: {type: string, maxLength: 100}
         safe_summary:
           type: string
           maxLength: 200
-          description: 固定安全模板，不包含拒绝原因正文。
+          description: 固定安全模板，不包含敏感正文。
         read_at: {type: [string, 'null'], format: date-time}
         created_at: {type: string, format: date-time}
     NotificationEnvelope:
@@ -5988,7 +5760,7 @@ components:
         current_password: {type: string, format: password, writeOnly: true}
     RiskMode:
       type: string
-      enum: [confirm, password, two_person]
+      enum: [confirm, password]
     RiskControlFields:
       type: object
       additionalProperties: false
@@ -6020,80 +5792,6 @@ components:
         expected_version: {type: integer, minimum: 1}
         current_password: {type: string, format: password, writeOnly: true}
         confirmed: {type: boolean, const: true}
-    ApprovalRequestStatus:
-      type: string
-      enum: [pending, rejected, cancelled, expired, stale, executed, execution_failed]
-    ApprovalCreated:
-      type: object
-      additionalProperties: false
-      required: [approval_required, approval_id, status, expires_at]
-      properties:
-        approval_required: {type: boolean, const: true}
-        approval_id: {type: string, format: uuid}
-        status: {type: string, const: pending}
-        expires_at: {type: string, format: date-time}
-    ApprovalCreatedEnvelope:
-      allOf:
-        - $ref: '#/components/schemas/EnvelopeBase'
-        - type: object
-          required: [data]
-          properties:
-            data: {$ref: '#/components/schemas/ApprovalCreated'}
-    ApprovalRequest:
-      type: object
-      additionalProperties: false
-      required: [id, action_key, policy_version, requester_id, target_type, target_id, target_version, safe_summary, status, expires_at, request_id, created_at, updated_at]
-      properties:
-        id: {type: string, format: uuid}
-        action_key: {type: string}
-        policy_version: {type: integer, minimum: 1}
-        requester_id: {type: string, format: uuid}
-        target_type: {type: string}
-        target_id: {type: string, format: uuid}
-        target_version: {type: integer, minimum: 0}
-        safe_summary: {type: string, maxLength: 500}
-        status: {$ref: '#/components/schemas/ApprovalRequestStatus'}
-        expires_at: {type: string, format: date-time}
-        approved_by_id: {type: [string, 'null'], format: uuid}
-        approved_at: {type: [string, 'null'], format: date-time}
-        rejected_by_id: {type: [string, 'null'], format: uuid}
-        rejected_at: {type: [string, 'null'], format: date-time}
-        rejection_reason: {type: string, maxLength: 500}
-        cancelled_at: {type: [string, 'null'], format: date-time}
-        executed_at: {type: [string, 'null'], format: date-time}
-        execution_result: {type: object, additionalProperties: true}
-        stable_error_code: {type: string}
-        request_id: {type: string, format: uuid}
-        created_at: {type: string, format: date-time}
-        updated_at: {type: string, format: date-time}
-    ApprovalEnvelope:
-      allOf:
-        - $ref: '#/components/schemas/EnvelopeBase'
-        - type: object
-          properties:
-            data: {$ref: '#/components/schemas/ApprovalRequest'}
-    ApprovalPageEnvelope:
-      allOf:
-        - $ref: '#/components/schemas/EnvelopeBase'
-        - type: object
-          properties:
-            data:
-              type: object
-              properties:
-                results: {type: array, items: {$ref: '#/components/schemas/ApprovalRequest'}}
-                pagination: {$ref: '#/components/schemas/Pagination'}
-    ApprovalApproveRequest:
-      type: object
-      additionalProperties: false
-      required: [current_password]
-      properties:
-        current_password: {type: string, format: password, writeOnly: true}
-    ApprovalRejectRequest:
-      type: object
-      additionalProperties: false
-      required: [reason]
-      properties:
-        reason: {type: string, minLength: 1, maxLength: 500}
     AuditEvent:
       type: object
       additionalProperties: false
@@ -6106,11 +5804,9 @@ components:
         actor_id: {type: [string, 'null'], format: uuid}
         subject_id: {type: [string, 'null'], format: uuid}
         requester_id: {type: [string, 'null'], format: uuid}
-        approver_id: {type: [string, 'null'], format: uuid}
         target_type: {type: string}
         target_id: {type: string, format: uuid}
         request_id: {type: string, format: uuid}
-        approval_request_id: {type: [string, 'null'], format: uuid}
         safe_before: {type: object, additionalProperties: true}
         safe_after: {type: object, additionalProperties: true}
         stable_error_code: {type: string}
@@ -6513,6 +6209,7 @@ components:
       required: [expected_version]
       properties:
         expected_version: {type: integer, minimum: 1}
+        confirmed: {type: boolean, default: false}
         selected_plan_version_id: {type: [string, 'null'], format: uuid}
         confirm_unavailable: {type: boolean, default: false}
         unavailable_reason: {type: string, maxLength: 500}
@@ -6525,6 +6222,7 @@ components:
       required: [expected_version, plan_id]
       properties:
         expected_version: {type: integer, minimum: 1}
+        confirmed: {type: boolean, default: false}
         plan_id: {type: string, format: uuid}
         opening_note: {type: string, maxLength: 500}
     TerminateSubscriptionRequest:
@@ -6533,6 +6231,7 @@ components:
       required: [expected_version, reason]
       properties:
         expected_version: {type: integer, minimum: 1}
+        confirmed: {type: boolean, default: false}
         reason: {type: string, minLength: 1, maxLength: 500}
     CurrentSubscriptionEnvelope:
       allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, properties: {data: {type: object, required: [current], properties: {current: {oneOf: [{$ref: '#/components/schemas/Subscription'}, {type: 'null'}]}}}}}]
@@ -6565,6 +6264,7 @@ components:
           additionalProperties: false
           required: [reason]
           properties:
+            confirmed: {type: boolean, default: false}
             confirm_unavailable: {type: boolean, default: false}
             unavailable_reason: {type: string, maxLength: 500}
             reason: {type: string, minLength: 1, maxLength: 500}
@@ -6574,6 +6274,7 @@ components:
       required: [expected_version, reason]
       properties:
         expected_version: {type: integer, minimum: 1}
+        confirmed: {type: boolean, default: false}
         reason: {type: string, minLength: 1, maxLength: 500}
     SubscriptionChangePreview:
       type: object

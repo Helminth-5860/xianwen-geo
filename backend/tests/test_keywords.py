@@ -46,7 +46,6 @@ def make_facts(*, status=Subject.Status.DRAFT, with_plan=True):
         phone=f"139{uuid.uuid4().int % 100000000:08d}",
         nickname="Keyword user",
         password=PASSWORD,
-        approval_status=User.ApprovalStatus.APPROVED,
         account_status=User.AccountStatus.ACTIVE,
     )
     subject_type = SubjectType.objects.get(key="enterprise")
@@ -493,7 +492,6 @@ def test_api_is_owner_scoped_strict_and_does_not_expose_internal_keys():
         phone=f"137{uuid.uuid4().int % 100000000:08d}",
         nickname="Other",
         password=PASSWORD,
-        approval_status=User.ApprovalStatus.APPROVED,
     )
     other_client = APIClient()
     other_client.force_authenticate(other)

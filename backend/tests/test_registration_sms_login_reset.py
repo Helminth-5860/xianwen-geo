@@ -114,10 +114,7 @@ def test_registration_consumes_code_creates_approved_active_user_and_logs_in(mon
     user = User.objects.get(phone="+8613800138000")
     assert user.phone == "+8613800138000"
     assert user.nickname == "新用户"
-    assert user.approval_status == User.ApprovalStatus.APPROVED
     assert user.account_status == User.AccountStatus.ACTIVE
-    assert user.approved_at is not None
-    assert user.approved_by is None
     assert user.is_active is True
     assert user.password != STRONG_PASSWORD
     assert user.check_password(STRONG_PASSWORD)
@@ -125,7 +122,6 @@ def test_registration_consumes_code_creates_approved_active_user_and_logs_in(mon
         "id": str(user.id),
         "nickname": "新用户",
         "phone_masked": "+86 138****8000",
-        "approval_status": "approved",
         "account_status": "active",
         "commercial_identity": "USER",
         "home_route": "/workspace",
@@ -256,20 +252,16 @@ def test_registration_database_failure_does_not_retry_consumption(monkeypatch):
 
 @pytest.mark.django_db
 @pytest.mark.parametrize(
-    ("approval_status", "account_status", "expected_status"),
+    ("account_status", "expected_status"),
     [
-        (User.ApprovalStatus.PENDING, User.AccountStatus.ACTIVE, 200),
-        (User.ApprovalStatus.APPROVED, User.AccountStatus.ACTIVE, 200),
-        (User.ApprovalStatus.REJECTED, User.AccountStatus.ACTIVE, 200),
-        (User.ApprovalStatus.PENDING, User.AccountStatus.CANCEL_PENDING, 200),
-        (User.ApprovalStatus.PENDING, User.AccountStatus.FROZEN, 403),
-        (User.ApprovalStatus.PENDING, User.AccountStatus.CANCELLED, 403),
+        (User.AccountStatus.ACTIVE, 200),
+        (User.AccountStatus.CANCEL_PENDING, 200),
+        (User.AccountStatus.FROZEN, 403),
+        (User.AccountStatus.CANCELLED, 403),
     ],
 )
-def test_sms_login_respects_account_but_not_approval_status(
-    monkeypatch, approval_status, account_status, expected_status
-):
-    user = create_user(approval_status=approval_status, account_status=account_status)
+def test_sms_login_respects_account_status(monkeypatch, account_status, expected_status):
+    user = create_user(account_status=account_status)
     assign_test_customer(user)
     monkeypatch.setattr("apps.users.views.verify_and_consume", lambda *args, **kwargs: True)
     client, token = csrf_client()

@@ -55,7 +55,6 @@ def test_create_user_uses_uuid_normalized_phone_and_password_hash():
     assert user.phone == "+8613800138000"
     assert user.password != STRONG_PASSWORD
     assert user.check_password(STRONG_PASSWORD)
-    assert user.approval_status == User.ApprovalStatus.PENDING
     assert user.account_status == User.AccountStatus.ACTIVE
     assert user.is_active is True
     for forbidden_field in ("username", "first_name", "last_name", "trial_ever_granted"):

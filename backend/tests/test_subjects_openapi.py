@@ -196,5 +196,4 @@ def test_subject_risk_catalog_review_and_minimal_exposure_contract():
     )
     detail_required = spec["components"]["schemas"]["SubjectDetail"]["allOf"][1]["required"]
     assert "risk" in detail_required
-    assert "/admin/approvals" in paths
-    assert "post" not in paths["/admin/approvals"]
+    assert "/admin/approvals" not in paths

@@ -32,7 +32,7 @@ from apps.quotas.models import (
     QuotaLedgerEntry,
 )
 from apps.quotas.services import adjust_quota_account, freeze_quota, release_hold
-from tests.test_cycle_reset import approved_renewal
+from tests.test_cycle_reset import confirmed_renewal
 from tests.test_plan_changes import activate_formal, admin, customer
 from tests.test_subscriptions import application_for, published_plan
 
@@ -91,7 +91,6 @@ def test_lifecycle_triggers_are_installed():
             "SELECT tgname FROM pg_trigger WHERE NOT tgisinternal AND tgname = ANY(%s)",
             [
                 [
-                    "plans_renewal_approval_binding",
                     "quota_cycle_reset_append_only",
                     "quota_expiry_disposition_append_only",
                     "quota_cycle_reset_consistency",
@@ -101,7 +100,6 @@ def test_lifecycle_triggers_are_installed():
         )
         names = {row[0] for row in cursor.fetchall()}
     assert names == {
-        "plans_renewal_approval_binding",
         "quota_cycle_reset_append_only",
         "quota_expiry_disposition_append_only",
         "quota_cycle_reset_consistency",
@@ -110,7 +108,7 @@ def test_lifecycle_triggers_are_installed():
 
 
 def test_blocked_expired_source_executes_after_hold_settlement_and_admin_change():
-    source, change = approved_renewal()
+    source, change = confirmed_renewal()
     actor = source.opened_by
     account = QuotaAccount.objects.get(subscription=source, quota_type="detection_points")
     grant_one(actor, account)
@@ -129,9 +127,8 @@ def test_blocked_expired_source_executes_after_hold_settlement_and_admin_change(
     assert source.status == Subscription.Status.EXPIRED
     assert change.status == SubscriptionChange.Status.SCHEDULED
     assert change.stable_error_code == RENEWAL_BLOCKED_BY_HOLD
-    approval = change.source_approval
-    approval.requester.is_staff = False
-    approval.requester.save(update_fields=["is_staff"])
+    source.opened_by.is_staff = False
+    source.opened_by.save(update_fields=["is_staff"])
     release_hold(
         hold_id=group.pk,
         amount=1,
@@ -154,7 +151,7 @@ def test_blocked_expired_source_executes_after_hold_settlement_and_admin_change(
 
 
 def test_terminated_source_fails_without_creating_successor():
-    source, change = approved_renewal()
+    source, change = confirmed_renewal()
     terminate_subscription(
         requester=source.opened_by,
         admin_context=resolve_admin_context(source.opened_by),
@@ -173,7 +170,7 @@ def test_terminated_source_fails_without_creating_successor():
 
 
 def test_elapsed_renewal_window_is_permanent_and_terminal():
-    source, change = approved_renewal()
+    source, change = confirmed_renewal()
     execute_due_renewal(
         change_id=change.pk,
         request_id=uuid.uuid4(),
@@ -192,7 +189,7 @@ def test_elapsed_renewal_window_is_permanent_and_terminal():
 
 
 def test_delayed_renewal_catches_up_monthly_cycles_before_execution_completes():
-    source, change = approved_renewal(valid_days=180)
+    source, change = confirmed_renewal(valid_days=180)
     executed_at = change.effective_at + timedelta(days=95)
     execute_due_renewal(
         change_id=change.pk,

@@ -1,7 +1,7 @@
 "use client";
 
 import { BellOutlined, SafetyCertificateOutlined } from "@ant-design/icons";
-import { Alert, Button, Card, Empty, Form, Input, List, Space, Tag, Typography } from "antd";
+import { Alert, Button, Card, Empty, List, Space, Tag, Typography } from "antd";
 import { useCallback, useEffect, useState } from "react";
 
 import {
@@ -11,7 +11,6 @@ import {
   getCurrentUser,
   getNotifications,
   markNotificationRead,
-  resubmitApproval,
   userMessage,
 } from "@/lib/auth-client";
 
@@ -21,15 +20,12 @@ export function AccountOverview() {
   const [user, setUser] = useState<AccountUser | null>(null);
   const [notifications, setNotifications] = useState<AccountNotification[]>([]);
   const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState("");
-  const [form] = Form.useForm<{ nickname: string }>();
 
   const load = useCallback(async () => {
     try {
       const current = await getCurrentUser();
       setUser(current);
-      form.setFieldsValue({ nickname: current.nickname });
       const notificationPage = await getNotifications();
       setNotifications(notificationPage.results);
     } catch (error) {
@@ -37,7 +33,7 @@ export function AccountOverview() {
     } finally {
       setLoading(false);
     }
-  }, [form]);
+  }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void load(), 0);
@@ -45,20 +41,6 @@ export function AccountOverview() {
   }, [load]);
 
   if (loading || !user) return null;
-
-  const resubmit = async ({ nickname }: { nickname: string }) => {
-    setSubmitting(true);
-    setMessage("");
-    try {
-      const updated = await resubmitApproval(nickname);
-      setUser(updated);
-      setMessage("资料已重新提交，请等待管理员审核。");
-    } catch (error) {
-      setMessage(userMessage(error));
-    } finally {
-      setSubmitting(false);
-    }
-  };
 
   const markRead = async (notification: AccountNotification) => {
     if (notification.read_at) return;
@@ -81,39 +63,10 @@ export function AccountOverview() {
           </Space>
           <Space wrap>
             <Text>{user.nickname}</Text>
-            <Tag color={user.approval_status === "approved" ? "green" : "blue"}>
-              {user.approval_status === "approved"
-                ? "审核通过"
-                : user.approval_status === "rejected"
-                  ? "审核未通过"
-                  : "等待审核"}
+            <Tag color={user.account_status === "active" ? "green" : "orange"}>
+              {user.account_status === "active" ? "正常" : "禁用"}
             </Tag>
           </Space>
-          {user.approval_status === "pending" && (
-            <Alert type="info" message="资料正在审核中，请耐心等待。" showIcon />
-          )}
-          {user.approval_status === "rejected" && (
-            <>
-              <Alert
-                type="warning"
-                showIcon
-                message="审核未通过"
-                description={user.approval_reason || "请完善资料后重新提交。"}
-              />
-              <Form form={form} layout="vertical" onFinish={resubmit}>
-                <Form.Item
-                  name="nickname"
-                  label="昵称"
-                  rules={[{ required: true, message: "请输入昵称" }, { max: 50 }]}
-                >
-                  <Input maxLength={50} />
-                </Form.Item>
-                <Button type="primary" htmlType="submit" loading={submitting}>
-                  重新提交审核
-                </Button>
-              </Form>
-            </>
-          )}
         </Space>
       </Card>
       <Card

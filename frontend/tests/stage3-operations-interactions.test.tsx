@@ -56,7 +56,7 @@ describe("Stage 3 operations and release-readiness dashboard", () => {
   beforeEach(() => {
     api.exportOperationsCustomers.mockResolvedValue(new Blob(["customer_id\n"]));
     api.getOperationsDashboard.mockResolvedValue({
-      customers: { total: 3, pending_review: 1, active: 2 },
+      customers: { total: 3, active: 2 },
       followups: { open: 2, overdue: 1 },
       feedback_open: 4,
       moderation: { articles: 1, images: 2 },

@@ -243,14 +243,13 @@ XW-0103 在现有 HttpOnly Session、CSRF 和 Redis 短信挑战基础上提供�
 密码重置及对应前端页面。login/password_reset 发送采用 anti-enumeration 抑制策略，验证码、
 密码、完整手机号和 Cookie 不进入响应或日志。详细边界见
 `docs/17-REGISTRATION-SMS-LOGIN-PASSWORD-RESET.md`。
-## 17. 用户审核与账号状态管理（XW-0104）
+## 17. 用户账号状态管理（XW-0104）
 
-XW-0104 提供独立的审核状态和账号状态机、追加式状态历史、最小站内通知、管理员审核页面，
-以及基于用户级 `session_version` 的全量 Session 撤销。冻结会使全部旧 Cookie 在下一次请求
-时失效；解冻不会恢复旧会话。
+XW-0104 提供正常／禁用账号状态、追加式状态历史、最小站内通知，以及基于用户级
+`session_version` 的全量 Session 撤销。禁用会使全部旧 Cookie 在下一次请求时失效；恢复
+账号不会恢复旧会话。注册验证成功后账号直接正常，不经过人工账号审核。
 
-管理员 API 仅允许有效 staff 使用，不提前建设完整 RBAC。完整接口、并发、迁移、日志和
-回滚边界见 `docs/18-USER-APPROVAL-ACCOUNT-STATUS.md`。
+完整接口、并发、迁移、日志和回滚边界见 `docs/18-USER-ACCOUNT-STATUS.md`。
 ## 18. 管理员 RBAC 与客户数据范围（XW-0105）
 
 XW-0105 在唯一 User 认证身份之上提供 AdminProfile、单角色 RBAC、显式菜单/动作权限、
@@ -260,13 +259,13 @@ own/role/all 客户范围、管理员 Session 即时撤销和防 ABA 的客户�
 RBAC 的 0002 Seed 迁移反向操作为 `RunPython.noop`：单独回退不会恢复普通 staff，也不会删除 Permission Seed/Profile；完整回退 0001 会删除 RBAC 表及证据。生产逆向迁移前必须审查、备份，优先采用前向修复或备份恢复，且不得连接腾讯云数据库进行验证。
 ## 19. 管理员 2FA 与 IP 白名单（XW-0106）
 
-XW-0106 的 Redis challenge、管理员安全 Session 上下文、角色及超级管理员 IPv4/IPv6 白名单、追加式安全事件、全部设备强制退出和服务器控制台紧急恢复继续保留。当前策略为独立管理员密码登录直接建立 Session，短信只在已认证管理员执行安全关键操作时授予短时 server-side Step-Up proof；业务高风险动作继续使用原有确认、当前密码、双人审批、版本检查和审计，不默认触发短信。管理员身份仍不能从普通登录入口绕过，production 未配置真实短信 Provider 时安全关键 Step-Up 与 release readiness 失败关闭，但普通密码登录不受阻。实现、迁移回滚限制和 PostgreSQL/Redis 专属验收见 `docs/20-ADMIN-2FA-IP-ALLOWLIST.md`。
+XW-0106 的 Redis challenge、管理员安全 Session 上下文、角色及超级管理员 IPv4/IPv6 白名单、追加式安全事件、全部设备强制退出和服务器控制台紧急恢复继续保留。当前策略为独立管理员密码登录直接建立 Session，短信只在已认证管理员执行安全关键操作时授予短时 server-side Step-Up proof；业务高风险动作使用页面确认或当前超级管理员密码复核、版本检查和操作记录，不默认触发短信。管理员身份仍不能从普通登录入口绕过，production 未配置真实短信 Provider 时安全关键 Step-Up 与 release readiness 失败关闭，但普通密码登录不受阻。实现、迁移回滚限制和 PostgreSQL/Redis 专属验收见 `docs/20-ADMIN-2FA-IP-ALLOWLIST.md`。
 
-## 20. 高风险审批与统一安全审计（XW-0107）
+## 20. 高风险操作与操作记录（XW-0107）
 
-XW-0107 将首批 12 个高风险写操作接入固定 Catalog 和显式 Handler 注册表，并按 PostgreSQL 当前 RiskPolicy 执行确认、密码再验证或双人审批。V1 不公开通用审批创建 API，不提供 BPM、动态执行器或单人绕过。审批 payload 只保存动作专属安全字段和绑定目标版本的摘要；统一 AuditEvent 追加式保存白名单摘要，不保存密码、验证码、Cookie、Session、challenge、完整手机号/IP、基础设施秘密或原始异常。
+XW-0107 将高风险写操作接入固定 Catalog 和显式 Handler 注册表，并按当前 RiskPolicy 执行页面确认或当前超级管理员密码复核。系统没有审批队列、通用审批 API、BPM 或动态执行器。AuditEvent 追加式保存安全摘要，不保存密码、验证码、Cookie、Session、challenge、完整手机号/IP、基础设施秘密或原始异常。
 
-迁移 Seed 使用 RunPython.noop 保留被审批/审计引用的目录证据；完整逆向迁移会删除审批和审计表，生产必须先审查并备份，优先前向修复或备份恢复。设计、API、安全边界及 PostgreSQL/Redis 专属验收见 docs/21-HIGH-RISK-APPROVAL-AUDIT.md。
+历史兼容表保留既有证据，新操作不再写入；迁移会取消所有待处理记录。生产逆向迁移必须先审查并备份，优先前向修复或备份恢复。设计、API、安全边界及 PostgreSQL/Redis 专属验收见 docs/21-HIGH-RISK-ACTION-AUDIT.md。
 ## 套餐与不可变版本（XW-0110）
 
 套餐模板使用独立 `plans` 应用、代码所有 Limit Catalog、typed value、八模型权限和 PostgreSQL 不可变触发器。展示价格仅用于 CNY 页面展示，不是交易价格；本阶段没有申请、订阅、订单、支付或财务流水。
@@ -290,7 +289,7 @@ CustomerAssignment 动态应用 own/role/all 范围，contact/close 经统一风
 ## 用户订阅（XW-0112）
 
 订阅事实由 PostgreSQL Subscription 和追加式 SubscriptionEvent 保存。正式订阅只能
-从套餐申请激活，试用只能由管理员审核发放；三项写操作均固定双人审批。用户通过
+从套餐申请激活，试用只能由管理员审核发放；三项写操作在页面确认后直接执行并写入操作记录。用户通过
 GET /api/v1/subscription 只读当前有效订阅，响应不会暴露完整权益快照或 digest。
 
 状态、锁顺序、数据库触发器、权限和回滚边界见
@@ -300,22 +299,22 @@ GET /api/v1/subscription 只读当前有效订阅，响应不会暴露完整权�
 Quota balances, holds, idempotency evidence, and append-only ledger history are
 owned by PostgreSQL in the independent `apps.quotas` application. There is no
 Subject UUID account and no public reset API in this task. Administrator
-grant/compensate/manual-deduct operations are fixed two-person actions; user
+grant/compensate/manual-deduct operations require password re-entry and execute directly; user
 responses omit internal business IDs and digest fields.
 
 See [docs/25-QUOTA-LEDGER.md](docs/25-QUOTA-LEDGER.md). Run the real isolated
 
 ## 套餐变更（XW-0114）
 
-套餐变更由 PostgreSQL `SubscriptionChange` 保存批准后的 scheduled/executed/cancelled 领域事实，
+套餐变更由 PostgreSQL `SubscriptionChange` 保存确认后的 scheduled/executed/cancelled 领域事实，
 新订阅通过不可变 `source_change` 建立来源链。续费只排期；升级、降级、替换和试用转正式立即执行。
-两项写动作固定双人审批，原始 Idempotency-Key 不进入持久化、日志或响应。
+两项写动作在页面确认后直接执行，原始 Idempotency-Key 不进入持久化、日志或响应。
 
 额度迁移只允许 overwrite、accumulate 和 retain。`QuotaHoldGroup` 支持跨到期批次冻结，
 `QuotaTransfer` 用延迟 Trigger 校验成对流水；没有 scheduled 自动执行、Beat、订单或支付。
 本地真实 PostgreSQL/Redis 验收运行 `.\scripts\test-plan-changes.ps1`。
 
-Seed reverse 保留审批/审计引用；Trigger reverse 只移除保护，不能安全撤销已执行变更或迁移流水。
+Seed reverse 保留操作记录引用；Trigger reverse 只移除保护，不能安全撤销已执行变更或迁移流水。
 完整回退会删除领域证据，生产逆向迁移前必须停止写入、审查并备份，优先前向修复或备份恢复。
 完整边界见 [docs/26-PLAN-CHANGES.md](docs/26-PLAN-CHANGES.md)。
 PostgreSQL/Redis suite with `.\scripts\test-quotas.ps1`.
@@ -387,8 +386,8 @@ See [docs/30-SUBJECT-VERSIONS-NAMES-PRODUCTS.md](docs/30-SUBJECT-VERSIONS-NAMES-
 
 ## Subject risk catalog and review (XW-0204)
 
-Subject risk types and rules are draft configuration. Only the fixed two-person
-`subject_risk.catalog.publish` action activates an immutable catalog revision;
+Subject risk types and rules are draft configuration. The confirmed
+`subject_risk.catalog.publish` action directly activates an immutable catalog revision;
 no production risk keywords, industry decisions, AI classifier, or external
 moderation provider is seeded. Each formal SubjectVersion is classified against
 and permanently bound to the then-current revision, while feature enforcement

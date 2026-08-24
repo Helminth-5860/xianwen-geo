@@ -110,10 +110,10 @@ def test_admin_security_openapi_response_matrices_are_complete():
         },
         ("/admin/admins/{adminId}/force-logout", "post"): {
             "200",
-            "202",
             "401",
             "403",
             "404",
+            "422",
             "500",
         },
     }

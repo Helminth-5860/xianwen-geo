@@ -44,7 +44,6 @@ def user(phone, *, admin=False, superuser=None):
     value = User(
         phone=phone,
         nickname="申请并发测试",
-        approval_status="approved",
         account_status="active",
         is_staff=admin,
         is_superuser=admin if superuser is None else superuser,

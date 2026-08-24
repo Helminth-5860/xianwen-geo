@@ -104,7 +104,6 @@ def _provision(*, storage_bytes=4096, file_field=False, trial=True):
         phone=f"138{uuid.uuid4().int % 100000000:08d}",
         nickname="File customer",
         password=PASSWORD,
-        approval_status=User.ApprovalStatus.APPROVED,
     )
     plan = create_plan(
         plan_id=uuid.uuid4(),

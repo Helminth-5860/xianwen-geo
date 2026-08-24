@@ -6,7 +6,7 @@ from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_protect
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
-from rest_framework.status import HTTP_200_OK, HTTP_202_ACCEPTED
+from rest_framework.status import HTTP_200_OK
 from rest_framework.views import APIView
 
 from apps.admin_rbac.permissions import HasAdminPermission
@@ -218,7 +218,4 @@ class AdminQuotaAdjustmentView(APIView):
             AdminSecurityUnavailable,
         ) as exc:
             return risk_error_response(exc, request)
-        return Response(
-            result.data,
-            status=HTTP_202_ACCEPTED if result.approval_required else HTTP_200_OK,
-        )
+        return Response(result.data, status=HTTP_200_OK)

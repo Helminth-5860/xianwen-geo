@@ -51,7 +51,6 @@ def make_user():
         phone=f"138{uuid.uuid4().int % 100000000:08d}",
         nickname="Version PostgreSQL user",
         password="Correct-Horse-Battery-2026!",
-        approval_status=User.ApprovalStatus.PENDING,
     )
 
 

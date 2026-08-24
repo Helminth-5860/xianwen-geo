@@ -72,9 +72,6 @@ export default function PlanDetailPage() {
     );
   }
 
-  const approval = (item: { approval_id: string }) =>
-    router.push(`/admin/approvals/${item.approval_id}`);
-
   return (
     <main className="admin-page">
       <Typography.Title>{plan.name}</Typography.Title>
@@ -123,7 +120,6 @@ export default function PlanDetailPage() {
               })
             }
             onExecuted={(item) => router.push(`/admin/plans/${item.id}`)}
-            onApproval={approval}
           >
             复制为新套餐
           </RiskActionButton>
@@ -137,7 +133,6 @@ export default function PlanDetailPage() {
             mode={modes["plan.version.create"] ?? "confirm"}
             execute={(credentials) => createPlanVersion(plan.id, plan.version, credentials)}
             onExecuted={(item) => router.push(`/admin/plans/${plan.id}/versions/${item.id}`)}
-            onApproval={approval}
           >
             创建草稿版本
           </RiskActionButton>
@@ -151,7 +146,7 @@ export default function PlanDetailPage() {
           <RiskActionButton
             key={action}
             actionName={action}
-            mode={modes[`plan.${action}`] ?? (action === "archive" ? "two_person" : "password")}
+            mode={modes[`plan.${action}`] ?? "password"}
             disabled={
               (action === "online" && plan.status !== "offline") ||
               (action === "offline" && plan.status !== "published") ||
@@ -162,7 +157,6 @@ export default function PlanDetailPage() {
               setMessage("状态已更新");
               void load();
             }}
-            onApproval={approval}
           >
             {action}
           </RiskActionButton>

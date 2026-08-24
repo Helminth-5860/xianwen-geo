@@ -30,7 +30,6 @@ describe("高风险动作交互", () => {
         mode="confirm"
         execute={execute}
         onExecuted={onExecuted}
-        onApproval={vi.fn()}
       >
         冻结
       </RiskActionButton>,
@@ -54,7 +53,6 @@ describe("高风险动作交互", () => {
         mode="password"
         execute={execute}
         onExecuted={vi.fn()}
-        onApproval={vi.fn()}
       >
         锁定
       </RiskActionButton>,
@@ -77,35 +75,22 @@ describe("高风险动作交互", () => {
     expect(sessionStorage.length).toBe(0);
   });
 
-  it("two_person 模式显示第二审批人提示并返回最小请求编号", async () => {
-    const onApproval = vi.fn();
-    const execute = vi.fn().mockResolvedValue({
-      approval_required: true,
-      approval_id: "approval-1",
-      status: "pending",
-      expires_at: "2026-08-02T00:00:00Z",
-    });
+  it("确认页面不展示审批队列或第二操作人概念", async () => {
+    const execute = vi.fn().mockResolvedValue({ done: true });
     render(
       <RiskActionButton
         actionName="停用管理员"
-        mode="two_person"
+        mode="confirm"
         execute={execute}
         onExecuted={vi.fn()}
-        onApproval={onApproval}
       >
         停用
       </RiskActionButton>,
     );
 
     await userEvent.click(screen.getByRole("button", { name: /停\s*用/ }));
-    expect(screen.getByText(/另一名有效超级管理员审批/)).toBeTruthy();
-    expect(screen.getByText(/没有第二名当前有效超级管理员/)).toBeTruthy();
-    await userEvent.click(screen.getByRole("button", { name: "发起审批" }));
-
-    await waitFor(() =>
-      expect(onApproval).toHaveBeenCalledWith(
-        expect.objectContaining({ approval_id: "approval-1" }),
-      ),
-    );
+    expect(document.body.textContent).not.toMatch(/审批|第二名/);
+    await userEvent.click(screen.getByRole("button", { name: "确认执行" }));
+    await waitFor(() => expect(execute).toHaveBeenCalledOnce());
   });
 });

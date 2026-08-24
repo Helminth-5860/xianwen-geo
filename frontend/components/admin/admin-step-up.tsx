@@ -107,14 +107,14 @@ export function AdminStepUpProvider({ children }: { children: ReactNode }) {
         okButtonProps={{ disabled: remaining <= 0 }}
         onOk={() => void verify()}
         onCancel={() => !busy && close("已取消安全验证")}
-        maskClosable={false}
+        mask={{ closable: false }}
         destroyOnHidden
       >
-        <Space direction="vertical" style={{ width: "100%" }}>
+        <Space orientation="vertical" style={{ width: "100%" }}>
           <Alert
             type={remaining > 0 ? "info" : "warning"}
             showIcon
-            message={
+            title={
               remaining > 0
                 ? `验证码已发送，将在 ${remaining} 秒后过期`
                 : "验证码已过期，请取消后重新执行操作"
@@ -133,7 +133,7 @@ export function AdminStepUpProvider({ children }: { children: ReactNode }) {
           <Typography.Text type="secondary">
             验证仅保存在当前管理员服务器 Session 中，短时有效；页面刷新不会自动发送短信。
           </Typography.Text>
-          {error && <Alert type="error" showIcon message={error} />}
+          {error && <Alert type="error" showIcon title={error} />}
         </Space>
       </Modal>
     </>

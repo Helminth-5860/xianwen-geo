@@ -161,7 +161,6 @@ def test_role_composite_patch_rejects_high_risk_nested_alias_and_mixed_fields(pa
         {"owner_admin": str(uuid.uuid4())},
         {"owner_admin_id": str(uuid.uuid4())},
         {"account_status": "frozen"},
-        {"approval_status": "approved"},
         {"assignment": {"owner_admin_id": str(uuid.uuid4())}},
         {"ownerAdmin": str(uuid.uuid4())},
         {"nickname": "混合字段", "account_status": "frozen"},
@@ -173,7 +172,6 @@ def test_customer_detail_has_no_generic_patch_bypass(payload):
     before = (
         customer.nickname,
         customer.account_status,
-        customer.approval_status,
         customer.status_version,
     )
 
@@ -184,6 +182,5 @@ def test_customer_detail_has_no_generic_patch_bypass(payload):
     assert (
         customer.nickname,
         customer.account_status,
-        customer.approval_status,
         customer.status_version,
     ) == before

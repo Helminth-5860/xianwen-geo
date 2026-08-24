@@ -11,7 +11,7 @@ class IsActiveStaff(BasePermission):
         return bool(user.is_authenticated and user.is_active and user.is_staff)
 
 
-class ApprovedAndActive(BasePermission):
+class ActiveAccount(BasePermission):
     message = "账号当前不可用"
 
     def has_permission(self, request, view) -> bool:
@@ -19,6 +19,5 @@ class ApprovedAndActive(BasePermission):
         return bool(
             user.is_authenticated
             and user.is_active
-            and user.approval_status == User.ApprovalStatus.APPROVED
             and user.account_status == User.AccountStatus.ACTIVE
         )

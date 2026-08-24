@@ -9,7 +9,6 @@ from django.urls import Resolver404, resolve
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from apps.admin_rbac.models import ApprovalRequest
 from apps.admin_rbac.permissions import resolve_admin_context
 from apps.plans.lifecycle import (
     RENEWAL_BLOCKED_BY_HOLD,
@@ -23,7 +22,6 @@ from apps.quotas.models import QuotaAccount, QuotaLedgerEntry
 from apps.quotas.services import adjust_quota_account, freeze_quota
 from tests.admin_session_helpers import authenticate_admin_client
 from tests.test_plan_changes import activate_formal, admin, customer
-from tests.test_subscriptions import PASSWORD
 
 
 @pytest.fixture(autouse=True)
@@ -32,9 +30,8 @@ def seed_catalogs(db):
     call_command("sync_admin_rbac", "--apply", verbosity=0)
 
 
-def approved_renewal(*, valid_days=30):
+def confirmed_renewal(*, valid_days=30):
     requester = admin()
-    approver = admin("13700137021")
     user = customer()
     source, _plan, version = activate_formal(
         requester,
@@ -51,21 +48,13 @@ def approved_renewal(*, valid_days=30):
             "change_type": "renewal",
             "quota_policy": "retain",
             "reason": "scheduled renewal lifecycle test",
+            "confirmed": True,
         },
         format="json",
         HTTP_IDEMPOTENCY_KEY="test-test-test-test-0115",
     )
-    assert submitted.status_code == 202
-    approval = ApprovalRequest.objects.get(pk=submitted.json()["data"]["approval_id"])
-    approved = authenticate_admin_client(APIClient(), approver, "198.51.100.115").post(
-        f"/api/v1/admin/approvals/{approval.pk}/approve",
-        {"current_password": PASSWORD},
-        format="json",
-        REMOTE_ADDR="198.51.100.115",
-    )
-    assert approved.status_code == 200
-    approval.refresh_from_db()
-    change = SubscriptionChange.objects.get(source_approval=approval)
+    assert submitted.status_code == 200
+    change = SubscriptionChange.objects.get(pk=submitted.json()["data"]["change_id"])
     return source, change
 
 
@@ -97,7 +86,7 @@ def test_expiry_is_idempotent_and_writes_one_event():
 
 @pytest.mark.django_db
 def test_blocked_renewal_still_expires_source_and_persists_retry():
-    source, change = approved_renewal()
+    source, change = confirmed_renewal()
     account = QuotaAccount.objects.get(subscription=source, quota_type="detection_points")
     digests = derive_idempotency_digests(
         "renewal-hold-fund-key-0001",

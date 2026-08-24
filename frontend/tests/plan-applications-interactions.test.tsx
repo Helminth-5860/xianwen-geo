@@ -122,7 +122,7 @@ beforeEach(() => {
   getAdminPlanApplication.mockResolvedValue(adminApplication);
   getRiskActions.mockResolvedValue([
     { key: "plan_application.contact", current_mode: "confirm" },
-    { key: "plan_application.close", current_mode: "two_person" },
+    { key: "plan_application.close", current_mode: "password" },
   ]);
   changeAdminPlanApplication.mockResolvedValue({
     ...adminApplication,
@@ -130,8 +130,9 @@ beforeEach(() => {
     version: 2,
   });
   openSubscriptionFromApplication.mockResolvedValue({
-    approval_required: true,
-    approval_id: "approval-1",
+    subscription_id: "subscription-1",
+    application_id: "application-1",
+    status: "active",
   });
 });
 afterEach(() => {
@@ -213,7 +214,7 @@ describe("套餐申请真实交互", () => {
     expect(screen.queryByRole("button", { name: "标记已联系" })).toBeNull();
     expect(screen.queryByRole("button", { name: "关闭申请" })).toBeNull();
   });
-  it("subscriptions.open capability 控制开通并提交双人审批 payload", async () => {
+  it("subscriptions.open capability 控制开通并在二次确认后直接执行", async () => {
     const context = {
       permission_keys: ["subscriptions.open"],
       menu_keys: ["menu.admin.plan-applications"],
@@ -224,10 +225,10 @@ describe("套餐申请真实交互", () => {
       </AdminCapabilityContext.Provider>,
     );
     await userEvent.click(await screen.findByRole("button", { name: "开通订阅" }));
-    expect(await screen.findByText("开通订阅（固定双人审批）")).toBeTruthy();
+    expect(await screen.findByText("确认开通订阅")).toBeTruthy();
     await userEvent.click(screen.getByLabelText("确认离线套餐或退役版本仍需开通"));
     await userEvent.type(screen.getByLabelText("特殊状态开通原因"), "客户已书面确认");
-    await userEvent.click(screen.getByRole("button", { name: "发起审批" }));
+    await userEvent.click(screen.getByRole("button", { name: "确认开通" }));
     await waitFor(() =>
       expect(openSubscriptionFromApplication).toHaveBeenCalledWith(
         "application-1",
@@ -238,6 +239,7 @@ describe("套餐申请真实交互", () => {
         }),
       ),
     );
-    expect(await screen.findByText(/approval-1/)).toBeTruthy();
+    await waitFor(() => expect(getAdminPlanApplication).toHaveBeenCalledTimes(2));
+    expect(screen.queryByText(/approval-1/)).toBeNull();
   });
 });

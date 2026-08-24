@@ -254,7 +254,7 @@ def test_permissions_risk_handlers_and_frozen_defaults_complete():
     assert RiskAction.objects.filter(pk__in=actions).count() == 10
     assert RiskPolicy.objects.filter(action_id__in=actions).count() == 10
     assert RISK_ACTION_BY_KEY["plan.version.publish"].default_mode == "password"
-    assert RISK_ACTION_BY_KEY["plan.archive"].default_mode == "two_person"
+    assert RISK_ACTION_BY_KEY["plan.archive"].default_mode == "password"
 
 
 @pytest.mark.django_db

@@ -128,7 +128,7 @@ describe("模型运行配置后台真实交互", () => {
   it("展示固定模型和无密钥边界", async () => {
     renderPage();
     expect(await screen.findByText("DeepSeek")).toBeTruthy();
-    expect(screen.getByText(/固定 8 个检测模型/)).toBeTruthy();
+    expect(screen.getByText(/查看模型运行状态/)).toBeTruthy();
     expect(screen.queryByLabelText(/API Key/)).toBeNull();
     expect(screen.queryByRole("button", { name: /新增模型/ })).toBeNull();
   });

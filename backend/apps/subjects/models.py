@@ -689,13 +689,6 @@ class SubjectRiskCatalogRevision(models.Model):  # noqa: DJ008
         on_delete=models.SET_NULL,
         related_name="published_subject_risk_revisions",
     )
-    approval_request = models.OneToOneField(
-        "admin_rbac.ApprovalRequest",
-        null=True,
-        blank=True,
-        on_delete=models.PROTECT,
-        related_name="subject_risk_catalog_revision",
-    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     objects = AppendOnlySubjectRiskQuerySet.as_manager()

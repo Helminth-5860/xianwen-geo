@@ -8,7 +8,7 @@ from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_protect
 from rest_framework.exceptions import NotFound
 from rest_framework.response import Response
-from rest_framework.status import HTTP_201_CREATED, HTTP_202_ACCEPTED, HTTP_409_CONFLICT
+from rest_framework.status import HTTP_201_CREATED, HTTP_409_CONFLICT
 from rest_framework.views import APIView
 
 from apps.core.responses import error_response
@@ -238,7 +238,7 @@ class AdminRoleChangeView(APIView):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
         try:
-            result = perform_risk_action(
+            perform_risk_action(
                 request=request,
                 action_key="admin.role.change",
                 target_id=profile_id,
@@ -256,8 +256,6 @@ class AdminRoleChangeView(APIView):
             return risk_error_response(exc, request)
         except AdminVersionConflict as exc:
             return _conflict(exc, request)
-        if result.approval_required:
-            return Response(result.data, status=HTTP_202_ACCEPTED)
         profile = AdminProfile.objects.select_related("user", "role").get(pk=profile_id)
         return Response(AdminProfileSerializer(profile).data)
 
@@ -275,7 +273,7 @@ class AdminStatusView(APIView):
         try:
             data = serializer.validated_data
             if self.action in {"disable", "lock"}:
-                result = perform_risk_action(
+                perform_risk_action(
                     request=request,
                     action_key=f"admin.{self.action}",
                     target_id=profile_id,
@@ -284,8 +282,6 @@ class AdminStatusView(APIView):
                     confirmed=data["confirmed"],
                     current_password=data["current_password"],
                 )
-                if result.approval_required:
-                    return Response(result.data, status=HTTP_202_ACCEPTED)
                 profile = AdminProfile.objects.select_related("user", "role").get(pk=profile_id)
             else:
                 profile = change_admin_status(
@@ -381,7 +377,7 @@ class RolePermissionsView(APIView):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
         try:
-            result = perform_risk_action(
+            perform_risk_action(
                 request=request,
                 action_key="role.permissions.replace",
                 target_id=role_id,
@@ -399,8 +395,6 @@ class RolePermissionsView(APIView):
             return risk_error_response(exc, request)
         except RoleVersionConflict as exc:
             return _conflict(exc, request)
-        if result.approval_required:
-            return Response(result.data, status=HTTP_202_ACCEPTED)
         return Response(RoleSerializer(AdminRole.objects.get(pk=role_id)).data)
 
 
@@ -415,7 +409,7 @@ class RoleDisableView(APIView):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
         try:
-            result = perform_risk_action(
+            perform_risk_action(
                 request=request,
                 action_key="role.disable",
                 target_id=role_id,
@@ -433,8 +427,6 @@ class RoleDisableView(APIView):
             return risk_error_response(exc, request)
         except (RoleVersionConflict, RoleInUse) as exc:
             return _conflict(exc, request)
-        if result.approval_required:
-            return Response(result.data, status=HTTP_202_ACCEPTED)
         return Response(RoleSerializer(AdminRole.objects.get(pk=role_id)).data)
 
 
@@ -466,7 +458,7 @@ class CustomerAssignmentView(APIView):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
         try:
-            result = perform_risk_action(
+            perform_risk_action(
                 request=request,
                 action_key="customer.assignment.change",
                 target_id=customer_id,
@@ -487,8 +479,6 @@ class CustomerAssignmentView(APIView):
             return risk_error_response(exc, request)
         except AssignmentVersionConflict as exc:
             return _conflict(exc, request)
-        if result.approval_required:
-            return Response(result.data, status=HTTP_202_ACCEPTED)
         assignment = CustomerAssignment.objects.get(customer_id=customer_id)
         return Response(AssignmentSerializer(assignment).data)
 

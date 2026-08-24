@@ -24,12 +24,11 @@ def synchronize_catalogs():
     call_command("sync_subject_catalog", "--apply", verbosity=0)
 
 
-def make_user(*, phone="13800138000", approval="pending", account="active"):
+def make_user(*, phone="13800138000", account="active"):
     return User.objects.create_user(
         phone=phone,
         nickname="主体配置用户",
         password=PASSWORD,
-        approval_status=approval,
         account_status=account,
     )
 
@@ -69,10 +68,9 @@ def test_catalog_contains_only_frozen_types_and_common_fields():
 
 
 @pytest.mark.django_db
-@pytest.mark.parametrize("approval", ["pending", "rejected", "approved"])
-def test_available_users_can_read_active_types_and_form_schema_without_writes(approval):
+def test_available_users_can_read_active_types_and_form_schema_without_writes():
     client = APIClient()
-    client.force_authenticate(make_user(approval=approval))
+    client.force_authenticate(make_user())
     subject_type = SubjectType.objects.get(key="enterprise")
     before = (
         subject_type.schema_version,

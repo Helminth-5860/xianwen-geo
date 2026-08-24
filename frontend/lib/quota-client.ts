@@ -45,6 +45,6 @@ export const adjustQuotaAccount = (
     }>
   >(
     "/admin/quota-accounts/" + accountId + "/adjust/" + action,
-    { expected_version: expectedVersion, amount, reason },
+    { expected_version: expectedVersion, amount, reason, confirmed: true },
     { "Idempotency-Key": idempotencyKey },
   );

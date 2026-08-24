@@ -98,7 +98,6 @@ def test_successful_password_login_rotates_session_and_sets_browser_cookie(user)
         "id": str(user.id),
         "nickname": "认证用户",
         "phone_masked": "+86 138****8000",
-        "approval_status": "pending",
         "account_status": "active",
         "commercial_identity": "USER",
         "home_route": "/workspace",
@@ -181,28 +180,6 @@ def test_wrong_password_and_unknown_phone_have_identical_external_response(user)
 
 @pytest.mark.django_db
 @pytest.mark.parametrize(
-    "approval_status",
-    [
-        User.ApprovalStatus.PENDING,
-        User.ApprovalStatus.APPROVED,
-        User.ApprovalStatus.REJECTED,
-    ],
-)
-def test_approval_status_does_not_prevent_login(approval_status):
-    created = User.objects.create_user(
-        phone="13800138000",
-        nickname="审核状态用户",
-        password=STRONG_PASSWORD,
-        approval_status=approval_status,
-    )
-    assign_test_customer(created)
-    client, token, _ = csrf_client()
-
-    assert password_login(client, token).status_code == 200
-
-
-@pytest.mark.django_db
-@pytest.mark.parametrize(
     ("account_status", "expected_status"),
     [
         (User.AccountStatus.ACTIVE, 200),
@@ -243,7 +220,6 @@ def test_me_requires_session_and_returns_minimum_user_data(user):
         "id",
         "nickname",
         "phone_masked",
-        "approval_status",
         "account_status",
         "commercial_identity",
         "home_route",

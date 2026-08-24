@@ -108,7 +108,7 @@ export function OperationsDashboard() {
           <Col xs={24} md={12} lg={6}>
             <Card title="客户">
               <Typography.Title level={3}>{dashboard?.customers.total ?? "—"}</Typography.Title>
-              <Typography.Text>待审核 {dashboard?.customers.pending_review ?? "—"}</Typography.Text>
+              <Typography.Text>正常 {dashboard?.customers.active ?? "—"}</Typography.Text>
             </Card>
           </Col>
           <Col xs={24} md={12} lg={6}>
