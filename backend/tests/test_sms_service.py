@@ -8,12 +8,22 @@ from apps.users.sms.purposes import SmsPurpose
 from apps.users.sms.security import verification_code_digest
 from apps.users.sms.service import send_verification_code, verify_and_consume
 from apps.users.sms.store import SmsRedisKeys
+from apps.users.sms.tencent import SmsProviderError, SmsProviderErrorCategory
 from tests.sms_fakes import MemorySmsStore
 
 
 class FailingProvider(MockSmsProvider):
     def send_verification_code(self, **kwargs) -> None:
         raise TimeoutError("provider details must stay internal")
+
+
+class DailyLimitProvider(MockSmsProvider):
+    def send_verification_code(self, **kwargs) -> None:
+        raise SmsProviderError(
+            SmsProviderErrorCategory.RATE_OR_QUOTA,
+            provider_code="LimitExceeded.PhoneNumberDailyLimit",
+            provider_request_id="safe-provider-request-id",
+        )
 
 
 def send_with_code(monkeypatch, store, provider, code, purpose="register"):
@@ -95,6 +105,18 @@ def test_provider_attempt_failure_never_activates_code(monkeypatch):
         send_with_code(monkeypatch, store, FailingProvider(), "832905")
 
     assert str(error.value) == ""
+    assert not verify_and_consume("13800138000", "register", "832905", store=store)
+    assert store.reserve_calls == 1
+
+
+def test_provider_safe_failure_keeps_category_and_never_activates_code(monkeypatch):
+    store = MemorySmsStore()
+
+    with pytest.raises(SmsProviderError) as error:
+        send_with_code(monkeypatch, store, DailyLimitProvider(), "832905")
+
+    assert error.value.category == SmsProviderErrorCategory.RATE_OR_QUOTA
+    assert error.value.provider_code == "LimitExceeded.PhoneNumberDailyLimit"
     assert not verify_and_consume("13800138000", "register", "832905", store=store)
     assert store.reserve_calls == 1
 

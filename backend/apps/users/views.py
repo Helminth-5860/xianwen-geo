@@ -1,3 +1,5 @@
+import logging
+
 from django.contrib.auth import logout
 from django.middleware.csrf import get_token
 from django.utils.decorators import method_decorator
@@ -46,9 +48,22 @@ from .services import (
 from .sms.exceptions import SmsRateLimited, SmsServiceUnavailable
 from .sms.security import client_ip_address
 from .sms.service import send_verification_code, verify_and_consume
+from .sms.tencent import SmsProviderError, SmsProviderErrorCategory
 
 INVALID_CREDENTIALS_MESSAGE = "手机号或密码不正确"
 SMS_CREDENTIALS_MESSAGE = "手机号或短信验证码不正确"
+SMS_PROVIDER_RATE_MESSAGES = {
+    "LimitExceeded.PhoneNumberDailyLimit": (
+        "该手机号今日获取验证码次数已达上限，请明日再试或更换手机号"
+    ),
+    "LimitExceeded.PhoneNumberOneHourLimit": "该手机号本小时获取验证码次数已达上限，请稍后再试",
+    "LimitExceeded.PhoneNumberThirtySecondLimit": "验证码发送过于频繁，请稍后再试",
+    "LimitExceeded.PhoneNumberSameContentDailyLimit": (
+        "该手机号今日获取同类验证码次数已达上限，请明日再试"
+    ),
+    "LimitExceeded.DeliveryFrequencyLimit": "验证码发送过于频繁，请稍后再试",
+}
+logger = logging.getLogger("xianwen.sms")
 
 
 def _service_unavailable(request):
@@ -64,6 +79,45 @@ def _rate_limited(request):
         ErrorCode.RATE_LIMITED,
         status_code=HTTP_429_TOO_MANY_REQUESTS,
         request=request,
+    )
+
+
+def _sms_provider_failure(request, exc: SmsProviderError):
+    logger.warning(
+        "短信供应商拒绝发送",
+        extra={
+            "sms_provider_category": exc.category.value,
+            "sms_provider_code": exc.provider_code or "unknown",
+            "sms_provider_request_id": exc.provider_request_id or "unknown",
+        },
+    )
+    if exc.category == SmsProviderErrorCategory.RATE_OR_QUOTA:
+        return error_response(
+            ErrorCode.RATE_LIMITED,
+            status_code=HTTP_429_TOO_MANY_REQUESTS,
+            request=request,
+            message=SMS_PROVIDER_RATE_MESSAGES.get(
+                exc.provider_code or "",
+                "短信发送次数或服务额度已达上限，请稍后再试",
+            ),
+        )
+    if exc.category in {
+        SmsProviderErrorCategory.AUTH_OR_PERMISSION,
+        SmsProviderErrorCategory.INVALID_CONFIGURATION,
+        SmsProviderErrorCategory.INVALID_REQUEST,
+        SmsProviderErrorCategory.TEMPLATE_OR_SIGN,
+    }:
+        return error_response(
+            ErrorCode.SERVICE_TEMPORARILY_UNAVAILABLE,
+            status_code=HTTP_503_SERVICE_UNAVAILABLE,
+            request=request,
+            message="短信服务配置异常，请联系平台客服",
+        )
+    return error_response(
+        ErrorCode.SERVICE_TEMPORARILY_UNAVAILABLE,
+        status_code=HTTP_503_SERVICE_UNAVAILABLE,
+        request=request,
+        message="短信服务连接异常，请稍后重试",
     )
 
 
@@ -114,6 +168,8 @@ class SmsSendView(APIView):
             )
         except SmsRateLimited:
             return _rate_limited(request)
+        except SmsProviderError as exc:
+            return _sms_provider_failure(request, exc)
         except SmsServiceUnavailable:
             return _service_unavailable(request)
         return Response(

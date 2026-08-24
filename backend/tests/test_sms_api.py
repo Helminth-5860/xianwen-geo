@@ -6,6 +6,7 @@ from rest_framework.test import APIClient
 from apps.users.models import User
 from apps.users.sms.exceptions import SmsRateLimited, SmsServiceUnavailable
 from apps.users.sms.service import SmsSendResult
+from apps.users.sms.tencent import SmsProviderError, SmsProviderErrorCategory
 
 CSRF_PATH = "/api/v1/auth/csrf"
 SMS_SEND_PATH = "/api/v1/auth/sms/send"
@@ -93,6 +94,38 @@ def test_sms_safe_failures_are_generic(monkeypatch, exception, status_code, erro
     assert response.status_code == status_code
     assert response.json()["error"]["code"] == error_code
     assert response.json()["error"]["details"] == {}
+
+
+@pytest.mark.django_db
+def test_provider_daily_limit_is_explained_without_exposing_sms_secrets(monkeypatch, caplog):
+    def fail(*args, **kwargs):
+        raise SmsProviderError(
+            SmsProviderErrorCategory.RATE_OR_QUOTA,
+            provider_code="LimitExceeded.PhoneNumberDailyLimit",
+            provider_request_id="safe-provider-request-id",
+        )
+
+    monkeypatch.setattr("apps.users.views.send_verification_code", fail)
+    client, token = csrf_client()
+    with caplog.at_level(logging.WARNING, logger="xianwen.sms"):
+        response = client.post(
+            SMS_SEND_PATH,
+            {"phone": "13800138000", "purpose": "register"},
+            format="json",
+            HTTP_X_CSRFTOKEN=token,
+        )
+
+    assert response.status_code == 429
+    assert response.json()["error"] == {
+        "code": "RATE_LIMITED",
+        "message": "该手机号今日获取验证码次数已达上限，请明日再试或更换手机号",
+        "details": {},
+    }
+    record = next(record for record in caplog.records if record.name == "xianwen.sms")
+    assert record.sms_provider_code == "LimitExceeded.PhoneNumberDailyLimit"
+    assert record.sms_provider_request_id == "safe-provider-request-id"
+    assert "13800138000" not in caplog.text
+    assert token not in caplog.text
 
 
 @pytest.mark.django_db

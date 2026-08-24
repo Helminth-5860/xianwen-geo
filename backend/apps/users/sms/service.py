@@ -79,6 +79,12 @@ def send_verification_code(
             code=code,
             expires_in=settings.SMS_CODE_TTL_SECONDS,
         )
+    except SmsServiceUnavailable:
+        try:
+            resolved_store.invalidate(keys.code, generation_id)
+        except SmsServiceUnavailable:
+            pass
+        raise
     except Exception as exc:
         try:
             resolved_store.invalidate(keys.code, generation_id)
