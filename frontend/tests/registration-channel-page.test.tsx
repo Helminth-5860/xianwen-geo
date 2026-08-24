@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
@@ -91,5 +92,42 @@ describe("公开注册页", () => {
     expect((screen.getByRole("button", { name: "注册并登录" }) as HTMLButtonElement).disabled).toBe(
       false,
     );
+  });
+
+  it("注册校验失败时直接显示后端返回的中文字段原因", async () => {
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        jsonResponse({ success: true, data: { csrf_token: "csrf-register" }, request_id: "r1" }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse(
+          {
+            success: false,
+            error: {
+              code: "VALIDATION_ERROR",
+              message: "请求参数不正确",
+              details: {
+                fields: {
+                  password: [{ message: "这个密码太常见了。", code: "password_too_common" }],
+                },
+              },
+            },
+            request_id: "r2",
+          },
+          422,
+        ),
+      );
+    const user = userEvent.setup();
+
+    render(<RegisterPage />);
+    await user.type(screen.getByLabelText("手机号"), "13800138000");
+    await user.type(screen.getByLabelText("昵称"), "体验用户");
+    await user.type(screen.getByLabelText("短信验证码"), "438921");
+    await user.type(screen.getByLabelText("设置密码"), "Correct-Horse-Battery-2026!");
+    await user.type(screen.getByLabelText("确认密码"), "Correct-Horse-Battery-2026!");
+    await user.click(screen.getByRole("button", { name: "注册并登录" }));
+
+    expect(await screen.findByText("密码：这个密码太常见了。")).toBeTruthy();
+    expect(screen.queryByText("请求参数不正确")).toBeNull();
   });
 });

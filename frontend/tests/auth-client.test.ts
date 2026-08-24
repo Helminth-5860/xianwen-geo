@@ -9,6 +9,7 @@ import {
   sendSms,
   setAdminStepUpHandler,
   validateRegistrationReference,
+  validationFieldMessages,
 } from "../lib/auth-client";
 
 function jsonResponse(body: unknown, status = 200) {
@@ -133,6 +134,29 @@ describe("集中认证客户端", () => {
     } satisfies Partial<AuthApiError>);
     expect(consoleError).not.toHaveBeenCalled();
     expect(consoleLog).not.toHaveBeenCalled();
+  });
+
+  it("只从统一校验错误中提取可展示的字段中文原因", () => {
+    const error = new AuthApiError(new Response(null, { status: 422 }), {
+      success: false,
+      error: {
+        code: "VALIDATION_ERROR",
+        message: "请求参数不正确",
+        details: {
+          fields: {
+            password: [{ message: "这个密码太常见了。", code: "password_too_common" }],
+            nickname: [{ message: "请输入昵称", code: "blank" }],
+          },
+        },
+      },
+      request_id: "r-validation",
+    });
+
+    expect(validationFieldMessages(error)).toEqual({
+      password: ["这个密码太常见了。"],
+      nickname: ["请输入昵称"],
+    });
+    expect(validationFieldMessages(new Error("内部异常"))).toEqual({});
   });
 
   it("密码重置使用冻结的字段名", async () => {

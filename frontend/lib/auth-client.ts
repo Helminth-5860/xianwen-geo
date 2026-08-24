@@ -50,6 +50,28 @@ export class AuthApiError extends Error {
   }
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export function validationFieldMessages(error: unknown): Record<string, string[]> {
+  if (!(error instanceof AuthApiError) || error.code !== "VALIDATION_ERROR") return {};
+
+  const fields = error.details.fields;
+  if (!isRecord(fields)) return {};
+
+  return Object.fromEntries(
+    Object.entries(fields).flatMap(([field, issues]) => {
+      const messages = (Array.isArray(issues) ? issues : [issues]).flatMap((issue) => {
+        if (!isRecord(issue) || typeof issue.message !== "string") return [];
+        const message = issue.message.trim();
+        return message ? [message] : [];
+      });
+      return messages.length ? [[field, messages]] : [];
+    }),
+  );
+}
+
 let adminStepUpHandler: (() => Promise<void>) | null = null;
 
 export function setAdminStepUpHandler(handler: (() => Promise<void>) | null) {

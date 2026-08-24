@@ -8,7 +8,12 @@ import { useEffect, useState } from "react";
 import { AuthShell, SubmitButton } from "@/components/auth/auth-shell";
 import { phoneRules, SmsCodeField } from "@/components/auth/sms-code-field";
 import { useSmsCode } from "@/hooks/use-sms-code";
-import { registerAccount, userMessage, validateRegistrationReference } from "@/lib/auth-client";
+import {
+  registerAccount,
+  userMessage,
+  validateRegistrationReference,
+  validationFieldMessages,
+} from "@/lib/auth-client";
 import { focusFirstInvalidField } from "@/lib/form-focus";
 import { validateConfirmation, validatePassword } from "@/lib/auth-validation";
 
@@ -21,6 +26,13 @@ type RegistrationValues = {
   password: string;
   passwordConfirmation: string;
 };
+
+const registrationFields = {
+  phone: { name: "phone", label: "手机号" },
+  nickname: { name: "nickname", label: "昵称" },
+  sms_code: { name: "smsCode", label: "短信验证码" },
+  password: { name: "password", label: "密码" },
+} as const satisfies Record<string, { name: keyof RegistrationValues; label: string }>;
 
 export default function RegisterPage() {
   const [form] = Form.useForm<RegistrationValues>();
@@ -61,6 +73,7 @@ export default function RegisterPage() {
 
   const submit = async (values: RegistrationValues) => {
     setError("");
+    form.setFields(Object.values(registrationFields).map(({ name }) => ({ name, errors: [] })));
     setSubmitting(true);
     try {
       const user = await registerAccount({
@@ -72,7 +85,19 @@ export default function RegisterPage() {
       });
       router.push(user.home_route);
     } catch (reason) {
-      setError(userMessage(reason));
+      const fieldMessages = validationFieldMessages(reason);
+      const visibleErrors = Object.entries(fieldMessages).flatMap(([field, messages]) => {
+        const target = registrationFields[field as keyof typeof registrationFields];
+        return target ? [{ ...target, messages }] : [];
+      });
+
+      if (visibleErrors.length) {
+        form.setFields(visibleErrors.map(({ name, messages }) => ({ name, errors: messages })));
+        setError(`${visibleErrors[0].label}：${visibleErrors[0].messages[0]}`);
+      } else {
+        const firstValidationMessage = Object.values(fieldMessages)[0]?.[0];
+        setError(firstValidationMessage || userMessage(reason));
+      }
     } finally {
       setSubmitting(false);
     }
