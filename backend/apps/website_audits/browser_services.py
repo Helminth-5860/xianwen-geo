@@ -40,10 +40,7 @@ def _page_kind(page: WebsiteAuditPage) -> str:
 
 
 def select_browser_pages(audit: WebsiteAudit, max_pages: int) -> list[WebsiteAuditPage]:
-    candidates = list(
-        audit.pages.filter(http_status=200, fetch_error="")
-        .order_by("depth", "url")
-    )
+    candidates = list(audit.pages.filter(http_status=200, fetch_error="").order_by("depth", "url"))
     candidates = [
         page
         for page in candidates
@@ -103,24 +100,25 @@ def queue_browser_audit(audit_id) -> bool:
         if audit.status != WebsiteAudit.Status.SUCCEEDED:
             return False
         if not settings.WEBSITE_AUDIT_BROWSER_ENABLED:
-            audit.browser_status = WebsiteAudit.BrowserStatus.DISABLED
-            audit.browser_profiles = profiles
-            audit.browser_finished_at = timezone.now()
-            audit.save(
-                update_fields=(
-                    "browser_status",
-                    "browser_profiles",
-                    "browser_finished_at",
-                    "updated_at",
+            if audit.browser_status != WebsiteAudit.BrowserStatus.SUCCEEDED:
+                audit.browser_status = WebsiteAudit.BrowserStatus.DISABLED
+                audit.browser_profiles = profiles
+                audit.browser_finished_at = timezone.now()
+                audit.save(
+                    update_fields=(
+                        "browser_status",
+                        "browser_profiles",
+                        "browser_finished_at",
+                        "updated_at",
+                    )
                 )
-            )
             return False
         if audit.browser_status in {
             WebsiteAudit.BrowserStatus.QUEUED,
             WebsiteAudit.BrowserStatus.RUNNING,
             WebsiteAudit.BrowserStatus.SUCCEEDED,
         }:
-            return audit.browser_status == WebsiteAudit.BrowserStatus.QUEUED
+            return False
         audit.browser_status = WebsiteAudit.BrowserStatus.QUEUED
         audit.browser_profiles = profiles
         audit.browser_selected_count = 0
