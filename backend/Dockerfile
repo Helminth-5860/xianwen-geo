@@ -38,10 +38,16 @@ RUN sed -i \
     && rm -rf /var/lib/apt/lists/* \
     && pip install --no-cache-dir --index-url "$BROWSER_PIP_INDEX_URL" --requirement requirements-browser.txt \
     && PLAYWRIGHT_EXPECTED_CHROMIUM="$(python -c 'from playwright.sync_api import sync_playwright; p=sync_playwright().start(); print(p.chromium.executable_path); p.stop()')" \
-    && mkdir -p "$(dirname "$PLAYWRIGHT_EXPECTED_CHROMIUM")" \
+    && PLAYWRIGHT_CHROMIUM_DIR="$(dirname "$(dirname "$PLAYWRIGHT_EXPECTED_CHROMIUM")")" \
+    && PLAYWRIGHT_CACHE_DIR="$(dirname "$PLAYWRIGHT_CHROMIUM_DIR")" \
+    && PLAYWRIGHT_CHROMIUM_REVISION="${PLAYWRIGHT_CHROMIUM_DIR##*-}" \
+    && PLAYWRIGHT_EXPECTED_HEADLESS="$PLAYWRIGHT_CACHE_DIR/chromium_headless_shell-$PLAYWRIGHT_CHROMIUM_REVISION/chrome-linux/headless_shell" \
+    && mkdir -p "$(dirname "$PLAYWRIGHT_EXPECTED_CHROMIUM")" "$(dirname "$PLAYWRIGHT_EXPECTED_HEADLESS")" \
     && ln -sf /usr/bin/chromium "$PLAYWRIGHT_EXPECTED_CHROMIUM" \
+    && ln -sf /usr/bin/chromium "$PLAYWRIGHT_EXPECTED_HEADLESS" \
     && chromium --version \
-    && test -x "$PLAYWRIGHT_EXPECTED_CHROMIUM"
+    && test -x "$PLAYWRIGHT_EXPECTED_CHROMIUM" \
+    && test -x "$PLAYWRIGHT_EXPECTED_HEADLESS"
 COPY --chown=app:app backend/ .
 COPY --chown=app:app config/plan-limit-keys.json /config/plan-limit-keys.json
 RUN sed -i 's/\r$//' /app/entrypoint.sh && chmod +x /app/entrypoint.sh

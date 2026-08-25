@@ -149,7 +149,26 @@ _SUMMARY_FIELDS = (
     "browser_error_code",
     "browser_started_at",
     "browser_finished_at",
+    "semantic_status",
+    "semantic_provider_key",
+    "semantic_model_id",
+    "semantic_prompt_version",
+    "semantic_page_count",
+    "semantic_question_count",
+    "semantic_scores",
+    "semantic_error_code",
+    "semantic_started_at",
+    "semantic_finished_at",
     "created_at",
+)
+
+_SEMANTIC_DETAIL_FIELDS = (
+    "semantic_runtime_version",
+    "semantic_result",
+    "semantic_input_tokens",
+    "semantic_output_tokens",
+    "semantic_total_tokens",
+    "semantic_latency_ms",
 )
 
 
@@ -169,4 +188,8 @@ class WebsiteAuditDetailSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = WebsiteAudit
-        fields = _SUMMARY_FIELDS + ("pages", "browser_snapshots", "findings")
+        fields = _SUMMARY_FIELDS + _SEMANTIC_DETAIL_FIELDS + (
+            "pages",
+            "browser_snapshots",
+            "findings",
+        )
