@@ -60,7 +60,18 @@ def generation_request():
     )
 
 
-def test_deepseek_keyword_provider_uses_capability_runtime_and_returns_typed_items():
+@pytest.mark.parametrize(
+    ("raw_category", "expected_category"),
+    (
+        ("comparison", "competitor"),
+        ("recommendation", "goal"),
+        ("transactional", "product_category"),
+    ),
+)
+def test_deepseek_keyword_provider_uses_capability_runtime_and_returns_typed_items(
+    raw_category,
+    expected_category,
+):
     def handler(request):
         assert request.headers["Authorization"] == "Bearer test-only-provider-credential"
         payload = json.loads(request.content)
@@ -87,10 +98,10 @@ def test_deepseek_keyword_provider_uses_capability_runtime_and_returns_typed_ite
                                             "region_level": None,
                                             "region_text": None,
                                             "base_keyword": None,
-                                            # DeepSeek can reasonably use the intent-shaped
-                                            # value for comparison keywords. The adapter
-                                            # normalizes this finite alias to competitor.
-                                            "business_category": "comparison",
+                                            # DeepSeek can place an intent-catalog value in
+                                            # the category field. The adapter applies only
+                                            # finite, documented aliases.
+                                            "business_category": raw_category,
                                             "search_intent": "commercial",
                                             "relevance_score": 95,
                                             "priority": "high",
@@ -122,7 +133,7 @@ def test_deepseek_keyword_provider_uses_capability_runtime_and_returns_typed_ite
     assert response.model_key == "deepseek"
     assert len(response.items) == 1
     assert response.items[0].text == "企业 GEO 优化"
-    assert response.items[0].business_category == "competitor"
+    assert response.items[0].business_category == expected_category
     assert response.items[0].relevance_score == 95
     assert response.provider_metrics == {
         "provider_model_id": "deepseek-chat",

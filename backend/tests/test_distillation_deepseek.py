@@ -6,6 +6,7 @@ import pytest
 
 from apps.ai.contracts import AdapterCredential, AIModelCapability
 from apps.ai.errors import AIAdapterError, AIAdapterErrorCategory
+from apps.ai.models import AICapabilityRuntimeConfig, APICredentialCapabilityBinding
 from apps.ai.runtime import AICapabilityRuntimeSnapshot
 from apps.keywords.distillation_contracts import (
     DistillationKeywordInput,
@@ -188,3 +189,22 @@ def test_deepseek_distillation_fails_closed_without_capability_runtime():
 
     with pytest.raises(DistillationProviderUnavailable):
         provider.ensure_available()
+
+
+@pytest.mark.django_db
+def test_deepseek_distillation_capability_rows_are_seeded_disabled():
+    runtime = AICapabilityRuntimeConfig.objects.get(
+        model__model_key="deepseek",
+        capability="keyword_distillation",
+    )
+    bindings = APICredentialCapabilityBinding.objects.filter(
+        provider__provider_key="deepseek",
+        capability="keyword_distillation",
+    )
+
+    assert runtime.enabled is False
+    assert runtime.provider_model_id == ""
+    assert set(bindings.values_list("environment", "enabled")) == {
+        ("staging", False),
+        ("production", False),
+    }

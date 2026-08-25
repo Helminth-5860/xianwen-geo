@@ -82,6 +82,15 @@ CATEGORY_ALIASES = {
     "comparison": KeywordCategory.COMPETITOR.value,
     "compare": KeywordCategory.COMPETITOR.value,
     "competition": KeywordCategory.COMPETITOR.value,
+    # DeepSeek occasionally places a valid intent-catalog value in the
+    # category field. Keep this normalization finite and deterministic so a
+    # metadata slip does not discard an otherwise valid keyword batch.
+    "informational": KeywordCategory.KNOWLEDGE.value,
+    "recommendation": KeywordCategory.GOAL.value,
+    "transactional": KeywordCategory.PRODUCT_CATEGORY.value,
+    "local": KeywordCategory.SERVICE.value,
+    "navigational": KeywordCategory.ENTITY.value,
+    "usage": KeywordCategory.CAPABILITY.value,
     "credibility": KeywordCategory.TRUST.value,
     "education": KeywordCategory.KNOWLEDGE.value,
 }
