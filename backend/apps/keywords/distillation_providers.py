@@ -76,6 +76,50 @@ def _safe_subject_values(values):
     }
 
 
+def _normalize_merge_canonical_members(items, inputs):
+    """Promote a referenced keep item into its otherwise valid merge group.
+
+    DeepSeek commonly describes the canonical item as ``keep`` and only marks
+    the duplicate item as ``merge``. The domain model requires every member,
+    including the canonical item, to carry the merge action and group key.
+    Only this finite, same-region shape is normalized; all other malformed
+    groups still fail closed in ``validate_provider_response``.
+    """
+
+    output = list(items)
+    indexes = {item.source_keyword_id: index for index, item in enumerate(output)}
+    input_map = {item.id: item for item in inputs}
+    for item in tuple(items):
+        if item.action != "merge" or not item.canonical_keyword_id or not item.merge_group_key:
+            continue
+        canonical_index = indexes.get(item.canonical_keyword_id)
+        source_input = input_map.get(item.source_keyword_id)
+        canonical_input = input_map.get(item.canonical_keyword_id)
+        if canonical_index is None or source_input is None or canonical_input is None:
+            continue
+        canonical = output[canonical_index]
+        if (
+            canonical.action != "keep"
+            or canonical.canonical_keyword_id is not None
+            or canonical.merge_group_key is not None
+        ):
+            continue
+        source_signature = (source_input.is_regional, source_input.region_matching_key)
+        canonical_signature = (
+            canonical_input.is_regional,
+            canonical_input.region_matching_key,
+        )
+        if source_signature != canonical_signature:
+            continue
+        output[canonical_index] = replace(
+            canonical,
+            action="merge",
+            canonical_keyword_id=item.canonical_keyword_id,
+            merge_group_key=item.merge_group_key,
+        )
+    return tuple(output)
+
+
 def _required_text(row, key):
     value = row.get(key)
     if not isinstance(value, str) or not value.strip():
@@ -204,8 +248,12 @@ class DeepSeekDistillationProvider(DeepSeekStructuredContentAdapter):
             metrics["provider_request_id"] = response.provider_request_id
         if response.usage.total_tokens is not None:
             metrics["total_tokens"] = response.usage.total_tokens
+        items = _normalize_merge_canonical_members(
+            self._items(response.output.content),
+            request.keywords,
+        )
         return DistillationResponse(
-            items=self._items(response.output.content),
+            items=items,
             model_key=self.model_key,
             provider_metrics=metrics,
         )

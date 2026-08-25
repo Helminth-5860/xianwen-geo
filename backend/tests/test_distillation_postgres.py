@@ -4,6 +4,7 @@ from datetime import timedelta
 import pytest
 from django.core.management import call_command
 from django.db import DatabaseError, connection, transaction
+from django.test import override_settings
 from django.utils import timezone
 
 from apps.keywords.distillation_services import (
@@ -68,6 +69,23 @@ def test_database_allows_only_one_active_distillation_per_subject():
             request_digest="c" * 64,
         )
     assert DistillationJob.objects.get(pk=first.pk).status == "queued"
+
+
+@override_settings(DISTILLATION_MOCK_SCENARIO="invalid_response")
+def test_free_initial_provider_failure_terminalizes_without_quota_hold_record():
+    user, subject, _, _, _, version = _facts()
+    job, _ = _create(user, subject, version)
+
+    assert job.billing_mode == DistillationJob.BillingMode.FREE_INITIAL
+    assert job.quota_hold_id is None
+    assert execute_distillation(job_id=job.pk) == {
+        "status": "failed",
+        "code": "DISTILLATION_INVALID_RESPONSE",
+    }
+
+    job.refresh_from_db()
+    assert job.status == DistillationJob.Status.FAILED
+    assert job.stable_error_code == "DISTILLATION_INVALID_RESPONSE"
 
 
 def test_job_result_event_and_confirmed_history_are_database_immutable():

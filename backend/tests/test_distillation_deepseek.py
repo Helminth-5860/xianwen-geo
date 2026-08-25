@@ -1,5 +1,6 @@
 import json
 import uuid
+from dataclasses import replace
 
 import httpx
 import pytest
@@ -121,10 +122,13 @@ def test_deepseek_distillation_uses_capability_runtime_and_existing_contract():
         "items": [
             {
                 "source_keyword_id": request.keywords[0].id,
-                "action": "merge",
-                "canonical_keyword_id": canonical_id,
-                "merge_group_key": group_key,
-                "reason": "含义相同，合并为统一表达",
+                # DeepSeek commonly keeps the canonical item and marks only
+                # the duplicate as merge. The adapter safely promotes this
+                # same-region canonical item into the merge group.
+                "action": "keep",
+                "canonical_keyword_id": None,
+                "merge_group_key": None,
+                "reason": "保留为统一表达",
             },
             {
                 "source_keyword_id": request.keywords[1].id,
@@ -172,6 +176,62 @@ def test_deepseek_distillation_invalid_schema_fails_closed():
 
     with pytest.raises(DistillationInvalidResponse):
         provider.distill(request)
+
+
+def test_deepseek_distillation_does_not_merge_across_regions():
+    request = distillation_request()
+    request = replace(
+        request,
+        keywords=(
+            replace(
+                request.keywords[0],
+                is_regional=True,
+                region_matching_key="440100",
+            ),
+            replace(
+                request.keywords[1],
+                is_regional=True,
+                region_matching_key="110100",
+            ),
+            request.keywords[2],
+        ),
+    )
+    group_key = str(uuid.UUID(int=201))
+    content = {
+        "items": [
+            {
+                "source_keyword_id": request.keywords[0].id,
+                "action": "keep",
+                "canonical_keyword_id": None,
+                "merge_group_key": None,
+                "reason": "保留标准表达",
+            },
+            {
+                "source_keyword_id": request.keywords[1].id,
+                "action": "merge",
+                "canonical_keyword_id": request.keywords[0].id,
+                "merge_group_key": group_key,
+                "reason": "模型错误地跨地域合并",
+            },
+            {
+                "source_keyword_id": request.keywords[2].id,
+                "action": "delete",
+                "canonical_keyword_id": None,
+                "merge_group_key": None,
+                "reason": "与主体无关",
+            },
+        ]
+    }
+    provider = DeepSeekDistillationProvider(
+        credential_resolver=CredentialResolver(),
+        transport=httpx.MockTransport(lambda raw: _provider_response(raw, content)),
+        runtime_resolver=runtime_snapshot,
+    )
+
+    response = provider.distill(request)
+
+    with pytest.raises(DistillationInvalidResponse):
+        validate_provider_response(inputs=request.keywords, response=response)
 
 
 def test_deepseek_distillation_fails_closed_without_capability_runtime():
