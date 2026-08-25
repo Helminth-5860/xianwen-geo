@@ -78,8 +78,14 @@ class WebsiteAuditPage(models.Model):  # noqa: DJ008
     open_graph = models.JSONField(default=dict)
     twitter_card = models.JSONField(default=dict)
     schema_types = models.JSONField(default=list)
+    schema_entities = models.JSONField(default=list)
+    jsonld_block_count = models.PositiveIntegerField(default=0)
+    jsonld_invalid_count = models.PositiveIntegerField(default=0)
     image_count = models.PositiveIntegerField(default=0)
     image_alt_missing_count = models.PositiveIntegerField(default=0)
+    paragraph_count = models.PositiveIntegerField(default=0)
+    list_count = models.PositiveIntegerField(default=0)
+    table_count = models.PositiveIntegerField(default=0)
     internal_links_count = models.PositiveIntegerField(default=0)
     external_links_count = models.PositiveIntegerField(default=0)
     text_characters = models.PositiveIntegerField(default=0)
@@ -144,6 +150,11 @@ class WebsiteAuditFinding(models.Model):  # noqa: DJ008
         FAIL = "fail", "失败"
         INFO = "info", "信息"
 
+    class Method(models.TextChoices):
+        DETERMINISTIC = "deterministic", "程序检测"
+        BROWSER = "browser", "浏览器检测"
+        SEMANTIC = "semantic", "语义分析"
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     audit = models.ForeignKey(WebsiteAudit, on_delete=models.CASCADE, related_name="findings")
     page = models.ForeignKey(
@@ -154,11 +165,21 @@ class WebsiteAuditFinding(models.Model):  # noqa: DJ008
         related_name="findings",
     )
     category = models.CharField(max_length=16, choices=Category.choices)
+    dimension = models.CharField(max_length=64, blank=True)
     check_key = models.CharField(max_length=128)
+    rule_version = models.CharField(max_length=32, default="deterministic-v1")
+    method = models.CharField(
+        max_length=24,
+        choices=Method.choices,
+        default=Method.DETERMINISTIC,
+    )
     severity = models.CharField(max_length=16, choices=Severity.choices)
     result = models.CharField(max_length=16, choices=Result.choices)
     title = models.CharField(max_length=300)
     summary = models.TextField(blank=True)
+    impact = models.TextField(blank=True)
+    recommendation = models.TextField(blank=True)
+    affected_count = models.PositiveIntegerField(default=0)
     evidence = models.JSONField(default=dict)
     created_at = models.DateTimeField(auto_now_add=True)
 
