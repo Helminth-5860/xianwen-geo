@@ -71,6 +71,7 @@ class SemanticAuditContext:
     pages: list[dict[str, Any]]
     allowed_urls: frozenset[str]
     allowed_question_ids: frozenset[str]
+    page_text_by_url: dict[str, str]
 
 
 def _safe_scalar(value: object, *, maximum: int = 1000) -> object | None:
@@ -261,4 +262,5 @@ def build_semantic_audit_context(
         pages=pages,
         allowed_urls=frozenset(str(row["url"]) for row in pages),
         allowed_question_ids=frozenset(str(row["id"]) for row in questions),
+        page_text_by_url={str(row["url"]): str(row["text"]) for row in pages},
     )
