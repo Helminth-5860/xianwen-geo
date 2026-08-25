@@ -8,6 +8,7 @@ from rest_framework.test import APIClient
 
 from apps.subjects.models import (
     Subject,
+    SubjectBusinessProfile,
     SubjectContext,
     SubjectEvent,
     SubjectType,
@@ -153,6 +154,103 @@ def test_existing_subject_uses_frozen_schema_after_catalog_changes():
     )
     assert returned_label == frozen_label
     assert returned_label != "Changed current label"
+
+
+@pytest.mark.django_db
+def test_business_profile_persists_round_trips_and_keeps_old_subjects_compatible():
+    user = make_user()
+    subject_type = SubjectType.objects.get(key="enterprise")
+    client = client_for(user)
+    created = client.post(
+        "/api/v1/subjects",
+        create_payload(
+            subject_type,
+            {
+                "name": "示例企业",
+                "service_regions": '{"version":1,"nationwide":true,"areas":[]}',
+            },
+        ),
+        format="json",
+    )
+    subject_id = data(created)["id"]
+
+    old_detail = client.get(f"/api/v1/subjects/{subject_id}")
+    assert old_detail.status_code == 200
+    assert data(old_detail)["business_profile"] == {
+        "legal_entity_type": "",
+        "contact_name": "",
+        "contact_phone": "",
+        "business_address": "",
+        "primary_business": "",
+        "brand_name": "",
+        "social_channels": {
+            "douyin": "",
+            "wechat_channels": "",
+            "wechat_official_account": "",
+            "xiaohongshu": "",
+            "kuaishou": "",
+            "ecommerce_urls": "",
+            "other_public_urls": "",
+        },
+    }
+    assert not SubjectBusinessProfile.objects.filter(subject_id=subject_id).exists()
+
+    profile = {
+        "legal_entity_type": "company",
+        "contact_name": "张三",
+        "contact_phone": "0755-12345678",
+        "business_address": "广东省深圳市南山区示例路 1 号",
+        "primary_business": "企业 GEO 咨询与内容服务",
+        "brand_name": "示例品牌",
+        "social_channels": {
+            "douyin": "示例品牌",
+            "wechat_official_account": "示例公众号",
+            "ecommerce_urls": "https://shop.example.com",
+        },
+    }
+    saved = client.patch(
+        f"/api/v1/subjects/{subject_id}/draft",
+        {
+            "expected_version": data(old_detail)["version"],
+            "values": data(old_detail)["draft_values"],
+            "profile_values": profile,
+        },
+        format="json",
+    )
+    assert saved.status_code == 200
+    assert data(saved)["business_profile"]["contact_name"] == "张三"
+    assert data(saved)["business_profile"]["social_channels"]["xiaohongshu"] == ""
+
+    persisted = SubjectBusinessProfile.objects.get(subject_id=subject_id)
+    assert persisted.primary_business == "企业 GEO 咨询与内容服务"
+    assert persisted.social_channels["douyin"] == "示例品牌"
+    subject = Subject.objects.get(pk=subject_id)
+    assert subject.draft_values["service_regions"] == ('{"version":1,"nationwide":true,"areas":[]}')
+    assert "contact_name" not in subject.draft_values
+    assert "contact_phone" not in subject.draft_values
+
+    edited_profile = {
+        **data(saved)["business_profile"],
+        "contact_name": "李四",
+        "social_channels": {
+            **data(saved)["business_profile"]["social_channels"],
+            "xiaohongshu": "示例小红书主页",
+        },
+    }
+    edited = client.patch(
+        f"/api/v1/subjects/{subject_id}/draft",
+        {
+            "expected_version": data(saved)["version"],
+            "values": data(saved)["draft_values"],
+            "profile_values": edited_profile,
+        },
+        format="json",
+    )
+    assert edited.status_code == 200
+    refreshed = client.get(f"/api/v1/subjects/{subject_id}")
+    assert data(refreshed)["business_profile"]["contact_name"] == "李四"
+    assert data(refreshed)["business_profile"]["social_channels"]["xiaohongshu"] == "示例小红书主页"
+    assert SubjectBusinessProfile.objects.filter(subject_id=subject_id).count() == 1
 
 
 @pytest.mark.django_db

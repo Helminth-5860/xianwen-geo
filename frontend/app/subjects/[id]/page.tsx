@@ -5,6 +5,7 @@ import {
   Button,
   Card,
   Checkbox,
+  Collapse,
   Form,
   Input,
   InputNumber,
@@ -21,16 +22,20 @@ import { useEffect, useState } from "react";
 
 import { SubjectAiEnrichment } from "@/components/subject-ai-enrichment";
 import { SubjectDocuments } from "@/components/subject-documents";
+import { SubjectServiceAreaSelector } from "@/components/subject-service-area-selector";
 import { SubjectWebSources } from "@/components/subject-web-sources";
 import { userMessage } from "@/lib/auth-client";
 import type { SubjectDocument } from "@/lib/documents-client";
 import {
   commitSubject,
+  emptySubjectBusinessProfile,
   getSubject,
   updateSubjectDraft,
   type PersistedSubjectField,
+  type SubjectBusinessProfile,
   type SubjectDetail,
   type SubjectProductConfirmation,
+  type SubjectSocialChannels,
 } from "@/lib/subjects-client";
 
 const statusLabels = {
@@ -39,10 +44,232 @@ const statusLabels = {
   archived: "\u5df2\u5f52\u6863",
 } as const;
 
+const fieldLabels: Record<string, string> = {
+  name: "营业执照主体名称",
+  legal_entity_type: "主体类型",
+  contact_name: "联系人",
+  contact_phone: "联系电话",
+  business_address: "经营地址",
+  primary_business: "主营业务",
+  target_audience: "目标用户",
+  core_products_services: "产品 / 服务",
+  service_regions: "服务区域",
+  brand_name: "品牌名称",
+  summary: "企业简介",
+  official_url: "官网",
+  douyin: "抖音",
+  wechat_channels: "视频号",
+  wechat_official_account: "公众号",
+  xiaohongshu: "小红书",
+  kuaishou: "快手",
+  ecommerce_urls: "淘宝 / 天猫 / 京东 / 1688 / 拼多多等",
+  other_public_urls: "其他公开网页",
+};
+
+const fieldPlaceholders: Record<string, string> = {
+  name: "请输入营业执照上的完整主体名称",
+  contact_name: "请输入日常业务联系人",
+  contact_phone: "请输入可联系的手机或座机",
+  business_address: "请输入实际经营地址",
+  primary_business: "请简要说明主要经营内容",
+  target_audience: "请描述主要服务的客户群体",
+  brand_name: "如对外品牌与营业执照名称不同，请填写品牌名称",
+  summary: "用简洁、客观的语言介绍企业业务与优势",
+  official_url: "https://example.com",
+  douyin: "填写账号名称或公开主页链接",
+  wechat_channels: "填写视频号名称或公开资料",
+  wechat_official_account: "填写公众号名称",
+  xiaohongshu: "填写账号名称或公开主页链接",
+  kuaishou: "填写账号名称或公开主页链接",
+  ecommerce_urls: "每行填写一个店铺或商品公开链接",
+  other_public_urls: "每行填写一个可公开访问的网页",
+};
+
+const baseIdentityKeys = new Set([
+  "name",
+  "legal_entity_type",
+  "contact_name",
+  "contact_phone",
+  "business_address",
+]);
+const businessKeys = new Set([
+  "primary_business",
+  "target_audience",
+  "core_products_services",
+  "service_regions",
+]);
+const requiredProfileKeys = new Set([...baseIdentityKeys, ...businessKeys]);
+
+type DirectProfileFieldKey = Exclude<keyof SubjectBusinessProfile, "social_channels">;
+type ProfileFieldKey = DirectProfileFieldKey | keyof SubjectSocialChannels;
+
+type ProfileField = Readonly<{
+  key: ProfileFieldKey;
+  label: string;
+  required: boolean;
+  wide?: boolean;
+  textarea?: boolean;
+}>;
+
+const profileFields: Record<ProfileFieldKey, ProfileField> = {
+  legal_entity_type: {
+    key: "legal_entity_type",
+    label: fieldLabels.legal_entity_type,
+    required: true,
+  },
+  contact_name: { key: "contact_name", label: fieldLabels.contact_name, required: true },
+  contact_phone: { key: "contact_phone", label: fieldLabels.contact_phone, required: true },
+  business_address: {
+    key: "business_address",
+    label: fieldLabels.business_address,
+    required: true,
+    wide: true,
+  },
+  primary_business: {
+    key: "primary_business",
+    label: fieldLabels.primary_business,
+    required: true,
+    wide: true,
+    textarea: true,
+  },
+  brand_name: { key: "brand_name", label: fieldLabels.brand_name, required: false },
+  douyin: { key: "douyin", label: fieldLabels.douyin, required: false },
+  wechat_channels: {
+    key: "wechat_channels",
+    label: fieldLabels.wechat_channels,
+    required: false,
+  },
+  wechat_official_account: {
+    key: "wechat_official_account",
+    label: fieldLabels.wechat_official_account,
+    required: false,
+  },
+  xiaohongshu: { key: "xiaohongshu", label: fieldLabels.xiaohongshu, required: false },
+  kuaishou: { key: "kuaishou", label: fieldLabels.kuaishou, required: false },
+  ecommerce_urls: {
+    key: "ecommerce_urls",
+    label: fieldLabels.ecommerce_urls,
+    required: false,
+    wide: true,
+    textarea: true,
+  },
+  other_public_urls: {
+    key: "other_public_urls",
+    label: fieldLabels.other_public_urls,
+    required: false,
+    wide: true,
+    textarea: true,
+  },
+};
+
+const requiredBusinessProfileFields = [
+  profileFields.legal_entity_type,
+  profileFields.contact_name,
+  profileFields.contact_phone,
+  profileFields.business_address,
+  profileFields.primary_business,
+];
+
+const socialProfileFieldKeys = new Set<ProfileFieldKey>([
+  "douyin",
+  "wechat_channels",
+  "wechat_official_account",
+  "xiaohongshu",
+  "kuaishou",
+  "ecommerce_urls",
+  "other_public_urls",
+]);
+
+function presentedField(field: PersistedSubjectField): PersistedSubjectField {
+  return {
+    ...field,
+    label: fieldLabels[field.field_key] ?? field.label,
+    required: field.required || requiredProfileKeys.has(field.field_key),
+  };
+}
+
+function valueMissing(value: unknown) {
+  if (value === null || value === undefined) return true;
+  if (typeof value === "string") return value.trim().length === 0;
+  if (Array.isArray(value)) return value.length === 0;
+  return false;
+}
+
+function profileValueMissing(field: PersistedSubjectField, value: unknown) {
+  if (field.field_key !== "service_regions") return valueMissing(value);
+  if (typeof value !== "string" || !value.trim()) return true;
+  try {
+    const parsed = JSON.parse(value) as { nationwide?: unknown; areas?: unknown };
+    return (
+      parsed.nationwide !== true && (!Array.isArray(parsed.areas) || parsed.areas.length === 0)
+    );
+  } catch {
+    return false;
+  }
+}
+
 function normalizedValue(field: PersistedSubjectField, value: unknown): unknown {
   if (field.field_type === "multi") return Array.isArray(value) ? value : [];
   if (field.field_type === "number") return typeof value === "number" ? value : null;
   return value ?? "";
+}
+
+function businessProfileValue(profile: SubjectBusinessProfile, key: ProfileFieldKey): string {
+  if (socialProfileFieldKeys.has(key)) {
+    return profile.social_channels[key as keyof SubjectSocialChannels];
+  }
+  return profile[key as DirectProfileFieldKey];
+}
+
+function ProfileFieldInput({
+  field,
+  value,
+  disabled,
+  onChange,
+}: {
+  field: ProfileField;
+  value: string;
+  disabled: boolean;
+  onChange: (value: string) => void;
+}) {
+  if (field.key === "legal_entity_type") {
+    return (
+      <Select
+        aria-label={field.label}
+        value={value || undefined}
+        disabled={disabled}
+        placeholder="请选择公司或个体工商户"
+        style={{ width: "100%" }}
+        options={[
+          { value: "company", label: "公司" },
+          { value: "individual_business", label: "个体工商户" },
+        ]}
+        onChange={onChange}
+      />
+    );
+  }
+  if (field.textarea) {
+    return (
+      <Input.TextArea
+        aria-label={field.label}
+        value={value}
+        disabled={disabled}
+        placeholder={fieldPlaceholders[field.key]}
+        rows={field.key === "primary_business" ? 4 : 3}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    );
+  }
+  return (
+    <Input
+      aria-label={field.label}
+      value={value}
+      disabled={disabled}
+      inputMode={field.key === "contact_phone" ? "tel" : undefined}
+      placeholder={fieldPlaceholders[field.key]}
+      onChange={(event) => onChange(event.target.value)}
+    />
+  );
 }
 
 function FieldInput({
@@ -58,6 +285,30 @@ function FieldInput({
   documents: SubjectDocument[];
   onChange: (value: unknown) => void;
 }) {
+  if (field.field_key === "service_regions") {
+    return <SubjectServiceAreaSelector value={value} disabled={disabled} onChange={onChange} />;
+  }
+  if (field.field_key === "core_products_services") {
+    const items =
+      typeof value === "string"
+        ? value
+            .split(/\r?\n/)
+            .map((item) => item.trim())
+            .filter(Boolean)
+        : [];
+    return (
+      <Select
+        aria-label={field.label}
+        mode="tags"
+        value={items}
+        disabled={disabled}
+        tokenSeparators={[",", "，"]}
+        placeholder="输入一项产品或服务后按回车，可添加多条"
+        style={{ width: "100%" }}
+        onChange={(next) => onChange(next.length ? next.join("\n") : null)}
+      />
+    );
+  }
   if (field.field_type === "image" || field.field_type === "file") {
     const choices = documents.filter(
       (document) =>
@@ -88,6 +339,7 @@ function FieldInput({
         aria-label={field.label}
         value={String(normalizedValue(field, value))}
         disabled={disabled}
+        placeholder={fieldPlaceholders[field.field_key]}
         rows={4}
         onChange={(event) => onChange(event.target.value || null)}
       />
@@ -143,6 +395,7 @@ function FieldInput({
       inputMode={field.field_type === "url" ? "url" : undefined}
       value={String(normalizedValue(field, value))}
       disabled={disabled}
+      placeholder={fieldPlaceholders[field.field_key]}
       onChange={(event) => onChange(event.target.value || null)}
     />
   );
@@ -165,6 +418,9 @@ export default function SubjectDetailPage() {
   const params = useParams<{ id: string }>();
   const [subject, setSubject] = useState<SubjectDetail>();
   const [values, setValues] = useState<Record<string, unknown>>({});
+  const [businessProfile, setBusinessProfile] = useState<SubjectBusinessProfile>(
+    emptySubjectBusinessProfile,
+  );
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [saving, setSaving] = useState(false);
@@ -174,6 +430,23 @@ export default function SubjectDetailPage() {
   >({});
   const [documents, setDocuments] = useState<SubjectDocument[]>([]);
 
+  const updateBusinessProfileField = (key: ProfileFieldKey, value: string) => {
+    setError("");
+    setNotice("");
+    setBusinessProfile((current) => {
+      if (socialProfileFieldKeys.has(key)) {
+        return {
+          ...current,
+          social_channels: {
+            ...current.social_channels,
+            [key]: value,
+          },
+        };
+      }
+      return { ...current, [key]: value } as SubjectBusinessProfile;
+    });
+  };
+
   useEffect(() => {
     let current = true;
     void getSubject(params.id)
@@ -181,6 +454,7 @@ export default function SubjectDetailPage() {
         if (!current) return;
         setSubject(data);
         setValues(data.draft_values);
+        setBusinessProfile(data.business_profile);
         setProductConfirmations(defaultProductConfirmations(data));
       })
       .catch((reason) => {
@@ -193,14 +467,31 @@ export default function SubjectDetailPage() {
 
   const save = async () => {
     if (!subject) return;
+    const missing = subject.form_schema.fields
+      .map(presentedField)
+      .filter((field) => field.required && profileValueMissing(field, values[field.field_key]));
+    if (missing.length) {
+      setNotice("");
+      setError(`请先填写：${missing.map((field) => field.label).join("、")}`);
+      return;
+    }
+    const missingProfile = requiredBusinessProfileFields.filter((field) =>
+      valueMissing(businessProfileValue(businessProfile, field.key)),
+    );
+    if (missingProfile.length) {
+      setNotice("");
+      setError(`请先填写：${missingProfile.map((field) => field.label).join("、")}`);
+      return;
+    }
     setSaving(true);
     try {
-      const updated = await updateSubjectDraft(subject, values);
+      const updated = await updateSubjectDraft(subject, values, businessProfile);
       setSubject(updated);
       setValues(updated.draft_values);
+      setBusinessProfile(updated.business_profile);
       setError("");
       setProductConfirmations(defaultProductConfirmations(updated));
-      setNotice("\u8349\u7a3f\u5df2\u4fdd\u5b58");
+      setNotice("保存成功");
     } catch (reason) {
       setNotice("");
       setError(userMessage(reason));
@@ -244,6 +535,7 @@ export default function SubjectDetailPage() {
       );
       setSubject(result.subject);
       setValues(result.subject.draft_values);
+      setBusinessProfile(result.subject.business_profile);
       setProductConfirmations(defaultProductConfirmations(result.subject));
       setError("");
       setNotice(`\u6b63\u5f0f\u7248\u672c v${result.version.version_no} \u5df2\u63d0\u4ea4`);
@@ -258,100 +550,165 @@ export default function SubjectDetailPage() {
     return <Spin fullscreen description={"\u6b63\u5728\u52a0\u8f7d\u4e3b\u4f53\u8349\u7a3f"} />;
   }
 
+  const renderBusinessProfileField = (field: ProfileField) => (
+    <Form.Item
+      key={field.key}
+      className={field.wide ? "subject-profile-field--wide" : undefined}
+      label={field.label}
+      required={field.required}
+    >
+      <ProfileFieldInput
+        field={field}
+        value={businessProfileValue(businessProfile, field.key)}
+        disabled={subject?.status === "archived"}
+        onChange={(value) => updateBusinessProfileField(field.key, value)}
+      />
+    </Form.Item>
+  );
+
   return (
-    <main className="page-shell">
-      <Link href="/subjects">{"\u8fd4\u56de\u4e3b\u4f53\u5217\u8868"}</Link>
+    <main className="page-shell subject-profile-page">
+      <Link href="/subjects">返回主体列表</Link>
       {error && <Alert type="error" showIcon message={error} style={{ marginTop: 20 }} />}
-      {notice && <Alert type="success" showIcon message={notice} style={{ marginTop: 20 }} />}
+      {notice && (
+        <Alert
+          type="success"
+          showIcon
+          message={notice}
+          description="资料已保存，你可以继续留在本页完善内容，或稍后从工作台进入其他功能。"
+          style={{ marginTop: 20 }}
+        />
+      )}
       {subject && (
         <>
-          <Space align="baseline">
-            <Typography.Title>{subject.form_schema.name}</Typography.Title>
-            <Tag>{statusLabels[subject.status]}</Tag>
-            {subject.is_current && <Tag color="blue">{"\u5f53\u524d\u4e3b\u4f53"}</Tag>}
-            {subject.current_version_no !== null && (
-              <Tag color="green">{`\u6b63\u5f0f\u7248\u672c v${subject.current_version_no}`}</Tag>
-            )}
-            {subject.retest_required && (
-              <Tag color="orange">{"\u9700\u91cd\u65b0\u68c0\u6d4b"}</Tag>
-            )}
-            <Tag
-              color={
-                subject.risk.status === "approved" || subject.risk.status === "clear"
-                  ? "green"
-                  : subject.risk.status === "rejected"
-                    ? "red"
-                    : "orange"
-              }
-            >
-              {`\u98ce\u9669\u72b6\u6001: ${subject.risk.status}`}
-            </Tag>
-          </Space>
+          <header className="subject-profile-header">
+            <div>
+              <Typography.Text className="subject-profile-eyebrow">企业资料</Typography.Text>
+              <Typography.Title>完善企业经营资料</Typography.Title>
+              <Typography.Paragraph type="secondary">
+                完整、真实的经营资料能帮助系统更准确地理解企业、品牌和服务范围。
+              </Typography.Paragraph>
+            </div>
+            <Space wrap>
+              <Tag>{statusLabels[subject.status]}</Tag>
+              {subject.is_current && <Tag color="blue">当前主体</Tag>}
+              {subject.current_version_no !== null && (
+                <Tag color="green">{`正式版本 v${subject.current_version_no}`}</Tag>
+              )}
+              {subject.retest_required && <Tag color="orange">资料已更新，建议复测</Tag>}
+            </Space>
+          </header>
+          <div className="subject-profile-progress" aria-label="资料完善进度">
+            <span className="subject-profile-progress__active">1&nbsp; 完善经营资料</span>
+            <span>2&nbsp; 配置关键词</span>
+            <span>3&nbsp; 开始 GEO 工作</span>
+          </div>
           {subject.risk.public_reason && (
             <Alert
               type="warning"
               showIcon
-              message={"\u5ba1\u6838\u539f\u56e0"}
+              message="资料提示"
               description={subject.risk.public_reason}
             />
           )}
-          <Typography.Paragraph>
-            <Link href={`/subjects/${subject.id}/versions`}>
-              {"\u67e5\u770b\u6b63\u5f0f\u7248\u672c\u5386\u53f2"}
-            </Link>
-          </Typography.Paragraph>
-          <Typography.Paragraph>
-            <Link href={`/subjects/${subject.id}/keywords`}>管理关键词</Link>
-          </Typography.Paragraph>
-          <Typography.Paragraph>
-            <Link href={`/subjects/${subject.id}/articles/new`}>创建 GEO 文章与渠道稿</Link>
-          </Typography.Paragraph>
-          <Typography.Paragraph type="secondary">
-            {subject.form_schema.description}
-          </Typography.Paragraph>
-          <Alert
-            type="info"
-            showIcon
-            message={`\u6b63\u5728\u4f7f\u7528\u521b\u5efa\u65f6\u4fdd\u5b58\u7684 Schema v${subject.schema_version}`}
-            description={
-              "\u7ba1\u7406\u5458\u540e\u7eed\u4fee\u6539\u5b57\u6bb5\u4e0d\u4f1a\u6539\u53d8\u8be5\u5386\u53f2\u8349\u7a3f\u7684\u8bed\u4e49\u3002"
-            }
-          />
-          <SubjectDocuments
-            subjectId={subject.id}
-            disabled={subject.status === "archived"}
-            onDocumentsChange={setDocuments}
-          />
-          <SubjectWebSources subjectId={subject.id} disabled={subject.status === "archived"} />
-          <SubjectAiEnrichment
-            subject={subject}
-            localValues={values}
-            disabled={subject.status === "archived"}
-            onApplied={(updated) => {
-              setSubject(updated);
-              setValues(updated.draft_values);
-              setProductConfirmations(defaultProductConfirmations(updated));
-            }}
-          />
-          <Card style={{ marginTop: 20 }}>
+          <Card className="subject-profile-form-card">
             <Form layout="vertical" onFinish={() => void save()}>
-              {subject.form_schema.fields.map((field) => (
-                <Form.Item
-                  key={field.field_key}
-                  label={field.label}
-                  required={field.required}
-                  extra={field.description}
-                >
-                  <FieldInput
-                    field={field}
-                    value={values[field.field_key]}
-                    disabled={subject.status === "archived"}
-                    documents={documents}
-                    onChange={(value) =>
-                      setValues((current) => ({ ...current, [field.field_key]: value }))
-                    }
-                  />
-                </Form.Item>
+              {[
+                {
+                  key: "identity",
+                  title: "基础身份信息",
+                  description: "用于确认企业经营主体和日常联系方式",
+                  fields: subject.form_schema.fields.filter((field) =>
+                    baseIdentityKeys.has(field.field_key),
+                  ),
+                  profileBefore: [] as ProfileField[],
+                  profileAfter: [
+                    profileFields.legal_entity_type,
+                    profileFields.contact_name,
+                    profileFields.contact_phone,
+                    profileFields.business_address,
+                  ],
+                },
+                {
+                  key: "business",
+                  title: "经营信息",
+                  description: "帮助系统理解你提供什么、服务谁，以及覆盖哪些区域",
+                  fields: subject.form_schema.fields.filter((field) =>
+                    businessKeys.has(field.field_key),
+                  ),
+                  profileBefore: [profileFields.primary_business],
+                  profileAfter: [] as ProfileField[],
+                },
+                {
+                  key: "public",
+                  title: "品牌与公开资料",
+                  description: "选填。公开信息越完整，后续内容分析越准确",
+                  fields: subject.form_schema.fields.filter(
+                    (field) =>
+                      !baseIdentityKeys.has(field.field_key) && !businessKeys.has(field.field_key),
+                  ),
+                  profileBefore: [profileFields.brand_name],
+                  profileAfter: [
+                    profileFields.douyin,
+                    profileFields.wechat_channels,
+                    profileFields.wechat_official_account,
+                    profileFields.xiaohongshu,
+                    profileFields.kuaishou,
+                    profileFields.ecommerce_urls,
+                    profileFields.other_public_urls,
+                  ],
+                },
+              ].map((section) => (
+                <section key={section.key} className="subject-profile-section">
+                  <div className="subject-profile-section__title">
+                    <div>
+                      <Typography.Title level={4}>{section.title}</Typography.Title>
+                      <Typography.Text type="secondary">{section.description}</Typography.Text>
+                    </div>
+                    <Tag>{section.key === "public" ? "选填" : "必填"}</Tag>
+                  </div>
+                  <div className="subject-profile-field-grid">
+                    {section.profileBefore.map(renderBusinessProfileField)}
+                    {section.fields.map((rawField) => {
+                      const field = presentedField(rawField);
+                      const wide = [
+                        "business_address",
+                        "primary_business",
+                        "target_audience",
+                        "core_products_services",
+                        "service_regions",
+                        "summary",
+                        "ecommerce_urls",
+                        "other_public_urls",
+                      ].includes(field.field_key);
+                      return (
+                        <Form.Item
+                          key={field.field_key}
+                          className={wide ? "subject-profile-field--wide" : undefined}
+                          label={field.label}
+                          required={field.required}
+                          extra={field.description}
+                        >
+                          <FieldInput
+                            field={field}
+                            value={values[field.field_key]}
+                            disabled={subject.status === "archived"}
+                            documents={documents}
+                            onChange={(value) => {
+                              setError("");
+                              setNotice("");
+                              setValues((current) => ({
+                                ...current,
+                                [field.field_key]: value,
+                              }));
+                            }}
+                          />
+                        </Form.Item>
+                      );
+                    })}
+                    {section.profileAfter.map(renderBusinessProfileField)}
+                  </div>
+                </section>
               ))}
               {subject.product_candidates.length > 0 && (
                 <Card
@@ -421,7 +778,7 @@ export default function SubjectDetailPage() {
                   loading={saving}
                   disabled={subject.status === "archived"}
                 >
-                  {"\u4fdd\u5b58\u8349\u7a3f"}
+                  保存资料
                 </Button>
                 <Popconfirm
                   title={"\u63d0\u4ea4\u6b63\u5f0f\u7248\u672c"}
@@ -437,8 +794,60 @@ export default function SubjectDetailPage() {
                   </Button>
                 </Popconfirm>
               </Space>
+              <Typography.Text type="secondary" className="subject-profile-save-note">
+                保存后停留在当前页面，不会自动创建关键词任务或进入后续流程。
+              </Typography.Text>
             </Form>
           </Card>
+          <Collapse
+            className="subject-profile-collapse"
+            items={[
+              {
+                key: "sources",
+                label: "更多资料来源（选填）",
+                children: (
+                  <>
+                    <Typography.Paragraph type="secondary">
+                      可上传宣传册、PDF、产品资料，或导入企业公开网页。
+                    </Typography.Paragraph>
+                    <SubjectDocuments
+                      subjectId={subject.id}
+                      disabled={subject.status === "archived"}
+                      onDocumentsChange={setDocuments}
+                    />
+                    <SubjectWebSources
+                      subjectId={subject.id}
+                      disabled={subject.status === "archived"}
+                    />
+                  </>
+                ),
+              },
+            ]}
+          />
+          <Collapse
+            className="subject-profile-collapse"
+            items={[
+              {
+                key: "ai",
+                label: "AI 帮我补充资料",
+                children: (
+                  <SubjectAiEnrichment
+                    subject={subject}
+                    localValues={values}
+                    disabled={subject.status === "archived"}
+                    onApplied={(updated) => {
+                      setSubject(updated);
+                      setValues(updated.draft_values);
+                      setProductConfirmations(defaultProductConfirmations(updated));
+                    }}
+                  />
+                ),
+              },
+            ]}
+          />
+          <Typography.Paragraph className="subject-profile-version-link">
+            <Link href={`/subjects/${subject.id}/versions`}>查看正式版本历史</Link>
+          </Typography.Paragraph>
         </>
       )}
     </main>

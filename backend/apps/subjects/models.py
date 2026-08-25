@@ -314,6 +314,37 @@ class Subject(models.Model):  # noqa: DJ008
         ]
 
 
+class SubjectBusinessProfile(models.Model):  # noqa: DJ008
+    class LegalEntityType(models.TextChoices):
+        COMPANY = "company", "公司"
+        INDIVIDUAL_BUSINESS = "individual_business", "个体工商户"
+
+    subject = models.OneToOneField(
+        Subject,
+        primary_key=True,
+        on_delete=models.CASCADE,
+        related_name="business_profile",
+    )
+    legal_entity_type = models.CharField(max_length=32, choices=LegalEntityType.choices)
+    contact_name = models.CharField(max_length=100)
+    contact_phone = models.CharField(max_length=32)
+    business_address = models.CharField(max_length=500)
+    primary_business = models.TextField()
+    brand_name = models.CharField(max_length=200, blank=True)
+    social_channels = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "subject_business_profiles"
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(legal_entity_type__in=("company", "individual_business")),
+                name="subject_profile_valid_entity_type",
+            )
+        ]
+
+
 class AppendOnlySubjectVersionQuerySet(models.QuerySet):
     def update(self, **kwargs):
         raise TypeError("Subject versions are append-only.")

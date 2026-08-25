@@ -161,6 +161,11 @@ class SubjectDraftView(APIView):
                 subject_id=subject_id,
                 expected_version=serializer.validated_data["expected_version"],
                 values=dict(serializer.validated_data["values"]),
+                profile_values=(
+                    dict(serializer.validated_data["profile_values"])
+                    if "profile_values" in serializer.validated_data
+                    else None
+                ),
             )
         except SubjectBusinessError as exc:
             return _error(exc, request)
