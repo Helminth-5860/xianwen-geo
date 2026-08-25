@@ -64,11 +64,16 @@ def _evidence_urls(value: object, allowed_urls: frozenset[str]) -> list[str]:
     return rows
 
 
+def _normalized_evidence_text(value: str) -> str:
+    return " ".join(value.split()).casefold()
+
+
 def validate_semantic_audit_output(
     payload: object,
     *,
     allowed_urls: frozenset[str],
     allowed_question_ids: frozenset[str],
+    page_text_by_url: dict[str, str] | None = None,
 ) -> ValidatedSemanticAudit:
     if not isinstance(payload, dict):
         raise SemanticAuditSchemaError("root_not_object")
@@ -205,17 +210,24 @@ def validate_semantic_audit_output(
     if not isinstance(raw_passages, list) or len(raw_passages) > 25:
         raise SemanticAuditSchemaError("citeable_passages_invalid")
     passages: list[dict[str, object]] = []
+    source_texts = page_text_by_url or {}
     for row in raw_passages:
         if not isinstance(row, dict):
             raise SemanticAuditSchemaError("citeable_passage_row_invalid")
         url = _text(row.get("url"), maximum=4096)
         if url not in allowed_urls:
             raise SemanticAuditSchemaError("invented_passage_url")
+        excerpt = _text(row.get("excerpt"), maximum=300)
+        if source_texts:
+            source = _normalized_evidence_text(source_texts.get(url, ""))
+            needle = _normalized_evidence_text(excerpt)
+            if not source or not needle or needle not in source:
+                raise SemanticAuditSchemaError("passage_excerpt_not_in_source")
         passages.append(
             {
                 "url": url,
                 "reason": _text(row.get("reason"), maximum=800),
-                "excerpt": _text(row.get("excerpt"), maximum=300),
+                "excerpt": excerpt,
             }
         )
 
