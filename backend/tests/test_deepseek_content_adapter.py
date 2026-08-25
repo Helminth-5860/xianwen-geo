@@ -93,6 +93,38 @@ def test_deepseek_structured_adapter_uses_credential_in_header_and_returns_only_
     assert "must-not-survive" not in repr(response)
 
 
+def test_deepseek_structured_adapter_accepts_canonical_model_id_for_requested_alias():
+    adapter = DeepSeekSubjectAssistantAdapter(
+        credential_resolver=_CredentialResolver(),
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(
+                200,
+                json={
+                    "id": "provider-request-canonical",
+                    "model": "deepseek-v4-flash",
+                    "choices": [
+                        {
+                            "finish_reason": "stop",
+                            "message": {"content": json.dumps({"answer": "ok"})},
+                        }
+                    ],
+                    "usage": {"prompt_tokens": 4, "completion_tokens": 2, "total_tokens": 6},
+                },
+            )
+        ),
+    )
+
+    response = adapter.invoke(
+        _request(adapter, AIModelCapability.SUBJECT_ASSISTANT, {"context": {}})
+    )
+
+    assert response.output.content == {"answer": "ok"}
+    assert response.sanitized_provider_metadata == {
+        "provider_model_id": "deepseek-v4-flash",
+        "requested_provider_model_id": "deepseek-chat",
+    }
+
+
 def test_deepseek_structured_capabilities_are_separate_and_fixed():
     assert DEEPSEEK_STRATEGY_DESCRIPTOR.identity.provider_key == "deepseek"
     assert DEEPSEEK_ASSISTANT_DESCRIPTOR.identity.provider_key == "deepseek"
@@ -161,7 +193,7 @@ def test_deepseek_structured_adapter_rejects_malformed_provider_json_without_lea
                 {"immutable_report_facts": {}},
             )
         )
-    assert failure.value.stable_code == "AI_DEEPSEEK_CONTENT_SCHEMA_INVALID"
+    assert failure.value.stable_code == "AI_DEEPSEEK_CONTENT_JSON_INVALID"
     assert "provider-secret-not-json" not in str(failure.value)
 
 
