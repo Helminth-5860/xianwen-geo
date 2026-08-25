@@ -126,9 +126,10 @@ class Command(BaseCommand):
             questions=[],
             pages=pages,
             technical_evidence=_technical_evidence(crawl),
-            allowed_urls=frozenset(str(row["url"]) for row in pages),
+            allowed_page_ids=frozenset(str(row["page_id"]) for row in pages),
             allowed_question_ids=frozenset(),
-            page_text_by_url={str(row["url"]): str(row["text"]) for row in pages},
+            page_url_by_id={str(row["page_id"]): str(row["url"]) for row in pages},
+            page_text_by_id={str(row["page_id"]): str(row["text"]) for row in pages},
         )
 
         self.stdout.write(
