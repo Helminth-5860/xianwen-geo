@@ -63,6 +63,8 @@ def _evidence_pages(
     allowed_page_ids: frozenset[str],
     page_url_by_id: dict[str, str],
 ) -> tuple[list[str], list[str]]:
+    if value is None:
+        raise SemanticAuditSchemaError("evidence_page_ids_required")
     page_ids = _string_list(value, maximum_items=20, maximum_chars=100)
     if any(page_id not in allowed_page_ids for page_id in page_ids):
         raise SemanticAuditSchemaError("invented_evidence_page_id")
@@ -110,7 +112,7 @@ def validate_semantic_audit_output(
         if not isinstance(row, dict):
             raise SemanticAuditSchemaError("entity_row_invalid")
         page_ids, urls = _evidence_pages(
-            row.get("evidence_page_ids", []),
+            row.get("evidence_page_ids"),
             allowed_page_ids=allowed_page_ids,
             page_url_by_id=page_url_by_id,
         )
@@ -131,7 +133,7 @@ def validate_semantic_audit_output(
         if not isinstance(row, dict):
             raise SemanticAuditSchemaError("entity_conflict_row_invalid")
         page_ids, urls = _evidence_pages(
-            row.get("evidence_page_ids", []),
+            row.get("evidence_page_ids"),
             allowed_page_ids=allowed_page_ids,
             page_url_by_id=page_url_by_id,
         )
@@ -154,7 +156,7 @@ def validate_semantic_audit_output(
         if severity not in _ALLOWED_SEVERITIES:
             raise SemanticAuditSchemaError("content_finding_severity_invalid")
         page_ids, urls = _evidence_pages(
-            row.get("evidence_page_ids", []),
+            row.get("evidence_page_ids"),
             allowed_page_ids=allowed_page_ids,
             page_url_by_id=page_url_by_id,
         )
@@ -199,7 +201,7 @@ def validate_semantic_audit_output(
             maximum_chars=500,
         )
         page_ids, urls = _evidence_pages(
-            row.get("evidence_page_ids", []),
+            row.get("evidence_page_ids"),
             allowed_page_ids=allowed_page_ids,
             page_url_by_id=page_url_by_id,
         )
@@ -234,7 +236,7 @@ def validate_semantic_audit_output(
         if importance not in _ALLOWED_IMPORTANCE:
             raise SemanticAuditSchemaError("topic_gap_importance_invalid")
         page_ids, urls = _evidence_pages(
-            row.get("evidence_page_ids", []),
+            row.get("evidence_page_ids"),
             allowed_page_ids=allowed_page_ids,
             page_url_by_id=page_url_by_id,
         )
