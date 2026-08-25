@@ -70,9 +70,10 @@ class SemanticAuditContext:
     questions: list[dict[str, Any]]
     pages: list[dict[str, Any]]
     technical_evidence: dict[str, Any]
-    allowed_urls: frozenset[str]
+    allowed_page_ids: frozenset[str]
     allowed_question_ids: frozenset[str]
-    page_text_by_url: dict[str, str]
+    page_url_by_id: dict[str, str]
+    page_text_by_id: dict[str, str]
 
 
 def _safe_scalar(value: object, *, maximum: int = 1000) -> object | None:
@@ -150,9 +151,7 @@ def _keyword_payload(audit: WebsiteAudit, maximum: int) -> list[dict[str, Any]]:
     version = getattr(keyword_set, "current_version", None)
     if version is None:
         return []
-    rows = Keyword.objects.filter(keyword_set_version=version).order_by(
-        "sort_order", "id"
-    )[:maximum]
+    rows = Keyword.objects.filter(keyword_set_version=version).order_by("sort_order", "id")[:maximum]
     return [
         {
             "id": str(row.id),
@@ -269,6 +268,7 @@ def _technical_evidence(audit: WebsiteAudit) -> dict[str, Any]:
     for row in snapshots:
         browser.append(
             {
+                "page_id": str(row.page_id),
                 "url": row.final_url or row.page.final_url or row.page.url,
                 "profile": row.profile,
                 "status": row.status,
@@ -320,7 +320,8 @@ def build_semantic_audit_context(
         questions=questions,
         pages=pages,
         technical_evidence=_technical_evidence(audit),
-        allowed_urls=frozenset(str(row["url"]) for row in pages),
+        allowed_page_ids=frozenset(str(row["page_id"]) for row in pages),
         allowed_question_ids=frozenset(str(row["id"]) for row in questions),
-        page_text_by_url={str(row["url"]): str(row["text"]) for row in pages},
+        page_url_by_id={str(row["page_id"]): str(row["url"]) for row in pages},
+        page_text_by_id={str(row["page_id"]): str(row["text"]) for row in pages},
     )
