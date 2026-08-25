@@ -1,0 +1,125 @@
+import uuid
+
+from django.conf import settings
+from django.db import migrations, models
+import django.db.models.deletion
+
+
+class Migration(migrations.Migration):
+    initial = True
+
+    dependencies = [
+        migrations.swappable_dependency(settings.AUTH_USER_MODEL),
+        ("subjects", "0017_promote_saved_subjects"),
+    ]
+
+    operations = [
+        migrations.CreateModel(
+            name="WebsiteAudit",
+            fields=[
+                ("id", models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
+                ("root_url", models.TextField()),
+                ("root_host", models.CharField(db_index=True, max_length=255)),
+                ("status", models.CharField(choices=[("queued", "排队中"), ("running", "扫描中"), ("succeeded", "已完成"), ("failed", "失败")], default="queued", max_length=16)),
+                ("max_pages", models.PositiveIntegerField(default=200)),
+                ("discovered_count", models.PositiveIntegerField(default=0)),
+                ("selected_count", models.PositiveIntegerField(default=0)),
+                ("fetched_count", models.PositiveIntegerField(default=0)),
+                ("failed_count", models.PositiveIntegerField(default=0)),
+                ("internal_link_count", models.PositiveIntegerField(default=0)),
+                ("external_link_count", models.PositiveIntegerField(default=0)),
+                ("robots_url", models.TextField(blank=True)),
+                ("robots_status", models.PositiveSmallIntegerField(blank=True, null=True)),
+                ("robots_text", models.TextField(blank=True)),
+                ("sitemap_urls", models.JSONField(default=list)),
+                ("stable_error_code", models.CharField(blank=True, max_length=64)),
+                ("started_at", models.DateTimeField(blank=True, null=True)),
+                ("finished_at", models.DateTimeField(blank=True, null=True)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("updated_at", models.DateTimeField(auto_now=True)),
+                ("subject", models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name="website_audits", to="subjects.subject")),
+                ("user", models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name="website_audits", to=settings.AUTH_USER_MODEL)),
+            ],
+            options={"db_table": "website_audits", "ordering": ("-created_at", "id")},
+        ),
+        migrations.CreateModel(
+            name="WebsiteAuditPage",
+            fields=[
+                ("id", models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
+                ("url", models.TextField()),
+                ("final_url", models.TextField(blank=True)),
+                ("source", models.CharField(choices=[("root", "首页"), ("sitemap", "Sitemap"), ("internal_link", "站内链接")], max_length=24)),
+                ("depth", models.PositiveSmallIntegerField(default=0)),
+                ("http_status", models.PositiveSmallIntegerField(blank=True, null=True)),
+                ("content_type", models.CharField(blank=True, max_length=128)),
+                ("response_ms", models.PositiveIntegerField(blank=True, null=True)),
+                ("response_bytes", models.PositiveIntegerField(default=0)),
+                ("redirect_count", models.PositiveSmallIntegerField(default=0)),
+                ("title", models.CharField(blank=True, max_length=500)),
+                ("meta_description", models.TextField(blank=True)),
+                ("canonical_url", models.TextField(blank=True)),
+                ("robots_meta", models.CharField(blank=True, max_length=500)),
+                ("html_lang", models.CharField(blank=True, max_length=64)),
+                ("viewport", models.CharField(blank=True, max_length=500)),
+                ("headings", models.JSONField(default=dict)),
+                ("open_graph", models.JSONField(default=dict)),
+                ("twitter_card", models.JSONField(default=dict)),
+                ("schema_types", models.JSONField(default=list)),
+                ("image_count", models.PositiveIntegerField(default=0)),
+                ("image_alt_missing_count", models.PositiveIntegerField(default=0)),
+                ("internal_links_count", models.PositiveIntegerField(default=0)),
+                ("external_links_count", models.PositiveIntegerField(default=0)),
+                ("text_characters", models.PositiveIntegerField(default=0)),
+                ("text_sample", models.TextField(blank=True)),
+                ("response_sha256", models.CharField(blank=True, max_length=64)),
+                ("fetch_error", models.CharField(blank=True, max_length=64)),
+                ("fetched_at", models.DateTimeField(blank=True, null=True)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("audit", models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name="pages", to="website_audits.websiteaudit")),
+            ],
+            options={"db_table": "website_audit_pages", "ordering": ("depth", "url", "id")},
+        ),
+        migrations.CreateModel(
+            name="WebsiteAuditLink",
+            fields=[
+                ("id", models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
+                ("destination_url", models.TextField()),
+                ("is_internal", models.BooleanField(db_index=True)),
+                ("anchor_text", models.CharField(blank=True, max_length=500)),
+                ("rel", models.CharField(blank=True, max_length=255)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("audit", models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name="links", to="website_audits.websiteaudit")),
+                ("source_page", models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, related_name="outgoing_links", to="website_audits.websiteauditpage")),
+            ],
+            options={"db_table": "website_audit_links"},
+        ),
+        migrations.CreateModel(
+            name="WebsiteAuditFinding",
+            fields=[
+                ("id", models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
+                ("category", models.CharField(choices=[("seo", "SEO"), ("geo", "GEO"), ("technical", "技术")], max_length=16)),
+                ("check_key", models.CharField(max_length=128)),
+                ("severity", models.CharField(choices=[("critical", "严重"), ("high", "高"), ("medium", "中"), ("low", "低"), ("info", "建议")], max_length=16)),
+                ("result", models.CharField(choices=[("pass", "通过"), ("warn", "警告"), ("fail", "失败"), ("info", "信息")], max_length=16)),
+                ("title", models.CharField(max_length=300)),
+                ("summary", models.TextField(blank=True)),
+                ("evidence", models.JSONField(default=dict)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("audit", models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name="findings", to="website_audits.websiteaudit")),
+                ("page", models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, related_name="findings", to="website_audits.websiteauditpage")),
+            ],
+            options={"db_table": "website_audit_findings"},
+        ),
+        migrations.AddConstraint(
+            model_name="websiteauditpage",
+            constraint=models.UniqueConstraint(fields=("audit", "url"), name="website_audit_page_unique"),
+        ),
+        migrations.AddIndex(model_name="websiteaudit", index=models.Index(fields=["user", "subject", "created_at"], name="website_audit_owner_idx")),
+        migrations.AddIndex(model_name="websiteaudit", index=models.Index(fields=["status", "created_at"], name="website_audit_status_idx")),
+        migrations.AddIndex(model_name="websiteauditpage", index=models.Index(fields=["audit", "http_status"], name="website_page_status_idx")),
+        migrations.AddIndex(model_name="websiteauditpage", index=models.Index(fields=["audit", "source", "depth"], name="website_page_source_idx")),
+        migrations.AddIndex(model_name="websiteauditlink", index=models.Index(fields=["audit", "is_internal"], name="website_link_scope_idx")),
+        migrations.AddIndex(model_name="websiteauditlink", index=models.Index(fields=["audit", "source_page"], name="website_link_source_idx")),
+        migrations.AddIndex(model_name="websiteauditfinding", index=models.Index(fields=["audit", "category", "severity"], name="website_finding_idx")),
+        migrations.AddIndex(model_name="websiteauditfinding", index=models.Index(fields=["audit", "check_key"], name="website_check_key_idx")),
+    ]
