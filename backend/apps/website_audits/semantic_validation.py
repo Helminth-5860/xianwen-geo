@@ -57,11 +57,20 @@ def _string_list(value: object, *, maximum_items: int, maximum_chars: int) -> li
     return output
 
 
-def _evidence_urls(value: object, allowed_urls: frozenset[str]) -> list[str]:
-    rows = _string_list(value, maximum_items=20, maximum_chars=4096)
-    if any(url not in allowed_urls for url in rows):
-        raise SemanticAuditSchemaError("invented_evidence_url")
-    return rows
+def _evidence_pages(
+    value: object,
+    *,
+    allowed_page_ids: frozenset[str],
+    page_url_by_id: dict[str, str],
+) -> tuple[list[str], list[str]]:
+    page_ids = _string_list(value, maximum_items=20, maximum_chars=100)
+    if any(page_id not in allowed_page_ids for page_id in page_ids):
+        raise SemanticAuditSchemaError("invented_evidence_page_id")
+    try:
+        urls = [page_url_by_id[page_id] for page_id in page_ids]
+    except KeyError as exc:
+        raise SemanticAuditSchemaError("evidence_page_mapping_missing") from exc
+    return page_ids, urls
 
 
 def _normalized_evidence_text(value: str) -> str:
@@ -71,12 +80,15 @@ def _normalized_evidence_text(value: str) -> str:
 def validate_semantic_audit_output(
     payload: object,
     *,
-    allowed_urls: frozenset[str],
+    allowed_page_ids: frozenset[str],
     allowed_question_ids: frozenset[str],
-    page_text_by_url: dict[str, str] | None = None,
+    page_url_by_id: dict[str, str],
+    page_text_by_id: dict[str, str] | None = None,
 ) -> ValidatedSemanticAudit:
     if not isinstance(payload, dict):
         raise SemanticAuditSchemaError("root_not_object")
+    if not allowed_page_ids or set(page_url_by_id) != set(allowed_page_ids):
+        raise SemanticAuditSchemaError("page_evidence_contract_invalid")
 
     raw_scores = payload.get("scores")
     if not isinstance(raw_scores, dict) or set(raw_scores) != set(_SCORE_KEYS):
@@ -97,13 +109,20 @@ def validate_semantic_audit_output(
     for row in recognized_entities:
         if not isinstance(row, dict):
             raise SemanticAuditSchemaError("entity_row_invalid")
+        page_ids, urls = _evidence_pages(
+            row.get("evidence_page_ids", []),
+            allowed_page_ids=allowed_page_ids,
+            page_url_by_id=page_url_by_id,
+        )
         normalized_entities.append(
             {
                 "name": _text(row.get("name"), maximum=300),
                 "type": _text(row.get("type"), maximum=50),
-                "evidence_urls": _evidence_urls(row.get("evidence_urls", []), allowed_urls),
+                "evidence_page_ids": page_ids,
+                "evidence_urls": urls,
             }
         )
+
     raw_conflicts = raw_entity.get("conflicts", [])
     if not isinstance(raw_conflicts, list) or len(raw_conflicts) > 20:
         raise SemanticAuditSchemaError("entity_conflicts_invalid")
@@ -111,10 +130,16 @@ def validate_semantic_audit_output(
     for row in raw_conflicts:
         if not isinstance(row, dict):
             raise SemanticAuditSchemaError("entity_conflict_row_invalid")
+        page_ids, urls = _evidence_pages(
+            row.get("evidence_page_ids", []),
+            allowed_page_ids=allowed_page_ids,
+            page_url_by_id=page_url_by_id,
+        )
         conflicts.append(
             {
                 "description": _text(row.get("description"), maximum=800),
-                "evidence_urls": _evidence_urls(row.get("evidence_urls", []), allowed_urls),
+                "evidence_page_ids": page_ids,
+                "evidence_urls": urls,
             }
         )
 
@@ -128,13 +153,19 @@ def validate_semantic_audit_output(
         severity = _text(row.get("severity"), maximum=20)
         if severity not in _ALLOWED_SEVERITIES:
             raise SemanticAuditSchemaError("content_finding_severity_invalid")
+        page_ids, urls = _evidence_pages(
+            row.get("evidence_page_ids", []),
+            allowed_page_ids=allowed_page_ids,
+            page_url_by_id=page_url_by_id,
+        )
         findings.append(
             {
                 "key": _text(row.get("key"), maximum=80),
                 "severity": severity,
                 "title": _text(row.get("title"), maximum=300),
                 "reason": _text(row.get("reason"), maximum=1200),
-                "evidence_urls": _evidence_urls(row.get("evidence_urls", []), allowed_urls),
+                "evidence_page_ids": page_ids,
+                "evidence_urls": urls,
                 "recommendation": _text(row.get("recommendation"), maximum=1200),
             }
         )
@@ -167,6 +198,11 @@ def validate_semantic_audit_output(
             maximum_items=12,
             maximum_chars=500,
         )
+        page_ids, urls = _evidence_pages(
+            row.get("evidence_page_ids", []),
+            allowed_page_ids=allowed_page_ids,
+            page_url_by_id=page_url_by_id,
+        )
         questions.append(
             {
                 "source": source,
@@ -174,7 +210,8 @@ def validate_semantic_audit_output(
                 "question": _text(row.get("question"), maximum=1000),
                 "coverage_score": coverage,
                 "status": status,
-                "evidence_urls": _evidence_urls(row.get("evidence_urls", []), allowed_urls),
+                "evidence_page_ids": page_ids,
+                "evidence_urls": urls,
                 "answer_summary": _text(row.get("answer_summary", ""), maximum=1000, required=False),
                 "missing_points": missing_points,
                 "recommendation": _text(row.get("recommendation"), maximum=1000),
@@ -196,13 +233,19 @@ def validate_semantic_audit_output(
         importance = _text(row.get("importance"), maximum=20)
         if importance not in _ALLOWED_IMPORTANCE:
             raise SemanticAuditSchemaError("topic_gap_importance_invalid")
+        page_ids, urls = _evidence_pages(
+            row.get("evidence_page_ids", []),
+            allowed_page_ids=allowed_page_ids,
+            page_url_by_id=page_url_by_id,
+        )
         topic_gaps.append(
             {
                 "topic": _text(row.get("topic"), maximum=300),
                 "importance": importance,
                 "reason": _text(row.get("reason"), maximum=1000),
                 "suggested_content": _text(row.get("suggested_content"), maximum=1200),
-                "evidence_urls": _evidence_urls(row.get("evidence_urls", []), allowed_urls),
+                "evidence_page_ids": page_ids,
+                "evidence_urls": urls,
             }
         )
 
@@ -210,22 +253,23 @@ def validate_semantic_audit_output(
     if not isinstance(raw_passages, list) or len(raw_passages) > 25:
         raise SemanticAuditSchemaError("citeable_passages_invalid")
     passages: list[dict[str, object]] = []
-    source_texts = page_text_by_url or {}
+    source_texts = page_text_by_id or {}
     for row in raw_passages:
         if not isinstance(row, dict):
             raise SemanticAuditSchemaError("citeable_passage_row_invalid")
-        url = _text(row.get("url"), maximum=4096)
-        if url not in allowed_urls:
-            raise SemanticAuditSchemaError("invented_passage_url")
+        page_id = _text(row.get("page_id"), maximum=100)
+        if page_id not in allowed_page_ids:
+            raise SemanticAuditSchemaError("invented_passage_page_id")
         excerpt = _text(row.get("excerpt"), maximum=300)
         if source_texts:
-            source = _normalized_evidence_text(source_texts.get(url, ""))
+            source = _normalized_evidence_text(source_texts.get(page_id, ""))
             needle = _normalized_evidence_text(excerpt)
             if not source or not needle or needle not in source:
                 raise SemanticAuditSchemaError("passage_excerpt_not_in_source")
         passages.append(
             {
-                "url": url,
+                "page_id": page_id,
+                "url": page_url_by_id[page_id],
                 "reason": _text(row.get("reason"), maximum=800),
                 "excerpt": excerpt,
             }
