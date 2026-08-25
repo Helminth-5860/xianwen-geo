@@ -24,6 +24,20 @@ USER app
 ENTRYPOINT ["/app/entrypoint.sh"]
 CMD ["python", "-m", "pytest"]
 
+FROM base AS browser
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright-browsers
+COPY backend/requirements-browser.txt ./
+RUN pip install --no-cache-dir --requirement requirements-browser.txt \
+    && mkdir -p /opt/playwright-browsers \
+    && PLAYWRIGHT_BROWSERS_PATH=/opt/playwright-browsers python -m playwright install --with-deps chromium \
+    && chmod -R a+rX /opt/playwright-browsers
+COPY --chown=app:app backend/ .
+COPY --chown=app:app config/plan-limit-keys.json /config/plan-limit-keys.json
+RUN sed -i 's/\r$//' /app/entrypoint.sh && chmod +x /app/entrypoint.sh
+USER app
+ENTRYPOINT ["/app/entrypoint.sh"]
+CMD ["celery", "-A", "config", "worker", "--loglevel=INFO", "--queues=browser_audit", "--concurrency=1", "--prefetch-multiplier=1"]
+
 FROM base AS production
 COPY --chown=app:app backend/ .
 COPY --chown=app:app config/plan-limit-keys.json /config/plan-limit-keys.json

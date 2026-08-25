@@ -1,0 +1,51 @@
+services:
+  web-fetch-worker:
+    environment:
+      WEBSITE_AUDIT_BROWSER_ENABLED: ${WEBSITE_AUDIT_BROWSER_ENABLED:-true}
+      WEBSITE_AUDIT_BROWSER_MAX_PAGES: ${WEBSITE_AUDIT_BROWSER_MAX_PAGES:-8}
+      WEBSITE_AUDIT_BROWSER_PROFILES: ${WEBSITE_AUDIT_BROWSER_PROFILES:-mobile,desktop}
+
+  browser-audit-worker:
+    extends:
+      service: celery
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: browser
+    command:
+      [
+        "celery",
+        "-A",
+        "config",
+        "worker",
+        "--loglevel=INFO",
+        "--queues=browser_audit",
+        "--concurrency=1",
+        "--prefetch-multiplier=1",
+        "--time-limit=900",
+        "--soft-time-limit=850",
+      ]
+    environment:
+      WEBSITE_AUDIT_BROWSER_ENABLED: ${WEBSITE_AUDIT_BROWSER_ENABLED:-true}
+      WEBSITE_AUDIT_BROWSER_MAX_PAGES: ${WEBSITE_AUDIT_BROWSER_MAX_PAGES:-8}
+      WEBSITE_AUDIT_BROWSER_PROFILES: ${WEBSITE_AUDIT_BROWSER_PROFILES:-mobile,desktop}
+      WEBSITE_AUDIT_BROWSER_TIMEOUT_SECONDS: ${WEBSITE_AUDIT_BROWSER_TIMEOUT_SECONDS:-30}
+      WEBSITE_AUDIT_BROWSER_SETTLE_MS: ${WEBSITE_AUDIT_BROWSER_SETTLE_MS:-1200}
+      WEBSITE_AUDIT_BROWSER_MAX_REQUESTS: ${WEBSITE_AUDIT_BROWSER_MAX_REQUESTS:-300}
+      WEBSITE_AUDIT_BROWSER_MAX_DOM_CHARACTERS: ${WEBSITE_AUDIT_BROWSER_MAX_DOM_CHARACTERS:-2000000}
+    privileged: false
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=512m
+    shm_size: 1gb
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 256
+    mem_limit: 1536m
+    cpus: 1.5
+    depends_on:
+      api:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
