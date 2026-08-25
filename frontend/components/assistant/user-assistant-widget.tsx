@@ -1,10 +1,11 @@
 "use client";
 
-import { CloseOutlined, CustomerServiceOutlined, SendOutlined } from "@ant-design/icons";
+import { CloseOutlined, SendOutlined } from "@ant-design/icons";
 import { Button, Input, Typography } from "antd";
 import { usePathname } from "next/navigation";
 import { useMemo, useState } from "react";
 
+import { officialXianwenLogoDataUrl } from "@/app/login/logo-data";
 import { useSubjectWorkspace } from "@/components/subject-workspace-context";
 
 type PageGuide = Readonly<{
@@ -144,9 +145,11 @@ export function UserAssistantWidget() {
         <section className="xw-assistant__panel" aria-label="显问 AI 助手">
           <header className="xw-assistant__header">
             <div className="xw-assistant__identity">
-              <span className="xw-assistant__avatar" aria-hidden="true">
-                <CustomerServiceOutlined />
-              </span>
+              <img
+                className="xw-assistant__brand-logo"
+                src={officialXianwenLogoDataUrl}
+                alt="显问 AI"
+              />
               <div>
                 <Typography.Text strong>显问 AI 助手</Typography.Text>
                 <Typography.Text type="secondary">当前：{guide.label}</Typography.Text>
@@ -209,12 +212,14 @@ export function UserAssistantWidget() {
 
       <Button
         className={`xw-assistant__launcher${open ? " xw-assistant__launcher--open" : ""}`}
-        type="primary"
         shape="circle"
         aria-label={open ? "显问 AI 助手已展开" : "打开显问 AI 助手"}
-        icon={<CustomerServiceOutlined />}
         onClick={() => setOpen((value) => !value)}
-      />
+      >
+        <span className="xw-assistant__launcher-crop" aria-hidden="true">
+          <img src={officialXianwenLogoDataUrl} alt="" />
+        </span>
+      </Button>
     </div>
   );
 }
