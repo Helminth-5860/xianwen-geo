@@ -49,7 +49,7 @@ class WebsiteAuditDetailView(APIView):
     def get(self, request, audit_id):
         audit = (
             WebsiteAudit.objects.filter(pk=audit_id, user=request.user)
-            .prefetch_related("pages", "findings")
+            .prefetch_related("pages", "browser_snapshots", "findings")
             .first()
         )
         if audit is None:
