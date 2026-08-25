@@ -5,7 +5,11 @@ from rest_framework.status import HTTP_201_CREATED, HTTP_404_NOT_FOUND, HTTP_409
 from rest_framework.views import APIView
 
 from .models import WebsiteAudit
-from .serializers import WebsiteAuditCreateSerializer, WebsiteAuditSerializer
+from .serializers import (
+    WebsiteAuditCreateSerializer,
+    WebsiteAuditDetailSerializer,
+    WebsiteAuditSummarySerializer,
+)
 from .services import WebsiteAuditBusy, WebsiteAuditNotFound, create_website_audit
 from .tasks import execute_website_audit_task
 
@@ -36,7 +40,7 @@ class WebsiteAuditCreateView(APIView):
                 {"detail": "当前主体已有官网检测正在进行。"},
                 status=HTTP_409_CONFLICT,
             )
-        return Response(WebsiteAuditSerializer(audit).data, status=HTTP_201_CREATED)
+        return Response(WebsiteAuditSummarySerializer(audit).data, status=HTTP_201_CREATED)
 
 
 class WebsiteAuditDetailView(APIView):
@@ -45,12 +49,12 @@ class WebsiteAuditDetailView(APIView):
     def get(self, request, audit_id):
         audit = (
             WebsiteAudit.objects.filter(pk=audit_id, user=request.user)
-            .prefetch_related("pages")
+            .prefetch_related("pages", "findings")
             .first()
         )
         if audit is None:
             return Response({"detail": "检测记录不存在。"}, status=HTTP_404_NOT_FOUND)
-        return Response(WebsiteAuditSerializer(audit).data)
+        return Response(WebsiteAuditDetailSerializer(audit).data)
 
 
 class SubjectWebsiteAuditListView(APIView):
@@ -60,4 +64,4 @@ class SubjectWebsiteAuditListView(APIView):
         audits = WebsiteAudit.objects.filter(user=request.user, subject_id=subject_id).order_by(
             "-created_at"
         )[:20]
-        return Response(WebsiteAuditSerializer(audits, many=True).data)
+        return Response(WebsiteAuditSummarySerializer(audits, many=True).data)
