@@ -33,14 +33,53 @@ WEBSITE_AUDIT_TEXT_SAMPLE_CHARACTERS = int(
 )
 WEBSITE_AUDIT_USER_AGENT = os.getenv("WEBSITE_AUDIT_USER_AGENT", "XianwenWebsiteAudit/1.0").strip()
 
+WEBSITE_AUDIT_BROWSER_ENABLED = os.getenv("WEBSITE_AUDIT_BROWSER_ENABLED", "false").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+WEBSITE_AUDIT_BROWSER_MAX_PAGES = int(os.getenv("WEBSITE_AUDIT_BROWSER_MAX_PAGES", "8"))
+WEBSITE_AUDIT_BROWSER_TIMEOUT_SECONDS = int(
+    os.getenv("WEBSITE_AUDIT_BROWSER_TIMEOUT_SECONDS", "30")
+)
+WEBSITE_AUDIT_BROWSER_SETTLE_MS = int(os.getenv("WEBSITE_AUDIT_BROWSER_SETTLE_MS", "1200"))
+WEBSITE_AUDIT_BROWSER_MAX_REQUESTS = int(os.getenv("WEBSITE_AUDIT_BROWSER_MAX_REQUESTS", "300"))
+WEBSITE_AUDIT_BROWSER_MAX_DOM_CHARACTERS = int(
+    os.getenv("WEBSITE_AUDIT_BROWSER_MAX_DOM_CHARACTERS", str(2_000_000))
+)
+WEBSITE_AUDIT_BROWSER_PROFILES = tuple(
+    item.strip().lower()
+    for item in os.getenv("WEBSITE_AUDIT_BROWSER_PROFILES", "mobile,desktop").split(",")
+    if item.strip()
+)
+
 for name in (
     "WEBSITE_AUDIT_MAX_PAGES",
     "WEBSITE_AUDIT_MAX_SITEMAPS",
     "WEBSITE_AUDIT_MAX_RESPONSE_BYTES",
     "WEBSITE_AUDIT_TOTAL_TIMEOUT_SECONDS",
     "WEBSITE_AUDIT_TEXT_SAMPLE_CHARACTERS",
+    "WEBSITE_AUDIT_BROWSER_MAX_PAGES",
+    "WEBSITE_AUDIT_BROWSER_TIMEOUT_SECONDS",
+    "WEBSITE_AUDIT_BROWSER_MAX_REQUESTS",
+    "WEBSITE_AUDIT_BROWSER_MAX_DOM_CHARACTERS",
 ):
     if globals()[name] <= 0:
         raise ImproperlyConfigured(f"{name} must be positive.")
 if WEBSITE_AUDIT_MAX_PAGES > 1000:
     raise ImproperlyConfigured("WEBSITE_AUDIT_MAX_PAGES must not exceed 1000.")
+if WEBSITE_AUDIT_BROWSER_MAX_PAGES > 50:
+    raise ImproperlyConfigured("WEBSITE_AUDIT_BROWSER_MAX_PAGES must not exceed 50.")
+if WEBSITE_AUDIT_BROWSER_TIMEOUT_SECONDS > 120:
+    raise ImproperlyConfigured("WEBSITE_AUDIT_BROWSER_TIMEOUT_SECONDS must not exceed 120.")
+if WEBSITE_AUDIT_BROWSER_SETTLE_MS < 0 or WEBSITE_AUDIT_BROWSER_SETTLE_MS > 10000:
+    raise ImproperlyConfigured("WEBSITE_AUDIT_BROWSER_SETTLE_MS must be between 0 and 10000.")
+if WEBSITE_AUDIT_BROWSER_MAX_REQUESTS > 2000:
+    raise ImproperlyConfigured("WEBSITE_AUDIT_BROWSER_MAX_REQUESTS must not exceed 2000.")
+if not WEBSITE_AUDIT_BROWSER_PROFILES or any(
+    item not in {"mobile", "desktop"} for item in WEBSITE_AUDIT_BROWSER_PROFILES
+):
+    raise ImproperlyConfigured(
+        "WEBSITE_AUDIT_BROWSER_PROFILES must contain only mobile and/or desktop."
+    )
