@@ -43,6 +43,7 @@ class WebsiteAuditPageSerializer(serializers.ModelSerializer):
 
 
 class WebsiteAuditSerializer(serializers.ModelSerializer):
+    subject_id = serializers.UUIDField(read_only=True)
     pages = WebsiteAuditPageSerializer(many=True, read_only=True)
 
     class Meta:
