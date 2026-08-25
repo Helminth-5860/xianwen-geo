@@ -127,6 +127,7 @@ const keywordErrorMessages: Readonly<Record<string, string>> = {
   KEYWORD_GENERATION_PROVIDER_REJECTED: "AI 关键词服务拒绝了本次请求，请调整条件后重试",
   KEYWORD_GENERATION_INVALID_RESPONSE: "AI 返回格式异常，请重新生成。",
   KEYWORD_GENERATION_INTERNAL_ERROR: "关键词生成任务处理失败，请稍后重试",
+  KEYWORD_VALUES_INVALID: "已有关键词数据不完整，请刷新后重新生成",
   KEYWORD_VERSION_CONFLICT: "关键词内容已经更新，请刷新后重试",
   KEYWORD_SUBJECT_VERSION_CONFLICT: "主体资料已经更新，请刷新后重新生成",
   DISTILLATION_PROVIDER_TIMEOUT: "关键词蒸馏服务响应超时，请稍后重试",

@@ -79,6 +79,8 @@ CATEGORY_ALIASES = {
     "pain": KeywordCategory.PAIN_POINT.value,
     "use_case": KeywordCategory.SCENARIO.value,
     "persona": KeywordCategory.AUDIENCE.value,
+    "comparison": KeywordCategory.COMPETITOR.value,
+    "compare": KeywordCategory.COMPETITOR.value,
     "competition": KeywordCategory.COMPETITOR.value,
     "credibility": KeywordCategory.TRUST.value,
     "education": KeywordCategory.KNOWLEDGE.value,

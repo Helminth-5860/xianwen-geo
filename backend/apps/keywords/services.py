@@ -131,6 +131,16 @@ def keyword_set_for_subject(*, user: User, subject: Subject) -> KeywordSet | Non
 
 
 def _normalized_from_draft(row: KeywordDraftItem) -> NormalizedKeyword:
+    base_keyword_text = row.base_keyword_text
+    base_keyword_matching = (
+        normalize_plain_text(base_keyword_text)[1] if base_keyword_text else None
+    )
+    # Historical drafts could persist the keyword itself as its base keyword.
+    # Treat that legacy shape as no base relationship so it cannot block a later
+    # generated version from being committed.
+    if base_keyword_matching == row.matching_text:
+        base_keyword_text = None
+        base_keyword_matching = None
     return NormalizedKeyword(
         text=row.text,
         matching_text=row.matching_text,
@@ -139,10 +149,8 @@ def _normalized_from_draft(row: KeywordDraftItem) -> NormalizedKeyword:
         region_level=row.region_level,
         region_text=row.region_text,
         region_matching_key=row.region_matching_key,
-        base_keyword_text=row.base_keyword_text,
-        base_keyword_matching=(
-            normalize_plain_text(row.base_keyword_text)[1] if row.base_keyword_text else None
-        ),
+        base_keyword_text=base_keyword_text,
+        base_keyword_matching=base_keyword_matching,
         business_category=row.business_category,
         search_intent=row.search_intent,
         search_intents=tuple(row.search_intents),

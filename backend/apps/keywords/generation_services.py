@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import json
+import logging
 import uuid
 from datetime import timedelta
 from typing import Any
@@ -69,6 +70,7 @@ from .taxonomy import (
 )
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
 _TERMINAL = {"succeeded", "failed", "conflict", "superseded"}
 
 
@@ -794,7 +796,27 @@ def execute_keyword_generation(*, job_id, expected_generation=None):
                 code=exc.code,
                 summary=getattr(exc, "diagnostic", None),
             )
+    except KeywordError as exc:
+        with transaction.atomic():
+            locked = KeywordGenerationJob.objects.select_for_update().get(pk=job_id)
+            if locked.status != "running" or locked.generation != generation:
+                return {"status": locked.status}
+            status = (
+                "conflict"
+                if exc.code
+                in {
+                    "KEYWORD_VERSION_CONFLICT",
+                    "KEYWORD_SUBJECT_VERSION_CONFLICT",
+                    "KEYWORD_VERSION_NO_CHANGES",
+                }
+                else "failed"
+            )
+            return _terminal_locked(locked, status=status, code=exc.code)
     except Exception as exc:
+        logger.exception(
+            "Unexpected keyword generation failure",
+            extra={"keyword_generation_job_id": str(job_id)},
+        )
         raise KeywordGenerationUnexpectedError(
             job_id=job_id,
             generation=generation,

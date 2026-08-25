@@ -87,7 +87,10 @@ def test_deepseek_keyword_provider_uses_capability_runtime_and_returns_typed_ite
                                             "region_level": None,
                                             "region_text": None,
                                             "base_keyword": None,
-                                            "business_category": "service",
+                                            # DeepSeek can reasonably use the intent-shaped
+                                            # value for comparison keywords. The adapter
+                                            # normalizes this finite alias to competitor.
+                                            "business_category": "comparison",
                                             "search_intent": "commercial",
                                             "relevance_score": 95,
                                             "priority": "high",
@@ -119,6 +122,7 @@ def test_deepseek_keyword_provider_uses_capability_runtime_and_returns_typed_ite
     assert response.model_key == "deepseek"
     assert len(response.items) == 1
     assert response.items[0].text == "企业 GEO 优化"
+    assert response.items[0].business_category == "competitor"
     assert response.items[0].relevance_score == 95
     assert response.provider_metrics == {
         "provider_model_id": "deepseek-chat",

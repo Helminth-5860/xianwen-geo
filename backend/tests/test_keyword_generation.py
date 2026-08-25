@@ -11,6 +11,7 @@ from django.test import override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
 
+from apps.keywords.exceptions import KeywordValuesInvalid
 from apps.keywords.generation_contracts import GeneratedKeyword, KeywordGenerationResponse
 from apps.keywords.generation_exceptions import (
     KeywordGenerationIdempotencyConflict,
@@ -34,6 +35,7 @@ from apps.keywords.models import (
     KeywordSet,
     KeywordSetVersion,
 )
+from apps.keywords.services import save_keyword_draft
 from apps.plans.models import Plan, PlanVersion, Subscription
 from apps.quotas.catalog import QUOTA_CATALOG
 from apps.quotas.models import (
@@ -229,6 +231,56 @@ def test_first_generation_is_free_and_auto_commits_candidate_version():
     assert keyword_set.current_version is not None
     assert account.available == 2
     assert account.frozen == 0
+
+
+def test_generation_accepts_legacy_draft_with_self_base_as_no_base_relation():
+    user, subject, subject_version, _ = _facts()
+    keyword_set, changed = save_keyword_draft(
+        user_id=user.pk,
+        subject_id=subject.pk,
+        expected_version=0,
+        expected_subject_version_id=subject_version.pk,
+        items=[
+            {
+                "text": "历史关键词",
+                "structure_type": "short",
+                "is_regional": False,
+                "region_level": "",
+                "region_text": "",
+                "base_keyword_text": "历史关键词",
+            }
+        ],
+    )
+    assert changed is True
+    job, _ = _create(
+        user,
+        subject,
+        subject_version,
+        expected_version=keyword_set.version,
+    )
+
+    assert execute_keyword_generation(job_id=job.pk) == {"status": "succeeded"}
+
+    keyword_set.refresh_from_db()
+    historical = keyword_set.current_version.keywords.get(text="历史关键词")
+    assert historical.base_keyword_id is None
+
+
+def test_generation_commit_domain_error_fails_once_without_internal_retry():
+    user, subject, subject_version, _ = _facts()
+    job, _ = _create(user, subject, subject_version)
+
+    with patch(
+        "apps.keywords.generation_services.commit_keyword_version",
+        side_effect=KeywordValuesInvalid,
+    ):
+        result = execute_keyword_generation(job_id=job.pk)
+
+    job.refresh_from_db()
+    assert result == {"status": "failed", "code": "KEYWORD_VALUES_INVALID"}
+    assert job.status == KeywordGenerationJob.Status.FAILED
+    assert job.stable_error_code == "KEYWORD_VALUES_INVALID"
+    assert not KeywordGenerationResult.objects.filter(job=job).exists()
 
 
 def test_same_idempotency_key_replays_and_one_active_job_blocks_second():
