@@ -1,6 +1,7 @@
 import { AntdRegistry } from "@ant-design/nextjs-registry";
 import type { Metadata } from "next";
 
+import { UserAssistantWidget } from "@/components/assistant/user-assistant-widget";
 import {
   SubjectWorkspaceProvider,
   SubjectWorkspaceTopbar,
@@ -9,6 +10,7 @@ import { UserWorkspaceNavigation } from "@/components/user-workspace-navigation"
 
 import "./globals.css";
 import "./product-shell.css";
+import "./assistant-widget.css";
 
 export const metadata: Metadata = {
   title: "显问 GEO 智能体系统",
@@ -27,6 +29,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
                 <SubjectWorkspaceTopbar />
                 {children}
               </div>
+              <UserAssistantWidget />
             </div>
           </SubjectWorkspaceProvider>
         </AntdRegistry>
