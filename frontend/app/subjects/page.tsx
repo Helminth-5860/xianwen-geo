@@ -18,8 +18,8 @@ import {
 } from "@/lib/subjects-client";
 
 const statusLabels = {
-  draft: "\u8349\u7a3f",
-  active: "\u5df2\u6fc0\u6d3b",
+  draft: "资料可编辑",
+  active: "正常",
   archived: "\u5df2\u5f52\u6863",
 } as const;
 
@@ -93,9 +93,7 @@ export default function SubjectsPage() {
         </Button>
       </Space>
       <Typography.Paragraph type="secondary">
-        {
-          "\u8349\u7a3f\u4e0d\u4ee3\u8868\u5df2\u6b63\u5f0f\u63d0\u4ea4\uff1b\u6fc0\u6d3b\u540e\u624d\u5360\u7528\u5957\u9910\u4e3b\u4f53\u540d\u989d\u3002"
-        }
+        创建后即可完善并保存企业资料；启用状态仅用于管理当前套餐的主体名额。
       </Typography.Paragraph>
       {error && (
         <Alert type="error" showIcon message={error} closable onClose={() => setError("")} />
@@ -103,7 +101,7 @@ export default function SubjectsPage() {
       {notice && (
         <Alert type="success" showIcon message={notice} closable onClose={() => setNotice("")} />
       )}
-      <Card title={"\u521b\u5efa\u4e3b\u4f53\u8349\u7a3f"} style={{ marginBottom: 20 }}>
+      <Card title="创建企业资料" style={{ marginBottom: 20 }}>
         <Space wrap>
           <Select
             aria-label={"\u4e3b\u4f53\u7c7b\u578b"}
@@ -124,11 +122,11 @@ export default function SubjectsPage() {
               if (!selected) return;
               void execute(
                 () => createSubject(selected.id, selected.schema_version),
-                "\u4e3b\u4f53\u8349\u7a3f\u5df2\u521b\u5efa",
+                "企业资料已创建",
               );
             }}
           >
-            {"\u521b\u5efa\u8349\u7a3f"}
+            创建主体
           </Button>
         </Space>
       </Card>
@@ -136,7 +134,7 @@ export default function SubjectsPage() {
         rowKey="id"
         dataSource={subjects ?? []}
         pagination={false}
-        locale={{ emptyText: "\u6682\u65e0\u4e3b\u4f53\u8349\u7a3f" }}
+        locale={{ emptyText: "暂无企业资料" }}
         columns={[
           {
             title: "\u4e3b\u4f53",

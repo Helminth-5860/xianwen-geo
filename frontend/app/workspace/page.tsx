@@ -112,7 +112,7 @@ export default function WorkspacePage() {
       {
         title: "1. 主体与知识",
         description: "完善品牌、产品、资料和公开来源，建立 GEO 的事实基础。",
-        status: subjectReady ? `正式版本 v${currentSubject.current_version_no}` : "待提交正式版本",
+        status: subjectReady ? "资料已保存" : "待完善资料",
         href: `/subjects/${currentSubject.id}`,
         icon: CheckCircleFilled,
         tone: subjectReady ? "done" : "attention",
@@ -237,14 +237,12 @@ export default function WorkspacePage() {
               <Space wrap>
                 <Tag color={currentSubject.status === "active" ? "green" : "default"}>
                   {currentSubject.status === "active"
-                    ? "已激活"
+                    ? "正常"
                     : currentSubject.status === "draft"
-                      ? "草稿"
+                      ? "资料可编辑"
                       : "已归档"}
                 </Tag>
-                {currentSubject.current_version_no !== null && (
-                  <Tag>主体 v{currentSubject.current_version_no}</Tag>
-                )}
+                {currentSubject.current_version_no !== null && <Tag>资料已生效</Tag>}
                 {currentSubject.retest_required && <Tag color="orange">需要复测</Tag>}
               </Space>
             </section>

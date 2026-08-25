@@ -323,7 +323,7 @@ describe("subject profile interactions", () => {
     await screen.findByText("\u521b\u5efa\u65f6\u4f01\u4e1a");
     await userEvent.click(screen.getByLabelText("\u4e3b\u4f53\u7c7b\u578b"));
     await userEvent.click(await screen.findByText("\u4f01\u4e1a"));
-    await userEvent.click(screen.getByRole("button", { name: "\u521b\u5efa\u8349\u7a3f" }));
+    await userEvent.click(screen.getByRole("button", { name: "创建主体" }));
     await waitFor(() => expect(createSubject).toHaveBeenCalledWith("type-1", 9));
   });
 
