@@ -25,10 +25,35 @@ class PageEvidence:
     open_graph: dict[str, str]
     twitter_card: dict[str, str]
     schema_types: list[str]
+    schema_entities: list[dict[str, object]]
+    jsonld_block_count: int
+    jsonld_invalid_count: int
     image_count: int
     image_alt_missing_count: int
+    paragraph_count: int
+    list_count: int
+    table_count: int
     links: list[ExtractedLink]
     text: str
+
+
+_SCHEMA_SIGNAL_TYPES = {
+    "organization",
+    "corporation",
+    "localbusiness",
+    "professionalservice",
+    "store",
+    "product",
+    "service",
+    "offer",
+    "article",
+    "newsarticle",
+    "blogposting",
+    "person",
+    "website",
+    "webpage",
+    "faqpage",
+}
 
 
 class _AuditHTMLParser(HTMLParser):
@@ -50,8 +75,14 @@ class _AuditHTMLParser(HTMLParser):
         self.open_graph: dict[str, str] = {}
         self.twitter_card: dict[str, str] = {}
         self.schema_types: set[str] = set()
+        self.schema_entities: list[dict[str, object]] = []
+        self.jsonld_block_count = 0
+        self.jsonld_invalid_count = 0
         self.image_count = 0
         self.image_alt_missing_count = 0
+        self.paragraph_count = 0
+        self.list_count = 0
+        self.table_count = 0
         self.links: list[ExtractedLink] = []
         self._anchor_href = ""
         self._anchor_rel = ""
@@ -70,6 +101,7 @@ class _AuditHTMLParser(HTMLParser):
             if tag == "script" and data.get("type", "").lower() == "application/ld+json":
                 self._in_json_ld = True
                 self._json_ld_parts = []
+                self.jsonld_block_count += 1
                 return
             self.blocked_depth += 1
             return
@@ -103,6 +135,12 @@ class _AuditHTMLParser(HTMLParser):
             self.image_count += 1
             if not data.get("alt", "").strip():
                 self.image_alt_missing_count += 1
+        elif tag == "p":
+            self.paragraph_count += 1
+        elif tag in {"ul", "ol", "dl"}:
+            self.list_count += 1
+        elif tag == "table":
+            self.table_count += 1
         elif tag == "a":
             self._anchor_href = data.get("href", "").strip()
             self._anchor_rel = data.get("rel", "").strip()
@@ -152,19 +190,69 @@ class _AuditHTMLParser(HTMLParser):
         if stripped:
             self.text_parts.append(stripped)
 
+    @staticmethod
+    def _type_values(raw_type: object) -> list[str]:
+        if isinstance(raw_type, str):
+            return [raw_type]
+        if isinstance(raw_type, list):
+            return [item for item in raw_type if isinstance(item, str)]
+        return []
+
+    @staticmethod
+    def _compact_text(value: object, maximum: int = 500) -> str:
+        if not isinstance(value, str):
+            return ""
+        return " ".join(value.split())[:maximum]
+
+    def _record_schema_entity(self, value: dict[str, object], types: list[str]) -> None:
+        lowered = {item.lower() for item in types}
+        if not (lowered & _SCHEMA_SIGNAL_TYPES) or len(self.schema_entities) >= 100:
+            return
+        same_as = value.get("sameAs")
+        same_as_values: list[str] = []
+        if isinstance(same_as, str):
+            same_as_values = [same_as[:4096]]
+        elif isinstance(same_as, list):
+            same_as_values = [item[:4096] for item in same_as if isinstance(item, str)][:50]
+
+        brand = value.get("brand")
+        if isinstance(brand, dict):
+            brand_name = self._compact_text(brand.get("name"), 300)
+        else:
+            brand_name = self._compact_text(brand, 300)
+
+        author = value.get("author")
+        if isinstance(author, dict):
+            author_name = self._compact_text(author.get("name"), 300)
+        else:
+            author_name = self._compact_text(author, 300)
+
+        entity = {
+            "types": types[:20],
+            "name": self._compact_text(value.get("name"), 500),
+            "url": self._compact_text(value.get("url"), 4096),
+            "same_as": same_as_values,
+            "brand": brand_name,
+            "author": author_name,
+            "date_published": self._compact_text(value.get("datePublished"), 100),
+            "date_modified": self._compact_text(value.get("dateModified"), 100),
+            "telephone": self._compact_text(value.get("telephone"), 100),
+        }
+        self.schema_entities.append(entity)
+
     def _consume_json_ld(self, raw: str) -> None:
         try:
             payload = json.loads(raw)
         except (json.JSONDecodeError, TypeError, ValueError):
+            self.jsonld_invalid_count += 1
             return
 
         def walk(value):
             if isinstance(value, dict):
-                raw_type = value.get("@type")
-                if isinstance(raw_type, str):
-                    self.schema_types.add(raw_type)
-                elif isinstance(raw_type, list):
-                    self.schema_types.update(item for item in raw_type if isinstance(item, str))
+                types = self._type_values(value.get("@type"))
+                self.schema_types.update(types)
+                if types:
+                    self._record_schema_entity(value, types)
                 for nested in value.values():
                     walk(nested)
             elif isinstance(value, list):
@@ -207,8 +295,14 @@ def parse_html(html: str, final_url: str) -> PageEvidence:
         open_graph=dict(sorted(parser.open_graph.items())),
         twitter_card=dict(sorted(parser.twitter_card.items())),
         schema_types=sorted(parser.schema_types),
+        schema_entities=parser.schema_entities,
+        jsonld_block_count=parser.jsonld_block_count,
+        jsonld_invalid_count=parser.jsonld_invalid_count,
         image_count=parser.image_count,
         image_alt_missing_count=parser.image_alt_missing_count,
+        paragraph_count=parser.paragraph_count,
+        list_count=parser.list_count,
+        table_count=parser.table_count,
         links=parser.links,
         text=text,
     )
