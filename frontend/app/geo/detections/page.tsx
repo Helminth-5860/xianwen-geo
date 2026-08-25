@@ -10,6 +10,7 @@ import { Alert, Button, Card, Checkbox, Empty, Space, Spin, Tag, Typography } fr
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
+import { useSubjectWorkspace } from "@/components/subject-workspace-context";
 import { userMessage } from "@/lib/auth-client";
 import {
   createDetection,
@@ -24,13 +25,12 @@ import {
   type QuestionBankVersion,
   type QuestionBankVersionItem,
 } from "@/lib/question-bank-client";
-import { getSubjects, type SubjectSummary } from "@/lib/subjects-client";
 
 const { Paragraph, Text, Title } = Typography;
 
 export default function GeoDetectionIndexPage() {
   const router = useRouter();
-  const [subject, setSubject] = useState<SubjectSummary | null>(null);
+  const { currentSubject: subject, loading: subjectLoading } = useSubjectWorkspace();
   const [options, setOptions] = useState<DetectionOptions | null>(null);
   const [questionBank, setQuestionBank] = useState<QuestionBankVersion | null>(null);
   const [history, setHistory] = useState<GeoDetectionJob[]>([]);
@@ -43,61 +43,53 @@ export default function GeoDetectionIndexPage() {
 
   useEffect(() => {
     let current = true;
+    if (subjectLoading) return () => undefined;
+    if (!subject) return () => undefined;
+    void (async () => {
+      const [optionResult, questionResult, historyResult] = await Promise.allSettled([
+        getDetectionOptions(subject.id),
+        getCurrentQuestionBank(subject.id),
+        getDetectionHistory(subject.id),
+      ]);
+      if (!current) return;
 
-    void getSubjects()
-      .then(async (data) => {
-        const currentSubject =
-          data.subjects.find((item) => item.id === data.context.current_subject_id) ??
-          data.subjects.find((item) => item.is_current) ??
-          null;
-        if (!current) return;
-        setSubject(currentSubject);
-        if (!currentSubject) return;
+      if (historyResult.status === "fulfilled") {
+        setHistory(
+          [...historyResult.value.items].sort(
+            (left, right) =>
+              new Date(right.created_at).getTime() - new Date(left.created_at).getTime(),
+          ),
+        );
+      }
 
-        const [optionResult, questionResult, historyResult] = await Promise.allSettled([
-          getDetectionOptions(currentSubject.id),
-          getCurrentQuestionBank(currentSubject.id),
-          getDetectionHistory(currentSubject.id),
-        ]);
-        if (!current) return;
+      if (questionResult.status === "fulfilled") setQuestionBank(questionResult.value);
+      if (optionResult.status === "fulfilled") setOptions(optionResult.value);
 
-        if (historyResult.status === "fulfilled") {
-          setHistory(
-            [...historyResult.value.items].sort(
-              (left, right) =>
-                new Date(right.created_at).getTime() - new Date(left.created_at).getTime(),
-            ),
-          );
-        }
+      if (questionResult.status === "fulfilled" && optionResult.status === "fulfilled") {
+        const scoringQuestions = (questionResult.value.items ?? []).filter(
+          (item) => item.participates_in_scoring,
+        );
+        setSelectedQuestions(
+          scoringQuestions
+            .slice(0, optionResult.value.max_questions_per_detection)
+            .map((item) => item.id),
+        );
 
-        if (questionResult.status === "fulfilled") setQuestionBank(questionResult.value);
-        if (optionResult.status === "fulfilled") setOptions(optionResult.value);
+        const configuredModels = optionResult.value.models.filter((model) => model.configured);
+        const defaults = configuredModels.filter((model) => model.selected_by_default);
+        const initialModels = defaults.length > 0 ? defaults : configuredModels;
+        setSelectedModels(
+          initialModels
+            .slice(0, optionResult.value.max_models_per_detection)
+            .map((model) => model.id),
+        );
+      }
 
-        if (questionResult.status === "fulfilled" && optionResult.status === "fulfilled") {
-          const scoringQuestions = (questionResult.value.items ?? []).filter(
-            (item) => item.participates_in_scoring,
-          );
-          setSelectedQuestions(
-            scoringQuestions
-              .slice(0, optionResult.value.max_questions_per_detection)
-              .map((item) => item.id),
-          );
-
-          const configuredModels = optionResult.value.models.filter((model) => model.configured);
-          const defaults = configuredModels.filter((model) => model.selected_by_default);
-          const initialModels = defaults.length > 0 ? defaults : configuredModels;
-          setSelectedModels(
-            initialModels
-              .slice(0, optionResult.value.max_models_per_detection)
-              .map((model) => model.id),
-          );
-        }
-
-        if (optionResult.status === "rejected") setError(userMessage(optionResult.reason));
-        else if (questionResult.status === "rejected") {
-          setError("当前主体还没有可用于检测的正式问题库，请先完成关键词与问题流程。");
-        }
-      })
+      if (optionResult.status === "rejected") setError(userMessage(optionResult.reason));
+      else if (questionResult.status === "rejected") {
+        setError("当前主体还没有可用于检测的正式问题库，请先完成关键词与问题流程。");
+      }
+    })()
       .catch((reason) => {
         if (current) setError(userMessage(reason));
       })
@@ -108,7 +100,7 @@ export default function GeoDetectionIndexPage() {
     return () => {
       current = false;
     };
-  }, []);
+  }, [subject, subjectLoading]);
 
   const questions = useMemo<QuestionBankVersionItem[]>(
     () =>
@@ -170,7 +162,8 @@ export default function GeoDetectionIndexPage() {
     }
   };
 
-  if (loading) return <Spin fullscreen description="正在加载 AI 可见度检测" />;
+  if (subjectLoading || (subject && loading))
+    return <Spin fullscreen description="正在加载 AI 可见度检测" />;
 
   return (
     <main className="geo-dashboard">

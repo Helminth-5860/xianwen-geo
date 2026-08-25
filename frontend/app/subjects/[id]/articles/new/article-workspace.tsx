@@ -22,6 +22,7 @@ import {
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { useSubjectSwitchGuard } from "@/components/subject-workspace-context";
 import {
   checkPublication,
   chooseComparison,
@@ -297,17 +298,33 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
   };
 
   const saveDraft = async () => {
-    if (!article) return;
+    if (!article) return false;
     setBusy(true);
     try {
-      applyArticle(await saveArticleDraft(article, title, content));
+      let currentArticle = article;
+      if (outline !== (article.outline?.text ?? "")) {
+        await saveOutline(article, outline, false);
+        currentArticle = await getArticle(article.id);
+      }
+      applyArticle(await saveArticleDraft(currentArticle, title, content));
       setNotice("当前唯一稿已自动保存；AI 原始生成事实未被修改");
+      return true;
     } catch (reason) {
       setError(userMessage(reason));
+      return false;
     } finally {
       setBusy(false);
     }
   };
+
+  const hasUnsavedArticleChanges = Boolean(
+    article
+      ? title !== article.title ||
+          content !== article.content ||
+          outline !== (article.outline?.text ?? "")
+      : title.trim() || selectedDocuments.length || selectedWebSources.length,
+  );
+  useSubjectSwitchGuard(`article-workspace:${subjectId}`, hasUnsavedArticleChanges, saveDraft);
 
   const adapt = async () => {
     if (!article || !selectedChannels.length) return;

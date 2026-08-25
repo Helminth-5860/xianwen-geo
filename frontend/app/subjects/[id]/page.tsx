@@ -16,11 +16,12 @@ import {
 } from "antd";
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 
 import { SubjectAiEnrichment } from "@/components/subject-ai-enrichment";
 import { SubjectDocuments } from "@/components/subject-documents";
 import { SubjectServiceAreaSelector } from "@/components/subject-service-area-selector";
+import { useSubjectSwitchGuard } from "@/components/subject-workspace-context";
 import { SubjectWebSources } from "@/components/subject-web-sources";
 import { AuthApiError, userMessage } from "@/lib/auth-client";
 import type { SubjectDocument } from "@/lib/documents-client";
@@ -548,17 +549,32 @@ function SubjectDetailContent() {
   };
 
   const save = async () => {
-    if (!subject) return;
+    if (!subject) return true;
     setSaving(true);
     try {
       await persist(subject, values, businessProfile, true);
+      return true;
     } catch (reason) {
       setNotice("");
       setError(subjectErrorMessage(reason, subject));
+      return false;
     } finally {
       setSaving(false);
     }
   };
+
+  const dirty = useMemo(
+    () =>
+      Boolean(
+        subject &&
+        !readOnly &&
+        (JSON.stringify(values) !== JSON.stringify(subject.draft_values) ||
+          JSON.stringify(businessProfile) !== JSON.stringify(subject.business_profile)),
+      ),
+    [businessProfile, readOnly, subject, values],
+  );
+  useSubjectSwitchGuard(`subject-profile:${params.id}`, dirty, save);
+
   if (!subject && !error) {
     return <Spin fullscreen description="正在加载企业资料" />;
   }

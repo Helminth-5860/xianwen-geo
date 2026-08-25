@@ -15,10 +15,10 @@ import zhCN from "antd/locale/zh_CN";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
-import { getCurrentUser, userMessage, type AccountUser } from "@/lib/auth-client";
+import { useSubjectWorkspace } from "@/components/subject-workspace-context";
+import { userMessage } from "@/lib/auth-client";
 import { getReportHistory, type GeoReport } from "@/lib/geo-report-client";
 import { getQuestionBankDraft, type QuestionBankDraft } from "@/lib/question-bank-client";
-import { getSubjects, type SubjectSummary } from "@/lib/subjects-client";
 
 const { Paragraph, Text, Title } = Typography;
 
@@ -34,10 +34,8 @@ type WorkflowItem = Readonly<{
 const metricValue = (value: string | null | undefined) => value ?? "—";
 
 export default function WorkspacePage() {
-  const router = useRouter();
-  const [user, setUser] = useState<AccountUser | null>();
-  const [subjects, setSubjects] = useState<SubjectSummary[]>([]);
-  const [currentSubject, setCurrentSubject] = useState<SubjectSummary | null>(null);
+  const { replace } = useRouter();
+  const { currentSubject, loading: subjectLoading, subjects, user } = useSubjectWorkspace();
   const [questionBank, setQuestionBank] = useState<QuestionBankDraft | null>(null);
   const [reports, setReports] = useState<GeoReport[]>([]);
   const [loading, setLoading] = useState(true);
@@ -45,49 +43,35 @@ export default function WorkspacePage() {
 
   useEffect(() => {
     let current = true;
+    if (subjectLoading) return () => undefined;
+    if (!user) {
+      replace("/login");
+      return () => undefined;
+    }
+    if (user.commercial_identity !== "USER") {
+      replace(user.home_route);
+      return () => undefined;
+    }
+    if (!currentSubject) return () => undefined;
+    void (async () => {
+      const [reportResult, questionResult] = await Promise.allSettled([
+        getReportHistory(currentSubject.id),
+        getQuestionBankDraft(currentSubject.id),
+      ]);
+      if (!current) return;
 
-    void getCurrentUser()
-      .then(async (account) => {
-        if (!current) return;
-        if (account.commercial_identity !== "USER") {
-          router.replace(account.home_route);
-          return;
-        }
-        setUser(account);
-        const subjectData = await getSubjects();
-        if (!current) return;
-        setSubjects(subjectData.subjects);
-        const subject =
-          subjectData.subjects.find((item) => item.id === subjectData.context.current_subject_id) ??
-          subjectData.subjects.find((item) => item.is_current) ??
-          null;
-        setCurrentSubject(subject);
-
-        if (!subject) return;
-
-        const [reportResult, questionResult] = await Promise.allSettled([
-          getReportHistory(subject.id),
-          getQuestionBankDraft(subject.id),
-        ]);
-        if (!current) return;
-
-        if (reportResult.status === "fulfilled") {
-          setReports(
-            [...reportResult.value.items].sort(
-              (left, right) =>
-                new Date(right.generated_at).getTime() - new Date(left.generated_at).getTime(),
-            ),
-          );
-        }
-        if (questionResult.status === "fulfilled") setQuestionBank(questionResult.value);
-      })
+      if (reportResult.status === "fulfilled") {
+        setReports(
+          [...reportResult.value.items].sort(
+            (left, right) =>
+              new Date(right.generated_at).getTime() - new Date(left.generated_at).getTime(),
+          ),
+        );
+      }
+      if (questionResult.status === "fulfilled") setQuestionBank(questionResult.value);
+    })()
       .catch((reason) => {
         if (!current) return;
-        setUser(null);
-        if (reason && typeof reason === "object" && "status" in reason && reason.status === 401) {
-          router.replace("/login");
-          return;
-        }
         setError(userMessage(reason));
       })
       .finally(() => {
@@ -97,7 +81,7 @@ export default function WorkspacePage() {
     return () => {
       current = false;
     };
-  }, [router]);
+  }, [currentSubject, replace, subjectLoading, user]);
 
   const latestReport = reports[0] ?? null;
   const subjectName =
@@ -186,7 +170,8 @@ export default function WorkspacePage() {
     return { label: "查看 GEO 报告", href: `/geo/reports/${latestReport.id}` };
   }, [currentSubject, latestReport, questionReady]);
 
-  if (loading) return <Spin fullscreen description="正在加载 GEO 总览" />;
+  if (subjectLoading || (currentSubject && loading))
+    return <Spin fullscreen description="正在加载 GEO 总览" />;
   if (!user) return null;
 
   return (

@@ -5,12 +5,18 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 
 import PublicHome from "../app/page";
 import WorkspacePage from "../app/workspace/page";
+import {
+  SubjectWorkspaceProvider,
+  SubjectWorkspaceTopbar,
+  useSubjectSwitchGuard,
+} from "../components/subject-workspace-context";
 import { UserWorkspaceNavigation } from "../components/user-workspace-navigation";
+import { subjectSwitchTargetPath } from "../lib/subjects-client";
 
 const getCurrentUser = vi.fn();
 const getSubjects = vi.fn();
 const setCurrentSubject = vi.fn();
-const reloadWorkspaceAfterSubjectChange = vi.fn();
+const navigateWorkspaceAfterSubjectChange = vi.fn();
 const getReportHistory = vi.fn();
 const getQuestionBankDraft = vi.fn();
 let pathname = "/workspace";
@@ -32,7 +38,8 @@ vi.mock("../lib/subjects-client", async () => {
     ...actual,
     getSubjects: (...args: unknown[]) => getSubjects(...args),
     setCurrentSubject: (...args: unknown[]) => setCurrentSubject(...args),
-    reloadWorkspaceAfterSubjectChange: () => reloadWorkspaceAfterSubjectChange(),
+    navigateWorkspaceAfterSubjectChange: (...args: unknown[]) =>
+      navigateWorkspaceAfterSubjectChange(...args),
   };
 });
 vi.mock("../lib/geo-report-client", async () => {
@@ -117,6 +124,14 @@ const latestReport = {
   generated_at: "2026-08-22T08:00:00Z",
 };
 
+const renderInWorkspace = (component: React.ReactNode) =>
+  render(<SubjectWorkspaceProvider>{component}</SubjectWorkspaceProvider>);
+
+function DirtyWorkspace({ save }: Readonly<{ save: () => Promise<boolean> }>) {
+  useSubjectSwitchGuard("test-dirty-page", true, save);
+  return <div>存在未保存修改</div>;
+}
+
 beforeAll(() => {
   globalThis.ResizeObserver = class {
     observe() {}
@@ -160,7 +175,7 @@ describe("GEO 产品工作台", () => {
   });
 
   it("工作台直接展示当前主体、真实 GEO 指标和完整优化主线", async () => {
-    render(<WorkspacePage />);
+    renderInWorkspace(<WorkspacePage />);
     expect(await screen.findByRole("heading", { name: "GEO 总览" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "显问科技" })).toBeTruthy();
     expect(screen.getAllByText("68.2").length).toBeGreaterThan(0);
@@ -179,7 +194,7 @@ describe("GEO 产品工作台", () => {
       subjects: [],
       context: { current_subject_id: null, version: 0 },
     });
-    render(<WorkspacePage />);
+    renderInWorkspace(<WorkspacePage />);
     expect(await screen.findByText("还没有当前 GEO 主体")).toBeTruthy();
     expect(screen.getByRole("link", { name: "创建并选择主体" }).getAttribute("href")).toBe(
       "/subjects",
@@ -189,19 +204,28 @@ describe("GEO 产品工作台", () => {
 
   it("未登录访问工作台时回登录页，而不是显示产品宣传页", async () => {
     getCurrentUser.mockRejectedValue(Object.assign(new Error("unauthenticated"), { status: 401 }));
-    render(<WorkspacePage />);
+    renderInWorkspace(<WorkspacePage />);
     await waitFor(() => expect(replace).toHaveBeenCalledWith("/login"));
     expect(screen.queryByText("创建账号")).toBeNull();
   });
 
   it("左侧导航按 GEO 主线组织，并彻底移除内部 AI 对话入口", async () => {
-    const { rerender } = render(<UserWorkspaceNavigation />);
+    const shell = () => (
+      <SubjectWorkspaceProvider>
+        <SubjectWorkspaceTopbar />
+        <UserWorkspaceNavigation />
+      </SubjectWorkspaceProvider>
+    );
+    const { rerender } = render(shell());
     expect(await screen.findByRole("navigation", { name: "GEO 工作台导航" })).toBeTruthy();
-    expect(screen.getByLabelText("当前主体")).toBeTruthy();
+    expect(screen.getByLabelText("Workspace 当前主体")).toBeTruthy();
     expect(screen.getByRole("link", { name: "主体档案" }).getAttribute("href")).toBe("/subjects");
     expect(screen.getByRole("link", { name: "GEO 总览" }).getAttribute("href")).toBe("/workspace");
-    expect(screen.getByRole("link", { name: "关键词与问题" }).getAttribute("href")).toBe(
+    expect(screen.getByRole("link", { name: "关键词中心" }).getAttribute("href")).toBe(
       "/subjects/subject-1/keywords",
+    );
+    expect(screen.getByRole("link", { name: "问题库" }).getAttribute("href")).toBe(
+      "/subjects/subject-1/questions",
     );
     expect(screen.getByRole("link", { name: "AI 可见度检测" }).getAttribute("href")).toBe(
       "/geo/detections",
@@ -219,7 +243,7 @@ describe("GEO 产品工作台", () => {
     expect(screen.queryByRole("link", { name: "显问 AI 助手" })).toBeNull();
 
     pathname = "/admin";
-    rerender(<UserWorkspaceNavigation />);
+    rerender(shell());
     await waitFor(() =>
       expect(screen.queryByRole("navigation", { name: "GEO 工作台导航" })).toBeNull(),
     );
@@ -230,12 +254,57 @@ describe("GEO 产品工作台", () => {
       subjects: [subject, otherSubject],
       context: { current_subject_id: subject.id, version: 7 },
     });
-    render(<UserWorkspaceNavigation />);
-    const selector = await screen.findByLabelText("当前主体");
+    render(
+      <SubjectWorkspaceProvider>
+        <SubjectWorkspaceTopbar />
+      </SubjectWorkspaceProvider>,
+    );
+    const selector = await screen.findByLabelText("Workspace 当前主体");
     await userEvent.click(selector);
     await userEvent.click(await screen.findByText("显问华南"));
 
     await waitFor(() => expect(setCurrentSubject).toHaveBeenCalledWith("subject-2", 7));
-    expect(reloadWorkspaceAfterSubjectChange).toHaveBeenCalledTimes(1);
+    expect(navigateWorkspaceAfterSubjectChange).toHaveBeenCalledWith("/workspace", "subject-2");
+  });
+
+  it("动态主体路由切换到同一功能的新主体，历史对象详情回到所属模块列表", () => {
+    expect(subjectSwitchTargetPath("/subjects/subject-1/keywords/distill", "subject-2")).toBe(
+      "/subjects/subject-2/keywords/distill",
+    );
+    expect(subjectSwitchTargetPath("/subjects/subject-1/versions/version-1", "subject-2")).toBe(
+      "/subjects/subject-2",
+    );
+    expect(subjectSwitchTargetPath("/geo/reports/report-1", "subject-2")).toBe("/geo/reports");
+    expect(subjectSwitchTargetPath("/geo/detections/detection-1", "subject-2")).toBe(
+      "/geo/detections",
+    );
+  });
+
+  it("有未保存修改时先确认，保存成功后才切换主体", async () => {
+    pathname = "/subjects/subject-1/keywords";
+    getSubjects.mockResolvedValue({
+      subjects: [subject, otherSubject],
+      context: { current_subject_id: subject.id, version: 7 },
+    });
+    const save = vi.fn().mockResolvedValue(true);
+    render(
+      <SubjectWorkspaceProvider>
+        <SubjectWorkspaceTopbar />
+        <DirtyWorkspace save={save} />
+      </SubjectWorkspaceProvider>,
+    );
+    const selector = await screen.findByLabelText("Workspace 当前主体");
+    await userEvent.click(selector);
+    await userEvent.click(await screen.findByText("显问华南"));
+    expect(await screen.findByText("当前页面有未保存修改")).toBeTruthy();
+    expect(setCurrentSubject).not.toHaveBeenCalled();
+
+    await userEvent.click(screen.getByRole("button", { name: "保存后切换" }));
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(setCurrentSubject).toHaveBeenCalledWith("subject-2", 7));
+    expect(navigateWorkspaceAfterSubjectChange).toHaveBeenCalledWith(
+      "/subjects/subject-1/keywords",
+      "subject-2",
+    );
   });
 });

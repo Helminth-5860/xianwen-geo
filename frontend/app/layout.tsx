@@ -1,6 +1,10 @@
 import { AntdRegistry } from "@ant-design/nextjs-registry";
 import type { Metadata } from "next";
 
+import {
+  SubjectWorkspaceProvider,
+  SubjectWorkspaceTopbar,
+} from "@/components/subject-workspace-context";
 import { UserWorkspaceNavigation } from "@/components/user-workspace-navigation";
 
 import "./globals.css";
@@ -16,10 +20,15 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html lang="zh-CN">
       <body>
         <AntdRegistry>
-          <div className="geo-app-shell">
-            <UserWorkspaceNavigation />
-            <div className="geo-app-shell__content">{children}</div>
-          </div>
+          <SubjectWorkspaceProvider>
+            <div className="geo-app-shell">
+              <UserWorkspaceNavigation />
+              <div className="geo-app-shell__content">
+                <SubjectWorkspaceTopbar />
+                {children}
+              </div>
+            </div>
+          </SubjectWorkspaceProvider>
         </AntdRegistry>
       </body>
     </html>

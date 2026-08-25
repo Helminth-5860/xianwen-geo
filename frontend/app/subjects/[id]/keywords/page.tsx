@@ -18,6 +18,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
+import { useSubjectSwitchGuard, useSubjectWorkspace } from "@/components/subject-workspace-context";
 import { AuthApiError, userMessage } from "@/lib/auth-client";
 
 import DistillationPanel from "./distillation-panel";
@@ -27,6 +28,7 @@ import {
   createKeywordGeneration,
   getKeywordDraft,
   getKeywordGenerationJob,
+  getCurrentDistillation,
   getKeywordVersion,
   getKeywordVersions,
   saveKeywordDraft,
@@ -38,7 +40,28 @@ import {
   type KeywordSearchIntent,
   type KeywordStructureType,
   type KeywordVersion,
+  type DistillationVersion,
 } from "@/lib/keywords-client";
+
+export type KeywordCenterStage = "generate" | "distill" | "assets" | "questions";
+
+function effectiveAssetRows(version: DistillationVersion | null) {
+  if (!version) return [];
+  const sourceById = new Map(
+    version.items.map((item) => [item.source_keyword.id, item.source_keyword]),
+  );
+  const assets = new Map<string, (typeof version.items)[number]["source_keyword"]>();
+  for (const item of version.items) {
+    const keyword =
+      item.action === "keep"
+        ? item.source_keyword
+        : item.action === "merge" && item.canonical_keyword_id
+          ? sourceById.get(item.canonical_keyword_id)
+          : null;
+    if (keyword) assets.set(keyword.id, keyword);
+  }
+  return Array.from(assets.values());
+}
 
 const structureOptions = [
   { value: "short", label: "短关键词" },
@@ -88,8 +111,11 @@ function draftItem(): KeywordItem {
   };
 }
 
-export default function KeywordEditorPage() {
+export function KeywordCenterPage({
+  stage = "generate",
+}: Readonly<{ stage?: KeywordCenterStage }>) {
   const params = useParams<{ id: string }>();
+  const { currentSubject } = useSubjectWorkspace();
   const [draft, setDraft] = useState<KeywordDraftState>();
   const [items, setItems] = useState<KeywordItem[]>([]);
   const [versions, setVersions] = useState<KeywordVersion[]>([]);
@@ -100,6 +126,7 @@ export default function KeywordEditorPage() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [generation, setGeneration] = useState<KeywordGenerationJob>();
+  const [currentAssets, setCurrentAssets] = useState<DistillationVersion | null>(null);
   const [targetCount, setTargetCount] = useState(10);
   const [includeShort, setIncludeShort] = useState(false);
   const [includeLongTail, setIncludeLongTail] = useState(false);
@@ -111,13 +138,15 @@ export default function KeywordEditorPage() {
   );
 
   const reload = useCallback(async () => {
-    const [nextDraft, history] = await Promise.all([
+    const [nextDraft, history, assets] = await Promise.all([
       getKeywordDraft(params.id),
       getKeywordVersions(params.id),
+      getCurrentDistillation(params.id).catch(() => null),
     ]);
     setDraft(nextDraft);
     setItems(nextDraft.items);
     setVersions(history.versions);
+    setCurrentAssets(assets);
     setDirty(false);
   }, [params.id]);
 
@@ -235,7 +264,7 @@ export default function KeywordEditorPage() {
   };
 
   const save = async () => {
-    if (!draft?.subject_version) return;
+    if (!draft?.subject_version) return true;
     setBusy(true);
     try {
       const next = await saveKeywordDraft(params.id, {
@@ -248,13 +277,17 @@ export default function KeywordEditorPage() {
       setDirty(false);
       setError("");
       setNotice("关键词草稿已保存");
+      return true;
     } catch (reason) {
       setError(userMessage(reason));
       setNotice("");
+      return false;
     } finally {
       setBusy(false);
     }
   };
+
+  useSubjectSwitchGuard(`keyword-candidates:${params.id}`, dirty, save);
 
   const commit = async () => {
     if (!draft?.subject_version) return;
@@ -283,11 +316,49 @@ export default function KeywordEditorPage() {
     draft.draft_subject_version &&
     draft.subject_version.id !== draft.draft_subject_version.id,
   );
+  const assetRows = effectiveAssetRows(currentAssets);
+  const currentKeywordVersion = versions.find(
+    (version) => version.version_no === draft?.current_keyword_version_no,
+  );
+  const pendingDistillationCount =
+    currentKeywordVersion && currentAssets?.keyword_set_version_id !== currentKeywordVersion.id
+      ? currentKeywordVersion.item_count
+      : 0;
+
+  const stageLinks: ReadonlyArray<{ key: KeywordCenterStage; label: string; href: string }> = [
+    { key: "generate", label: "1. 关键词生成", href: `/subjects/${params.id}/keywords` },
+    { key: "distill", label: "2. 关键词蒸馏", href: `/subjects/${params.id}/keywords/distill` },
+    { key: "assets", label: "3. 关键词资产", href: `/subjects/${params.id}/keywords/assets` },
+    { key: "questions", label: "问题库", href: `/subjects/${params.id}/questions` },
+  ];
 
   return (
     <main className="page-shell">
       <Link href={`/subjects/${params.id}`}>返回主体详情</Link>
-      <Typography.Title style={{ marginTop: 16 }}>关键词编辑器</Typography.Title>
+      <Typography.Title style={{ marginTop: 16 }}>关键词中心</Typography.Title>
+      <Typography.Text type="secondary">关键词编辑器</Typography.Text>
+      <Typography.Paragraph type="secondary">
+        当前企业：{currentSubject?.official_name || currentSubject?.subject_type.name || "当前主体"}
+      </Typography.Paragraph>
+      <Card className="keyword-center-summary" style={{ marginBottom: 20 }}>
+        <Space wrap size="middle">
+          {stageLinks.map((item) => (
+            <Button
+              key={item.key}
+              type={stage === item.key ? "primary" : "default"}
+              href={item.href}
+            >
+              {item.label}
+            </Button>
+          ))}
+        </Space>
+        <Space wrap className="keyword-center-stats">
+          <Tag>当前批次 {generation ? generation.id.slice(0, 8) : "当前草稿"}</Tag>
+          <Tag color="blue">生成数 {items.length}</Tag>
+          <Tag color="orange">待蒸馏 {pendingDistillationCount}</Tag>
+          <Tag color="green">已入资产 {assetRows.length}</Tag>
+        </Space>
+      </Card>
       {error && <Alert type="error" showIcon message={error} style={{ marginBottom: 16 }} />}
       {notice && <Alert type="success" showIcon message={notice} style={{ marginBottom: 16 }} />}
       {baseStale && (
@@ -316,302 +387,350 @@ export default function KeywordEditorPage() {
         </Space>
       )}
 
-      <Card title="AI 关键词生成" style={{ marginBottom: 20 }}>
-        <Space direction="vertical" style={{ width: "100%" }}>
-          <Space wrap>
-            <Typography.Text>生成数量</Typography.Text>
-            <InputNumber
-              aria-label="生成数量"
-              min={1}
-              max={200}
-              value={targetCount}
-              disabled={disabled}
-              onChange={(value) => setTargetCount(value ?? 1)}
-            />
-            <Checkbox
-              checked={includeShort}
-              disabled={disabled}
-              onChange={(event) => setIncludeShort(event.target.checked)}
-            >
-              短关键词
-            </Checkbox>
-            <Checkbox
-              checked={includeLongTail}
-              disabled={disabled}
-              onChange={(event) => setIncludeLongTail(event.target.checked)}
-            >
-              长尾关键词
-            </Checkbox>
-            <Checkbox
-              checked={includeRegional}
-              disabled={disabled}
-              onChange={(event) => setIncludeRegional(event.target.checked)}
-            >
-              地域词
-            </Checkbox>
-          </Space>
-          {!includeShort && !includeLongTail && (
-            <Typography.Text type="secondary">
-              未选择短词或长尾词时，将使用通用模式。
-            </Typography.Text>
-          )}
-          {includeRegional && (
-            <Input
-              aria-label="生成地域"
-              value={regionsText}
-              disabled={disabled}
-              placeholder="多个地域用英文逗号分隔，例如：上海,杭州"
-              onChange={(event) => setRegionsText(event.target.value)}
-            />
-          )}
-          <Space wrap>
-            <Button
-              type="primary"
-              loading={busy}
-              disabled={disabled || dirty}
-              onClick={() => void startGeneration(false)}
-            >
-              AI 生成关键词
-            </Button>
-            {regenerationConfirmation && (
-              <Popconfirm
-                title="确认消耗一次关键词再生成额度？"
-                description="额度会先冻结，只有结果成功写入草稿后才会扣除；失败或冲突会释放。"
-                okText="确认再生成"
-                cancelText="取消"
-                onConfirm={() => void startGeneration(true)}
-              >
-                <Button danger disabled={disabled || dirty}>
-                  确认消耗额度并再生成
-                </Button>
-              </Popconfirm>
-            )}
-            {generation && (
-              <>
-                <Tag color={generation.status === "succeeded" ? "green" : "blue"}>
-                  任务：{generation.status}
-                </Tag>
-                <Tag>
-                  {generation.billing.billing_mode === "free_initial"
-                    ? "首次免费"
-                    : `再生成剩余 ${generation.billing.remaining ?? "-"}`}
-                </Tag>
-              </>
-            )}
-          </Space>
-        </Space>
-      </Card>
-
-      <Card title="关键词草稿">
-        <Space direction="vertical" style={{ width: "100%" }} size="middle">
-          {items.map((item, index) => (
-            <Card key={item.id ?? `new-${index}`} size="small">
-              <Space wrap align="start">
-                <Input
-                  aria-label={`关键词-${index + 1}`}
-                  value={item.text}
+      {stage === "generate" && (
+        <>
+          <Card title="AI 关键词生成" style={{ marginBottom: 20 }}>
+            <Space direction="vertical" style={{ width: "100%" }}>
+              <Space wrap>
+                <Typography.Text>生成数量</Typography.Text>
+                <InputNumber
+                  aria-label="生成数量"
+                  min={1}
+                  max={200}
+                  value={targetCount}
                   disabled={disabled}
-                  placeholder="输入关键词"
-                  style={{ width: 220 }}
-                  onChange={(event) => change(index, { text: event.target.value })}
-                />
-                <Select
-                  aria-label={`关键词类型-${index + 1}`}
-                  value={item.structure_type}
-                  disabled={disabled}
-                  options={structureOptions}
-                  style={{ width: 140 }}
-                  onChange={(value: KeywordStructureType) =>
-                    change(index, { structure_type: value })
-                  }
+                  onChange={(value) => setTargetCount(value ?? 1)}
                 />
                 <Checkbox
-                  aria-label={`地域词-${index + 1}`}
-                  checked={item.is_regional}
+                  checked={includeShort}
                   disabled={disabled}
-                  onChange={(event) =>
-                    change(index, {
-                      is_regional: event.target.checked,
-                      region_level: event.target.checked ? item.region_level : null,
-                      region_text: event.target.checked ? item.region_text : null,
-                    })
-                  }
+                  onChange={(event) => setIncludeShort(event.target.checked)}
+                >
+                  短关键词
+                </Checkbox>
+                <Checkbox
+                  checked={includeLongTail}
+                  disabled={disabled}
+                  onChange={(event) => setIncludeLongTail(event.target.checked)}
+                >
+                  长尾关键词
+                </Checkbox>
+                <Checkbox
+                  checked={includeRegional}
+                  disabled={disabled}
+                  onChange={(event) => setIncludeRegional(event.target.checked)}
                 >
                   地域词
                 </Checkbox>
-                {item.is_regional && (
+              </Space>
+              {!includeShort && !includeLongTail && (
+                <Typography.Text type="secondary">
+                  未选择短词或长尾词时，将使用通用模式。
+                </Typography.Text>
+              )}
+              {includeRegional && (
+                <Input
+                  aria-label="生成地域"
+                  value={regionsText}
+                  disabled={disabled}
+                  placeholder="多个地域用英文逗号分隔，例如：上海,杭州"
+                  onChange={(event) => setRegionsText(event.target.value)}
+                />
+              )}
+              <Space wrap>
+                <Button
+                  type="primary"
+                  loading={busy}
+                  disabled={disabled || dirty}
+                  onClick={() => void startGeneration(false)}
+                >
+                  AI 生成关键词
+                </Button>
+                {regenerationConfirmation && (
+                  <Popconfirm
+                    title="确认消耗一次关键词再生成额度？"
+                    description="额度会先冻结，只有结果成功写入草稿后才会扣除；失败或冲突会释放。"
+                    okText="确认再生成"
+                    cancelText="取消"
+                    onConfirm={() => void startGeneration(true)}
+                  >
+                    <Button danger disabled={disabled || dirty}>
+                      确认消耗额度并再生成
+                    </Button>
+                  </Popconfirm>
+                )}
+                {generation && (
                   <>
-                    <Select
-                      aria-label={`地域层级-${index + 1}`}
-                      allowClear
-                      value={item.region_level ?? undefined}
+                    <Tag color={generation.status === "succeeded" ? "green" : "blue"}>
+                      任务：{generation.status}
+                    </Tag>
+                    <Tag>
+                      {generation.billing.billing_mode === "free_initial"
+                        ? "首次免费"
+                        : `再生成剩余 ${generation.billing.remaining ?? "-"}`}
+                    </Tag>
+                  </>
+                )}
+              </Space>
+            </Space>
+          </Card>
+
+          <Card title="关键词草稿">
+            <Space direction="vertical" style={{ width: "100%" }} size="middle">
+              {items.map((item, index) => (
+                <Card key={item.id ?? `new-${index}`} size="small">
+                  <Space wrap align="start">
+                    <Input
+                      aria-label={`关键词-${index + 1}`}
+                      value={item.text}
                       disabled={disabled}
-                      options={regionOptions}
-                      placeholder="地域层级"
+                      placeholder="输入关键词"
+                      style={{ width: 220 }}
+                      onChange={(event) => change(index, { text: event.target.value })}
+                    />
+                    <Select
+                      aria-label={`关键词类型-${index + 1}`}
+                      value={item.structure_type}
+                      disabled={disabled}
+                      options={structureOptions}
                       style={{ width: 140 }}
-                      onChange={(value: KeywordRegionLevel | undefined) =>
-                        change(index, { region_level: value ?? null })
+                      onChange={(value: KeywordStructureType) =>
+                        change(index, { structure_type: value })
+                      }
+                    />
+                    <Checkbox
+                      aria-label={`地域词-${index + 1}`}
+                      checked={item.is_regional}
+                      disabled={disabled}
+                      onChange={(event) =>
+                        change(index, {
+                          is_regional: event.target.checked,
+                          region_level: event.target.checked ? item.region_level : null,
+                          region_text: event.target.checked ? item.region_text : null,
+                        })
+                      }
+                    >
+                      地域词
+                    </Checkbox>
+                    {item.is_regional && (
+                      <>
+                        <Select
+                          aria-label={`地域层级-${index + 1}`}
+                          allowClear
+                          value={item.region_level ?? undefined}
+                          disabled={disabled}
+                          options={regionOptions}
+                          placeholder="地域层级"
+                          style={{ width: 140 }}
+                          onChange={(value: KeywordRegionLevel | undefined) =>
+                            change(index, { region_level: value ?? null })
+                          }
+                        />
+                        <Input
+                          aria-label={`地域文本-${index + 1}`}
+                          value={item.region_text ?? ""}
+                          disabled={disabled}
+                          placeholder="例如：上海"
+                          style={{ width: 180 }}
+                          onChange={(event) => change(index, { region_text: event.target.value })}
+                        />
+                      </>
+                    )}
+                    <Input
+                      aria-label={`基础关键词-${index + 1}`}
+                      value={item.base_keyword_text ?? ""}
+                      disabled={disabled}
+                      placeholder="基础关键词（可选）"
+                      style={{ width: 200 }}
+                      onChange={(event) =>
+                        change(index, { base_keyword_text: event.target.value || null })
                       }
                     />
                     <Input
-                      aria-label={`地域文本-${index + 1}`}
-                      value={item.region_text ?? ""}
+                      aria-label={`业务分类-${index + 1}`}
+                      value={item.business_category ?? ""}
                       disabled={disabled}
-                      placeholder="例如：上海"
+                      placeholder="业务分类（可选）"
                       style={{ width: 180 }}
-                      onChange={(event) => change(index, { region_text: event.target.value })}
+                      onChange={(event) =>
+                        change(index, { business_category: event.target.value || null })
+                      }
                     />
-                  </>
-                )}
-                <Input
-                  aria-label={`基础关键词-${index + 1}`}
-                  value={item.base_keyword_text ?? ""}
-                  disabled={disabled}
-                  placeholder="基础关键词（可选）"
-                  style={{ width: 200 }}
-                  onChange={(event) =>
-                    change(index, { base_keyword_text: event.target.value || null })
-                  }
-                />
-                <Input
-                  aria-label={`业务分类-${index + 1}`}
-                  value={item.business_category ?? ""}
-                  disabled={disabled}
-                  placeholder="业务分类（可选）"
-                  style={{ width: 180 }}
-                  onChange={(event) =>
-                    change(index, { business_category: event.target.value || null })
-                  }
-                />
-                <Select
-                  aria-label={`搜索意图-${index + 1}`}
-                  allowClear
-                  value={item.search_intent ?? undefined}
-                  disabled={disabled}
-                  options={intentOptions}
-                  placeholder="搜索意图"
-                  style={{ width: 150 }}
-                  onChange={(value: KeywordSearchIntent | undefined) =>
-                    change(index, { search_intent: value ?? null })
-                  }
-                />
-                <Select
-                  aria-label={`优先级-${index + 1}`}
-                  allowClear
-                  value={item.priority ?? undefined}
-                  disabled={disabled}
-                  options={priorityOptions}
-                  placeholder="优先级"
-                  style={{ width: 120 }}
-                  onChange={(value: KeywordPriority | undefined) =>
-                    change(index, { priority: value ?? null })
-                  }
-                />
-                {item.relevance_score !== null && (
-                  <Tag aria-label={`相关度-${index + 1}`}>相关度 {item.relevance_score}</Tag>
-                )}
-                {item.ai_reason && (
-                  <Typography.Text
-                    aria-label={`AI 理由-${index + 1}`}
-                    type="secondary"
-                    style={{ maxWidth: 360 }}
-                  >
-                    {item.ai_reason}
-                  </Typography.Text>
-                )}
+                    <Select
+                      aria-label={`搜索意图-${index + 1}`}
+                      allowClear
+                      value={item.search_intent ?? undefined}
+                      disabled={disabled}
+                      options={intentOptions}
+                      placeholder="搜索意图"
+                      style={{ width: 150 }}
+                      onChange={(value: KeywordSearchIntent | undefined) =>
+                        change(index, { search_intent: value ?? null })
+                      }
+                    />
+                    <Select
+                      aria-label={`优先级-${index + 1}`}
+                      allowClear
+                      value={item.priority ?? undefined}
+                      disabled={disabled}
+                      options={priorityOptions}
+                      placeholder="优先级"
+                      style={{ width: 120 }}
+                      onChange={(value: KeywordPriority | undefined) =>
+                        change(index, { priority: value ?? null })
+                      }
+                    />
+                    {item.relevance_score !== null && (
+                      <Tag aria-label={`相关度-${index + 1}`}>相关度 {item.relevance_score}</Tag>
+                    )}
+                    {item.ai_reason && (
+                      <Typography.Text
+                        aria-label={`AI 理由-${index + 1}`}
+                        type="secondary"
+                        style={{ maxWidth: 360 }}
+                      >
+                        {item.ai_reason}
+                      </Typography.Text>
+                    )}
+                    <Button
+                      aria-label={`上移-${index + 1}`}
+                      disabled={disabled || index === 0}
+                      onClick={() => move(index, -1)}
+                    >
+                      上移
+                    </Button>
+                    <Button
+                      aria-label={`下移-${index + 1}`}
+                      disabled={disabled || index === items.length - 1}
+                      onClick={() => move(index, 1)}
+                    >
+                      下移
+                    </Button>
+                    <Button
+                      aria-label={`删除-${index + 1}`}
+                      danger
+                      disabled={disabled}
+                      onClick={() => {
+                        setItems((current) =>
+                          current.filter((_, itemIndex) => itemIndex !== index),
+                        );
+                        setDirty(true);
+                      }}
+                    >
+                      删除
+                    </Button>
+                  </Space>
+                </Card>
+              ))}
+              <Space>
                 <Button
-                  aria-label={`上移-${index + 1}`}
-                  disabled={disabled || index === 0}
-                  onClick={() => move(index, -1)}
-                >
-                  上移
-                </Button>
-                <Button
-                  aria-label={`下移-${index + 1}`}
-                  disabled={disabled || index === items.length - 1}
-                  onClick={() => move(index, 1)}
-                >
-                  下移
-                </Button>
-                <Button
-                  aria-label={`删除-${index + 1}`}
-                  danger
                   disabled={disabled}
                   onClick={() => {
-                    setItems((current) => current.filter((_, itemIndex) => itemIndex !== index));
+                    setItems((current) => [
+                      ...current,
+                      { ...draftItem(), sort_order: current.length },
+                    ]);
                     setDirty(true);
                   }}
                 >
-                  删除
+                  添加关键词
+                </Button>
+                <Button
+                  type="primary"
+                  loading={busy}
+                  disabled={disabled}
+                  onClick={() => void save()}
+                >
+                  保存草稿
+                </Button>
+                <Popconfirm
+                  title="提交关键词正式版本"
+                  description="提交后会形成不可修改的关键词历史版本。"
+                  okText="确认提交"
+                  cancelText="取消"
+                  onConfirm={() => void commit()}
+                >
+                  <Button
+                    loading={busy}
+                    disabled={disabled || dirty || baseStale || items.length === 0}
+                  >
+                    保存并生成新版本
+                  </Button>
+                </Popconfirm>
+              </Space>
+            </Space>
+          </Card>
+        </>
+      )}
+
+      {stage === "distill" && (
+        <DistillationPanel
+          subjectId={params.id}
+          keywordDirty={dirty}
+          onDirtyChange={setDistillationDirty}
+        />
+      )}
+      {stage === "questions" && (
+        <QuestionBankPanel subjectId={params.id} upstreamDirty={dirty || distillationDirty} />
+      )}
+
+      {stage === "assets" && (
+        <Card title="关键词资产" style={{ marginTop: 20 }}>
+          {currentAssets ? (
+            <Space direction="vertical" style={{ width: "100%" }} size="middle">
+              <Typography.Text type="secondary">
+                这里只展示当前主体已确认的蒸馏结果；问题库只会读取这一组稳定关键词资产。
+              </Typography.Text>
+              <Space wrap>
+                <Tag color="green">资产版本 v{currentAssets.version_no}</Tag>
+                <Tag>资产数量 {assetRows.length}</Tag>
+              </Space>
+              <Space wrap>
+                {assetRows.map((item) => (
+                  <Tag key={item.id} color="blue">
+                    {item.text}
+                    {item.region_text ? ` · ${item.region_text}` : ""}
+                  </Tag>
+                ))}
+              </Space>
+            </Space>
+          ) : (
+            <Typography.Text type="secondary">
+              暂无关键词资产。请先完成关键词生成并确认蒸馏结果。
+            </Typography.Text>
+          )}
+        </Card>
+      )}
+
+      {stage === "generate" && (
+        <Card title="关键词版本历史" style={{ marginTop: 20 }}>
+          <Space direction="vertical" style={{ width: "100%" }}>
+            {versions.length === 0 && (
+              <Typography.Text type="secondary">暂无正式版本</Typography.Text>
+            )}
+            {versions.map((version) => (
+              <Space key={version.id}>
+                <Typography.Text>v{version.version_no}</Typography.Text>
+                <Typography.Text type="secondary">
+                  基于主体 v{version.subject_version.version_no} · {version.item_count} 个关键词
+                </Typography.Text>
+                <Button
+                  size="small"
+                  onClick={() =>
+                    void getKeywordVersion(params.id, version.id)
+                      .then(setSelectedVersion)
+                      .catch((reason) => setError(userMessage(reason)))
+                  }
+                >
+                  查看
                 </Button>
               </Space>
-            </Card>
-          ))}
-          <Space>
-            <Button
-              disabled={disabled}
-              onClick={() => {
-                setItems((current) => [...current, { ...draftItem(), sort_order: current.length }]);
-                setDirty(true);
-              }}
-            >
-              添加关键词
-            </Button>
-            <Button type="primary" loading={busy} disabled={disabled} onClick={() => void save()}>
-              保存草稿
-            </Button>
-            <Popconfirm
-              title="提交关键词正式版本"
-              description="提交后会形成不可修改的关键词历史版本。"
-              okText="确认提交"
-              cancelText="取消"
-              onConfirm={() => void commit()}
-            >
-              <Button
-                loading={busy}
-                disabled={disabled || dirty || baseStale || items.length === 0}
-              >
-                保存并生成新版本
-              </Button>
-            </Popconfirm>
+            ))}
           </Space>
-        </Space>
-      </Card>
+        </Card>
+      )}
 
-      <DistillationPanel
-        subjectId={params.id}
-        keywordDirty={dirty}
-        onDirtyChange={setDistillationDirty}
-      />
-      <QuestionBankPanel subjectId={params.id} upstreamDirty={dirty || distillationDirty} />
-
-      <Card title="关键词版本历史" style={{ marginTop: 20 }}>
-        <Space direction="vertical" style={{ width: "100%" }}>
-          {versions.length === 0 && (
-            <Typography.Text type="secondary">暂无正式版本</Typography.Text>
-          )}
-          {versions.map((version) => (
-            <Space key={version.id}>
-              <Typography.Text>v{version.version_no}</Typography.Text>
-              <Typography.Text type="secondary">
-                基于主体 v{version.subject_version.version_no} · {version.item_count} 个关键词
-              </Typography.Text>
-              <Button
-                size="small"
-                onClick={() =>
-                  void getKeywordVersion(params.id, version.id)
-                    .then(setSelectedVersion)
-                    .catch((reason) => setError(userMessage(reason)))
-                }
-              >
-                查看
-              </Button>
-            </Space>
-          ))}
-        </Space>
-      </Card>
-
-      {selectedVersion && (
+      {stage === "generate" && selectedVersion && (
         <Card title={`关键词正式版本 v${selectedVersion.version_no}`} style={{ marginTop: 20 }}>
           <Space direction="vertical">
             {selectedVersion.items?.map((item) => (
@@ -626,4 +745,8 @@ export default function KeywordEditorPage() {
       )}
     </main>
   );
+}
+
+export default function KeywordEditorPage() {
+  return <KeywordCenterPage />;
 }

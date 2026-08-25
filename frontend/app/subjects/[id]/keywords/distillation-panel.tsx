@@ -3,6 +3,7 @@
 import { Alert, Button, Card, Input, Popconfirm, Select, Space, Tag, Typography } from "antd";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { useSubjectSwitchGuard } from "@/components/subject-workspace-context";
 import { AuthApiError, userMessage } from "@/lib/auth-client";
 import {
   confirmDistillation,
@@ -171,7 +172,7 @@ export default function DistillationPanel({ subjectId, keywordDirty, onDirtyChan
   };
 
   const save = async () => {
-    if (!draft) return;
+    if (!draft) return true;
     setBusy(true);
     try {
       const next = await saveDistillationDraft(subjectId, draft.version, items);
@@ -180,13 +181,17 @@ export default function DistillationPanel({ subjectId, keywordDirty, onDirtyChan
       setDirty(false);
       setError("");
       setNotice("蒸馏调整草稿已保存，尚未形成正式版本");
+      return true;
     } catch (reason) {
       setError(userMessage(reason));
       setNotice("");
+      return false;
     } finally {
       setBusy(false);
     }
   };
+
+  useSubjectSwitchGuard(`keyword-distillation:${subjectId}`, dirty, save);
 
   const confirm = async () => {
     if (!draft) return;

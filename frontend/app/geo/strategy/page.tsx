@@ -8,31 +8,24 @@ import {
 import { Alert, Button, Card, Empty, Space, Spin, Tag, Typography } from "antd";
 import { useEffect, useState } from "react";
 
+import { useSubjectWorkspace } from "@/components/subject-workspace-context";
 import { userMessage } from "@/lib/auth-client";
 import { getReportHistory, type GeoReport } from "@/lib/geo-report-client";
-import { getSubjects, type SubjectSummary } from "@/lib/subjects-client";
 
 const { Paragraph, Text, Title } = Typography;
 
 export default function GeoStrategyIndexPage() {
-  const [subject, setSubject] = useState<SubjectSummary | null>(null);
+  const { currentSubject: subject, loading: subjectLoading } = useSubjectWorkspace();
   const [reports, setReports] = useState<GeoReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   useEffect(() => {
     let current = true;
-
-    void getSubjects()
-      .then(async (data) => {
-        const currentSubject =
-          data.subjects.find((item) => item.id === data.context.current_subject_id) ??
-          data.subjects.find((item) => item.is_current) ??
-          null;
-        if (!current) return;
-        setSubject(currentSubject);
-        if (!currentSubject) return;
-        const result = await getReportHistory(currentSubject.id);
+    if (subjectLoading) return () => undefined;
+    if (!subject) return () => undefined;
+    void getReportHistory(subject.id)
+      .then((result) => {
         if (!current) return;
         setReports(
           [...result.items].sort(
@@ -51,9 +44,10 @@ export default function GeoStrategyIndexPage() {
     return () => {
       current = false;
     };
-  }, []);
+  }, [subject, subjectLoading]);
 
-  if (loading) return <Spin fullscreen description="正在加载优化策略" />;
+  if (subjectLoading || (subject && loading))
+    return <Spin fullscreen description="正在加载优化策略" />;
 
   return (
     <main className="geo-dashboard">

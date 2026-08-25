@@ -349,6 +349,26 @@ export function reloadWorkspaceAfterSubjectChange() {
   if (typeof window !== "undefined") window.location.reload();
 }
 
+export function subjectSwitchTargetPath(pathname: string, nextSubjectId: string) {
+  const subjectRoute = pathname.match(/^\/subjects\/[^/]+(\/.*)?$/);
+  if (subjectRoute) {
+    const suffix = subjectRoute[1] ?? "";
+    if (suffix.startsWith("/versions")) return `/subjects/${nextSubjectId}`;
+    return `/subjects/${nextSubjectId}${suffix}`;
+  }
+  if (/^\/geo\/detections\/[^/]+/.test(pathname)) return "/geo/detections";
+  if (/^\/geo\/reports\/[^/]+/.test(pathname)) {
+    return pathname.includes("/strategy") ? "/geo/strategy" : "/geo/reports";
+  }
+  return pathname;
+}
+
+export function navigateWorkspaceAfterSubjectChange(pathname: string, nextSubjectId: string) {
+  if (typeof window !== "undefined") {
+    window.location.assign(subjectSwitchTargetPath(pathname, nextSubjectId));
+  }
+}
+
 export const getSubjects = (status = "") =>
   get<SubjectList>(`/subjects${status ? `?status=${encodeURIComponent(status)}` : ""}`);
 

@@ -4,7 +4,7 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import KeywordEditorPage from "@/app/subjects/[id]/keywords/page";
+import KeywordEditorPage, { KeywordCenterPage } from "@/app/subjects/[id]/keywords/page";
 import { AuthApiError } from "@/lib/auth-client";
 
 const api = vi.hoisted(() => ({
@@ -15,6 +15,7 @@ const api = vi.hoisted(() => ({
   commitKeywords: vi.fn(),
   createKeywordGeneration: vi.fn(),
   getKeywordGenerationJob: vi.fn(),
+  getCurrentDistillation: vi.fn(),
 }));
 
 vi.mock("@/lib/keywords-client", async () => {
@@ -76,6 +77,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   api.getKeywordDraft.mockResolvedValue(draft);
   api.getKeywordVersions.mockResolvedValue({ versions: [] });
+  api.getCurrentDistillation.mockRejectedValue(new Error("no assets"));
   api.createKeywordGeneration.mockReset();
   api.getKeywordGenerationJob.mockReset();
 });
@@ -83,6 +85,51 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("KeywordEditorPage", () => {
+  it("separates confirmed keyword assets from candidate generation", async () => {
+    api.getKeywordVersions.mockResolvedValue({
+      versions: [
+        {
+          id: "kv-1",
+          version_no: 1,
+          subject_version: draft.subject_version,
+          item_count: 1,
+          created_at: "2026-08-25T00:00:00Z",
+        },
+      ],
+    });
+    api.getCurrentDistillation.mockResolvedValue({
+      id: "distillation-1",
+      version_no: 1,
+      subject_version_id: "sv-1",
+      keyword_set_version_id: "kv-1",
+      source_result_id: "result-1",
+      item_count: 1,
+      confirmed_at: "2026-08-25T00:00:00Z",
+      items: [
+        {
+          source_keyword: draft.items[0],
+          action: "keep",
+          canonical_keyword_id: null,
+          merge_group_key: null,
+          ai_action: "keep",
+          ai_canonical_keyword_id: null,
+          ai_merge_group_key: null,
+          ai_reason: "相关",
+          user_reason: "",
+          user_overridden: false,
+          sort_order: 0,
+        },
+      ],
+    });
+
+    render(<KeywordCenterPage stage="assets" />);
+
+    expect(await screen.findByText("关键词资产")).toBeTruthy();
+    expect(screen.getByText("GEO")).toBeTruthy();
+    expect(screen.getByText("资产版本 v1")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "AI 生成关键词" })).toBeNull();
+  });
+
   it("adds and saves a manual keyword draft alongside generation UI", async () => {
     api.saveKeywordDraft.mockResolvedValue({ ...draft, version: 2 });
     render(<KeywordEditorPage />);

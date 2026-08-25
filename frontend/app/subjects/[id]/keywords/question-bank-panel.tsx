@@ -14,6 +14,7 @@ import {
 } from "antd";
 import { useCallback, useEffect, useState } from "react";
 
+import { useSubjectSwitchGuard } from "@/components/subject-workspace-context";
 import { AuthApiError, userMessage } from "@/lib/auth-client";
 import {
   confirmQuestionBank,
@@ -167,7 +168,7 @@ export default function QuestionBankPanel({ subjectId, upstreamDirty }: Props) {
   };
 
   const save = async () => {
-    if (!draft) return;
+    if (!draft) return true;
     setBusy(true);
     try {
       const next = await saveQuestionBankDraft(subjectId, draft.version, items);
@@ -176,13 +177,17 @@ export default function QuestionBankPanel({ subjectId, upstreamDirty }: Props) {
       setDirty(false);
       setError("");
       setNotice("问题库草稿已保存，人工编辑未消耗 AI 次数");
+      return true;
     } catch (reason) {
       setError(userMessage(reason));
       setNotice("");
+      return false;
     } finally {
       setBusy(false);
     }
   };
+
+  useSubjectSwitchGuard(`question-bank:${subjectId}`, dirty, save);
 
   const confirm = async () => {
     if (!draft) return;
