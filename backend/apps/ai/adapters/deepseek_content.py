@@ -50,7 +50,7 @@ def _parse_json_object_content(content: object) -> dict:
     """Parse one JSON object while tolerating common model presentation wrappers.
 
     DeepSeek is asked for JSON mode, but an otherwise valid response can still be
-    wrapped in a Markdown fence or a short explanatory prefix/suffix.  This helper
+    wrapped in a Markdown fence or a short explanatory prefix/suffix. This helper
     deliberately does not repair values or invent missing fields; domain adapters
     remain responsible for their own strict schema validation.
     """
@@ -125,6 +125,14 @@ class _DeepSeekStructuredContentAdapter:
                 retryable=False,
             ) from None
 
+    @staticmethod
+    def _parse_error(stable_code: str) -> AIAdapterError:
+        return AIAdapterError(
+            AIAdapterErrorCategory.RESPONSE_PARSE,
+            stable_code=stable_code,
+            retryable=False,
+        )
+
     def invoke(
         self, request: AIAdapterRequest[StructuredContentPayload]
     ) -> AIAdapterResponse[StructuredContentOutput]:
@@ -195,47 +203,56 @@ class _DeepSeekStructuredContentAdapter:
                     stable_code="AI_DEEPSEEK_RESPONSE_TOO_LARGE",
                     retryable=False,
                 )
+
             try:
                 data = response.json()
-                choices = data["choices"]
-                choice = choices[0]
-                content = choice["message"]["content"]
-                parsed = _parse_json_object_content(content)
-                usage = data["usage"]
-            except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError):
-                raise AIAdapterError(
-                    AIAdapterErrorCategory.RESPONSE_PARSE,
-                    stable_code="AI_DEEPSEEK_CONTENT_SCHEMA_INVALID",
-                    retryable=False,
-                ) from None
+            except (json.JSONDecodeError, UnicodeDecodeError, ValueError):
+                raise self._parse_error("AI_DEEPSEEK_CONTENT_RESPONSE_INVALID") from None
+            if not isinstance(data, dict):
+                raise self._parse_error("AI_DEEPSEEK_CONTENT_RESPONSE_INVALID")
+
+            choices = data.get("choices")
             if (
-                not isinstance(data, dict)
-                or not isinstance(choices, list)
+                not isinstance(choices, list)
                 or len(choices) != 1
-                or not isinstance(choice, dict)
-                or not isinstance(parsed, dict)
-                or not isinstance(usage, dict)
+                or not isinstance(choices[0], dict)
             ):
-                raise AIAdapterError(
-                    AIAdapterErrorCategory.RESPONSE_PARSE,
-                    stable_code="AI_DEEPSEEK_CONTENT_SCHEMA_INVALID",
-                    retryable=False,
-                )
+                raise self._parse_error("AI_DEEPSEEK_CONTENT_CHOICES_INVALID")
+            choice = choices[0]
+
+            message = choice.get("message")
+            if not isinstance(message, dict):
+                raise self._parse_error("AI_DEEPSEEK_CONTENT_MESSAGE_INVALID")
+            content = message.get("content")
+            if not isinstance(content, str) or not content.strip():
+                raise self._parse_error("AI_DEEPSEEK_CONTENT_EMPTY")
+            try:
+                parsed = _parse_json_object_content(content)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                if choice.get("finish_reason") == "length":
+                    raise self._parse_error("AI_DEEPSEEK_CONTENT_TRUNCATED") from None
+                raise self._parse_error("AI_DEEPSEEK_CONTENT_JSON_INVALID") from None
+
+            usage = data.get("usage")
+            if not isinstance(usage, dict):
+                raise self._parse_error("AI_DEEPSEEK_CONTENT_USAGE_INVALID")
             input_tokens = _int(usage.get("prompt_tokens"))
             output_tokens = _int(usage.get("completion_tokens"))
             total_tokens = _int(usage.get("total_tokens"))
+            if input_tokens is None or output_tokens is None or total_tokens is None:
+                raise self._parse_error("AI_DEEPSEEK_CONTENT_USAGE_INVALID")
+
             provider_model_id = _safe_optional_text(data.get("model"), maximum=255)
-            if (
-                input_tokens is None
-                or output_tokens is None
-                or total_tokens is None
-                or provider_model_id != request.payload.provider_model_id
-            ):
-                raise AIAdapterError(
-                    AIAdapterErrorCategory.RESPONSE_PARSE,
-                    stable_code="AI_DEEPSEEK_CONTENT_SCHEMA_INVALID",
-                    retryable=False,
-                )
+            if provider_model_id is None:
+                raise self._parse_error("AI_DEEPSEEK_CONTENT_MODEL_ID_INVALID")
+
+            # DeepSeek may accept a compatibility alias in the request and return the
+            # canonical model id that actually served it. A different non-empty model
+            # id is therefore metadata, not evidence of a malformed response.
+            metadata: dict[str, object] = {"provider_model_id": provider_model_id}
+            if provider_model_id != request.payload.provider_model_id:
+                metadata["requested_provider_model_id"] = request.payload.provider_model_id
+
             return AIAdapterResponse(
                 request_id=request.request_id,
                 identity=self.descriptor.identity,
@@ -248,7 +265,7 @@ class _DeepSeekStructuredContentAdapter:
                 ),
                 timing=AIAdapterTiming(latency_ms=max(0, int((monotonic() - started) * 1000))),
                 finish_reason=_map_finish_reason(choice.get("finish_reason")),
-                sanitized_provider_metadata={"provider_model_id": provider_model_id},
+                sanitized_provider_metadata=metadata,
             )
         finally:
             if self._transport is None:
