@@ -19,20 +19,30 @@ from .semantic_services import (
 from .services import execute_website_audit, fail_website_audit
 
 
+def _dispatch_semantic_if_ready(audit_id) -> bool:
+    if not queue_semantic_audit(audit_id):
+        return False
+    execute_website_semantic_audit_task.apply_async(
+        args=[str(audit_id)],
+        queue="ai_content",
+    )
+    return True
+
+
 @shared_task(bind=True, name="website_audits.execute")
 def execute_website_audit_task(self, audit_id):
     try:
         result = execute_website_audit(audit_id)
-        if queue_browser_audit(audit_id):
+        browser_queued = queue_browser_audit(audit_id)
+        if browser_queued:
             execute_website_browser_audit_task.apply_async(
                 args=[str(audit_id)],
                 queue="browser_audit",
             )
-        if queue_semantic_audit(audit_id):
-            execute_website_semantic_audit_task.apply_async(
-                args=[str(audit_id)],
-                queue="ai_content",
-            )
+        else:
+            # Browser auditing can be disabled. Semantic analysis still runs from
+            # deterministic/static evidence instead of being silently skipped.
+            _dispatch_semantic_if_ready(audit_id)
         return result
     except (OperationalError, InterfaceError) as exc:
         if self.request.retries >= 3:
@@ -51,7 +61,9 @@ def execute_website_audit_task(self, audit_id):
 @shared_task(bind=True, name="website_audits.execute_browser")
 def execute_website_browser_audit_task(self, audit_id):
     try:
-        return execute_browser_audit(audit_id)
+        result = execute_browser_audit(audit_id)
+        _dispatch_semantic_if_ready(audit_id)
+        return result
     except WebsiteBrowserAuditBusy:
         status = WebsiteAudit.objects.filter(pk=audit_id).values_list(
             "browser_status", flat=True
@@ -65,6 +77,7 @@ def execute_website_browser_audit_task(self, audit_id):
     except (OperationalError, InterfaceError) as exc:
         if self.request.retries >= 2:
             fail_browser_audit(audit_id, "BROWSER_DATABASE_UNAVAILABLE")
+            _dispatch_semantic_if_ready(audit_id)
             raise
         raise self.retry(
             exc=exc,
@@ -73,6 +86,9 @@ def execute_website_browser_audit_task(self, audit_id):
         ) from exc
     except Exception:
         fail_browser_audit(audit_id)
+        # Browser failure must not erase the deeper content audit; semantic analysis
+        # can still use M1/M2 evidence and records browser_status=failed as evidence.
+        _dispatch_semantic_if_ready(audit_id)
         raise
 
 
