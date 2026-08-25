@@ -12,7 +12,7 @@ RUN addgroup --system app \
     && mkdir -p /home/app \
     && chown app:app /home/app
 
-COPY backend/requirements.txt backend/requirements-dev.txt backend/requirements-browser.txt ./
+COPY backend/requirements.txt backend/requirements-dev.txt ./
 RUN pip install --no-cache-dir --requirement requirements.txt
 
 FROM base AS test
@@ -26,6 +26,7 @@ CMD ["python", "-m", "pytest"]
 
 FROM base AS browser
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright-browsers
+COPY backend/requirements-browser.txt ./
 RUN pip install --no-cache-dir --requirement requirements-browser.txt \
     && mkdir -p /opt/playwright-browsers \
     && PLAYWRIGHT_BROWSERS_PATH=/opt/playwright-browsers python -m playwright install --with-deps chromium \
