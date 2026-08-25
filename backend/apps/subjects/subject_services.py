@@ -9,7 +9,7 @@ from apps.plans.models import Subscription, SubscriptionChange
 from apps.plans.subscription_services import effective_entitlement_snapshot
 from apps.users.models import User
 
-from .models import Subject, SubjectContext, SubjectEvent, SubjectType
+from .models import Subject, SubjectBusinessProfile, SubjectContext, SubjectEvent, SubjectType
 from .schema_snapshots import (
     SCHEMA_SNAPSHOT_FORMAT_VERSION,
     SnapshotValueError,
@@ -183,7 +183,9 @@ def subjects_for_user(user: User):
 
 
 def subject_for_user_or_404(*, user: User, subject_id, lock: bool = False) -> Subject:
-    query = Subject.objects.filter(user=user).select_related("subject_type", "current_version")
+    query = Subject.objects.filter(user=user).select_related(
+        "subject_type", "current_version", "business_profile"
+    )
     if lock:
         query = query.select_for_update(of=("self",))
     try:
@@ -317,12 +319,20 @@ def update_subject_draft(
     subject_id,
     expected_version: int,
     values: dict[str, Any],
+    profile_values: dict[str, Any] | None = None,
 ) -> Subject:
     user = User.objects.select_for_update().get(pk=user_id)
     subject = subject_for_user_or_404(user=user, subject_id=subject_id, lock=True)
     if subject.version != expected_version:
         raise SubjectVersionConflict
-    return merge_subject_draft_values_locked(user=user, subject=subject, values=values)
+    subject = merge_subject_draft_values_locked(user=user, subject=subject, values=values)
+    if profile_values is not None:
+        profile, _ = SubjectBusinessProfile.objects.update_or_create(
+            subject=subject,
+            defaults=profile_values,
+        )
+        subject.business_profile = profile
+    return subject
 
 
 @transaction.atomic

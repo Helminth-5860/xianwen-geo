@@ -6,6 +6,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 
 import SubjectDetailPage from "../app/subjects/[id]/page";
 import SubjectsPage from "../app/subjects/page";
+import { SubjectServiceAreaSelector } from "../components/subject-service-area-selector";
 import type { SubjectDetail, SubjectList, SubjectType } from "../lib/subjects-client";
 
 vi.mock("next/navigation", () => ({ useParams: () => ({ id: "subject-1" }) }));
@@ -72,7 +73,25 @@ const detail: SubjectDetail = {
     name: "\u5386\u53f2\u540d\u79f0",
     stage: "startup",
     regions: ["east"],
+    service_regions: JSON.stringify({ version: 1, nationwide: true, areas: [] }),
     logo: null,
+  },
+  business_profile: {
+    legal_entity_type: "company",
+    contact_name: "张三",
+    contact_phone: "0755-12345678",
+    business_address: "广东省深圳市南山区示例路 1 号",
+    primary_business: "企业 GEO 咨询与内容服务",
+    brand_name: "显问测试品牌",
+    social_channels: {
+      douyin: "显问测试品牌",
+      wechat_channels: "",
+      wechat_official_account: "显问AI",
+      xiaohongshu: "",
+      kuaishou: "",
+      ecommerce_urls: "",
+      other_public_urls: "",
+    },
   },
   form_schema: {
     id: "type-1",
@@ -120,6 +139,19 @@ const detail: SubjectDetail = {
         used_for_ai: false,
         name_role: "product",
         options: [{ option_key: "east", label: "\u534e\u4e1c", sort_order: 10 }],
+      },
+      {
+        field_key: "service_regions",
+        field_type: "textarea",
+        scope: "common",
+        label: "服务地区",
+        description: "主体提供服务的地区",
+        required: false,
+        default_value: null,
+        sort_order: 35,
+        used_for_ai: true,
+        name_role: "none",
+        options: [],
       },
       {
         field_key: "logo",
@@ -227,15 +259,17 @@ afterEach(() => {
 describe("subject draft interactions", () => {
   it("renders and edits an existing subject exclusively from its persisted form schema", async () => {
     render(<SubjectDetailPage />);
-    const name = await screen.findByLabelText("\u5386\u53f2\u4e3b\u4f53\u540d\u79f0");
-    expect(screen.getByText("\u6301\u4e45\u5316\u5feb\u7167\u63cf\u8ff0")).toBeTruthy();
-    expect(screen.getByText(/Schema v2/)).toBeTruthy();
+    const name = await screen.findByLabelText("营业执照主体名称");
+    expect(screen.getByRole("heading", { name: "完善企业经营资料" })).toBeTruthy();
+    expect(screen.getByText("基础身份信息")).toBeTruthy();
+    expect(screen.getByText("经营信息")).toBeTruthy();
+    expect(screen.getByText("品牌与公开资料")).toBeTruthy();
     expect(getSubject).toHaveBeenCalledWith("subject-1");
     expect(getSubjectFormSchema).not.toHaveBeenCalled();
 
     await userEvent.clear(name);
     await userEvent.type(name, "\u66f4\u65b0\u540d\u79f0");
-    await userEvent.click(screen.getByRole("button", { name: "\u4fdd\u5b58\u8349\u7a3f" }));
+    await userEvent.click(screen.getByRole("button", { name: "保存资料" }));
     await waitFor(() =>
       expect(updateSubjectDraft).toHaveBeenCalledWith(
         detail,
@@ -243,13 +277,52 @@ describe("subject draft interactions", () => {
           name: "\u66f4\u65b0\u540d\u79f0",
           stage: "startup",
           regions: ["east"],
+          service_regions: JSON.stringify({ version: 1, nationwide: true, areas: [] }),
+        }),
+        detail.business_profile,
+      ),
+    );
+    expect(await screen.findByText("保存成功")).toBeTruthy();
+    expect(commitSubject).not.toHaveBeenCalled();
+  });
+
+  it("saves the operating profile fields and re-renders the returned values", async () => {
+    updateSubjectDraft.mockImplementationOnce(
+      async (_subject, draftValues, profileValues: SubjectDetail["business_profile"]) => ({
+        ...detail,
+        version: 5,
+        draft_values: draftValues,
+        business_profile: profileValues,
+      }),
+    );
+    render(<SubjectDetailPage />);
+
+    const contact = await screen.findByLabelText("联系人");
+    await userEvent.clear(contact);
+    await userEvent.type(contact, "李四");
+    const xiaohongshu = screen.getByLabelText("小红书");
+    await userEvent.type(xiaohongshu, "显问 GEO 主页");
+    await userEvent.click(screen.getByRole("button", { name: "保存资料" }));
+
+    await waitFor(() =>
+      expect(updateSubjectDraft).toHaveBeenCalledWith(
+        detail,
+        detail.draft_values,
+        expect.objectContaining({
+          contact_name: "李四",
+          social_channels: expect.objectContaining({ xiaohongshu: "显问 GEO 主页" }),
         }),
       ),
     );
+    expect(await screen.findByText("保存成功")).toBeTruthy();
+    expect((screen.getByLabelText("联系人") as HTMLInputElement).value).toBe("李四");
+    expect((screen.getByLabelText("小红书") as HTMLInputElement).value).toBe("显问 GEO 主页");
   });
 
   it("enables the private library and verified image-version selector", async () => {
     render(<SubjectDetailPage />);
+    await screen.findByText("更多资料来源（选填）");
+    await userEvent.click(screen.getByText("更多资料来源（选填）"));
     expect(await screen.findByText("主体资料库")).toBeTruthy();
     expect(screen.getByRole("button", { name: "上传资料" })).toBeTruthy();
     expect(screen.getByLabelText("品牌图片")).toBeTruthy();
@@ -268,12 +341,13 @@ describe("subject draft interactions", () => {
     render(<SubjectDetailPage />);
     expect(
       (await screen.findByRole("button", {
-        name: "\u4fdd\u5b58\u8349\u7a3f",
+        name: "保存资料",
       })) as HTMLButtonElement,
     ).toHaveProperty("disabled", true);
-    expect(
-      screen.getByLabelText("\u5386\u53f2\u4e3b\u4f53\u540d\u79f0") as HTMLInputElement,
-    ).toHaveProperty("disabled", true);
+    expect(screen.getByLabelText("营业执照主体名称") as HTMLInputElement).toHaveProperty(
+      "disabled",
+      true,
+    );
     expect(
       screen.getByRole("button", {
         name: "\u63d0\u4ea4\u6b63\u5f0f\u7248\u672c",
@@ -311,7 +385,7 @@ describe("subject draft interactions", () => {
 
   it("requires local draft edits to be saved before formal commit", async () => {
     render(<SubjectDetailPage />);
-    const name = await screen.findByLabelText("\u5386\u53f2\u4e3b\u4f53\u540d\u79f0");
+    const name = await screen.findByLabelText("营业执照主体名称");
     await userEvent.clear(name);
     await userEvent.type(name, "\u672a\u4fdd\u5b58\u540d\u79f0");
     await userEvent.click(
@@ -342,5 +416,41 @@ describe("subject risk public boundary", () => {
       await screen.findByText("\u8bf7\u6838\u5bf9\u516c\u5f00\u4e3b\u4f53\u8d44\u6599"),
     ).toBeTruthy();
     expect(screen.queryByText(/internal_note|review_evidence|test\.rule/)).toBeNull();
+  });
+});
+
+describe("subject service area selector", () => {
+  it("keeps code and name for multiple mainland area levels and supports nationwide", async () => {
+    const onChange = vi.fn();
+    render(
+      <SubjectServiceAreaSelector
+        disabled={false}
+        value={JSON.stringify({
+          version: 1,
+          nationwide: false,
+          areas: [
+            {
+              code: "440305",
+              name: "南山区",
+              level: "district",
+              path: [
+                { code: "440000", name: "广东省" },
+                { code: "440300", name: "深圳市" },
+                { code: "440305", name: "南山区" },
+              ],
+            },
+          ],
+        })}
+        onChange={onChange}
+      />,
+    );
+
+    expect(screen.getByText("广东省 / 深圳市 / 南山区")).toBeTruthy();
+    await userEvent.click(screen.getByRole("checkbox", { name: "支持全国" }));
+    expect(JSON.parse(onChange.mock.calls[0][0])).toEqual({
+      version: 1,
+      nationwide: true,
+      areas: [],
+    });
   });
 });

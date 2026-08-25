@@ -4,7 +4,7 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { SubjectDetail } from "@/lib/subjects-client";
+import { emptySubjectBusinessProfile, type SubjectDetail } from "@/lib/subjects-client";
 
 import { SubjectAiEnrichment } from "./subject-ai-enrichment";
 
@@ -30,6 +30,7 @@ const subject = {
   updated_at: "2026-08-14T00:00:00Z",
   schema_version: 1,
   draft_values: { name: "示例企业", summary: null },
+  business_profile: emptySubjectBusinessProfile(),
   form_schema: {
     id: "type-1",
     key: "enterprise",

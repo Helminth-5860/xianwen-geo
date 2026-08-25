@@ -4,6 +4,7 @@ from apps.admin_rbac.serializers import StrictSerializer
 
 from .models import (
     Subject,
+    SubjectBusinessProfile,
     SubjectContext,
     SubjectFieldDefinition,
     SubjectFieldOption,
@@ -277,9 +278,58 @@ class SubjectCreateRequestSerializer(StrictSerializer):
     initial_values = serializers.DictField(required=False, default=dict)
 
 
+class SubjectSocialChannelsSerializer(StrictSerializer):
+    douyin = serializers.CharField(required=False, allow_blank=True, default="", max_length=1000)
+    wechat_channels = serializers.CharField(
+        required=False, allow_blank=True, default="", max_length=1000
+    )
+    wechat_official_account = serializers.CharField(
+        required=False, allow_blank=True, default="", max_length=1000
+    )
+    xiaohongshu = serializers.CharField(
+        required=False, allow_blank=True, default="", max_length=1000
+    )
+    kuaishou = serializers.CharField(required=False, allow_blank=True, default="", max_length=1000)
+    ecommerce_urls = serializers.CharField(
+        required=False, allow_blank=True, default="", max_length=5000
+    )
+    other_public_urls = serializers.CharField(
+        required=False, allow_blank=True, default="", max_length=5000
+    )
+
+
+class SubjectBusinessProfileInputSerializer(StrictSerializer):
+    legal_entity_type = serializers.ChoiceField(
+        choices=SubjectBusinessProfile.LegalEntityType.values
+    )
+    contact_name = serializers.CharField(max_length=100)
+    contact_phone = serializers.RegexField(regex=r"^[0-9+()\-\s]{5,32}$", max_length=32)
+    business_address = serializers.CharField(max_length=500)
+    primary_business = serializers.CharField(max_length=5000)
+    brand_name = serializers.CharField(required=False, allow_blank=True, default="", max_length=200)
+    social_channels = SubjectSocialChannelsSerializer(required=False, default=dict)
+
+
+class SubjectBusinessProfileSerializer(serializers.ModelSerializer):
+    social_channels = SubjectSocialChannelsSerializer()
+
+    class Meta:
+        model = SubjectBusinessProfile
+        fields = (
+            "legal_entity_type",
+            "contact_name",
+            "contact_phone",
+            "business_address",
+            "primary_business",
+            "brand_name",
+            "social_channels",
+        )
+
+
 class SubjectDraftUpdateRequestSerializer(StrictSerializer):
     expected_version = serializers.IntegerField(min_value=1)
     values = serializers.DictField()
+    profile_values = SubjectBusinessProfileInputSerializer(required=False)
 
 
 class SubjectStatusRequestSerializer(StrictSerializer):
@@ -390,6 +440,7 @@ class SubjectSummarySerializer(serializers.ModelSerializer):
 
 
 class SubjectDetailSerializer(SubjectSummarySerializer):
+    business_profile = serializers.SerializerMethodField()
     form_schema = serializers.SerializerMethodField()
     product_candidates = serializers.SerializerMethodField()
     has_uncommitted_changes = serializers.SerializerMethodField()
@@ -410,6 +461,7 @@ class SubjectDetailSerializer(SubjectSummarySerializer):
             "updated_at",
             "schema_version",
             "draft_values",
+            "business_profile",
             "form_schema",
             "product_candidates",
             "has_uncommitted_changes",
@@ -418,6 +470,21 @@ class SubjectDetailSerializer(SubjectSummarySerializer):
 
     def get_form_schema(self, obj):
         return public_form_schema(obj.schema_snapshot)
+
+    def get_business_profile(self, obj):
+        try:
+            profile = obj.business_profile
+        except SubjectBusinessProfile.DoesNotExist:
+            return {
+                "legal_entity_type": "",
+                "contact_name": "",
+                "contact_phone": "",
+                "business_address": "",
+                "primary_business": "",
+                "brand_name": "",
+                "social_channels": SubjectSocialChannelsSerializer({}).data,
+            }
+        return SubjectBusinessProfileSerializer(profile).data
 
     def get_product_candidates(self, obj):
         try:

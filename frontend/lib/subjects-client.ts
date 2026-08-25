@@ -228,10 +228,49 @@ export type SubjectSummary = Readonly<{
   updated_at: string;
 }>;
 
+export type SubjectSocialChannels = Readonly<{
+  douyin: string;
+  wechat_channels: string;
+  wechat_official_account: string;
+  xiaohongshu: string;
+  kuaishou: string;
+  ecommerce_urls: string;
+  other_public_urls: string;
+}>;
+
+export type SubjectBusinessProfile = Readonly<{
+  legal_entity_type: "" | "company" | "individual_business";
+  contact_name: string;
+  contact_phone: string;
+  business_address: string;
+  primary_business: string;
+  brand_name: string;
+  social_channels: SubjectSocialChannels;
+}>;
+
+export const emptySubjectBusinessProfile = (): SubjectBusinessProfile => ({
+  legal_entity_type: "",
+  contact_name: "",
+  contact_phone: "",
+  business_address: "",
+  primary_business: "",
+  brand_name: "",
+  social_channels: {
+    douyin: "",
+    wechat_channels: "",
+    wechat_official_account: "",
+    xiaohongshu: "",
+    kuaishou: "",
+    ecommerce_urls: "",
+    other_public_urls: "",
+  },
+});
+
 export type SubjectDetail = SubjectSummary &
   Readonly<{
     schema_version: number;
     draft_values: Record<string, unknown>;
+    business_profile: SubjectBusinessProfile;
     form_schema: PersistedFormSchema;
     product_candidates: ReadonlyArray<{
       candidate_key: string;
@@ -316,10 +355,12 @@ export const getSubject = (id: string) => get<SubjectDetail>(`/subjects/${id}`);
 export const updateSubjectDraft = (
   subject: Pick<SubjectDetail, "id" | "version">,
   values: Record<string, unknown>,
+  profileValues?: SubjectBusinessProfile,
 ) =>
   write<SubjectDetail>("PATCH", `/subjects/${subject.id}/draft`, {
     expected_version: subject.version,
     values,
+    ...(profileValues ? { profile_values: profileValues } : {}),
   });
 
 export const archiveSubject = (subject: Pick<SubjectSummary, "id" | "version">) =>
