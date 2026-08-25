@@ -11,6 +11,15 @@ class WebsiteAudit(models.Model):  # noqa: DJ008
         SUCCEEDED = "succeeded", "已完成"
         FAILED = "failed", "失败"
 
+    class BrowserStatus(models.TextChoices):
+        NOT_STARTED = "not_started", "未开始"
+        QUEUED = "queued", "排队中"
+        RUNNING = "running", "浏览器检测中"
+        SUCCEEDED = "succeeded", "已完成"
+        PARTIAL = "partial", "部分完成"
+        FAILED = "failed", "失败"
+        DISABLED = "disabled", "未启用"
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -39,6 +48,18 @@ class WebsiteAudit(models.Model):  # noqa: DJ008
     stable_error_code = models.CharField(max_length=64, blank=True)
     started_at = models.DateTimeField(null=True, blank=True)
     finished_at = models.DateTimeField(null=True, blank=True)
+    browser_status = models.CharField(
+        max_length=16,
+        choices=BrowserStatus.choices,
+        default=BrowserStatus.NOT_STARTED,
+    )
+    browser_profiles = models.JSONField(default=list)
+    browser_selected_count = models.PositiveIntegerField(default=0)
+    browser_completed_count = models.PositiveIntegerField(default=0)
+    browser_failed_count = models.PositiveIntegerField(default=0)
+    browser_error_code = models.CharField(max_length=64, blank=True)
+    browser_started_at = models.DateTimeField(null=True, blank=True)
+    browser_finished_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -48,6 +69,10 @@ class WebsiteAudit(models.Model):  # noqa: DJ008
         indexes = [
             models.Index(fields=("user", "subject", "created_at"), name="website_audit_owner_idx"),
             models.Index(fields=("status", "created_at"), name="website_audit_status_idx"),
+            models.Index(
+                fields=("browser_status", "created_at"),
+                name="website_browser_status_idx",
+            ),
         ]
 
 
@@ -104,6 +129,84 @@ class WebsiteAuditPage(models.Model):  # noqa: DJ008
         indexes = [
             models.Index(fields=("audit", "http_status"), name="website_page_status_idx"),
             models.Index(fields=("audit", "source", "depth"), name="website_page_source_idx"),
+        ]
+
+
+class WebsiteAuditBrowserSnapshot(models.Model):  # noqa: DJ008
+    class Profile(models.TextChoices):
+        MOBILE = "mobile", "移动端"
+        DESKTOP = "desktop", "桌面端"
+
+    class Status(models.TextChoices):
+        SUCCEEDED = "succeeded", "成功"
+        FAILED = "failed", "失败"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    audit = models.ForeignKey(
+        WebsiteAudit,
+        on_delete=models.CASCADE,
+        related_name="browser_snapshots",
+    )
+    page = models.ForeignKey(
+        WebsiteAuditPage,
+        on_delete=models.CASCADE,
+        related_name="browser_snapshots",
+    )
+    profile = models.CharField(max_length=16, choices=Profile.choices)
+    status = models.CharField(max_length=16, choices=Status.choices)
+    final_url = models.TextField(blank=True)
+    navigation_ms = models.PositiveIntegerField(null=True, blank=True)
+    ttfb_ms = models.PositiveIntegerField(null=True, blank=True)
+    dom_content_loaded_ms = models.PositiveIntegerField(null=True, blank=True)
+    load_ms = models.PositiveIntegerField(null=True, blank=True)
+    fcp_ms = models.PositiveIntegerField(null=True, blank=True)
+    lcp_ms = models.PositiveIntegerField(null=True, blank=True)
+    cls = models.FloatField(null=True, blank=True)
+    tbt_ms = models.PositiveIntegerField(null=True, blank=True)
+    request_count = models.PositiveIntegerField(default=0)
+    failed_request_count = models.PositiveIntegerField(default=0)
+    blocked_request_count = models.PositiveIntegerField(default=0)
+    transfer_bytes = models.PositiveBigIntegerField(default=0)
+    cross_host_request_count = models.PositiveIntegerField(default=0)
+    cross_host_transfer_bytes = models.PositiveBigIntegerField(default=0)
+    resource_summary = models.JSONField(default=dict)
+    console_error_count = models.PositiveIntegerField(default=0)
+    page_error_count = models.PositiveIntegerField(default=0)
+    dom_nodes = models.PositiveIntegerField(default=0)
+    rendered_html_characters = models.PositiveIntegerField(default=0)
+    rendered_text_characters = models.PositiveIntegerField(default=0)
+    static_text_characters = models.PositiveIntegerField(default=0)
+    text_delta = models.IntegerField(default=0)
+    text_growth_ratio = models.FloatField(null=True, blank=True)
+    rendered_title = models.CharField(max_length=500, blank=True)
+    rendered_meta_description = models.TextField(blank=True)
+    rendered_canonical_url = models.TextField(blank=True)
+    rendered_schema_types = models.JSONField(default=list)
+    rendered_heading_counts = models.JSONField(default=dict)
+    visible_image_count = models.PositiveIntegerField(default=0)
+    images_without_alt = models.PositiveIntegerField(default=0)
+    failure_code = models.CharField(max_length=64, blank=True)
+    evidence = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "website_audit_browser_snapshots"
+        ordering = ("page_id", "profile", "id")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("audit", "page", "profile"),
+                name="website_browser_snapshot_unique",
+            )
+        ]
+        indexes = [
+            models.Index(
+                fields=("audit", "profile", "status"),
+                name="website_browser_profile_idx",
+            ),
+            models.Index(
+                fields=("audit", "page"),
+                name="website_browser_page_idx",
+            ),
         ]
 
 
