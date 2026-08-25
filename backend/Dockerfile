@@ -25,12 +25,22 @@ ENTRYPOINT ["/app/entrypoint.sh"]
 CMD ["python", "-m", "pytest"]
 
 FROM base AS browser
-ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright-browsers
+ARG DEBIAN_MIRROR=http://deb.debian.org/debian
+ARG DEBIAN_SECURITY_MIRROR=http://deb.debian.org/debian-security
 COPY backend/requirements-browser.txt ./
-RUN pip install --no-cache-dir --requirement requirements-browser.txt \
-    && mkdir -p /opt/playwright-browsers \
-    && PLAYWRIGHT_BROWSERS_PATH=/opt/playwright-browsers python -m playwright install --with-deps chromium \
-    && chmod -R a+rX /opt/playwright-browsers
+RUN sed -i \
+        -e "s|http://deb.debian.org/debian-security|${DEBIAN_SECURITY_MIRROR}|g" \
+        -e "s|http://deb.debian.org/debian|${DEBIAN_MIRROR}|g" \
+        /etc/apt/sources.list.d/debian.sources \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends chromium fonts-noto-cjk \
+    && rm -rf /var/lib/apt/lists/* \
+    && pip install --no-cache-dir --requirement requirements-browser.txt \
+    && PLAYWRIGHT_EXPECTED_CHROMIUM="$(python -c 'from playwright.sync_api import sync_playwright; p=sync_playwright().start(); print(p.chromium.executable_path); p.stop()')" \
+    && mkdir -p "$(dirname "$PLAYWRIGHT_EXPECTED_CHROMIUM")" \
+    && ln -sf /usr/bin/chromium "$PLAYWRIGHT_EXPECTED_CHROMIUM" \
+    && chromium --version \
+    && test -x "$PLAYWRIGHT_EXPECTED_CHROMIUM"
 COPY --chown=app:app backend/ .
 COPY --chown=app:app config/plan-limit-keys.json /config/plan-limit-keys.json
 RUN sed -i 's/\r$//' /app/entrypoint.sh && chmod +x /app/entrypoint.sh
