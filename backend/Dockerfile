@@ -27,6 +27,7 @@ CMD ["python", "-m", "pytest"]
 FROM base AS browser
 ARG DEBIAN_MIRROR=http://deb.debian.org/debian
 ARG DEBIAN_SECURITY_MIRROR=http://deb.debian.org/debian-security
+ARG BROWSER_PIP_INDEX_URL=https://pypi.org/simple
 COPY backend/requirements-browser.txt ./
 RUN sed -i \
         -e "s|http://deb.debian.org/debian-security|${DEBIAN_SECURITY_MIRROR}|g" \
@@ -35,7 +36,7 @@ RUN sed -i \
     && apt-get update \
     && apt-get install -y --no-install-recommends chromium fonts-noto-cjk \
     && rm -rf /var/lib/apt/lists/* \
-    && pip install --no-cache-dir --requirement requirements-browser.txt \
+    && pip install --no-cache-dir --index-url "$BROWSER_PIP_INDEX_URL" --requirement requirements-browser.txt \
     && PLAYWRIGHT_EXPECTED_CHROMIUM="$(python -c 'from playwright.sync_api import sync_playwright; p=sync_playwright().start(); print(p.chromium.executable_path); p.stop()')" \
     && mkdir -p "$(dirname "$PLAYWRIGHT_EXPECTED_CHROMIUM")" \
     && ln -sf /usr/bin/chromium "$PLAYWRIGHT_EXPECTED_CHROMIUM" \
