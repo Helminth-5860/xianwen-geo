@@ -101,7 +101,7 @@ _SYSTEM_PROMPT = r"""
     {
       "url":"输入中的URL",
       "reason":"为什么这段内容具有引用价值",
-      "excerpt":"从输入页面原文中摘取的短证据，不超过300字"
+      "excerpt":"从输入页面原文中逐字摘取的短证据，不超过300字"
     }
   ]
 }
@@ -110,6 +110,7 @@ _SYSTEM_PROMPT = r"""
 - 如果 input_questions 非空：必须逐条评估，source 必须为 question_bank，question_id 必须与输入完全一致，不得新增或漏掉。
 - 如果 input_questions 为空：基于主体、关键词和网站内容生成 6-20 个核心用户问题，source 必须为 derived，question_id 必须为 null。
 - coverage_score 只衡量官网证据能否回答该问题；没有证据必须低分。
+- citeable_passages.excerpt 必须从对应 url 的 website_pages.text 中逐字摘取，不得改写、概括或拼接不存在的句子。
 
 输出宁可保守，不要为了看起来完整而编造结论。
 """.strip()
@@ -178,6 +179,7 @@ def execute_semantic_provider(
         response.output.content,
         allowed_urls=context.allowed_urls,
         allowed_question_ids=context.allowed_question_ids,
+        page_text_by_url=context.page_text_by_url,
     )
     return SemanticProviderResult(
         validated=validated,
