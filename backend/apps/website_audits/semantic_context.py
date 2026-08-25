@@ -6,7 +6,7 @@ from typing import Any
 from apps.keywords.models import Keyword
 from apps.questions.models import Question
 
-from .models import WebsiteAudit, WebsiteAuditPage
+from .models import WebsiteAudit, WebsiteAuditFinding, WebsiteAuditPage
 
 _PUBLIC_FIELD_HINTS = (
     "name",
@@ -69,6 +69,7 @@ class SemanticAuditContext:
     keywords: list[dict[str, Any]]
     questions: list[dict[str, Any]]
     pages: list[dict[str, Any]]
+    technical_evidence: dict[str, Any]
     allowed_urls: frozenset[str]
     allowed_question_ids: frozenset[str]
     page_text_by_url: dict[str, str]
@@ -239,6 +240,64 @@ def _page_payload(
     return selected
 
 
+def _technical_evidence(audit: WebsiteAudit) -> dict[str, Any]:
+    findings: list[dict[str, Any]] = []
+    rows = (
+        audit.findings.exclude(method=WebsiteAuditFinding.Method.SEMANTIC)
+        .order_by("category", "severity", "check_key")[:80]
+    )
+    for row in rows:
+        safe_evidence = _safe_scalar(row.evidence, maximum=500)
+        findings.append(
+            {
+                "method": row.method,
+                "category": row.category,
+                "dimension": row.dimension,
+                "check_key": row.check_key,
+                "severity": row.severity,
+                "result": row.result,
+                "title": row.title,
+                "affected_count": row.affected_count,
+                "evidence": safe_evidence or {},
+            }
+        )
+
+    browser: list[dict[str, Any]] = []
+    snapshots = audit.browser_snapshots.select_related("page").order_by(
+        "page__depth", "page__url", "profile"
+    )[:40]
+    for row in snapshots:
+        browser.append(
+            {
+                "url": row.final_url or row.page.final_url or row.page.url,
+                "profile": row.profile,
+                "status": row.status,
+                "ttfb_ms": row.ttfb_ms,
+                "fcp_ms": row.fcp_ms,
+                "lcp_ms": row.lcp_ms,
+                "cls": row.cls,
+                "tbt_ms": row.tbt_ms,
+                "request_count": row.request_count,
+                "failed_request_count": row.failed_request_count,
+                "blocked_request_count": row.blocked_request_count,
+                "transfer_bytes": row.transfer_bytes,
+                "dom_nodes": row.dom_nodes,
+                "static_text_characters": row.static_text_characters,
+                "rendered_text_characters": row.rendered_text_characters,
+                "text_growth_ratio": row.text_growth_ratio,
+                "rendered_title": row.rendered_title,
+                "rendered_schema_types": row.rendered_schema_types,
+                "console_error_count": row.console_error_count,
+                "page_error_count": row.page_error_count,
+            }
+        )
+    return {
+        "deterministic_and_browser_findings": findings,
+        "browser_snapshots": browser,
+        "browser_status": audit.browser_status,
+    }
+
+
 def build_semantic_audit_context(
     audit: WebsiteAudit,
     *,
@@ -260,6 +319,7 @@ def build_semantic_audit_context(
         keywords=_keyword_payload(audit, maximum_keywords),
         questions=questions,
         pages=pages,
+        technical_evidence=_technical_evidence(audit),
         allowed_urls=frozenset(str(row["url"]) for row in pages),
         allowed_question_ids=frozenset(str(row["id"]) for row in questions),
         page_text_by_url={str(row["url"]): str(row["text"]) for row in pages},
