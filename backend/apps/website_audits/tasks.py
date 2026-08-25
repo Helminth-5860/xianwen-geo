@@ -1,7 +1,14 @@
 from celery import shared_task  # type: ignore[import-untyped]
 from django.db import InterfaceError, OperationalError
 
-from .browser_services import execute_browser_audit, fail_browser_audit, queue_browser_audit
+from .browser_services import (
+    WebsiteBrowserAuditBusy,
+    WebsiteBrowserAuditNotReady,
+    execute_browser_audit,
+    fail_browser_audit,
+    queue_browser_audit,
+)
+from .models import WebsiteAudit
 from .services import execute_website_audit, fail_website_audit
 
 
@@ -29,6 +36,12 @@ def execute_website_audit_task(self, audit_id):
 def execute_website_browser_audit_task(self, audit_id):
     try:
         return execute_browser_audit(audit_id)
+    except WebsiteBrowserAuditBusy:
+        status = WebsiteAudit.objects.filter(pk=audit_id).values_list("browser_status", flat=True).first()
+        return {"audit_id": str(audit_id), "browser_status": status or "running"}
+    except WebsiteBrowserAuditNotReady:
+        status = WebsiteAudit.objects.filter(pk=audit_id).values_list("browser_status", flat=True).first()
+        return {"audit_id": str(audit_id), "browser_status": status or "not_ready"}
     except (OperationalError, InterfaceError) as exc:
         if self.request.retries >= 2:
             fail_browser_audit(audit_id, "BROWSER_DATABASE_UNAVAILABLE")
