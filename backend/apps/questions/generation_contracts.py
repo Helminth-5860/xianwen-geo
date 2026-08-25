@@ -8,6 +8,8 @@ class QuestionKeywordInput:
     text: str
     region_text: str | None
     search_intent: str | None
+    business_category: str | None = None
+    search_intents: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

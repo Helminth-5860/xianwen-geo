@@ -163,3 +163,41 @@ def test_deepseek_structured_adapter_rejects_malformed_provider_json_without_lea
         )
     assert failure.value.stable_code == "AI_DEEPSEEK_CONTENT_SCHEMA_INVALID"
     assert "provider-secret-not-json" not in str(failure.value)
+
+
+@pytest.mark.parametrize(
+    "content",
+    (
+        '```json\n{"keywords": []}\n```',
+        '以下是结果：\n{"keywords": []}\n请查收。',
+    ),
+)
+def test_deepseek_structured_adapter_accepts_common_json_presentation_wrappers(content):
+    adapter = DeepSeekStrategyAdapter(
+        credential_resolver=_CredentialResolver(),
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(
+                200,
+                json={
+                    "model": "deepseek-chat",
+                    "choices": [
+                        {
+                            "finish_reason": "stop",
+                            "message": {"content": content},
+                        }
+                    ],
+                    "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+                },
+            )
+        ),
+    )
+
+    response = adapter.invoke(
+        _request(
+            adapter,
+            AIModelCapability.IMPROVEMENT_STRATEGY,
+            {"immutable_report_facts": {}},
+        )
+    )
+
+    assert response.output.content == {"keywords": []}

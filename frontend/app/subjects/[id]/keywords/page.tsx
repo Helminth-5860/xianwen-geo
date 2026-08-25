@@ -8,6 +8,7 @@ import {
   Input,
   InputNumber,
   Popconfirm,
+  Radio,
   Select,
   Space,
   Spin,
@@ -18,97 +19,194 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
-import { useSubjectSwitchGuard, useSubjectWorkspace } from "@/components/subject-workspace-context";
+import {
+  keywordRegionSelectionsFromServiceArea,
+  KeywordRegionSelector,
+} from "@/components/keyword-region-selector";
+import { useSubjectWorkspace } from "@/components/subject-workspace-context";
 import { AuthApiError, userMessage } from "@/lib/auth-client";
+import {
+  appendKeywordCandidates,
+  createKeywordGeneration,
+  getKeywordAssets,
+  getKeywordDraft,
+  getKeywordGenerationJob,
+  keywordBusinessCategoryOptions,
+  keywordJobErrorMessage,
+  keywordJobStatusLabel,
+  keywordSearchIntentOptions,
+  updateKeywordAsset,
+  type KeywordDraftState,
+  type KeywordGenerationJob,
+  type KeywordAsset,
+  type KeywordItem,
+  type KeywordRegionSelection,
+  type KeywordSearchIntent,
+} from "@/lib/keywords-client";
 
 import DistillationPanel from "./distillation-panel";
 import QuestionBankPanel from "./question-bank-panel";
-import {
-  commitKeywords,
-  createKeywordGeneration,
-  getKeywordDraft,
-  getKeywordGenerationJob,
-  getCurrentDistillation,
-  getKeywordVersion,
-  getKeywordVersions,
-  saveKeywordDraft,
-  type KeywordDraftState,
-  type KeywordGenerationJob,
-  type KeywordItem,
-  type KeywordPriority,
-  type KeywordRegionLevel,
-  type KeywordSearchIntent,
-  type KeywordStructureType,
-  type KeywordVersion,
-  type DistillationVersion,
-} from "@/lib/keywords-client";
 
-export type KeywordCenterStage = "generate" | "distill" | "assets" | "questions";
+export type KeywordCenterStage = "generate" | "custom" | "distill" | "assets" | "questions";
+type RegionMode = "unrestricted" | "subject" | "custom";
+type LengthType = "short" | "long_tail";
 
-function effectiveAssetRows(version: DistillationVersion | null) {
-  if (!version) return [];
-  const sourceById = new Map(
-    version.items.map((item) => [item.source_keyword.id, item.source_keyword]),
-  );
-  const assets = new Map<string, (typeof version.items)[number]["source_keyword"]>();
-  for (const item of version.items) {
-    const keyword =
-      item.action === "keep"
-        ? item.source_keyword
-        : item.action === "merge" && item.canonical_keyword_id
-          ? sourceById.get(item.canonical_keyword_id)
-          : null;
-    if (keyword) assets.set(keyword.id, keyword);
-  }
-  return Array.from(assets.values());
-}
-
-const structureOptions = [
-  { value: "short", label: "短关键词" },
-  { value: "long_tail", label: "长尾关键词" },
-  { value: "general", label: "通用关键词" },
-];
-const regionOptions = [
-  { value: "country", label: "国家/地区" },
-  { value: "province", label: "省/州" },
-  { value: "city", label: "城市" },
-  { value: "district", label: "区县" },
-  { value: "custom", label: "自定义" },
-];
-const intentOptions = [
-  { value: "informational", label: "信息型" },
-  { value: "navigational", label: "导航型" },
-  { value: "commercial", label: "商业调研型" },
-  { value: "transactional", label: "交易型" },
-];
-const priorityOptions = [
-  { value: "high", label: "高" },
-  { value: "medium", label: "中" },
-  { value: "low", label: "低" },
-];
-
-const readOnlyReasons: Record<string, string> = {
-  account_unavailable: "当前账号状态不允许编辑关键词。",
-  subject_archived: "已归档主体只能查看关键词历史。",
-  subject_version_required: "请先提交主体正式版本，再维护关键词。",
-  plan_required: "当前操作需要有效套餐。",
+const sourceLabels: Readonly<Record<string, string>> = {
+  legacy: "已有关键词",
+  manual: "手工添加",
+  bulk: "批量添加",
+  smart_generation: "智能生成",
+  custom_generation: "自定义生成",
 };
 
-function draftItem(): KeywordItem {
-  return {
-    text: "",
-    structure_type: "general",
-    is_regional: false,
-    region_level: null,
-    region_text: null,
-    base_keyword_text: null,
-    business_category: null,
-    search_intent: null,
-    relevance_score: null,
-    priority: null,
-    ai_reason: null,
-    sort_order: 0,
-  };
+const categoryGroups = [
+  { title: "品牌与业务", values: ["entity", "industry", "product_category", "product"] },
+  { title: "服务与能力", values: ["service", "capability", "goal"] },
+  { title: "需求与场景", values: ["pain_point", "solution", "scenario", "audience"] },
+  { title: "竞争与信任", values: ["competitor", "trust", "knowledge"] },
+] as const;
+
+const legacyIntentMap: Readonly<Record<string, KeywordSearchIntent>> = {
+  informational: "informational",
+  navigational: "navigational",
+  commercial: "recommendation",
+  transactional: "transactional",
+};
+
+function itemIntents(item: KeywordItem): KeywordSearchIntent[] {
+  if (item.search_intents?.length) return item.search_intents;
+  const legacy = item.search_intent ? legacyIntentMap[item.search_intent] : undefined;
+  return legacy ? [legacy] : [];
+}
+
+function categoryLabel(value: string | null) {
+  return keywordBusinessCategoryOptions.find((option) => option.value === value)?.label ?? value;
+}
+
+function intentLabel(value: KeywordSearchIntent) {
+  return keywordSearchIntentOptions.find((option) => option.value === value)?.label ?? value;
+}
+
+function formatUpdatedAt(value: string) {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return new Intl.DateTimeFormat("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(parsed);
+}
+
+function GenerationControls({
+  targetCount,
+  includeShort,
+  includeLongTail,
+  regionMode,
+  regionSelections,
+  serviceRegions,
+  disabled,
+  onTargetCountChange,
+  onIncludeShortChange,
+  onIncludeLongTailChange,
+  onRegionModeChange,
+  onRegionSelectionsChange,
+}: Readonly<{
+  targetCount: number;
+  includeShort: boolean;
+  includeLongTail: boolean;
+  regionMode: RegionMode;
+  regionSelections: KeywordRegionSelection[];
+  serviceRegions: string;
+  disabled: boolean;
+  onTargetCountChange: (value: number) => void;
+  onIncludeShortChange: (value: boolean) => void;
+  onIncludeLongTailChange: (value: boolean) => void;
+  onRegionModeChange: (value: RegionMode) => void;
+  onRegionSelectionsChange: (value: KeywordRegionSelection[]) => void;
+}>) {
+  return (
+    <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+      <div>
+        <Typography.Text strong>1. 生成数量</Typography.Text>
+        <div style={{ marginTop: 8 }}>
+          <Space wrap>
+            <Radio.Group
+              aria-label="生成数量快捷选择"
+              value={[10, 20, 50, 100].includes(targetCount) ? targetCount : undefined}
+              disabled={disabled}
+              optionType="button"
+              buttonStyle="solid"
+              options={[
+                { value: 10, label: "10 个" },
+                { value: 20, label: "20 个" },
+                { value: 50, label: "50 个" },
+                { value: 100, label: "100 个" },
+              ]}
+              onChange={(event) => onTargetCountChange(event.target.value)}
+            />
+            <InputNumber
+              aria-label="自定义生成数量"
+              addonBefore="自定义"
+              min={1}
+              max={200}
+              value={targetCount}
+              disabled={disabled}
+              onChange={(value) => onTargetCountChange(value ?? 1)}
+            />
+          </Space>
+        </div>
+      </div>
+      <div>
+        <Typography.Text strong>2. 关键词长度</Typography.Text>
+        <div style={{ marginTop: 8 }}>
+          <Space wrap>
+            <Checkbox
+              checked={includeShort}
+              disabled={disabled}
+              onChange={(event) => onIncludeShortChange(event.target.checked)}
+            >
+              短关键词
+            </Checkbox>
+            <Checkbox
+              checked={includeLongTail}
+              disabled={disabled}
+              onChange={(event) => onIncludeLongTailChange(event.target.checked)}
+            >
+              长尾关键词
+            </Checkbox>
+          </Space>
+        </div>
+      </div>
+      <div>
+        <Typography.Text strong>3. 地域范围</Typography.Text>
+        <div style={{ marginTop: 8 }}>
+          <Radio.Group
+            aria-label="地域范围"
+            value={regionMode}
+            disabled={disabled}
+            onChange={(event) => onRegionModeChange(event.target.value as RegionMode)}
+          >
+            <Radio value="unrestricted">不限地域</Radio>
+            <Radio value="subject">使用主体服务区域</Radio>
+            <Radio value="custom">自定义地域</Radio>
+          </Radio.Group>
+        </div>
+        {regionMode !== "unrestricted" ? (
+          <div style={{ marginTop: 12 }}>
+            <KeywordRegionSelector
+              mode={regionMode === "subject" ? "subject" : "custom"}
+              serviceRegions={serviceRegions}
+              value={regionSelections}
+              disabled={disabled}
+              onChange={onRegionSelectionsChange}
+            />
+          </div>
+        ) : null}
+      </div>
+    </Space>
+  );
 }
 
 export function KeywordCenterPage({
@@ -118,36 +216,48 @@ export function KeywordCenterPage({
   const { currentSubject } = useSubjectWorkspace();
   const [draft, setDraft] = useState<KeywordDraftState>();
   const [items, setItems] = useState<KeywordItem[]>([]);
-  const [versions, setVersions] = useState<KeywordVersion[]>([]);
-  const [selectedVersion, setSelectedVersion] = useState<KeywordVersion>();
-  const [dirty, setDirty] = useState(false);
+  const [assets, setAssets] = useState<KeywordAsset[]>([]);
+  const [viewingAssetId, setViewingAssetId] = useState<string>();
+  const [editingAssetId, setEditingAssetId] = useState<string>();
+  const [assetText, setAssetText] = useState("");
+  const [assetCategory, setAssetCategory] = useState<string>();
+  const [assetIntents, setAssetIntents] = useState<KeywordSearchIntent[]>([]);
   const [distillationDirty, setDistillationDirty] = useState(false);
+  const [generation, setGeneration] = useState<KeywordGenerationJob>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [generation, setGeneration] = useState<KeywordGenerationJob>();
-  const [currentAssets, setCurrentAssets] = useState<DistillationVersion | null>(null);
-  const [targetCount, setTargetCount] = useState(10);
-  const [includeShort, setIncludeShort] = useState(false);
-  const [includeLongTail, setIncludeLongTail] = useState(false);
-  const [includeRegional, setIncludeRegional] = useState(false);
-  const [regionsText, setRegionsText] = useState("");
   const [regenerationConfirmation, setRegenerationConfirmation] = useState(false);
+  const [targetCount, setTargetCount] = useState(10);
+  const [includeShort, setIncludeShort] = useState(true);
+  const [includeLongTail, setIncludeLongTail] = useState(true);
+  const [regionMode, setRegionMode] = useState<RegionMode>("subject");
+  const [regionSelections, setRegionSelections] = useState<KeywordRegionSelection[]>([]);
+  const [businessCategories, setBusinessCategories] = useState<string[]>([]);
+  const [searchIntents, setSearchIntents] = useState<KeywordSearchIntent[]>([]);
+  const [manualText, setManualText] = useState("");
+  const [manualCategory, setManualCategory] = useState<string>();
+  const [manualIntents, setManualIntents] = useState<KeywordSearchIntent[]>([]);
+  const [manualLength, setManualLength] = useState<LengthType>("short");
+  const [manualRegions, setManualRegions] = useState<KeywordRegionSelection[]>([]);
+  const [manualNotes, setManualNotes] = useState("");
+  const [batchText, setBatchText] = useState("");
+  const [batchCategory, setBatchCategory] = useState<string>();
+  const [batchIntents, setBatchIntents] = useState<KeywordSearchIntent[]>([]);
+  const [batchLength, setBatchLength] = useState<LengthType>("short");
+  const [batchRegions, setBatchRegions] = useState<KeywordRegionSelection[]>([]);
   const generationActive = Boolean(
     generation && ["queued", "running", "retry_wait"].includes(generation.status),
   );
 
   const reload = useCallback(async () => {
-    const [nextDraft, history, assets] = await Promise.all([
+    const [nextDraft, nextAssets] = await Promise.all([
       getKeywordDraft(params.id),
-      getKeywordVersions(params.id),
-      getCurrentDistillation(params.id).catch(() => null),
+      getKeywordAssets(params.id),
     ]);
     setDraft(nextDraft);
     setItems(nextDraft.items);
-    setVersions(history.versions);
-    setCurrentAssets(assets);
-    setDirty(false);
+    setAssets(nextAssets.items.filter((asset) => !asset.deleted));
   }, [params.id]);
 
   useEffect(() => {
@@ -159,24 +269,17 @@ export function KeywordCenterPage({
   }, [reload]);
 
   useEffect(() => {
-    if (!dirty) return;
-    const warn = (event: BeforeUnloadEvent) => event.preventDefault();
-    window.addEventListener("beforeunload", warn);
-    return () => window.removeEventListener("beforeunload", warn);
-  }, [dirty]);
-
-  useEffect(() => {
     if (!generationActive || !generation) return;
     const timer = window.setTimeout(() => {
       void getKeywordGenerationJob(generation.id)
         .then(async (next) => {
           setGeneration(next);
           if (next.status === "succeeded") {
-            setNotice("AI 关键词已写入草稿，请审核、编辑后再提交正式版本");
+            setNotice("AI 关键词已生成，已加入待蒸馏关键词");
             setError("");
             await reload();
           } else if (["failed", "conflict", "superseded"].includes(next.status)) {
-            setError(next.stable_error_code || "关键词生成失败，请重试");
+            setError(keywordJobErrorMessage(next.stable_error_code, "关键词生成失败，请重试"));
             setNotice("");
           }
         })
@@ -185,36 +288,18 @@ export function KeywordCenterPage({
     return () => window.clearTimeout(timer);
   }, [generation, generationActive, reload]);
 
-  const change = (index: number, patch: Partial<KeywordItem>) => {
-    setItems((current) =>
-      current.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item)),
-    );
-    setDirty(true);
-  };
-
-  const move = (index: number, delta: number) => {
-    const target = index + delta;
-    if (target < 0 || target >= items.length) return;
-    setItems((current) => {
-      const next = [...current];
-      [next[index], next[target]] = [next[target], next[index]];
-      return next.map((item, sortOrder) => ({ ...item, sort_order: sortOrder }));
-    });
-    setDirty(true);
-  };
-
-  const startGeneration = async (regenerate: boolean) => {
+  const startGeneration = async (regenerate: boolean, generationMode: "smart" | "custom") => {
     if (!draft?.subject_version) return;
-    if (dirty) {
-      setError("请先保存或放弃本地未保存修改，再启动 AI 生成");
+    if (!includeShort && !includeLongTail) {
+      setError("请至少选择一种关键词长度");
       return;
     }
-    const regions = regionsText
-      .split(",")
-      .map((value) => value.trim())
-      .filter(Boolean);
-    if (includeRegional && regions.length === 0) {
-      setError("选择地域词时至少填写一个地域");
+    if (regionMode === "custom" && regionSelections.length === 0) {
+      setError("请选择至少一个自定义地域");
+      return;
+    }
+    if (generationMode === "custom" && (!businessCategories.length || !searchIntents.length)) {
+      setError("自定义 AI 生成至少需要选择一个关键词分类和一个用户意图");
       return;
     }
     setBusy(true);
@@ -227,8 +312,17 @@ export function KeywordCenterPage({
           targetCount,
           includeShort,
           includeLongTail,
-          includeRegional,
-          regions: includeRegional ? regions : [],
+          includeRegional: regionMode !== "unrestricted",
+          regions:
+            regionMode === "custom"
+              ? regionSelections
+              : regionMode === "subject"
+                ? keywordRegionSelectionsFromServiceArea(currentSubject?.service_regions ?? "")
+                : [],
+          generationMode,
+          categories: generationMode === "custom" ? businessCategories : [],
+          intents: generationMode === "custom" ? searchIntents : [],
+          regionMode,
           regenerate,
         },
         crypto.randomUUID(),
@@ -238,7 +332,7 @@ export function KeywordCenterPage({
       setError("");
       if (job.status === "succeeded") {
         await reload();
-        setNotice("已恢复此前成功的生成结果，关键词草稿已刷新");
+        setNotice("关键词已生成并加入待蒸馏关键词");
       } else {
         setNotice(
           job.billing.billing_mode === "free_initial"
@@ -263,20 +357,34 @@ export function KeywordCenterPage({
     }
   };
 
-  const save = async () => {
-    if (!draft?.subject_version) return true;
+  const appendCandidates = async (
+    source: "manual" | "bulk",
+    values: Array<{
+      text: string;
+      category: string;
+      intents: KeywordSearchIntent[];
+      lengthType: LengthType;
+      regions: KeywordRegionSelection[];
+      notes: string;
+    }>,
+  ) => {
+    if (!draft?.subject_version || values.length === 0) return false;
     setBusy(true);
     try {
-      const next = await saveKeywordDraft(params.id, {
+      const result = await appendKeywordCandidates(params.id, {
         expectedVersion: draft.version,
         expectedSubjectVersionId: draft.subject_version.id,
-        items,
+        source,
+        items: values,
       });
-      setDraft(next);
-      setItems(next.items);
-      setDirty(false);
+      setDraft(result.candidate_pool);
+      setItems(result.candidate_pool.items);
       setError("");
-      setNotice("关键词草稿已保存");
+      setNotice(
+        result.skipped_duplicates.length
+          ? `已加入 ${result.added_count} 个待蒸馏关键词，跳过 ${result.skipped_duplicates.length} 个重复词`
+          : `已加入 ${result.added_count} 个待蒸馏关键词`,
+      );
       return true;
     } catch (reason) {
       setError(userMessage(reason));
@@ -287,26 +395,102 @@ export function KeywordCenterPage({
     }
   };
 
-  useSubjectSwitchGuard(`keyword-candidates:${params.id}`, dirty, save);
-
-  const commit = async () => {
-    if (!draft?.subject_version) return;
-    if (dirty) {
-      setError("请先保存当前关键词草稿，再提交正式版本。");
+  const addManualKeyword = async () => {
+    const text = manualText.trim();
+    if (!text || !manualCategory || manualIntents.length === 0) {
+      setError("请填写关键词，并选择关键词分类和用户意图");
       return;
     }
+    const added = await appendCandidates("manual", [
+      {
+        text,
+        category: manualCategory,
+        intents: manualIntents,
+        lengthType: manualLength,
+        regions: manualRegions,
+        notes: manualNotes.trim(),
+      },
+    ]);
+    if (added) {
+      setManualText("");
+      setManualNotes("");
+    }
+  };
+
+  const addBatchKeywords = async () => {
+    const nonEmptyLines = batchText
+      .split(/\r?\n/)
+      .map((value) => value.trim())
+      .filter(Boolean);
+    const texts = Array.from(new Set(nonEmptyLines));
+    const localDuplicateCount = nonEmptyLines.length - texts.length;
+    if (!texts.length || !batchCategory || batchIntents.length === 0) {
+      setError("请逐行填写关键词，并选择统一的关键词分类和用户意图");
+      return;
+    }
+    const added = await appendCandidates(
+      "bulk",
+      texts.map((text) => ({
+        text,
+        category: batchCategory,
+        intents: batchIntents,
+        lengthType: batchLength,
+        regions: batchRegions,
+        notes: "",
+      })),
+    );
+    if (added) {
+      setBatchText("");
+      if (localDuplicateCount > 0) {
+        setNotice((current) => `${current}；另跳过 ${localDuplicateCount} 个本地重复项`);
+      }
+    }
+  };
+
+  const patchAsset = async (
+    asset: KeywordAsset,
+    patch: Parameters<typeof updateKeywordAsset>[2],
+  ) => {
     setBusy(true);
     try {
-      const result = await commitKeywords(params.id, draft.version, draft.subject_version.id);
-      setNotice(`关键词正式版本 v${result.version.version_no} 已提交`);
+      const updated = await updateKeywordAsset(params.id, asset.id, patch);
+      setAssets((current) =>
+        updated.deleted
+          ? current.filter((item) => item.id !== updated.id)
+          : current.map((item) => (item.id === updated.id ? updated : item)),
+      );
+      setEditingAssetId(undefined);
       setError("");
-      await reload();
+      setNotice(updated.deleted ? "关键词已删除" : "关键词资产已更新");
     } catch (reason) {
       setError(userMessage(reason));
       setNotice("");
     } finally {
       setBusy(false);
     }
+  };
+
+  const beginAssetEdit = (asset: KeywordAsset) => {
+    setEditingAssetId(asset.id);
+    setAssetText(asset.text);
+    setAssetCategory(asset.category ?? undefined);
+    setAssetIntents(asset.intents);
+  };
+
+  const toggleBusinessCategory = (value: string, checked: boolean) => {
+    setBusinessCategories((current) =>
+      checked ? Array.from(new Set([...current, value])) : current.filter((item) => item !== value),
+    );
+  };
+
+  const selectCategoryGroup = (values: readonly string[]) => {
+    setBusinessCategories((current) => Array.from(new Set([...current, ...values])));
+  };
+
+  const toggleSearchIntent = (value: KeywordSearchIntent, checked: boolean) => {
+    setSearchIntents((current) =>
+      checked ? Array.from(new Set([...current, value])) : current.filter((item) => item !== value),
+    );
   };
 
   if (!draft && !error) return <Spin fullscreen description="正在加载关键词" />;
@@ -316,419 +500,535 @@ export function KeywordCenterPage({
     draft.draft_subject_version &&
     draft.subject_version.id !== draft.draft_subject_version.id,
   );
-  const assetRows = effectiveAssetRows(currentAssets);
-  const currentKeywordVersion = versions.find(
-    (version) => version.version_no === draft?.current_keyword_version_no,
-  );
-  const pendingDistillationCount =
-    currentKeywordVersion && currentAssets?.keyword_set_version_id !== currentKeywordVersion.id
-      ? currentKeywordVersion.item_count
-      : 0;
+  const serviceRegions = currentSubject?.service_regions ?? "";
+  const pageTitle =
+    stage === "generate"
+      ? "智能关键词"
+      : stage === "custom"
+        ? "自定义关键词"
+        : stage === "distill"
+          ? "关键词蒸馏"
+          : stage === "assets"
+            ? "关键词资产"
+            : "问题库";
 
   return (
     <main className="page-shell">
       <Link href={`/subjects/${params.id}`}>返回主体详情</Link>
-      <Typography.Title style={{ marginTop: 16 }}>关键词中心</Typography.Title>
-      <Typography.Text type="secondary">关键词编辑器</Typography.Text>
+      <Typography.Title style={{ marginTop: 16 }}>{pageTitle}</Typography.Title>
       <Typography.Paragraph type="secondary">
         当前企业：{currentSubject?.official_name || currentSubject?.subject_type.name || "当前主体"}
       </Typography.Paragraph>
       <Card className="keyword-center-summary" style={{ marginBottom: 20 }}>
         <Space wrap className="keyword-center-stats">
-          <Tag>当前批次 {generation ? generation.id.slice(0, 8) : "当前草稿"}</Tag>
-          <Tag color="blue">生成数 {items.length}</Tag>
-          <Tag color="orange">待蒸馏 {pendingDistillationCount}</Tag>
-          <Tag color="green">已入资产 {assetRows.length}</Tag>
+          <Tag color="orange">待蒸馏关键词 {items.length}</Tag>
+          <Tag color="green">关键词资产 {assets.length}</Tag>
         </Space>
       </Card>
-      {error && <Alert type="error" showIcon message={error} style={{ marginBottom: 16 }} />}
-      {notice && <Alert type="success" showIcon message={notice} style={{ marginBottom: 16 }} />}
-      {baseStale && (
+      {error ? <Alert type="error" showIcon message={error} style={{ marginBottom: 16 }} /> : null}
+      {notice ? (
+        <Alert type="success" showIcon message={notice} style={{ marginBottom: 16 }} />
+      ) : null}
+      {baseStale ? (
         <Alert
           type="warning"
           showIcon
-          message="主体资料正式版本已更新，请先保存关键词草稿以重新绑定后再提交。"
+          message="主体资料已更新，请重新添加或生成关键词。"
           style={{ marginBottom: 16 }}
         />
-      )}
-      {draft && !draft.can_write && draft.read_only_reason && (
+      ) : null}
+      {draft && !draft.can_write && draft.read_only_reason ? (
         <Alert
           type="warning"
           showIcon
-          message={readOnlyReasons[draft.read_only_reason] ?? "当前状态为只读"}
+          message="当前账号或主体状态不允许维护关键词"
           style={{ marginBottom: 16 }}
         />
-      )}
-      {draft?.subject_version && (
-        <Space style={{ marginBottom: 16 }}>
-          <Tag color="blue">主体正式版本 v{draft.subject_version.version_no}</Tag>
-          {draft.current_keyword_version_no && (
-            <Tag color="green">关键词正式版本 v{draft.current_keyword_version_no}</Tag>
-          )}
-          {dirty && <Tag color="orange">有未保存修改</Tag>}
-        </Space>
-      )}
+      ) : null}
 
-      {stage === "generate" && (
-        <>
-          <Card title="AI 关键词生成" style={{ marginBottom: 20 }}>
-            <Space direction="vertical" style={{ width: "100%" }}>
-              <Space wrap>
-                <Typography.Text>生成数量</Typography.Text>
-                <InputNumber
-                  aria-label="生成数量"
-                  min={1}
-                  max={200}
-                  value={targetCount}
-                  disabled={disabled}
-                  onChange={(value) => setTargetCount(value ?? 1)}
-                />
-                <Checkbox
-                  checked={includeShort}
-                  disabled={disabled}
-                  onChange={(event) => setIncludeShort(event.target.checked)}
-                >
-                  短关键词
-                </Checkbox>
-                <Checkbox
-                  checked={includeLongTail}
-                  disabled={disabled}
-                  onChange={(event) => setIncludeLongTail(event.target.checked)}
-                >
-                  长尾关键词
-                </Checkbox>
-                <Checkbox
-                  checked={includeRegional}
-                  disabled={disabled}
-                  onChange={(event) => setIncludeRegional(event.target.checked)}
-                >
-                  地域词
-                </Checkbox>
-              </Space>
-              {!includeShort && !includeLongTail && (
-                <Typography.Text type="secondary">
-                  未选择短词或长尾词时，将使用通用模式。
-                </Typography.Text>
-              )}
-              {includeRegional && (
-                <Input
-                  aria-label="生成地域"
-                  value={regionsText}
-                  disabled={disabled}
-                  placeholder="多个地域用英文逗号分隔，例如：上海,杭州"
-                  onChange={(event) => setRegionsText(event.target.value)}
-                />
-              )}
-              <Space wrap>
-                <Button
-                  type="primary"
-                  loading={busy}
-                  disabled={disabled || dirty}
-                  onClick={() => void startGeneration(false)}
-                >
-                  AI 生成关键词
+      {stage === "generate" ? (
+        <Card title="智能生成设置">
+          <GenerationControls
+            targetCount={targetCount}
+            includeShort={includeShort}
+            includeLongTail={includeLongTail}
+            regionMode={regionMode}
+            regionSelections={regionSelections}
+            serviceRegions={serviceRegions}
+            disabled={disabled}
+            onTargetCountChange={setTargetCount}
+            onIncludeShortChange={setIncludeShort}
+            onIncludeLongTailChange={setIncludeLongTail}
+            onRegionModeChange={setRegionMode}
+            onRegionSelectionsChange={setRegionSelections}
+          />
+          <Space wrap style={{ marginTop: 20 }}>
+            <Button
+              type="primary"
+              loading={busy}
+              disabled={disabled}
+              onClick={() => void startGeneration(false, "smart")}
+            >
+              一键生成关键词
+            </Button>
+            {generation ? (
+              <Tag color={generation.status === "succeeded" ? "green" : "blue"}>
+                {keywordJobStatusLabel[generation.status]}
+              </Tag>
+            ) : null}
+            {regenerationConfirmation ? (
+              <Popconfirm
+                title="确认消耗一次关键词再生成额度？"
+                description="任务成功后才会扣除，失败会释放额度。"
+                okText="确认再生成"
+                cancelText="取消"
+                onConfirm={() => void startGeneration(true, "smart")}
+              >
+                <Button danger disabled={disabled}>
+                  确认消耗额度并再生成
                 </Button>
-                {regenerationConfirmation && (
-                  <Popconfirm
-                    title="确认消耗一次关键词再生成额度？"
-                    description="额度会先冻结，只有结果成功写入草稿后才会扣除；失败或冲突会释放。"
-                    okText="确认再生成"
-                    cancelText="取消"
-                    onConfirm={() => void startGeneration(true)}
-                  >
-                    <Button danger disabled={disabled || dirty}>
-                      确认消耗额度并再生成
-                    </Button>
-                  </Popconfirm>
-                )}
-                {generation && (
-                  <>
-                    <Tag color={generation.status === "succeeded" ? "green" : "blue"}>
-                      任务：{generation.status}
-                    </Tag>
-                    <Tag>
-                      {generation.billing.billing_mode === "free_initial"
-                        ? "首次免费"
-                        : `再生成剩余 ${generation.billing.remaining ?? "-"}`}
-                    </Tag>
-                  </>
-                )}
+              </Popconfirm>
+            ) : null}
+          </Space>
+        </Card>
+      ) : null}
+
+      {stage === "custom" ? (
+        <Space direction="vertical" size="large" style={{ width: "100%" }}>
+          <Card title="手工添加">
+            <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+              <Input
+                aria-label="手工关键词"
+                value={manualText}
+                disabled={disabled}
+                placeholder="输入一个关键词"
+                onChange={(event) => setManualText(event.target.value)}
+              />
+              <Space wrap>
+                <Select
+                  aria-label="手工关键词长度"
+                  value={manualLength}
+                  disabled={disabled}
+                  options={[
+                    { value: "short", label: "短关键词" },
+                    { value: "long_tail", label: "长尾关键词" },
+                  ]}
+                  style={{ width: 150 }}
+                  onChange={setManualLength}
+                />
+                <Select
+                  aria-label="手工关键词分类"
+                  value={manualCategory}
+                  disabled={disabled}
+                  options={keywordBusinessCategoryOptions}
+                  placeholder="选择关键词分类"
+                  style={{ minWidth: 200 }}
+                  onChange={setManualCategory}
+                />
+                <Select
+                  aria-label="手工用户意图"
+                  mode="multiple"
+                  value={manualIntents}
+                  disabled={disabled}
+                  options={keywordSearchIntentOptions}
+                  placeholder="选择用户意图（可多选）"
+                  style={{ minWidth: 320 }}
+                  onChange={setManualIntents}
+                />
               </Space>
+              <KeywordRegionSelector
+                mode="custom"
+                serviceRegions={serviceRegions}
+                value={manualRegions}
+                disabled={disabled}
+                onChange={setManualRegions}
+              />
+              <Input.TextArea
+                aria-label="手工关键词备注"
+                value={manualNotes}
+                disabled={disabled}
+                rows={2}
+                maxLength={1000}
+                placeholder="备注（选填）"
+                onChange={(event) => setManualNotes(event.target.value)}
+              />
+              <Button type="primary" loading={busy} disabled={disabled} onClick={addManualKeyword}>
+                添加关键词
+              </Button>
             </Space>
           </Card>
 
-          <Card title="关键词草稿">
-            <Space direction="vertical" style={{ width: "100%" }} size="middle">
-              {items.map((item, index) => (
-                <Card key={item.id ?? `new-${index}`} size="small">
-                  <Space wrap align="start">
-                    <Input
-                      aria-label={`关键词-${index + 1}`}
-                      value={item.text}
-                      disabled={disabled}
-                      placeholder="输入关键词"
-                      style={{ width: 220 }}
-                      onChange={(event) => change(index, { text: event.target.value })}
-                    />
-                    <Select
-                      aria-label={`关键词类型-${index + 1}`}
-                      value={item.structure_type}
-                      disabled={disabled}
-                      options={structureOptions}
-                      style={{ width: 140 }}
-                      onChange={(value: KeywordStructureType) =>
-                        change(index, { structure_type: value })
-                      }
-                    />
-                    <Checkbox
-                      aria-label={`地域词-${index + 1}`}
-                      checked={item.is_regional}
-                      disabled={disabled}
-                      onChange={(event) =>
-                        change(index, {
-                          is_regional: event.target.checked,
-                          region_level: event.target.checked ? item.region_level : null,
-                          region_text: event.target.checked ? item.region_text : null,
-                        })
-                      }
-                    >
-                      地域词
-                    </Checkbox>
-                    {item.is_regional && (
-                      <>
-                        <Select
-                          aria-label={`地域层级-${index + 1}`}
-                          allowClear
-                          value={item.region_level ?? undefined}
-                          disabled={disabled}
-                          options={regionOptions}
-                          placeholder="地域层级"
-                          style={{ width: 140 }}
-                          onChange={(value: KeywordRegionLevel | undefined) =>
-                            change(index, { region_level: value ?? null })
-                          }
-                        />
-                        <Input
-                          aria-label={`地域文本-${index + 1}`}
-                          value={item.region_text ?? ""}
-                          disabled={disabled}
-                          placeholder="例如：上海"
-                          style={{ width: 180 }}
-                          onChange={(event) => change(index, { region_text: event.target.value })}
-                        />
-                      </>
-                    )}
-                    <Input
-                      aria-label={`基础关键词-${index + 1}`}
-                      value={item.base_keyword_text ?? ""}
-                      disabled={disabled}
-                      placeholder="基础关键词（可选）"
-                      style={{ width: 200 }}
-                      onChange={(event) =>
-                        change(index, { base_keyword_text: event.target.value || null })
-                      }
-                    />
-                    <Input
-                      aria-label={`业务分类-${index + 1}`}
-                      value={item.business_category ?? ""}
-                      disabled={disabled}
-                      placeholder="业务分类（可选）"
-                      style={{ width: 180 }}
-                      onChange={(event) =>
-                        change(index, { business_category: event.target.value || null })
-                      }
-                    />
-                    <Select
-                      aria-label={`搜索意图-${index + 1}`}
-                      allowClear
-                      value={item.search_intent ?? undefined}
-                      disabled={disabled}
-                      options={intentOptions}
-                      placeholder="搜索意图"
-                      style={{ width: 150 }}
-                      onChange={(value: KeywordSearchIntent | undefined) =>
-                        change(index, { search_intent: value ?? null })
-                      }
-                    />
-                    <Select
-                      aria-label={`优先级-${index + 1}`}
-                      allowClear
-                      value={item.priority ?? undefined}
-                      disabled={disabled}
-                      options={priorityOptions}
-                      placeholder="优先级"
-                      style={{ width: 120 }}
-                      onChange={(value: KeywordPriority | undefined) =>
-                        change(index, { priority: value ?? null })
-                      }
-                    />
-                    {item.relevance_score !== null && (
-                      <Tag aria-label={`相关度-${index + 1}`}>相关度 {item.relevance_score}</Tag>
-                    )}
-                    {item.ai_reason && (
-                      <Typography.Text
-                        aria-label={`AI 理由-${index + 1}`}
-                        type="secondary"
-                        style={{ maxWidth: 360 }}
-                      >
-                        {item.ai_reason}
-                      </Typography.Text>
-                    )}
-                    <Button
-                      aria-label={`上移-${index + 1}`}
-                      disabled={disabled || index === 0}
-                      onClick={() => move(index, -1)}
-                    >
-                      上移
-                    </Button>
-                    <Button
-                      aria-label={`下移-${index + 1}`}
-                      disabled={disabled || index === items.length - 1}
-                      onClick={() => move(index, 1)}
-                    >
-                      下移
-                    </Button>
-                    <Button
-                      aria-label={`删除-${index + 1}`}
-                      danger
-                      disabled={disabled}
-                      onClick={() => {
-                        setItems((current) =>
-                          current.filter((_, itemIndex) => itemIndex !== index),
-                        );
-                        setDirty(true);
-                      }}
-                    >
-                      删除
-                    </Button>
-                  </Space>
-                </Card>
-              ))}
-              <Space>
-                <Button
+          <Card title="批量添加">
+            <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+              <Input.TextArea
+                aria-label="批量关键词"
+                value={batchText}
+                disabled={disabled}
+                rows={6}
+                placeholder="每行一个关键词，最多 200 个"
+                onChange={(event) => setBatchText(event.target.value)}
+              />
+              <Space wrap>
+                <Select
+                  aria-label="批量关键词长度"
+                  value={batchLength}
                   disabled={disabled}
-                  onClick={() => {
-                    setItems((current) => [
-                      ...current,
-                      { ...draftItem(), sort_order: current.length },
-                    ]);
-                    setDirty(true);
-                  }}
-                >
-                  添加关键词
-                </Button>
-                <Button
-                  type="primary"
-                  loading={busy}
+                  options={[
+                    { value: "short", label: "短关键词" },
+                    { value: "long_tail", label: "长尾关键词" },
+                  ]}
+                  style={{ width: 150 }}
+                  onChange={setBatchLength}
+                />
+                <Select
+                  aria-label="批量关键词分类"
+                  value={batchCategory}
                   disabled={disabled}
-                  onClick={() => void save()}
-                >
-                  保存草稿
-                </Button>
-                <Popconfirm
-                  title="提交关键词正式版本"
-                  description="提交后会形成不可修改的关键词历史版本。"
-                  okText="确认提交"
-                  cancelText="取消"
-                  onConfirm={() => void commit()}
-                >
+                  options={keywordBusinessCategoryOptions}
+                  placeholder="选择统一分类"
+                  style={{ minWidth: 200 }}
+                  onChange={setBatchCategory}
+                />
+                <Select
+                  aria-label="批量用户意图"
+                  mode="multiple"
+                  value={batchIntents}
+                  disabled={disabled}
+                  options={keywordSearchIntentOptions}
+                  placeholder="选择统一用户意图"
+                  style={{ minWidth: 320 }}
+                  onChange={setBatchIntents}
+                />
+              </Space>
+              <KeywordRegionSelector
+                mode="custom"
+                serviceRegions={serviceRegions}
+                value={batchRegions}
+                disabled={disabled}
+                onChange={setBatchRegions}
+              />
+              <Button type="primary" loading={busy} disabled={disabled} onClick={addBatchKeywords}>
+                批量加入待蒸馏关键词
+              </Button>
+            </Space>
+          </Card>
+
+          <Card title="按分类和意图 AI 生成">
+            <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+              <div>
+                <Space wrap style={{ marginBottom: 12 }}>
+                  <Typography.Text strong>关键词分类（可多选）</Typography.Text>
                   <Button
-                    loading={busy}
-                    disabled={disabled || dirty || baseStale || items.length === 0}
+                    size="small"
+                    disabled={disabled}
+                    onClick={() =>
+                      setBusinessCategories(
+                        keywordBusinessCategoryOptions.map((option) => option.value),
+                      )
+                    }
                   >
-                    保存并生成新版本
+                    全部选择
                   </Button>
-                </Popconfirm>
-              </Space>
+                  <Button
+                    size="small"
+                    disabled={disabled || businessCategories.length === 0}
+                    onClick={() => setBusinessCategories([])}
+                  >
+                    清空
+                  </Button>
+                </Space>
+                <Space direction="vertical" size="small" style={{ width: "100%" }}>
+                  {categoryGroups.map((group) => (
+                    <Card key={group.title} size="small">
+                      <Space direction="vertical" size="small" style={{ width: "100%" }}>
+                        <Space wrap>
+                          <Typography.Text strong>{group.title}</Typography.Text>
+                          <Button
+                            size="small"
+                            disabled={disabled}
+                            onClick={() => selectCategoryGroup(group.values)}
+                          >
+                            本组全选
+                          </Button>
+                        </Space>
+                        <Space wrap>
+                          {group.values.map((value) => (
+                            <Checkbox
+                              key={value}
+                              checked={businessCategories.includes(value)}
+                              disabled={disabled}
+                              onChange={(event) =>
+                                toggleBusinessCategory(value, event.target.checked)
+                              }
+                            >
+                              {categoryLabel(value)}
+                            </Checkbox>
+                          ))}
+                        </Space>
+                      </Space>
+                    </Card>
+                  ))}
+                </Space>
+              </div>
+              <div>
+                <Typography.Text strong>用户意图（可多选）</Typography.Text>
+                <div style={{ marginTop: 8 }}>
+                  <Space wrap>
+                    {keywordSearchIntentOptions.map((option) => (
+                      <Checkbox
+                        key={option.value}
+                        checked={searchIntents.includes(option.value)}
+                        disabled={disabled}
+                        onChange={(event) => toggleSearchIntent(option.value, event.target.checked)}
+                      >
+                        {option.label}
+                      </Checkbox>
+                    ))}
+                  </Space>
+                </div>
+              </div>
+              <GenerationControls
+                targetCount={targetCount}
+                includeShort={includeShort}
+                includeLongTail={includeLongTail}
+                regionMode={regionMode}
+                regionSelections={regionSelections}
+                serviceRegions={serviceRegions}
+                disabled={disabled}
+                onTargetCountChange={setTargetCount}
+                onIncludeShortChange={setIncludeShort}
+                onIncludeLongTailChange={setIncludeLongTail}
+                onRegionModeChange={setRegionMode}
+                onRegionSelectionsChange={setRegionSelections}
+              />
+              <Button
+                type="primary"
+                loading={busy}
+                disabled={disabled}
+                onClick={() => void startGeneration(false, "custom")}
+              >
+                生成自定义关键词
+              </Button>
             </Space>
           </Card>
-        </>
-      )}
 
-      {stage === "distill" && (
-        <DistillationPanel
-          subjectId={params.id}
-          keywordDirty={dirty}
-          onDirtyChange={setDistillationDirty}
-        />
-      )}
-      {stage === "questions" && (
-        <QuestionBankPanel subjectId={params.id} upstreamDirty={dirty || distillationDirty} />
-      )}
-
-      {stage === "assets" && (
-        <Card title="关键词资产" style={{ marginTop: 20 }}>
-          {currentAssets ? (
-            <Space direction="vertical" style={{ width: "100%" }} size="middle">
-              <Typography.Text type="secondary">
-                这里只展示当前主体已确认的蒸馏结果；问题库只会读取这一组稳定关键词资产。
-              </Typography.Text>
-              <Space wrap>
-                <Tag color="green">资产版本 v{currentAssets.version_no}</Tag>
-                <Tag>资产数量 {assetRows.length}</Tag>
-              </Space>
-              <Space wrap>
-                {assetRows.map((item) => (
-                  <Tag key={item.id} color="blue">
-                    {item.text}
-                    {item.region_text ? ` · ${item.region_text}` : ""}
-                  </Tag>
+          <Card title="待蒸馏关键词">
+            {items.length ? (
+              <Space direction="vertical" size="small" style={{ width: "100%" }}>
+                {items.map((item, index) => (
+                  <Card key={item.id ?? `${item.text}-${index}`} size="small">
+                    <Space wrap>
+                      <Typography.Text strong>{item.text}</Typography.Text>
+                      <Tag>{item.structure_type === "long_tail" ? "长尾关键词" : "短关键词"}</Tag>
+                      {item.business_category ? (
+                        <Tag color="blue">{categoryLabel(item.business_category)}</Tag>
+                      ) : null}
+                      {itemIntents(item).map((intent) => (
+                        <Tag key={intent} color="purple">
+                          {intentLabel(intent)}
+                        </Tag>
+                      ))}
+                      {(item.regions ?? []).map((region) => (
+                        <Tag key={region.path.map((node) => node.code).join("/")} color="cyan">
+                          {region.path.map((node) => node.name).join(" / ")}
+                        </Tag>
+                      ))}
+                      <Tag>{sourceLabels[item.source ?? "legacy"] ?? "已有关键词"}</Tag>
+                    </Space>
+                  </Card>
                 ))}
               </Space>
+            ) : (
+              <Typography.Text type="secondary">
+                暂无待蒸馏关键词，可通过手工、批量或 AI 方式添加。
+              </Typography.Text>
+            )}
+          </Card>
+        </Space>
+      ) : null}
+
+      {stage === "distill" ? (
+        <DistillationPanel
+          subjectId={params.id}
+          keywordDirty={false}
+          onDirtyChange={setDistillationDirty}
+        />
+      ) : null}
+      {stage === "questions" ? (
+        <QuestionBankPanel subjectId={params.id} upstreamDirty={distillationDirty} />
+      ) : null}
+      {stage === "assets" ? (
+        <Card title="关键词资产">
+          {assets.length ? (
+            <Space direction="vertical" style={{ width: "100%" }} size="middle">
+              <Typography.Text type="secondary">
+                这里只展示当前主体已确认的蒸馏结果；问题库只读取这组稳定关键词资产。
+              </Typography.Text>
+              <Tag color="green">资产数量 {assets.length}</Tag>
+              {assets.map((asset) => {
+                const editing = editingAssetId === asset.id;
+                const viewing = viewingAssetId === asset.id;
+                return (
+                  <Card key={asset.id} size="small">
+                    <Space direction="vertical" size="small" style={{ width: "100%" }}>
+                      {editing ? (
+                        <>
+                          <Input
+                            aria-label={`编辑关键词-${asset.id}`}
+                            value={assetText}
+                            disabled={busy}
+                            onChange={(event) => setAssetText(event.target.value)}
+                          />
+                          <Space wrap>
+                            <Select
+                              aria-label={`编辑分类-${asset.id}`}
+                              value={assetCategory}
+                              disabled={busy}
+                              options={keywordBusinessCategoryOptions}
+                              placeholder="选择关键词分类"
+                              style={{ minWidth: 200 }}
+                              onChange={setAssetCategory}
+                            />
+                            <Select
+                              aria-label={`编辑意图-${asset.id}`}
+                              mode="multiple"
+                              value={assetIntents}
+                              disabled={busy}
+                              options={keywordSearchIntentOptions}
+                              placeholder="选择用户意图"
+                              style={{ minWidth: 320 }}
+                              onChange={setAssetIntents}
+                            />
+                          </Space>
+                          <Space>
+                            <Button
+                              type="primary"
+                              disabled={busy || !assetText.trim()}
+                              onClick={() =>
+                                void patchAsset(asset, {
+                                  displayText: assetText.trim(),
+                                  category: assetCategory ?? "",
+                                  intents: assetIntents,
+                                })
+                              }
+                            >
+                              保存
+                            </Button>
+                            <Button disabled={busy} onClick={() => setEditingAssetId(undefined)}>
+                              取消
+                            </Button>
+                          </Space>
+                        </>
+                      ) : (
+                        <>
+                          <Space wrap>
+                            <Typography.Text strong>{asset.text}</Typography.Text>
+                            <Tag color={asset.enabled ? "green" : "default"}>
+                              {asset.enabled ? "已启用" : "已停用"}
+                            </Tag>
+                            <Tag color={asset.usable_for_questions ? "blue" : "default"}>
+                              {asset.usable_for_questions ? "用于问题生成" : "未用于问题生成"}
+                            </Tag>
+                          </Space>
+                          {viewing ? (
+                            <Space direction="vertical" size="small" style={{ width: "100%" }}>
+                              <Space wrap>
+                                {asset.category ? <Tag>{categoryLabel(asset.category)}</Tag> : null}
+                                {asset.intents.map((intent) => (
+                                  <Tag key={intent} color="purple">
+                                    {intentLabel(intent)}
+                                  </Tag>
+                                ))}
+                                {asset.regions.map((region) => (
+                                  <Tag
+                                    key={region.path.map((node) => node.code).join("/")}
+                                    color="cyan"
+                                  >
+                                    {region.path.map((node) => node.name).join(" / ")}
+                                  </Tag>
+                                ))}
+                              </Space>
+                              <Typography.Text>
+                                相关关键词：{asset.related_keywords.join("、") || "暂无"}
+                              </Typography.Text>
+                              <Typography.Text>
+                                目标人群：{asset.audiences.join("、") || "暂无"}
+                              </Typography.Text>
+                              <Typography.Text>
+                                使用场景：{asset.scenarios.join("、") || "暂无"}
+                              </Typography.Text>
+                              <Typography.Text type="secondary">
+                                来源：{sourceLabels[asset.source] ?? "蒸馏确认"} · 更新时间：
+                                {formatUpdatedAt(asset.updated_at)}
+                              </Typography.Text>
+                            </Space>
+                          ) : null}
+                          <Space wrap>
+                            <Button
+                              size="small"
+                              onClick={() =>
+                                setViewingAssetId((current) =>
+                                  current === asset.id ? undefined : asset.id,
+                                )
+                              }
+                            >
+                              {viewing ? "收起" : "查看"}
+                            </Button>
+                            <Button
+                              size="small"
+                              disabled={busy}
+                              onClick={() => beginAssetEdit(asset)}
+                            >
+                              编辑
+                            </Button>
+                            <Button
+                              size="small"
+                              disabled={busy}
+                              onClick={() => void patchAsset(asset, { enabled: !asset.enabled })}
+                            >
+                              {asset.enabled ? "停用" : "启用"}
+                            </Button>
+                            <Button
+                              size="small"
+                              disabled={busy}
+                              onClick={() =>
+                                void patchAsset(asset, {
+                                  usableForQuestions: !asset.usable_for_questions,
+                                })
+                              }
+                            >
+                              {asset.usable_for_questions ? "取消用于问题生成" : "选择用于问题生成"}
+                            </Button>
+                            <Popconfirm
+                              title="删除关键词资产？"
+                              description="删除后将不再用于问题生成。"
+                              okText="确认删除"
+                              cancelText="取消"
+                              onConfirm={() => void patchAsset(asset, { deleted: true })}
+                            >
+                              <Button danger size="small" disabled={busy}>
+                                删除
+                              </Button>
+                            </Popconfirm>
+                          </Space>
+                        </>
+                      )}
+                    </Space>
+                  </Card>
+                );
+              })}
             </Space>
           ) : (
             <Typography.Text type="secondary">
-              暂无关键词资产。请先完成关键词生成并确认蒸馏结果。
+              暂无关键词资产，请先添加关键词并确认蒸馏结果。
             </Typography.Text>
           )}
         </Card>
-      )}
-
-      {stage === "generate" && (
-        <Card title="关键词版本历史" style={{ marginTop: 20 }}>
-          <Space direction="vertical" style={{ width: "100%" }}>
-            {versions.length === 0 && (
-              <Typography.Text type="secondary">暂无正式版本</Typography.Text>
-            )}
-            {versions.map((version) => (
-              <Space key={version.id}>
-                <Typography.Text>v{version.version_no}</Typography.Text>
-                <Typography.Text type="secondary">
-                  基于主体 v{version.subject_version.version_no} · {version.item_count} 个关键词
-                </Typography.Text>
-                <Button
-                  size="small"
-                  onClick={() =>
-                    void getKeywordVersion(params.id, version.id)
-                      .then(setSelectedVersion)
-                      .catch((reason) => setError(userMessage(reason)))
-                  }
-                >
-                  查看
-                </Button>
-              </Space>
-            ))}
-          </Space>
-        </Card>
-      )}
-
-      {stage === "generate" && selectedVersion && (
-        <Card title={`关键词正式版本 v${selectedVersion.version_no}`} style={{ marginTop: 20 }}>
-          <Space direction="vertical">
-            {selectedVersion.items?.map((item) => (
-              <Typography.Text key={item.id}>
-                {item.text} ·{" "}
-                {structureOptions.find((option) => option.value === item.structure_type)?.label}
-                {item.is_regional && item.region_text ? ` · ${item.region_text}` : ""}
-              </Typography.Text>
-            ))}
-          </Space>
-        </Card>
-      )}
+      ) : null}
     </main>
   );
 }
 
-export default function KeywordEditorPage() {
+export default function SmartKeywordPage() {
   return <KeywordCenterPage />;
 }

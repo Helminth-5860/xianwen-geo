@@ -247,8 +247,11 @@ describe("GEO 产品工作台", () => {
     expect(subjectMenu.getAttribute("aria-expanded")).toBe("false");
 
     await userEvent.click(screen.getByText("关键词中心"));
-    expect(screen.getByRole("link", { name: "关键词生成" }).getAttribute("href")).toBe(
+    expect(screen.getByRole("link", { name: "智能关键词" }).getAttribute("href")).toBe(
       "/subjects/subject-1/keywords",
+    );
+    expect(screen.getByRole("link", { name: "自定义关键词" }).getAttribute("href")).toBe(
+      "/subjects/subject-1/keywords/custom",
     );
     expect(screen.getByRole("link", { name: "关键词蒸馏" }).getAttribute("href")).toBe(
       "/subjects/subject-1/keywords/distill",
@@ -293,6 +296,9 @@ describe("GEO 产品工作台", () => {
   it("动态主体路由切换到同一功能的新主体，历史对象详情回到所属模块列表", () => {
     expect(subjectSwitchTargetPath("/subjects/subject-1/keywords/distill", "subject-2")).toBe(
       "/subjects/subject-2/keywords/distill",
+    );
+    expect(subjectSwitchTargetPath("/subjects/subject-1/keywords/custom", "subject-2")).toBe(
+      "/subjects/subject-2/keywords/custom",
     );
     expect(subjectSwitchTargetPath("/subjects/subject-1/versions/version-1", "subject-2")).toBe(
       "/subjects/subject-2",

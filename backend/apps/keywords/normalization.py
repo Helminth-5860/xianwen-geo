@@ -2,8 +2,10 @@ import hashlib
 import json
 import unicodedata
 from dataclasses import dataclass
+from typing import Any
 
 from .models import KeywordItemFields
+from .taxonomy import normalize_intents
 
 
 class KeywordNormalizationError(ValueError):
@@ -23,6 +25,10 @@ class NormalizedKeyword:
     base_keyword_matching: str | None
     business_category: str | None
     search_intent: str | None
+    search_intents: tuple[str, ...]
+    regions: tuple[dict[str, Any], ...]
+    source: str
+    notes: str
     relevance_score: int | None
     priority: str | None
     ai_reason: str | None
@@ -40,6 +46,10 @@ class NormalizedKeyword:
             "base_keyword_text": self.base_keyword_text,
             "business_category": self.business_category,
             "search_intent": self.search_intent,
+            "search_intents": list(self.search_intents),
+            "regions": [dict(region) for region in self.regions],
+            "source": self.source,
+            "notes": self.notes,
             "relevance_score": self.relevance_score,
             "priority": self.priority,
             "ai_reason": self.ai_reason,
@@ -71,6 +81,70 @@ def _optional_plain_text(
     return normalize_plain_text(raw, max_length=max_length)
 
 
+def normalize_region_entries(value: object) -> list[dict[str, Any]]:
+    if value in (None, ""):
+        return []
+    if not isinstance(value, (list, tuple)) or len(value) > 20:
+        raise KeywordNormalizationError("regions_shape")
+    valid_levels = set(KeywordItemFields.RegionLevel.values)
+    output: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for raw in value:
+        if isinstance(raw, str):
+            name, matching_name = normalize_plain_text(raw, max_length=200)
+            entry: dict[str, Any] = {"code": "", "name": name, "level": "custom"}
+            identity = f"name:{matching_name}"
+        elif isinstance(raw, dict):
+            if set(raw) - {"code", "name", "level", "path"}:
+                raise KeywordNormalizationError("regions_fields")
+            code = raw.get("code", "")
+            name = raw.get("name")
+            level = raw.get("level", "custom")
+            if not isinstance(code, str) or len(code.strip()) > 32:
+                raise KeywordNormalizationError("region_code")
+            if not isinstance(name, str) or not isinstance(level, str):
+                raise KeywordNormalizationError("regions_shape")
+            if level not in valid_levels:
+                raise KeywordNormalizationError("region_level")
+            normalized_name, matching_name = normalize_plain_text(name, max_length=200)
+            normalized_code = code.strip()
+            entry = {"code": normalized_code, "name": normalized_name, "level": level}
+            path = raw.get("path")
+            if path is not None:
+                if not isinstance(path, list) or len(path) > 5:
+                    raise KeywordNormalizationError("region_path")
+                normalized_path = []
+                for node in path:
+                    if not isinstance(node, dict) or set(node) - {"code", "name"}:
+                        raise KeywordNormalizationError("region_path")
+                    node_code = node.get("code")
+                    node_name = node.get("name")
+                    if not isinstance(node_code, str) or not isinstance(node_name, str):
+                        raise KeywordNormalizationError("region_path")
+                    normalized_node_name, _ = normalize_plain_text(node_name, max_length=200)
+                    if not node_code.strip() or len(node_code.strip()) > 32:
+                        raise KeywordNormalizationError("region_path")
+                    normalized_path.append(
+                        {"code": node_code.strip(), "name": normalized_node_name}
+                    )
+                entry["path"] = normalized_path
+            identity = f"code:{normalized_code}" if normalized_code else f"name:{matching_name}"
+        else:
+            raise KeywordNormalizationError("regions_shape")
+        if identity in seen:
+            raise KeywordNormalizationError("regions_duplicate")
+        seen.add(identity)
+        output.append(entry)
+    return output
+
+
+def _regions_matching_key(regions: list[dict[str, Any]]) -> str:
+    if not regions:
+        return ""
+    encoded = json.dumps(regions, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return f"regions:{hashlib.sha256(encoded.encode('utf-8')).hexdigest()}"
+
+
 def normalize_keyword_items(items: list[dict[str, object]]) -> list[NormalizedKeyword]:
     result: list[NormalizedKeyword] = []
     seen: set[tuple[str, str]] = set()
@@ -91,12 +165,27 @@ def normalize_keyword_items(items: list[dict[str, object]]) -> list[NormalizedKe
         raw_region = item.get("region_text", "") or ""
         if not isinstance(raw_level, str) or not isinstance(raw_region, str):
             raise KeywordNormalizationError("shape")
-        if is_regional:
+        raw_regions = item.get("regions", [])
+        regions = normalize_region_entries(raw_regions)
+        if regions:
+            if not is_regional:
+                raise KeywordNormalizationError("region_shape")
+            region_level = str(regions[0]["level"])
+            region_text = str(regions[0]["name"])
+            region_matching_key = _regions_matching_key(regions)
+        elif is_regional:
             if raw_level and raw_level not in valid_region_levels:
                 raise KeywordNormalizationError("region_level")
             region_text, region_match = normalize_plain_text(raw_region, max_length=200)
             region_level = raw_level
             region_matching_key = f"{region_level or 'region'}:{region_match}"
+            regions = [
+                {
+                    "code": "",
+                    "name": region_text,
+                    "level": region_level or "custom",
+                }
+            ]
         else:
             if raw_level or raw_region:
                 raise KeywordNormalizationError("region_shape")
@@ -112,6 +201,17 @@ def normalize_keyword_items(items: list[dict[str, object]]) -> list[NormalizedKe
             search_intent = None
         if search_intent is not None and search_intent not in valid_intents:
             raise KeywordNormalizationError("search_intent")
+        raw_intents = item.get("search_intents", [])
+        if raw_intents in (None, []):
+            raw_intents = [search_intent] if search_intent else []
+        try:
+            search_intents = normalize_intents(raw_intents) if raw_intents else ()
+        except ValueError as exc:
+            raise KeywordNormalizationError(str(exc)) from exc
+        source = item.get("source", KeywordItemFields.Source.LEGACY)
+        if source not in KeywordItemFields.Source.values:
+            raise KeywordNormalizationError("source")
+        notes, _ = _optional_plain_text(item, "notes", max_length=1000)
         relevance_score = item.get("relevance_score")
         if relevance_score is not None and (
             type(relevance_score) is not int or not 0 <= relevance_score <= 100
@@ -140,6 +240,10 @@ def normalize_keyword_items(items: list[dict[str, object]]) -> list[NormalizedKe
                 base_keyword_matching=base_keyword_matching,
                 business_category=business_category,
                 search_intent=str(search_intent) if search_intent is not None else None,
+                search_intents=search_intents,
+                regions=tuple(regions),
+                source=str(source),
+                notes=notes or "",
                 relevance_score=relevance_score,
                 priority=str(priority) if priority is not None else None,
                 ai_reason=ai_reason,
@@ -206,7 +310,7 @@ def normalize_generated_keyword_items(
     for item in normalized:
         if (
             item.business_category is None
-            or item.search_intent is None
+            or (item.search_intent is None and not item.search_intents)
             or item.relevance_score is None
             or item.priority is None
             or item.ai_reason is None

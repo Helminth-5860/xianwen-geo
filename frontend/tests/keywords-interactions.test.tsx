@@ -4,18 +4,15 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import KeywordEditorPage, { KeywordCenterPage } from "@/app/subjects/[id]/keywords/page";
-import { AuthApiError } from "@/lib/auth-client";
+import SmartKeywordPage, { KeywordCenterPage } from "@/app/subjects/[id]/keywords/page";
 
 const api = vi.hoisted(() => ({
-  getKeywordDraft: vi.fn(),
-  getKeywordVersions: vi.fn(),
-  getKeywordVersion: vi.fn(),
-  saveKeywordDraft: vi.fn(),
-  commitKeywords: vi.fn(),
+  appendKeywordCandidates: vi.fn(),
   createKeywordGeneration: vi.fn(),
+  getKeywordAssets: vi.fn(),
+  getKeywordDraft: vi.fn(),
   getKeywordGenerationJob: vi.fn(),
-  getCurrentDistillation: vi.fn(),
+  updateKeywordAsset: vi.fn(),
 }));
 
 vi.mock("@/lib/keywords-client", async () => {
@@ -24,9 +21,84 @@ vi.mock("@/lib/keywords-client", async () => {
   return { ...actual, ...api };
 });
 vi.mock("next/navigation", () => ({ useParams: () => ({ id: "subject-1" }) }));
+vi.mock("@/components/subject-workspace-context", () => ({
+  useSubjectWorkspace: () => ({
+    currentSubject: {
+      id: "subject-1",
+      official_name: "示例企业",
+      subject_type: { name: "企业" },
+      service_regions: JSON.stringify({ version: 1, nationwide: true, areas: [] }),
+    },
+  }),
+}));
+vi.mock("@/components/keyword-region-selector", async () => {
+  const actual = await vi.importActual<typeof import("@/components/keyword-region-selector")>(
+    "@/components/keyword-region-selector",
+  );
+  return {
+    ...actual,
+    KeywordRegionSelector: ({
+      mode,
+      onChange,
+    }: {
+      mode?: "subject" | "custom";
+      onChange: (
+        value: Array<{
+          code: string;
+          name: string;
+          level: "district";
+          path: Array<{ code: string; name: string }>;
+        }>,
+      ) => void;
+    }) => (
+      <button
+        type="button"
+        onClick={() =>
+          onChange([
+            {
+              code: "440106",
+              name: "天河区",
+              level: "district",
+              path: [
+                { code: "440000", name: "广东省" },
+                { code: "440100", name: "广州市" },
+                { code: "440106", name: "天河区" },
+              ],
+            },
+          ])
+        }
+      >
+        {mode === "subject" ? "使用主体服务区域" : "选择自定义地域"}
+      </button>
+    ),
+  };
+});
 vi.mock("@/app/subjects/[id]/keywords/distillation-panel", () => ({
+  default: () => <div>蒸馏页面</div>,
+}));
+vi.mock("@/app/subjects/[id]/keywords/question-bank-panel", () => ({
   default: () => null,
 }));
+
+const item = {
+  id: "keyword-1",
+  text: "GEO",
+  structure_type: "short" as const,
+  is_regional: false,
+  region_level: null,
+  region_text: null,
+  regions: [],
+  base_keyword_text: null,
+  business_category: "entity",
+  search_intent: "informational" as const,
+  search_intents: ["informational" as const],
+  source: "manual" as const,
+  notes: "",
+  relevance_score: null,
+  priority: null,
+  ai_reason: null,
+  sort_order: 0,
+};
 
 const draft = {
   version: 1,
@@ -35,23 +107,56 @@ const draft = {
   current_keyword_version_no: 1,
   can_write: true,
   read_only_reason: null,
-  items: [
-    {
-      id: "keyword-1",
-      text: "GEO",
-      structure_type: "short" as const,
-      is_regional: false,
-      region_level: null,
-      region_text: null,
-      base_keyword_text: null,
-      business_category: null,
-      search_intent: null,
-      relevance_score: null,
-      priority: null,
-      ai_reason: null,
-      sort_order: 0,
-    },
-  ],
+  items: [item],
+};
+
+const asset = {
+  id: "asset-1",
+  text: "GEO 品牌咨询",
+  source_text: "GEO 品牌咨询",
+  related_keywords: ["AI 搜索品牌咨询"],
+  audiences: ["品牌负责人"],
+  scenarios: ["企业品牌推广"],
+  category: "entity",
+  intents: ["informational" as const],
+  regions: [],
+  source: "distillation",
+  enabled: true,
+  usable_for_questions: true,
+  deleted: false,
+  updated_at: "2026-08-25T00:00:00Z",
+};
+
+const succeededJob = {
+  id: "job-1",
+  subject_id: "subject-1",
+  subject_version_id: "sv-1",
+  status: "succeeded" as const,
+  version: 1,
+  stable_error_code: "",
+  billing: { billing_mode: "free_initial" as const, held: false, remaining: 2 },
+  configuration: {
+    target_count: 10,
+    include_short: true,
+    include_long_tail: true,
+    include_regional: true,
+    regions: [],
+    generation_mode: "smart" as const,
+    categories: [],
+    intents: [],
+    region_mode: "subject" as const,
+  },
+  provenance: {
+    provider_key: "provider",
+    model_key: "model",
+    adapter_version: "1",
+    prompt_version: "keyword-generation-v1",
+  },
+  result: { item_count: 1, applied_keyword_set_version: 2 },
+  attempts: 1,
+  created_at: "2026-08-25T00:00:00Z",
+  updated_at: "2026-08-25T00:00:01Z",
+  finished_at: "2026-08-25T00:00:01Z",
 };
 
 beforeEach(() => {
@@ -76,365 +181,215 @@ beforeEach(() => {
   });
   vi.clearAllMocks();
   api.getKeywordDraft.mockResolvedValue(draft);
-  api.getKeywordVersions.mockResolvedValue({ versions: [] });
-  api.getCurrentDistillation.mockRejectedValue(new Error("no assets"));
-  api.createKeywordGeneration.mockReset();
-  api.getKeywordGenerationJob.mockReset();
+  api.getKeywordAssets.mockResolvedValue({ items: [] });
+  api.createKeywordGeneration.mockResolvedValue(succeededJob);
+  api.appendKeywordCandidates.mockResolvedValue({
+    candidate_pool: { ...draft, version: 2 },
+    added_count: 1,
+    skipped_duplicates: [],
+  });
+  api.updateKeywordAsset.mockImplementation(
+    async (_subjectId: string, _assetId: string, patch: Record<string, unknown>) => ({
+      ...asset,
+      text: patch.displayText ?? asset.text,
+      category: patch.category ?? asset.category,
+      intents: patch.intents ?? asset.intents,
+      enabled: patch.enabled ?? asset.enabled,
+      usable_for_questions: patch.usableForQuestions ?? asset.usable_for_questions,
+      deleted: patch.deleted ?? asset.deleted,
+    }),
+  );
 });
 
 afterEach(cleanup);
 
-describe("KeywordEditorPage", () => {
-  it("separates confirmed keyword assets from candidate generation", async () => {
-    api.getKeywordVersions.mockResolvedValue({
-      versions: [
-        {
-          id: "kv-1",
-          version_no: 1,
-          subject_version: draft.subject_version,
-          item_count: 1,
-          created_at: "2026-08-25T00:00:00Z",
-        },
-      ],
-    });
-    api.getCurrentDistillation.mockResolvedValue({
-      id: "distillation-1",
-      version_no: 1,
-      subject_version_id: "sv-1",
-      keyword_set_version_id: "kv-1",
-      source_result_id: "result-1",
-      item_count: 1,
-      confirmed_at: "2026-08-25T00:00:00Z",
-      items: [
-        {
-          source_keyword: draft.items[0],
-          action: "keep",
-          canonical_keyword_id: null,
-          merge_group_key: null,
-          ai_action: "keep",
-          ai_canonical_keyword_id: null,
-          ai_merge_group_key: null,
-          ai_reason: "相关",
-          user_reason: "",
-          user_overridden: false,
-          sort_order: 0,
-        },
-      ],
-    });
+describe("关键词中心四页", () => {
+  it("智能关键词提供数量、长度和三种地域模式，并直接生成待蒸馏关键词", async () => {
+    render(<SmartKeywordPage />);
 
-    render(<KeywordCenterPage stage="assets" />);
+    expect(await screen.findByRole("heading", { name: "智能关键词" })).toBeTruthy();
+    for (const label of ["10 个", "20 个", "50 个", "100 个"]) {
+      expect(screen.getByText(label)).toBeTruthy();
+    }
+    expect(screen.getByLabelText("自定义生成数量")).toBeTruthy();
+    expect(screen.getByRole("checkbox", { name: "短关键词" })).toBeTruthy();
+    expect(screen.getByRole("checkbox", { name: "长尾关键词" })).toBeTruthy();
+    expect(screen.getByRole("radio", { name: "不限地域" })).toBeTruthy();
+    expect(screen.getByRole("radio", { name: "使用主体服务区域" })).toBeTruthy();
+    expect(screen.getByRole("radio", { name: "自定义地域" })).toBeTruthy();
+    expect(screen.queryByText("草稿")).toBeNull();
+    expect(screen.queryByText("版本历史")).toBeNull();
+    expect(screen.queryByText("当前批次")).toBeNull();
 
-    expect(await screen.findByText("关键词资产")).toBeTruthy();
-    expect(screen.getByText("GEO")).toBeTruthy();
-    expect(screen.getByText("资产版本 v1")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "AI 生成关键词" })).toBeNull();
-  });
-
-  it("adds and saves a manual keyword draft alongside generation UI", async () => {
-    api.saveKeywordDraft.mockResolvedValue({ ...draft, version: 2 });
-    render(<KeywordEditorPage />);
-
-    expect(await screen.findByText("关键词编辑器")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "AI 生成关键词" })).toBeTruthy();
-    await userEvent.click(screen.getByRole("button", { name: "添加关键词" }));
-    await userEvent.type(screen.getByLabelText("关键词-2"), "上海 GEO 服务");
-    await userEvent.click(screen.getByRole("checkbox", { name: "地域词-2" }));
-    await userEvent.type(screen.getByLabelText("地域文本-2"), "上海");
-    await userEvent.click(screen.getByRole("button", { name: "保存草稿" }));
-
-    await waitFor(() => expect(api.saveKeywordDraft).toHaveBeenCalledTimes(1));
-    expect(api.saveKeywordDraft.mock.calls[0][1].expectedVersion).toBe(1);
-    expect(api.saveKeywordDraft.mock.calls[0][1].expectedSubjectVersionId).toBe("sv-1");
-  });
-
-  it("commits the saved draft and reloads formal history", async () => {
-    api.commitKeywords.mockResolvedValue({
-      version: {
-        id: "kv-2",
-        version_no: 2,
-        subject_version: draft.subject_version,
-        item_count: 1,
-        created_at: "2026-08-14T10:00:00Z",
-        items: draft.items,
-      },
-    });
-    render(<KeywordEditorPage />);
-
-    expect(await screen.findByText("关键词编辑器")).toBeTruthy();
-    await userEvent.click(screen.getByRole("button", { name: "保存并生成新版本" }));
-    await userEvent.click(await screen.findByRole("button", { name: "确认提交" }));
-
-    await waitFor(() => expect(api.commitKeywords).toHaveBeenCalledTimes(1));
-    expect(api.commitKeywords).toHaveBeenCalledWith("subject-1", 1, "sv-1");
-  });
-
-  it("keeps local edits when a save conflict is returned", async () => {
-    api.saveKeywordDraft.mockRejectedValue(new Error("关键词草稿已发生变化，请刷新后重试"));
-    render(<KeywordEditorPage />);
-
-    expect(await screen.findByText("关键词编辑器")).toBeTruthy();
-    const input = screen.getByLabelText("关键词-1");
-    await userEvent.clear(input);
-    await userEvent.type(input, "本地未保存关键词");
-    await userEvent.click(screen.getByRole("button", { name: "保存草稿" }));
-
-    expect(await screen.findByText("关键词草稿已发生变化，请刷新后重试")).toBeTruthy();
-    expect((screen.getByLabelText("关键词-1") as HTMLInputElement).value).toBe("本地未保存关键词");
-  });
-
-  it("requires an explicit draft rebase when the subject version changed", async () => {
-    api.getKeywordDraft.mockResolvedValue({
-      ...draft,
-      draft_subject_version: {
-        id: "sv-old",
-        version_no: 1,
-        official_name: "示例企业",
-      },
-    });
-    render(<KeywordEditorPage />);
-
-    expect(
-      await screen.findByText("主体资料正式版本已更新，请先保存关键词草稿以重新绑定后再提交。"),
-    ).toBeTruthy();
-    expect(screen.getByRole("button", { name: "保存并生成新版本" })).toHaveProperty(
-      "disabled",
-      true,
-    );
-  });
-
-  it("blocks generation while local draft edits are unsaved", async () => {
-    render(<KeywordEditorPage />);
-    expect(await screen.findByText("关键词编辑器")).toBeTruthy();
-
-    await userEvent.type(screen.getByLabelText("关键词-1"), " 本地修改");
-    expect(screen.getByRole("button", { name: "AI 生成关键词" })).toHaveProperty("disabled", true);
-    expect(api.createKeywordGeneration).not.toHaveBeenCalled();
-  });
-
-  it("starts general-mode generation, polls success, and loads AI metadata", async () => {
-    const queuedJob = {
-      id: "job-1",
-      subject_id: "subject-1",
-      subject_version_id: "sv-1",
-      status: "queued" as const,
-      version: 1,
-      stable_error_code: "",
-      billing: { billing_mode: "free_initial" as const, held: false, remaining: 2 },
-      configuration: {
-        target_count: 10,
-        include_short: false,
-        include_long_tail: false,
-        include_regional: false,
-        regions: [],
-      },
-      provenance: {
-        provider_key: "mock",
-        model_key: "mock-keyword-generation-v1",
-        adapter_version: "1",
-        prompt_version: "keyword-generation-v1",
-      },
-      result: null,
-      attempts: 0,
-      created_at: "2026-08-15T00:00:00Z",
-      updated_at: "2026-08-15T00:00:00Z",
-      finished_at: null,
-    };
-    api.createKeywordGeneration.mockResolvedValue(queuedJob);
-    api.getKeywordGenerationJob.mockResolvedValue({
-      ...queuedJob,
-      status: "succeeded",
-      version: 3,
-      result: { item_count: 1, applied_keyword_set_version: 2 },
-      finished_at: "2026-08-15T00:00:02Z",
-    });
-    api.getKeywordDraft.mockResolvedValueOnce(draft).mockResolvedValue({
-      ...draft,
-      version: 2,
-      items: [
-        {
-          ...draft.items[0],
-          business_category: "general",
-          search_intent: "commercial" as const,
-          relevance_score: 98,
-          priority: "high" as const,
-          ai_reason: "与主体业务高度相关",
-        },
-      ],
-    });
-
-    render(<KeywordEditorPage />);
-    expect(await screen.findByText("关键词编辑器")).toBeTruthy();
-    await userEvent.click(screen.getByRole("button", { name: "AI 生成关键词" }));
+    await userEvent.click(screen.getByRole("radio", { name: "不限地域" }));
+    await userEvent.click(screen.getByRole("button", { name: "一键生成关键词" }));
 
     await waitFor(() => expect(api.createKeywordGeneration).toHaveBeenCalledTimes(1));
     expect(api.createKeywordGeneration.mock.calls[0][1]).toMatchObject({
-      expectedSubjectVersionId: "sv-1",
-      expectedKeywordSetVersion: 1,
-      includeShort: false,
-      includeLongTail: false,
-      includeRegional: false,
+      targetCount: 10,
+      includeShort: true,
+      includeLongTail: true,
+      regionMode: "unrestricted",
+      generationMode: "smart",
       regions: [],
-      regenerate: false,
     });
-    await waitFor(() => expect(api.getKeywordGenerationJob).toHaveBeenCalledWith("job-1"), {
-      timeout: 2500,
-    });
-    expect(await screen.findByText("相关度 98")).toBeTruthy();
-    expect(screen.getByText("与主体业务高度相关")).toBeTruthy();
+    expect(await screen.findByText("关键词已生成并加入待蒸馏关键词")).toBeTruthy();
   });
 
-  it("shows a stable terminal generation failure without replacing the draft", async () => {
-    const queued = {
-      id: "job-failed",
-      subject_id: "subject-1",
-      subject_version_id: "sv-1",
-      status: "queued" as const,
-      version: 1,
-      stable_error_code: "",
-      billing: { billing_mode: "free_initial" as const, held: false, remaining: 2 },
-      configuration: {
-        target_count: 10,
-        include_short: false,
-        include_long_tail: false,
-        include_regional: false,
-        regions: [],
-      },
-      provenance: {
-        provider_key: "mock",
-        model_key: "mock-keyword-generation-v1",
-        adapter_version: "1",
-        prompt_version: "keyword-generation-v1",
-      },
-      result: null,
-      attempts: 0,
-      created_at: "2026-08-15T00:00:00Z",
-      updated_at: "2026-08-15T00:00:00Z",
-      finished_at: null,
-    };
+  it("自定义 AI 生成直接展示四组 14 类与 8 类用户意图", async () => {
+    render(<KeywordCenterPage stage="custom" />);
+
+    expect(await screen.findByRole("heading", { name: "自定义关键词" })).toBeTruthy();
+    for (const group of ["品牌与业务", "服务与能力", "需求与场景", "竞争与信任"]) {
+      expect(screen.getByText(group)).toBeTruthy();
+    }
+    for (const category of [
+      "企业与品牌",
+      "行业与赛道",
+      "产品或服务类别",
+      "具体产品",
+      "具体服务",
+      "能力与功能",
+      "目标与收益",
+      "问题与痛点",
+      "解决方案",
+      "使用场景",
+      "目标人群",
+      "竞品与替代",
+      "信任与口碑",
+      "知识与教育",
+    ]) {
+      expect(screen.getByRole("checkbox", { name: category })).toBeTruthy();
+    }
+    for (const intent of [
+      "信息了解",
+      "推荐评估",
+      "对比选择",
+      "交易转化",
+      "地域本地",
+      "导航联系",
+      "信任口碑",
+      "使用服务",
+    ]) {
+      expect(screen.getByRole("checkbox", { name: intent })).toBeTruthy();
+    }
+
+    await userEvent.click(screen.getByRole("button", { name: "全部选择" }));
+    await userEvent.click(screen.getByRole("checkbox", { name: "信息了解" }));
+    await userEvent.click(screen.getByRole("radio", { name: "不限地域" }));
+    await userEvent.click(screen.getByRole("button", { name: "生成自定义关键词" }));
+
+    await waitFor(() => expect(api.createKeywordGeneration).toHaveBeenCalledTimes(1));
+    expect(api.createKeywordGeneration.mock.calls[0][1]).toMatchObject({
+      generationMode: "custom",
+      categories: [
+        "entity",
+        "industry",
+        "product_category",
+        "product",
+        "service",
+        "capability",
+        "goal",
+        "pain_point",
+        "solution",
+        "scenario",
+        "audience",
+        "competitor",
+        "trust",
+        "knowledge",
+      ],
+      intents: ["informational"],
+    });
+  });
+
+  it("批量添加明确合并本地和服务端重复项提示", async () => {
+    api.appendKeywordCandidates.mockResolvedValue({
+      candidate_pool: { ...draft, version: 2 },
+      added_count: 2,
+      skipped_duplicates: ["已有词"],
+    });
+    render(<KeywordCenterPage stage="custom" />);
+    expect(await screen.findByRole("heading", { name: "自定义关键词" })).toBeTruthy();
+
+    await userEvent.type(screen.getByLabelText("批量关键词"), "新词一\n新词一\n新词二");
+    await userEvent.click(screen.getByLabelText("批量关键词分类"));
+    await userEvent.click(
+      await screen.findByText("企业与品牌", { selector: ".ant-select-item-option-content" }),
+    );
+    await userEvent.click(screen.getByLabelText("批量用户意图"));
+    await userEvent.click(
+      await screen.findByText("信息了解", { selector: ".ant-select-item-option-content" }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "批量加入待蒸馏关键词" }));
+
+    await waitFor(() => expect(api.appendKeywordCandidates).toHaveBeenCalledTimes(1));
+    expect(api.appendKeywordCandidates.mock.calls[0][1].items).toHaveLength(2);
+    expect(
+      await screen.findByText("已加入 2 个待蒸馏关键词，跳过 1 个重复词；另跳过 1 个本地重复项"),
+    ).toBeTruthy();
+  });
+
+  it("关键词资产支持查看、编辑、启停、问题生成选择和删除", async () => {
+    api.getKeywordAssets.mockResolvedValue({ items: [asset] });
+    render(<KeywordCenterPage stage="assets" />);
+
+    expect(await screen.findByRole("heading", { name: "关键词资产" })).toBeTruthy();
+    expect(screen.getByText("GEO 品牌咨询")).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: /查\s*看/ }));
+    expect(screen.getByText("相关关键词：AI 搜索品牌咨询")).toBeTruthy();
+    expect(screen.getByText("目标人群：品牌负责人")).toBeTruthy();
+    expect(screen.getByText("使用场景：企业品牌推广")).toBeTruthy();
+    expect(screen.getByText(/来源：蒸馏确认 · 更新时间：/)).toBeTruthy();
+
+    await userEvent.click(screen.getByRole("button", { name: /停\s*用/ }));
+    await waitFor(() =>
+      expect(api.updateKeywordAsset).toHaveBeenCalledWith("subject-1", "asset-1", {
+        enabled: false,
+      }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "取消用于问题生成" }));
+    await waitFor(() =>
+      expect(api.updateKeywordAsset).toHaveBeenCalledWith("subject-1", "asset-1", {
+        usableForQuestions: false,
+      }),
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: /编\s*辑/ }));
+    await userEvent.clear(screen.getByLabelText("编辑关键词-asset-1"));
+    await userEvent.type(screen.getByLabelText("编辑关键词-asset-1"), "更新后的关键词");
+    await userEvent.click(screen.getByRole("button", { name: /保\s*存/ }));
+    await waitFor(() =>
+      expect(api.updateKeywordAsset).toHaveBeenCalledWith(
+        "subject-1",
+        "asset-1",
+        expect.objectContaining({ displayText: "更新后的关键词" }),
+      ),
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: /删\s*除/ }));
+    await userEvent.click(await screen.findByRole("button", { name: "确认删除" }));
+    await waitFor(() =>
+      expect(api.updateKeywordAsset).toHaveBeenCalledWith("subject-1", "asset-1", {
+        deleted: true,
+      }),
+    );
+  });
+
+  it("AI 返回结构异常时只显示明确中文，不暴露英文错误码", async () => {
+    const queued = { ...succeededJob, status: "queued" as const, result: null, finished_at: null };
     api.createKeywordGeneration.mockResolvedValue(queued);
     api.getKeywordGenerationJob.mockResolvedValue({
       ...queued,
       status: "failed",
-      stable_error_code: "KEYWORD_GENERATION_PROVIDER_REJECTED",
-      finished_at: "2026-08-15T00:00:02Z",
+      stable_error_code: "KEYWORD_GENERATION_INVALID_RESPONSE",
     });
-
-    render(<KeywordEditorPage />);
-    expect(await screen.findByText("关键词编辑器")).toBeTruthy();
-    await userEvent.click(screen.getByRole("button", { name: "AI 生成关键词" }));
+    render(<SmartKeywordPage />);
+    expect(await screen.findByRole("heading", { name: "智能关键词" })).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "一键生成关键词" }));
 
     expect(
-      await screen.findByText("KEYWORD_GENERATION_PROVIDER_REJECTED", {}, { timeout: 2500 }),
+      await screen.findByText("AI 返回格式异常，请重新生成。", {}, { timeout: 2500 }),
     ).toBeTruthy();
-    expect((screen.getByLabelText("关键词-1") as HTMLInputElement).value).toBe("GEO");
-  });
-
-  it("refreshes the draft immediately when idempotency replays a succeeded job", async () => {
-    const succeeded = {
-      id: "job-replay",
-      subject_id: "subject-1",
-      subject_version_id: "sv-1",
-      status: "succeeded" as const,
-      version: 3,
-      stable_error_code: "",
-      billing: { billing_mode: "free_initial" as const, held: false, remaining: 2 },
-      configuration: {
-        target_count: 10,
-        include_short: false,
-        include_long_tail: false,
-        include_regional: false,
-        regions: [],
-      },
-      provenance: {
-        provider_key: "mock",
-        model_key: "mock-keyword-generation-v1",
-        adapter_version: "1",
-        prompt_version: "keyword-generation-v1",
-      },
-      result: { item_count: 1, applied_keyword_set_version: 2 },
-      attempts: 1,
-      created_at: "2026-08-15T00:00:00Z",
-      updated_at: "2026-08-15T00:00:02Z",
-      finished_at: "2026-08-15T00:00:02Z",
-    };
-    api.createKeywordGeneration.mockResolvedValue(succeeded);
-    api.getKeywordDraft.mockResolvedValueOnce(draft).mockResolvedValue({
-      ...draft,
-      version: 2,
-      items: [{ ...draft.items[0], text: "恢复的 AI 关键词" }],
-    });
-
-    render(<KeywordEditorPage />);
-    expect(await screen.findByText("关键词编辑器")).toBeTruthy();
-    await userEvent.click(screen.getByRole("button", { name: "AI 生成关键词" }));
-
-    expect(await screen.findByText("已恢复此前成功的生成结果，关键词草稿已刷新")).toBeTruthy();
-    await waitFor(() => expect(api.getKeywordDraft).toHaveBeenCalledTimes(2));
-    expect(api.getKeywordGenerationJob).not.toHaveBeenCalled();
-    expect((screen.getByLabelText("关键词-1") as HTMLInputElement).value).toBe("恢复的 AI 关键词");
-  });
-
-  it("requires explicit confirmation before a billable regeneration", async () => {
-    api.createKeywordGeneration
-      .mockRejectedValueOnce(
-        new AuthApiError(new Response(null, { status: 409 }), {
-          success: false,
-          error: {
-            code: "KEYWORD_REGENERATION_CONFIRMATION_REQUIRED",
-            message: "需要确认消耗再生成额度",
-            details: {},
-          },
-          request_id: "request-1",
-        }),
-      )
-      .mockResolvedValueOnce({
-        id: "job-regeneration",
-        subject_id: "subject-1",
-        subject_version_id: "sv-1",
-        status: "queued" as const,
-        version: 1,
-        stable_error_code: "",
-        billing: { billing_mode: "regeneration" as const, held: true, remaining: 1 },
-        configuration: {
-          target_count: 10,
-          include_short: false,
-          include_long_tail: false,
-          include_regional: false,
-          regions: [],
-        },
-        provenance: {
-          provider_key: "mock",
-          model_key: "mock-keyword-generation-v1",
-          adapter_version: "1",
-          prompt_version: "keyword-generation-v1",
-        },
-        result: null,
-        attempts: 0,
-        created_at: "2026-08-15T00:00:00Z",
-        updated_at: "2026-08-15T00:00:00Z",
-        finished_at: null,
-      });
-
-    render(<KeywordEditorPage />);
-    expect(await screen.findByText("关键词编辑器")).toBeTruthy();
-    await userEvent.click(screen.getByRole("button", { name: "AI 生成关键词" }));
-    expect(await screen.findByText("该主体已使用免费生成，请确认消耗一次再生成额度")).toBeTruthy();
-    await userEvent.click(screen.getByRole("button", { name: "确认消耗额度并再生成" }));
-    await userEvent.click(await screen.findByRole("button", { name: "确认再生成" }));
-
-    await waitFor(() => expect(api.createKeywordGeneration).toHaveBeenCalledTimes(2));
-    expect(api.createKeywordGeneration.mock.calls[0][1].regenerate).toBe(false);
-    expect(api.createKeywordGeneration.mock.calls[1][1].regenerate).toBe(true);
-  });
-
-  it("shows a clear read-only reason when writing is unavailable", async () => {
-    api.getKeywordDraft.mockResolvedValue({
-      ...draft,
-      can_write: false,
-      read_only_reason: "subject_archived",
-    });
-    render(<KeywordEditorPage />);
-    expect(await screen.findByText("已归档主体只能查看关键词历史。")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "添加关键词" })).toHaveProperty("disabled", true);
+    expect(screen.queryByText("KEYWORD_GENERATION_INVALID_RESPONSE")).toBeNull();
   });
 });

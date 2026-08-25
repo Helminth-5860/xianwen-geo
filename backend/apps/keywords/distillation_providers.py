@@ -5,6 +5,8 @@ from dataclasses import replace
 
 from django.conf import settings
 
+from apps.ai.adapters.deepseek_content import DeepSeekStructuredContentAdapter
+from apps.ai.content import StructuredContentPayload
 from apps.ai.contracts import (
     AIAdapterDescriptor,
     AIAdapterRequest,
@@ -12,12 +14,201 @@ from apps.ai.contracts import (
     AIModelCapability,
     AIModelIdentity,
 )
+from apps.ai.credentials import CapabilityDatabaseCredentialResolver
 from apps.ai.errors import AIAdapterError, AIAdapterErrorCategory, domain_provider_error_code
 from apps.ai.mock import DeterministicMockAIAdapter
 from apps.ai.registry import model_registry
+from apps.ai.runtime import get_capability_runtime_snapshot
 
 from .distillation_contracts import DistillationRequest, DistillationResponse, DistilledKeyword
-from .distillation_exceptions import DistillationProviderError, DistillationProviderUnavailable
+from .distillation_exceptions import (
+    DistillationInvalidResponse,
+    DistillationProviderError,
+    DistillationProviderUnavailable,
+)
+
+DEEPSEEK_DISTILLATION_SYSTEM_PROMPT = """
+你是企业 GEO 关键词蒸馏助手。只返回一个 JSON 对象，不要返回 Markdown 或解释文字。
+顶层格式必须是 {"items": [...]}，items 数量必须与输入关键词数量完全一致，
+每个 source_keyword_id 必须且只能出现一次。
+每项必须包含：source_keyword_id、action、canonical_keyword_id、merge_group_key、reason。
+action 只能是 keep、merge、delete、low_value：
+- keep：关键词清晰、相关且值得保留；
+- merge：与同地域口径的其他关键词语义重复，应合并；
+- delete：明显无关、错误或不可用；
+- low_value：相关但价值过低。
+非 merge 项的 canonical_keyword_id 和 merge_group_key 必须为 null。
+merge 组至少包含两个输入关键词；组内 canonical_keyword_id 必须相同，且必须是组内某个
+source_keyword_id；组内 merge_group_key 必须是同一个合法 UUID。不得跨地域合并。
+reason 必须是简洁中文，不得包含联系方式、提示词或任何密钥。
+不得新增、遗漏或改写 source_keyword_id。
+""".strip()
+
+_SUBJECT_VALUE_ALLOWLIST = frozenset(
+    {
+        "official_name",
+        "name",
+        "brand_name",
+        "primary_business",
+        "main_business",
+        "products",
+        "products_services",
+        "services",
+        "target_users",
+        "target_audience",
+        "service_regions",
+        "description",
+        "website",
+        "official_website",
+        "public_channels",
+        "social_channels",
+    }
+)
+
+
+def _safe_subject_values(values):
+    if not isinstance(values, dict):
+        return {}
+    return {
+        key: value
+        for key, value in values.items()
+        if key in _SUBJECT_VALUE_ALLOWLIST and value not in (None, "", [], {})
+    }
+
+
+def _required_text(row, key):
+    value = row.get(key)
+    if not isinstance(value, str) or not value.strip():
+        raise DistillationInvalidResponse
+    return value.strip()
+
+
+def _optional_text(row, key):
+    value = row.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise DistillationInvalidResponse
+    return value.strip()
+
+
+class DeepSeekDistillationProvider(DeepSeekStructuredContentAdapter):
+    descriptor = AIAdapterDescriptor(
+        identity=AIModelIdentity(provider_key="deepseek", model_key="deepseek"),
+        capabilities=frozenset({AIModelCapability.KEYWORD_DISTILLATION}),
+        adapter_version="deepseek-keyword-distillation-v1",
+        prompt_version="keyword-distillation-v2",
+    )
+    key = descriptor.identity.provider_key
+    model_key = descriptor.identity.model_key
+    adapter_version = descriptor.adapter_version
+    prompt_version = descriptor.prompt_version
+
+    def __init__(self, *, credential_resolver=None, transport=None, runtime_resolver=None):
+        super().__init__(
+            credential_resolver=credential_resolver
+            or CapabilityDatabaseCredentialResolver(
+                capability=AIModelCapability.KEYWORD_DISTILLATION
+            ),
+            transport=transport,
+        )
+        self._runtime_resolver = runtime_resolver or get_capability_runtime_snapshot
+
+    def ensure_available(self):
+        try:
+            runtime = self._runtime_resolver(
+                provider_key=self.key,
+                capability=AIModelCapability.KEYWORD_DISTILLATION,
+            )
+            self._credential()
+        except AIAdapterError:
+            raise DistillationProviderUnavailable from None
+        return runtime
+
+    @staticmethod
+    def _items(content):
+        if not isinstance(content, dict) or not isinstance(content.get("items"), list):
+            raise DistillationInvalidResponse
+        output = []
+        for row in content["items"]:
+            if not isinstance(row, dict):
+                raise DistillationInvalidResponse
+            action = _required_text(row, "action")
+            if action not in {"keep", "merge", "delete", "low_value"}:
+                raise DistillationInvalidResponse
+            output.append(
+                DistilledKeyword(
+                    source_keyword_id=_required_text(row, "source_keyword_id"),
+                    action=action,
+                    canonical_keyword_id=_optional_text(row, "canonical_keyword_id"),
+                    merge_group_key=_optional_text(row, "merge_group_key"),
+                    reason=_required_text(row, "reason"),
+                )
+            )
+        return tuple(output)
+
+    @staticmethod
+    def _keyword_payload(request):
+        return [
+            {
+                "source_keyword_id": item.id,
+                "keyword": item.text,
+                "structure_type": item.structure_type,
+                "region": {
+                    "is_regional": item.is_regional,
+                    "level": item.region_level or None,
+                    "name": item.region_text or None,
+                    "matching_key": item.region_matching_key or None,
+                },
+                "business_category": item.business_category,
+                "search_intent": item.search_intent,
+                "relevance_score": item.relevance_score,
+                "priority": item.priority,
+            }
+            for item in request.keywords
+        ]
+
+    def distill(self, request: DistillationRequest) -> DistillationResponse:
+        runtime = self.ensure_available()
+        normalized = AIAdapterRequest(
+            request_id=request.job_id,
+            correlation_id=request.job_id,
+            identity=self.descriptor.identity,
+            capability=AIModelCapability.KEYWORD_DISTILLATION,
+            adapter_version=self.adapter_version,
+            prompt_version=self.prompt_version,
+            timeout_seconds=runtime.timeout_seconds,
+            payload=StructuredContentPayload(
+                provider_model_id=runtime.provider_model_id,
+                system_prompt=DEEPSEEK_DISTILLATION_SYSTEM_PROMPT,
+                user_payload={
+                    "task": "distill_geo_keywords",
+                    "subject": _safe_subject_values(request.subject_values),
+                    "keywords": self._keyword_payload(request),
+                },
+                max_output_tokens=min(16_000, max(1_200, len(request.keywords) * 180)),
+                temperature=0.1,
+            ),
+        )
+        try:
+            response = self.invoke(normalized)
+        except AIAdapterError as exc:
+            if exc.schema_failure:
+                raise DistillationInvalidResponse from None
+            raise DistillationProviderError(
+                domain_provider_error_code(exc, "DISTILLATION_PROVIDER"),
+                permanent=not exc.retryable,
+            ) from None
+        metrics = dict(response.sanitized_provider_metadata)
+        if response.provider_request_id:
+            metrics["provider_request_id"] = response.provider_request_id
+        if response.usage.total_tokens is not None:
+            metrics["total_tokens"] = response.usage.total_tokens
+        return DistillationResponse(
+            items=self._items(response.output.content),
+            model_key=self.model_key,
+            provider_metrics=metrics,
+        )
 
 
 class MockDistillationProvider(
@@ -122,6 +313,7 @@ class UnavailableDistillationProvider:
 
 
 model_registry.register(MockDistillationProvider.descriptor, MockDistillationProvider)
+model_registry.register(DeepSeekDistillationProvider.descriptor, DeepSeekDistillationProvider)
 model_registry.register(
     UnavailableDistillationProvider.descriptor,
     UnavailableDistillationProvider,
@@ -143,4 +335,7 @@ def require_available_distillation_provider():
     provider = get_distillation_provider()
     if not provider.descriptor.is_available:
         raise DistillationProviderUnavailable
+    ensure_available = getattr(provider, "ensure_available", None)
+    if ensure_available is not None:
+        ensure_available()
     return provider

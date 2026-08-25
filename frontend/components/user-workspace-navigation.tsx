@@ -34,6 +34,7 @@ const linkedItem = (key: string, label: string, href: string): MenuItem => ({
 function workspaceMenu(subjectId: string | null): MenuItem[] {
   const subjectHome = subjectId ? `/subjects/${subjectId}` : "/subjects";
   const keywordHome = subjectId ? `/subjects/${subjectId}/keywords` : "/subjects";
+  const customKeywordHome = subjectId ? `/subjects/${subjectId}/keywords/custom` : "/subjects";
   const distillHome = subjectId ? `/subjects/${subjectId}/keywords/distill` : "/subjects";
   const assetHome = subjectId ? `/subjects/${subjectId}/keywords/assets` : "/subjects";
   const questionHome = subjectId ? `/subjects/${subjectId}/questions` : "/subjects";
@@ -59,7 +60,8 @@ function workspaceMenu(subjectId: string | null): MenuItem[] {
       icon: <TagsOutlined />,
       label: "关键词中心",
       children: [
-        linkedItem("keywords-generate", "关键词生成", keywordHome),
+        linkedItem("keywords-smart", "智能关键词", keywordHome),
+        linkedItem("keywords-custom", "自定义关键词", customKeywordHome),
         linkedItem("keywords-distill", "关键词蒸馏", distillHome),
         linkedItem("keywords-assets", "关键词资产", assetHome),
       ],
@@ -134,7 +136,8 @@ function selectedMenuKey(pathname: string) {
   if (/^\/subjects\/[^/]+$/.test(pathname)) return "subject-edit";
   if (pathname.includes("/keywords/distill")) return "keywords-distill";
   if (pathname.includes("/keywords/assets")) return "keywords-assets";
-  if (pathname.includes("/keywords")) return "keywords-generate";
+  if (pathname.includes("/keywords/custom")) return "keywords-custom";
+  if (pathname.includes("/keywords")) return "keywords-smart";
   if (pathname.includes("/questions")) return "questions-generate";
   if (pathname.startsWith("/geo/detections")) return "detections-subject";
   if (pathname.startsWith("/geo/reports")) return "insights-reports";
@@ -148,7 +151,8 @@ function selectedMenuKey(pathname: string) {
 const menuGroupByChild: Readonly<Record<string, string>> = {
   "subject-edit": "subject",
   "subject-manage": "subject",
-  "keywords-generate": "keywords",
+  "keywords-smart": "keywords",
+  "keywords-custom": "keywords",
   "keywords-distill": "keywords",
   "keywords-assets": "keywords",
   "questions-generate": "questions",

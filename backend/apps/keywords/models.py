@@ -65,6 +65,7 @@ class KeywordItemFields(models.Model):
         PROVINCE = "province", "省/州"
         CITY = "city", "城市"
         DISTRICT = "district", "区县"
+        STREET = "street", "乡镇/街道"
         CUSTOM = "custom", "自定义"
 
     class SearchIntent(models.TextChoices):
@@ -77,6 +78,13 @@ class KeywordItemFields(models.Model):
         HIGH = "high", "High"
         MEDIUM = "medium", "Medium"
         LOW = "low", "Low"
+
+    class Source(models.TextChoices):
+        LEGACY = "legacy", "历史数据"
+        MANUAL = "manual", "手工添加"
+        BULK = "bulk", "批量添加"
+        SMART_GENERATION = "smart_generation", "智能生成"
+        CUSTOM_GENERATION = "custom_generation", "自定义生成"
 
     text = models.CharField(max_length=500)
     matching_text = models.CharField(max_length=500)
@@ -91,6 +99,10 @@ class KeywordItemFields(models.Model):
     search_intent = models.CharField(  # noqa: DJ001
         max_length=16, choices=SearchIntent.choices, null=True, blank=True
     )
+    search_intents = models.JSONField(default=list)
+    regions = models.JSONField(default=list)
+    source = models.CharField(max_length=24, choices=Source.choices, default=Source.LEGACY)
+    notes = models.CharField(max_length=1000, blank=True)
     relevance_score = models.PositiveSmallIntegerField(null=True, blank=True)
     priority = models.CharField(  # noqa: DJ001
         max_length=16, choices=Priority.choices, null=True, blank=True
@@ -163,7 +175,14 @@ class KeywordDraftItem(KeywordItemFields):  # noqa: DJ008
                 condition=(
                     models.Q(region_level="")
                     | models.Q(
-                        region_level__in=("country", "province", "city", "district", "custom")
+                        region_level__in=(
+                            "country",
+                            "province",
+                            "city",
+                            "district",
+                            "street",
+                            "custom",
+                        )
                     )
                 ),
                 name="keyword_draft_region_level_valid",
@@ -322,7 +341,14 @@ class Keyword(KeywordItemFields):  # noqa: DJ008
                 condition=(
                     models.Q(region_level="")
                     | models.Q(
-                        region_level__in=("country", "province", "city", "district", "custom")
+                        region_level__in=(
+                            "country",
+                            "province",
+                            "city",
+                            "district",
+                            "street",
+                            "custom",
+                        )
                     )
                 ),
                 name="keyword_formal_region_level_valid",
@@ -343,6 +369,44 @@ class Keyword(KeywordItemFields):  # noqa: DJ008
                 ),
                 name="keyword_formal_region_shape",
             ),
+        ]
+
+
+class KeywordAssetPreference(models.Model):  # noqa: DJ008
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="keyword_asset_preferences",
+    )
+    subject = models.ForeignKey(
+        Subject,
+        on_delete=models.PROTECT,
+        related_name="keyword_asset_preferences",
+    )
+    source_keyword = models.ForeignKey(
+        Keyword,
+        on_delete=models.PROTECT,
+        related_name="asset_preferences",
+    )
+    display_text = models.CharField(max_length=500, blank=True)
+    business_category = models.CharField(max_length=128, blank=True)
+    search_intents = models.JSONField(null=True, blank=True, default=None)
+    region_selections = models.JSONField(null=True, blank=True, default=None)
+    enabled = models.BooleanField(default=True)
+    usable_for_questions = models.BooleanField(default=True)
+    deleted_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "keyword_asset_preferences"
+        ordering = ("subject_id", "source_keyword_id")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("subject", "source_keyword"),
+                name="keyword_asset_preference_unique",
+            )
         ]
 
 
@@ -369,6 +433,15 @@ class KeywordGenerationJob(models.Model):  # noqa: DJ008
     class BillingMode(models.TextChoices):
         FREE_INITIAL = "free_initial", "Free initial"
         REGENERATION = "regeneration", "Regeneration"
+
+    class GenerationMode(models.TextChoices):
+        SMART = "smart", "智能关键词"
+        CUSTOM = "custom", "自定义关键词"
+
+    class RegionMode(models.TextChoices):
+        UNRESTRICTED = "unrestricted", "不限地域"
+        SUBJECT = "subject", "使用当前主体服务区域"
+        CUSTOM = "custom", "自定义地域"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(
@@ -402,6 +475,18 @@ class KeywordGenerationJob(models.Model):  # noqa: DJ008
     include_long_tail = models.BooleanField(default=False)
     include_regional = models.BooleanField(default=False)
     regions = models.JSONField(default=list)
+    generation_mode = models.CharField(
+        max_length=16,
+        choices=GenerationMode.choices,
+        default=GenerationMode.SMART,
+    )
+    requested_categories = models.JSONField(default=list)
+    requested_intents = models.JSONField(default=list)
+    region_mode = models.CharField(
+        max_length=16,
+        choices=RegionMode.choices,
+        default=RegionMode.UNRESTRICTED,
+    )
     input_subject_values = models.JSONField(default=dict)
     historical_exclusions = models.JSONField(default=list)
     provider_key = models.CharField(max_length=32)
@@ -464,6 +549,11 @@ class KeywordGenerationJob(models.Model):  # noqa: DJ008
                 & models.Q(attempts__gte=0)
                 & models.Q(retry_count__gte=0),
                 name="keyword_generation_counts_valid",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(generation_mode__in=("smart", "custom"))
+                & models.Q(region_mode__in=("unrestricted", "subject", "custom")),
+                name="keyword_generation_modes_valid",
             ),
             models.CheckConstraint(
                 condition=(

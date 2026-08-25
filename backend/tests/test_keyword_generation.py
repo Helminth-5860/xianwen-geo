@@ -11,6 +11,7 @@ from django.test import override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
 
+from apps.keywords.generation_contracts import GeneratedKeyword, KeywordGenerationResponse
 from apps.keywords.generation_exceptions import (
     KeywordGenerationIdempotencyConflict,
     KeywordGenerationInProgress,
@@ -19,6 +20,8 @@ from apps.keywords.generation_exceptions import (
     KeywordGenerationRegenerationConfirmationRequired,
 )
 from apps.keywords.generation_services import (
+    _finalize_success,
+    _generated_items,
     claim_keyword_generation_job,
     create_keyword_generation_job,
     execute_keyword_generation,
@@ -42,6 +45,7 @@ from apps.quotas.models import (
 from apps.quotas.services import initialize_subscription_accounts
 from apps.subjects.models import (
     Subject,
+    SubjectBusinessProfile,
     SubjectName,
     SubjectType,
     SubjectVersion,
@@ -194,7 +198,7 @@ def _subject_account(subject):
     )
 
 
-def test_first_generation_is_free_and_applies_complete_draft_only():
+def test_first_generation_is_free_and_auto_commits_candidate_version():
     user, subject, subject_version, _ = _facts()
     job, created = _create(user, subject, subject_version)
 
@@ -209,19 +213,20 @@ def test_first_generation_is_free_and_applies_complete_draft_only():
     account = _subject_account(subject)
 
     assert job.status == KeywordGenerationJob.Status.SUCCEEDED
-    assert keyword_set.version == 1
+    assert keyword_set.version == 2
     assert len(items) == 3
     assert {item.structure_type for item in items} == {
         "short",
         "long_tail",
     }
     assert all(item.business_category for item in items)
-    assert all(item.search_intent for item in items)
+    assert all(item.search_intents for item in items)
     assert all(item.relevance_score is not None for item in items)
     assert all(item.priority for item in items)
     assert all(item.ai_reason for item in items)
     assert KeywordGenerationResult.objects.filter(job=job).count() == 1
-    assert KeywordSetVersion.objects.count() == 0
+    assert KeywordSetVersion.objects.count() == 1
+    assert keyword_set.current_version is not None
     assert account.available == 2
     assert account.frozen == 0
 
@@ -267,7 +272,7 @@ def test_server_computes_regeneration_and_requires_explicit_confirmation():
             user,
             subject,
             version,
-            expected_version=1,
+            expected_version=2,
             regenerate=False,
         )
 
@@ -275,7 +280,7 @@ def test_server_computes_regeneration_and_requires_explicit_confirmation():
         user,
         subject,
         version,
-        expected_version=1,
+        expected_version=2,
         regenerate=True,
     )
     account = _subject_account(subject)
@@ -296,7 +301,7 @@ def test_successful_regeneration_consumes_once_and_retry_call_is_idempotent():
         user,
         subject,
         version,
-        expected_version=1,
+        expected_version=2,
         regenerate=True,
     )
 
@@ -318,7 +323,7 @@ def test_successful_regeneration_consumes_once_and_retry_call_is_idempotent():
         ).count()
         == 1
     )
-    assert KeywordSet.objects.get(subject=subject).version == 2
+    assert KeywordSet.objects.get(subject=subject).version == 4
 
 
 @override_settings(
@@ -334,7 +339,7 @@ def test_retry_exhaustion_releases_regeneration_hold():
         user,
         subject,
         version,
-        expected_version=1,
+        expected_version=2,
         regenerate=True,
     )
 
@@ -361,7 +366,7 @@ def test_invalid_provider_output_releases_regeneration_hold():
         user,
         subject,
         version,
-        expected_version=1,
+        expected_version=2,
         regenerate=True,
     )
 
@@ -370,7 +375,7 @@ def test_invalid_provider_output_releases_regeneration_hold():
     second.quota_hold.refresh_from_db()
     assert second.stable_error_code == "KEYWORD_GENERATION_INVALID_RESPONSE"
     assert second.quota_hold.released_amount == 1
-    assert KeywordSet.objects.get(subject=subject).version == 1
+    assert KeywordSet.objects.get(subject=subject).version == 2
 
 
 def test_user_draft_change_causes_conflict_and_releases_hold():
@@ -383,7 +388,7 @@ def test_user_draft_change_causes_conflict_and_releases_hold():
         user,
         subject,
         version,
-        expected_version=1,
+        expected_version=2,
         regenerate=True,
     )
     current = KeywordSet.objects.get(subject=subject)
@@ -421,7 +426,7 @@ def test_subject_version_change_causes_conflict_and_releases_regeneration_hold()
         user,
         subject,
         version,
-        expected_version=1,
+        expected_version=2,
         regenerate=True,
     )
     with transaction.atomic():
@@ -452,7 +457,7 @@ def test_subject_version_change_causes_conflict_and_releases_regeneration_hold()
     assert second.quota_hold.released_amount == 1
     assert account.available == 2
     assert account.frozen == 0
-    assert KeywordSet.objects.get(subject=subject).version == 1
+    assert KeywordSet.objects.get(subject=subject).version == 2
 
 
 def test_dispatcher_enqueues_each_due_job_without_executing_inline():
@@ -539,7 +544,7 @@ def test_generation_api_is_strict_async_owner_scoped_and_hides_internal_data():
                 "expected_subject_version_id": str(version.pk),
                 "expected_keyword_set_version": 0,
                 "target_count": 2,
-                "include_short": False,
+                "include_short": True,
                 "include_long_tail": False,
                 "include_regional": False,
                 "regions": [],
@@ -652,3 +657,98 @@ def test_events_and_result_store_only_validated_safe_evidence():
     assert "prompt" not in serialized
     assert QuotaHoldGroup.objects.count() == 0
     assert QuotaHold.objects.count() == 0
+
+
+def test_generation_uses_public_subject_allowlist_and_clears_self_base_keyword():
+    user, subject, version, _ = _facts(generation_limit=2)
+    SubjectBusinessProfile.objects.create(
+        subject=subject,
+        legal_entity_type="company",
+        contact_name="不应发送的联系人",
+        contact_phone="13800000000",
+        business_address="不应发送的地址",
+        primary_business="GEO 优化服务",
+        brand_name="显问",
+        social_channels={"website": "https://example.test"},
+    )
+    job, _ = _create(user, subject, version, target_count=1)
+
+    assert job.input_subject_values["primary_business"] == "GEO 优化服务"
+    assert job.input_subject_values["brand_name"] == "显问"
+    assert "contact_name" not in job.input_subject_values
+    assert "contact_phone" not in job.input_subject_values
+    assert "business_address" not in job.input_subject_values
+    assert "legal_entity_type" not in job.input_subject_values
+
+    normalized = _generated_items(
+        job,
+        KeywordGenerationResponse(
+            model_key=job.model_key,
+            provider_metrics={},
+            items=(
+                GeneratedKeyword(
+                    text="显问 GEO",
+                    structure_type="short",
+                    is_regional=False,
+                    region_level=None,
+                    region_text=None,
+                    base_keyword="  显问　GEO ",
+                    business_category="entity",
+                    search_intent=None,
+                    relevance_score=95,
+                    priority="high",
+                    ai_reason="主体品牌",
+                    search_intents=("navigational",),
+                ),
+            ),
+        ),
+    )
+    assert normalized[0].base_keyword_text is None
+
+
+def test_generation_duplicate_conflict_rolls_back_all_candidate_appends():
+    user, subject, version, _ = _facts(generation_limit=3)
+    first, _ = _create(user, subject, version)
+    execute_keyword_generation(job_id=first.pk)
+    before = KeywordSet.objects.get(subject=subject)
+    existing_text = before.draft_items.order_by("sort_order").first().text
+    before_ids = list(before.draft_items.order_by("sort_order").values_list("id", flat=True))
+    second, _ = _create(
+        user,
+        subject,
+        version,
+        expected_version=before.version,
+        regenerate=True,
+        target_count=2,
+    )
+    _, generation = claim_keyword_generation_job(job_id=second.pk)
+
+    def item(text):
+        return GeneratedKeyword(
+            text=text,
+            structure_type="short",
+            is_regional=False,
+            region_level=None,
+            region_text=None,
+            base_keyword=None,
+            business_category="service",
+            search_intent=None,
+            relevance_score=90,
+            priority="high",
+            ai_reason="测试",
+            search_intents=("recommendation",),
+        )
+
+    result = _finalize_success(
+        second.pk,
+        generation,
+        KeywordGenerationResponse(
+            items=(item(existing_text), item("全新候选关键词")),
+            model_key=second.model_key,
+            provider_metrics={},
+        ),
+    )
+    after = KeywordSet.objects.get(subject=subject)
+    assert result == {"status": "conflict", "code": "KEYWORD_VERSION_NO_CHANGES"}
+    assert after.version == before.version
+    assert list(after.draft_items.order_by("sort_order").values_list("id", flat=True)) == before_ids

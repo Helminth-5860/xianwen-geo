@@ -7,6 +7,11 @@ from django.core.management import call_command
 from django.utils import timezone
 from rest_framework.test import APIClient
 
+from apps.keywords.distillation_services import (
+    confirm_distillation,
+    create_distillation_job,
+    execute_distillation,
+)
 from apps.keywords.exceptions import (
     KeywordPlanRequired,
     KeywordStateConflict,
@@ -15,13 +20,14 @@ from apps.keywords.exceptions import (
     KeywordVersionConflict,
     KeywordVersionNoChanges,
 )
-from apps.keywords.models import Keyword, KeywordSet, KeywordSetVersion
+from apps.keywords.models import DistillationWorkspace, Keyword, KeywordSet, KeywordSetVersion
 from apps.keywords.normalization import (
     KeywordNormalizationError,
     normalize_keyword_items,
     resolve_base_keyword_indexes,
 )
 from apps.keywords.services import commit_keyword_version, save_keyword_draft
+from apps.keywords.taxonomy import KEYWORD_CATEGORY_VALUES, KEYWORD_INTENT_VALUES
 from apps.plans.models import Plan, PlanVersion, Subscription
 from apps.subjects.models import Subject, SubjectName, SubjectType, SubjectVersion
 from apps.subjects.schema_snapshots import (
@@ -560,3 +566,168 @@ def test_formal_models_are_append_only_at_orm_layer():
         KeywordSetVersion.objects.filter(pk=formal.pk).update(item_count=99)
     with pytest.raises(TypeError):
         Keyword.objects.filter(keyword_set_version=formal).delete()
+
+
+def test_keyword_taxonomy_has_fixed_fourteen_categories_and_eight_intents():
+    assert len(KEYWORD_CATEGORY_VALUES) == 14
+    assert len(KEYWORD_INTENT_VALUES) == 8
+
+
+def test_manual_and_bulk_candidate_api_append_dedupes_and_auto_commits():
+    user, subject, version = make_facts()
+    client = APIClient()
+    client.force_authenticate(user)
+    endpoint = f"/api/v1/subjects/{subject.pk}/keywords/candidates"
+    common = {
+        "category": "service",
+        "intents": ["recommendation", "local"],
+        "length_type": "short",
+        "regions": [
+            {
+                "code": "440106",
+                "name": "天河区",
+                "level": "district",
+                "path": [
+                    {"code": "440000", "name": "广东省"},
+                    {"code": "440100", "name": "广州市"},
+                ],
+            }
+        ],
+        "notes": "内部测试",
+    }
+    first = client.post(
+        endpoint,
+        {
+            "expected_version": 0,
+            "expected_subject_version_id": str(version.pk),
+            "source": "manual",
+            "items": [{"text": " 广州 GEO 服务 ", **common}],
+        },
+        format="json",
+    )
+    assert first.status_code == 201
+    assert first.json()["data"]["added_count"] == 1
+    assert first.json()["data"]["candidate_pool"]["version"] == 2
+
+    second = client.post(
+        endpoint,
+        {
+            "expected_version": 2,
+            "expected_subject_version_id": str(version.pk),
+            "source": "bulk",
+            "items": [
+                {"text": "广州 GEO 服务", **common},
+                {"text": "   ", **common},
+                {"text": "AI 搜索优化", **common},
+                {"text": "ＡＩ 搜索优化", **common},
+            ],
+        },
+        format="json",
+    )
+    assert second.status_code == 201
+    payload = second.json()["data"]
+    assert payload["added_count"] == 1
+    assert len(payload["skipped_duplicates"]) == 2
+    assert payload["candidate_pool"]["version"] == 4
+    assert KeywordSet.objects.get(subject=subject).current_version.version_no == 2
+    rows = list(KeywordSet.objects.get(subject=subject).draft_items.order_by("sort_order"))
+    assert [row.source for row in rows] == ["manual", "bulk"]
+    assert rows[0].search_intents == ["recommendation", "local"]
+    assert rows[0].regions[0]["code"] == "440106"
+
+
+def test_keyword_assets_project_merge_groups_and_preserve_group_fields_after_patch():
+    user, subject, subject_version = make_facts()
+    subject.status = Subject.Status.ACTIVE
+    subject.save(update_fields=["status", "updated_at"])
+    keyword_set, _ = save_keyword_draft(
+        user_id=user.pk,
+        subject_id=subject.pk,
+        expected_version=0,
+        expected_subject_version_id=subject_version.pk,
+        items=[
+            {
+                "text": "品牌咨询",
+                "structure_type": "short",
+                "is_regional": False,
+                "business_category": "entity",
+            },
+            {
+                "text": "企业决策者 GEO",
+                "structure_type": "long_tail",
+                "is_regional": False,
+                "business_category": "audience",
+            },
+            {
+                "text": "采购场景 GEO",
+                "structure_type": "long_tail",
+                "is_regional": False,
+                "business_category": "scenario",
+            },
+            {
+                "text": "待删除场景",
+                "structure_type": "general",
+                "is_regional": False,
+                "business_category": "scenario",
+            },
+            {
+                "text": "低价值人群",
+                "structure_type": "general",
+                "is_regional": False,
+                "business_category": "audience",
+            },
+        ],
+    )
+    keyword_set, keyword_version = commit_keyword_version(
+        user_id=user.pk,
+        subject_id=subject.pk,
+        expected_version=keyword_set.version,
+        expected_subject_version_id=subject_version.pk,
+    )
+    job, _ = create_distillation_job(
+        user_id=user.pk,
+        subject_id=subject.pk,
+        keyword_set_version_id=keyword_version.pk,
+        expected_workspace_version=0,
+        regenerate=False,
+        idempotency_key=f"asset-groups-{uuid.uuid4()}",
+        request_id=uuid.uuid4(),
+    )
+    assert execute_distillation(job_id=job.pk) == {"status": "succeeded"}
+    workspace = DistillationWorkspace.objects.get(subject=subject)
+    confirm_distillation(
+        user_id=user.pk,
+        subject_id=subject.pk,
+        expected_version=workspace.version,
+    )
+
+    client = APIClient()
+    client.force_authenticate(user)
+    endpoint = f"/api/v1/subjects/{subject.pk}/keyword-assets"
+    response = client.get(endpoint)
+    assert response.status_code == 200
+    items = response.json()["data"]["items"]
+    assert len(items) == 2
+    group = next(item for item in items if item["core_keyword"] == "企业决策者 GEO")
+    assert group["related_keywords"] == ["采购场景 GEO"]
+    assert group["audiences"] == ["企业决策者 GEO"]
+    assert group["scenarios"] == ["采购场景 GEO"]
+    original_updated_at = group["updated_at"]
+
+    patched = client.patch(
+        f"{endpoint}/{group['id']}",
+        {
+            "display_text": "企业采购负责人 GEO",
+            "category": "audience",
+            "enabled": False,
+        },
+        format="json",
+    )
+    assert patched.status_code == 200
+    payload = patched.json()["data"]
+    assert payload["core_keyword"] == "企业采购负责人 GEO"
+    assert payload["related_keywords"] == ["采购场景 GEO"]
+    assert payload["audiences"] == ["企业采购负责人 GEO"]
+    assert payload["scenarios"] == ["采购场景 GEO"]
+    assert payload["enabled"] is False
+    assert payload["updated_at"] >= original_updated_at

@@ -12,6 +12,9 @@ from .generation_views import (
     KeywordGenerationDetailView,
 )
 from .views import (
+    KeywordAssetListView,
+    KeywordAssetPreferenceView,
+    KeywordCandidateAppendView,
     KeywordCommitView,
     KeywordCurrentView,
     KeywordDraftView,
@@ -43,6 +46,18 @@ urlpatterns = [
         KeywordGenerationDetailView.as_view(),
     ),
     path("subjects/<uuid:subject_id>/keywords/draft", KeywordDraftView.as_view()),
+    path(
+        "subjects/<uuid:subject_id>/keywords/candidates",
+        KeywordCandidateAppendView.as_view(),
+    ),
+    path(
+        "subjects/<uuid:subject_id>/keyword-assets",
+        KeywordAssetListView.as_view(),
+    ),
+    path(
+        "subjects/<uuid:subject_id>/keyword-assets/<uuid:keyword_id>",
+        KeywordAssetPreferenceView.as_view(),
+    ),
     path("subjects/<uuid:subject_id>/keywords/current", KeywordCurrentView.as_view()),
     path("subjects/<uuid:subject_id>/keywords/commit", KeywordCommitView.as_view()),
     path("subjects/<uuid:subject_id>/keywords/versions", KeywordVersionListView.as_view()),

@@ -8,7 +8,10 @@ from apps.ai.errors import AIAdapterError, AIAdapterErrorCategory
 from apps.ai.models import AICapabilityRuntimeConfig, APICredentialCapabilityBinding
 from apps.ai.runtime import AICapabilityRuntimeSnapshot
 from apps.keywords.generation_contracts import KeywordGenerationRequest
-from apps.keywords.generation_exceptions import KeywordGenerationProviderUnavailable
+from apps.keywords.generation_exceptions import (
+    KeywordGenerationInvalidResponse,
+    KeywordGenerationProviderUnavailable,
+)
 from apps.keywords.generation_providers import DeepSeekKeywordGenerationProvider
 
 
@@ -84,7 +87,7 @@ def test_deepseek_keyword_provider_uses_capability_runtime_and_returns_typed_ite
                                             "region_level": None,
                                             "region_text": None,
                                             "base_keyword": None,
-                                            "business_category": "GEO 服务",
+                                            "business_category": "service",
                                             "search_intent": "commercial",
                                             "relevance_score": 95,
                                             "priority": "high",
@@ -121,6 +124,7 @@ def test_deepseek_keyword_provider_uses_capability_runtime_and_returns_typed_ite
         "provider_model_id": "deepseek-chat",
         "provider_request_id": "provider-request-1",
         "total_tokens": 180,
+        "request_count": 1,
     }
 
 
@@ -139,6 +143,114 @@ def test_deepseek_keyword_provider_fails_closed_without_capability_runtime():
 
     with pytest.raises(KeywordGenerationProviderUnavailable):
         provider.ensure_available()
+
+
+def test_deepseek_keyword_provider_repairs_schema_once_then_succeeds():
+    requests = []
+
+    def handler(request):
+        payload = json.loads(request.content)
+        user_payload = json.loads(payload["messages"][1]["content"])
+        requests.append(user_payload)
+        category = "unknown-category" if len(requests) == 1 else "service"
+        return httpx.Response(
+            200,
+            json={
+                "id": f"provider-request-{len(requests)}",
+                "model": "deepseek-chat",
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "keywords": [
+                                        {
+                                            "keyword": "企业 GEO 优化",
+                                            "business_category": category,
+                                            "search_intent": "commercial",
+                                            "structure_type": "general",
+                                            "regions": None,
+                                            "relevance_score": 95,
+                                            "priority": "high",
+                                            "ai_reason": "与当前主营业务直接相关",
+                                        }
+                                    ]
+                                },
+                                ensure_ascii=False,
+                            )
+                        },
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": 10,
+                    "completion_tokens": 10,
+                    "total_tokens": 20,
+                },
+            },
+        )
+
+    provider = DeepSeekKeywordGenerationProvider(
+        credential_resolver=CredentialResolver(),
+        transport=httpx.MockTransport(handler),
+        runtime_resolver=runtime_snapshot,
+    )
+    response = provider.generate(generation_request())
+
+    assert len(requests) == 2
+    assert requests[0]["task"] == "generate_geo_keywords"
+    assert requests[1]["task"] == "repair_geo_keyword_json"
+    assert response.items[0].business_category == "service"
+    assert response.items[0].search_intents == ("recommendation",)
+    assert response.provider_metrics["request_count"] == 2
+
+
+def test_deepseek_keyword_provider_fails_after_exactly_one_repair_request():
+    request_count = 0
+
+    def handler(request):
+        nonlocal request_count
+        request_count += 1
+        return httpx.Response(
+            200,
+            json={
+                "id": f"provider-request-{request_count}",
+                "model": "deepseek-chat",
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {"items": [{"text": "企业 GEO 优化"}]},
+                                ensure_ascii=False,
+                            )
+                        },
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": 10,
+                    "completion_tokens": 10,
+                    "total_tokens": 20,
+                },
+            },
+        )
+
+    provider = DeepSeekKeywordGenerationProvider(
+        credential_resolver=CredentialResolver(),
+        transport=httpx.MockTransport(handler),
+        runtime_resolver=runtime_snapshot,
+    )
+    with pytest.raises(KeywordGenerationInvalidResponse) as error:
+        provider.generate(generation_request())
+
+    assert request_count == 2
+    assert set(error.value.diagnostic) == {
+        "actual_structure",
+        "expected_structure",
+        "error_fields",
+        "parse_failure_reason",
+        "root_cause",
+    }
 
 
 @pytest.mark.django_db

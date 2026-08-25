@@ -288,8 +288,8 @@ def test_production_missing_required_environment_fails_fast(missing):
             "Mock distillation provider is forbidden",
         ),
         (
-            {"DISTILLATION_PROVIDER": "deepseek"},
-            "Only unavailable distillation provider is supported",
+            {"DISTILLATION_PROVIDER": "unsupported"},
+            "Only unavailable or deepseek distillation provider is supported",
         ),
         (
             {"QUESTION_GENERATION_IDEMPOTENCY_HMAC_KEY": "weak"},
@@ -334,6 +334,11 @@ def test_production_accepts_complete_safe_configuration():
 
 def test_production_accepts_deepseek_keyword_generation_provider():
     result = import_settings(overrides={"KEYWORD_GENERATION_PROVIDER": "deepseek"})
+    assert result.returncode == 0, result.stderr
+
+
+def test_production_accepts_deepseek_distillation_provider():
+    result = import_settings(overrides={"DISTILLATION_PROVIDER": "deepseek"})
     assert result.returncode == 0, result.stderr
 
 

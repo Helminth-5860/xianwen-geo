@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from time import monotonic
 
 import httpx
@@ -38,6 +39,49 @@ DEEPSEEK_ASSISTANT_ADAPTER_VERSION = "deepseek-assistant-v1"
 DEEPSEEK_ASSISTANT_PROMPT_VERSION = "subject-assistant-v1"
 DEEPSEEK_ARTICLE_ADAPTER_VERSION = "deepseek-article-v1"
 DEEPSEEK_ARTICLE_PROMPT_VERSION = "geo-article-content-v1"
+
+_JSON_CODE_FENCE = re.compile(
+    r"^\s*```(?:json)?\s*(?P<body>.*?)\s*```\s*$",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _parse_json_object_content(content: object) -> dict:
+    """Parse one JSON object while tolerating common model presentation wrappers.
+
+    DeepSeek is asked for JSON mode, but an otherwise valid response can still be
+    wrapped in a Markdown fence or a short explanatory prefix/suffix.  This helper
+    deliberately does not repair values or invent missing fields; domain adapters
+    remain responsible for their own strict schema validation.
+    """
+
+    if not isinstance(content, str):
+        raise ValueError("content_not_text")
+    candidate = content.strip()
+    fenced = _JSON_CODE_FENCE.fullmatch(candidate)
+    if fenced is not None:
+        candidate = fenced.group("body").strip()
+    try:
+        parsed = json.loads(candidate)
+    except json.JSONDecodeError:
+        decoder = json.JSONDecoder()
+        parsed = None
+        for index, character in enumerate(candidate):
+            if character != "{":
+                continue
+            try:
+                value, _ = decoder.raw_decode(candidate[index:])
+            except json.JSONDecodeError:
+                continue
+            if isinstance(value, dict):
+                parsed = value
+                break
+        if parsed is None:
+            raise
+    if not isinstance(parsed, dict):
+        raise ValueError("content_not_object")
+    return parsed
+
 
 DEEPSEEK_STRATEGY_DESCRIPTOR = AIAdapterDescriptor(
     identity=AIModelIdentity(provider_key="deepseek", model_key="deepseek"),
@@ -156,7 +200,7 @@ class _DeepSeekStructuredContentAdapter:
                 choices = data["choices"]
                 choice = choices[0]
                 content = choice["message"]["content"]
-                parsed = json.loads(content)
+                parsed = _parse_json_object_content(content)
                 usage = data["usage"]
             except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError):
                 raise AIAdapterError(

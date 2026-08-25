@@ -185,8 +185,10 @@ if KEYWORD_GENERATION_IDEMPOTENCY_HMAC_KEY in {
 
 if DISTILLATION_PROVIDER == "mock":
     raise ImproperlyConfigured("Mock distillation provider is forbidden in production.")
-if DISTILLATION_PROVIDER != "unavailable":
-    raise ImproperlyConfigured("Only unavailable distillation provider is supported in production.")
+if DISTILLATION_PROVIDER not in {"unavailable", "deepseek"}:
+    raise ImproperlyConfigured(
+        "Only unavailable or deepseek distillation provider is supported in production."
+    )
 if len(DISTILLATION_IDEMPOTENCY_HMAC_KEY) < 50:
     raise ImproperlyConfigured("DISTILLATION_IDEMPOTENCY_HMAC_KEY is too weak for production.")
 if DISTILLATION_IDEMPOTENCY_HMAC_KEY in {

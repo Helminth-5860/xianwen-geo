@@ -181,8 +181,32 @@ describe("DistillationPanel", () => {
     expect(submitted.ai_action).toBe("delete");
 
     await userEvent.click(screen.getByRole("button", { name: "确认蒸馏结果" }));
-    await userEvent.click(await screen.findByRole("button", { name: "确认版本" }));
+    await userEvent.click(await screen.findByRole("button", { name: "确认结果" }));
     await waitFor(() => expect(api.confirmDistillation).toHaveBeenCalledWith("subject-1", 2));
+  });
+
+  it("拆分合并组时原子恢复组内全部关键词", async () => {
+    api.saveDistillationDraft.mockImplementation(async (_subjectId, _version, items) => ({
+      ...draft,
+      version: 2,
+      items,
+    }));
+    render(<DistillationPanel subjectId="subject-1" keywordDirty={false} />);
+    expect(await screen.findByRole("button", { name: "拆分合并组 1" })).toBeTruthy();
+
+    await userEvent.click(screen.getByRole("button", { name: "拆分合并组 1" }));
+    await userEvent.click(await screen.findByRole("button", { name: "确认拆分" }));
+    await userEvent.click(screen.getByRole("button", { name: "保存蒸馏调整" }));
+
+    await waitFor(() => expect(api.saveDistillationDraft).toHaveBeenCalledTimes(1));
+    const submitted = api.saveDistillationDraft.mock.calls[0][2];
+    for (const index of [1, 2]) {
+      expect(submitted[index]).toMatchObject({
+        action: "keep",
+        canonical_keyword_id: null,
+        merge_group_key: null,
+      });
+    }
   });
 
   it("requires explicit confirmation before billable re-distillation", async () => {

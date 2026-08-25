@@ -9,7 +9,8 @@ from apps.keywords.distillation_services import (
     confirm_distillation,
     execute_distillation,
 )
-from apps.keywords.models import DistillationWorkspace
+from apps.keywords.models import DistillationWorkspace, KeywordAssetPreference
+from apps.keywords.services import update_keyword_asset_preference
 from apps.questions.bank_models import (
     Question,
     QuestionBankVersion,
@@ -27,6 +28,7 @@ from apps.questions.generation_exceptions import (
     QuestionGenerationRegenerationConfirmationRequired,
 )
 from apps.questions.generation_services import (
+    _effective_keywords,
     claim_question_generation_job,
     confirm_question_bank,
     create_question_generation_job,
@@ -106,6 +108,52 @@ def test_initial_generation_is_free_bounded_and_keeps_provenance():
     assert "subject_values" not in str(
         [event.safe_summary for event in QuestionGenerationEvent.objects.filter(job=job)]
     )
+
+
+def test_question_generation_uses_effective_keyword_asset_preferences():
+    user, subject, _, _, distilled = facts(limit=2)
+    original = _effective_keywords(distilled)
+    assert original
+    keyword_id = original[0]["id"]
+
+    update_keyword_asset_preference(
+        user_id=user.pk,
+        subject_id=subject.pk,
+        keyword_id=keyword_id,
+        values={
+            "display_text": "品牌 GEO 咨询",
+            "category": "service",
+            "intents": ["recommendation", "local"],
+            "regions": [
+                {
+                    "code": "440106",
+                    "name": "天河区",
+                    "level": "district",
+                    "path": [
+                        {"code": "440000", "name": "广东省"},
+                        {"code": "440100", "name": "广州市"},
+                    ],
+                }
+            ],
+        },
+    )
+    effective = _effective_keywords(distilled)
+    edited = next(row for row in effective if row["id"] == keyword_id)
+    assert edited["text"] == "品牌 GEO 咨询"
+    assert edited["business_category"] == "service"
+    assert edited["search_intents"] == ["recommendation", "local"]
+    assert edited["region_text"] == "广东省 / 广州市 / 天河区"
+
+    update_keyword_asset_preference(
+        user_id=user.pk,
+        subject_id=subject.pk,
+        keyword_id=keyword_id,
+        values={"deleted": True},
+    )
+    preference = KeywordAssetPreference.objects.get(source_keyword_id=keyword_id)
+    assert preference.enabled is False
+    assert preference.usable_for_questions is False
+    assert all(row["id"] != keyword_id for row in _effective_keywords(distilled))
 
 
 def test_idempotency_one_active_and_regeneration_settles_once():
