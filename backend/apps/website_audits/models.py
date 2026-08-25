@@ -20,6 +20,14 @@ class WebsiteAudit(models.Model):  # noqa: DJ008
         FAILED = "failed", "失败"
         DISABLED = "disabled", "未启用"
 
+    class SemanticStatus(models.TextChoices):
+        NOT_STARTED = "not_started", "未开始"
+        QUEUED = "queued", "排队中"
+        RUNNING = "running", "语义检测中"
+        SUCCEEDED = "succeeded", "已完成"
+        FAILED = "failed", "失败"
+        DISABLED = "disabled", "未启用"
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -48,6 +56,7 @@ class WebsiteAudit(models.Model):  # noqa: DJ008
     stable_error_code = models.CharField(max_length=64, blank=True)
     started_at = models.DateTimeField(null=True, blank=True)
     finished_at = models.DateTimeField(null=True, blank=True)
+
     browser_status = models.CharField(
         max_length=16,
         choices=BrowserStatus.choices,
@@ -60,6 +69,28 @@ class WebsiteAudit(models.Model):  # noqa: DJ008
     browser_error_code = models.CharField(max_length=64, blank=True)
     browser_started_at = models.DateTimeField(null=True, blank=True)
     browser_finished_at = models.DateTimeField(null=True, blank=True)
+
+    semantic_status = models.CharField(
+        max_length=16,
+        choices=SemanticStatus.choices,
+        default=SemanticStatus.NOT_STARTED,
+    )
+    semantic_provider_key = models.CharField(max_length=64, blank=True)
+    semantic_model_id = models.CharField(max_length=255, blank=True)
+    semantic_runtime_version = models.PositiveBigIntegerField(null=True, blank=True)
+    semantic_prompt_version = models.CharField(max_length=64, blank=True)
+    semantic_page_count = models.PositiveIntegerField(default=0)
+    semantic_question_count = models.PositiveIntegerField(default=0)
+    semantic_scores = models.JSONField(default=dict)
+    semantic_result = models.JSONField(default=dict)
+    semantic_input_tokens = models.PositiveIntegerField(default=0)
+    semantic_output_tokens = models.PositiveIntegerField(default=0)
+    semantic_total_tokens = models.PositiveIntegerField(default=0)
+    semantic_latency_ms = models.PositiveIntegerField(null=True, blank=True)
+    semantic_error_code = models.CharField(max_length=64, blank=True)
+    semantic_started_at = models.DateTimeField(null=True, blank=True)
+    semantic_finished_at = models.DateTimeField(null=True, blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -72,6 +103,10 @@ class WebsiteAudit(models.Model):  # noqa: DJ008
             models.Index(
                 fields=("browser_status", "created_at"),
                 name="website_browser_status_idx",
+            ),
+            models.Index(
+                fields=("semantic_status", "created_at"),
+                name="website_semantic_status_idx",
             ),
         ]
 
