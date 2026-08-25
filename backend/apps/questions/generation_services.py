@@ -10,7 +10,12 @@ from django.http import Http404
 from django.utils import timezone
 
 from apps.ai.sanitization import sanitize_provider_metrics
-from apps.keywords.models import DistillationSet, DistillationWorkspace, Keyword
+from apps.keywords.models import (
+    DistillationSet,
+    DistillationWorkspace,
+    Keyword,
+    KeywordAssetPreference,
+)
 from apps.keywords.services import _assert_user_write_allowed, _lock_effective_subscription
 from apps.plans.subscription_services import effective_entitlement_snapshot
 from apps.quotas.models import QuotaAccount
@@ -132,14 +137,60 @@ def _effective_keywords(distillation_set):
             keyword = row.canonical_keyword
         if keyword is not None:
             keyword_by_id.setdefault(keyword.pk, keyword)
+    preferences = {
+        row.source_keyword_id: row
+        for row in KeywordAssetPreference.objects.filter(
+            user=distillation_set.user,
+            subject=distillation_set.subject,
+            source_keyword_id__in=keyword_by_id,
+        )
+    }
+    excluded = {
+        keyword_id
+        for keyword_id, preference in preferences.items()
+        if not preference.enabled
+        or not preference.usable_for_questions
+        or preference.deleted_at is not None
+    }
+
+    def effective_region_text(keyword, preference):
+        if preference is None or preference.region_selections is None:
+            return keyword.region_text
+        labels = []
+        for region in preference.region_selections:
+            path = region.get("path") if isinstance(region, dict) else None
+            names = [node.get("name") for node in path or [] if isinstance(node, dict)]
+            if isinstance(region, dict) and region.get("name"):
+                if not names or names[-1] != region["name"]:
+                    names.append(region["name"])
+            label = " / ".join(str(name) for name in names if name)
+            if label and label not in labels:
+                labels.append(label)
+        return "；".join(labels) or None
+
     return [
         {
             "id": str(row.pk),
-            "text": row.text,
-            "region_text": row.region_text,
+            "text": (
+                preferences[row.pk].display_text
+                if row.pk in preferences and preferences[row.pk].display_text
+                else row.text
+            ),
+            "region_text": effective_region_text(row, preferences.get(row.pk)),
             "search_intent": row.search_intent,
+            "business_category": (
+                preferences[row.pk].business_category
+                if row.pk in preferences and preferences[row.pk].business_category
+                else row.business_category
+            ),
+            "search_intents": (
+                preferences[row.pk].search_intents
+                if row.pk in preferences and preferences[row.pk].search_intents is not None
+                else row.search_intents
+            ),
         }
         for row in keyword_by_id.values()
+        if row.pk not in excluded
     ]
 
 

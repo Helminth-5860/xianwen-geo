@@ -47,6 +47,11 @@ class KeywordGenerationProviderUnavailable(KeywordGenerationError):
 class KeywordGenerationInvalidResponse(KeywordGenerationError):
     code = "KEYWORD_GENERATION_INVALID_RESPONSE"
 
+    def __init__(self, reason: str = "schema_invalid", *, diagnostic=None):
+        self.reason = reason
+        self.diagnostic = diagnostic if isinstance(diagnostic, dict) else {}
+        super().__init__(reason)
+
 
 class KeywordGenerationProviderError(KeywordGenerationError):
     def __init__(self, code: str, *, permanent: bool):

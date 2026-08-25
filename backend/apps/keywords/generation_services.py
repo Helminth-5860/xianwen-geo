@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import json
 import uuid
 from datetime import timedelta
 from typing import Any
@@ -51,12 +52,20 @@ from .normalization import (
     KeywordNormalizationError,
     normalize_generated_keyword_items,
     normalize_plain_text,
+    normalize_region_entries,
 )
 from .services import (
     _assert_user_write_allowed,
     _lock_effective_subscription,
     _lock_subject_for_keywords,
-    replace_keyword_draft_from_generation,
+    append_keyword_draft_items,
+    commit_keyword_version,
+)
+from .taxonomy import (
+    KEYWORD_CATEGORY_VALUES,
+    KEYWORD_INTENT_VALUES,
+    normalize_category,
+    normalize_intents,
 )
 
 User = get_user_model()
@@ -80,8 +89,12 @@ def _validate_config(
     include_short: bool,
     include_long_tail: bool,
     include_regional: bool,
-    regions: list[str],
-) -> list[str]:
+    regions: list[object],
+    generation_mode: str,
+    categories: list[str],
+    intents: list[str],
+    region_mode: str,
+) -> tuple[list[dict[str, Any]], list[str], list[str]]:
     if (
         type(target_count) is not int
         or not 1 <= target_count <= settings.KEYWORD_GENERATION_MAX_COUNT
@@ -91,24 +104,38 @@ def _validate_config(
         type(value) is not bool for value in (include_short, include_long_tail, include_regional)
     ):
         raise KeywordGenerationConfigInvalid
+    if not include_short and not include_long_tail:
+        raise KeywordGenerationConfigInvalid
+    if generation_mode not in KeywordGenerationJob.GenerationMode.values:
+        raise KeywordGenerationConfigInvalid
+    if region_mode not in KeywordGenerationJob.RegionMode.values:
+        raise KeywordGenerationConfigInvalid
+    if not isinstance(categories, list) or len(categories) > len(KEYWORD_CATEGORY_VALUES):
+        raise KeywordGenerationConfigInvalid
+    if not isinstance(intents, list) or len(intents) > len(KEYWORD_INTENT_VALUES):
+        raise KeywordGenerationConfigInvalid
+    try:
+        normalized_categories = list(
+            dict.fromkeys(normalize_category(value) for value in categories)
+        )
+        normalized_intents = list(normalize_intents(intents)) if intents else []
+    except ValueError as exc:
+        raise KeywordGenerationConfigInvalid from exc
+    if generation_mode == KeywordGenerationJob.GenerationMode.CUSTOM and (
+        not normalized_categories or not normalized_intents
+    ):
+        raise KeywordGenerationConfigInvalid
     if not isinstance(regions, list) or len(regions) > settings.KEYWORD_GENERATION_MAX_REGIONS:
         raise KeywordGenerationConfigInvalid
-    normalized = []
-    seen = set()
-    for raw in regions:
-        if not isinstance(raw, str):
-            raise KeywordGenerationConfigInvalid
-        try:
-            value, matching = normalize_plain_text(raw, max_length=200)
-        except KeywordNormalizationError as exc:
-            raise KeywordGenerationConfigInvalid from exc
-        if matching in seen:
-            raise KeywordGenerationConfigInvalid
-        seen.add(matching)
-        normalized.append(value)
-    if include_regional != bool(normalized):
+    try:
+        normalized_regions = normalize_region_entries(regions)
+    except KeywordNormalizationError as exc:
+        raise KeywordGenerationConfigInvalid from exc
+    if region_mode == KeywordGenerationJob.RegionMode.UNRESTRICTED and normalized_regions:
         raise KeywordGenerationConfigInvalid
-    return normalized
+    if region_mode == KeywordGenerationJob.RegionMode.CUSTOM and not normalized_regions:
+        raise KeywordGenerationConfigInvalid
+    return normalized_regions, normalized_categories, normalized_intents
 
 
 def _request_payload(
@@ -122,6 +149,10 @@ def _request_payload(
     include_regional,
     regions,
     regenerate,
+    generation_mode,
+    categories,
+    intents,
+    region_mode,
 ):
     return {
         "subject_id": str(subject_id),
@@ -133,13 +164,59 @@ def _request_payload(
         "include_regional": include_regional,
         "regions": regions,
         "regenerate": regenerate,
+        "generation_mode": generation_mode,
+        "categories": categories,
+        "intents": intents,
+        "region_mode": region_mode,
     }
 
 
-def _subject_values(subject_version) -> dict[str, Any]:
-    values = copy.deepcopy(subject_version.field_values)
+SAFE_SUBJECT_FIELD_KEYS = frozenset(
+    {
+        "summary",
+        "core_products_services",
+        "target_audience",
+        "service_regions",
+        "official_url",
+        "description",
+        "website",
+        "other_public_urls",
+    }
+)
+
+
+def _subject_values(subject, subject_version) -> dict[str, Any]:
+    values = {
+        key: copy.deepcopy(value)
+        for key, value in subject_version.field_values.items()
+        if key in SAFE_SUBJECT_FIELD_KEYS
+    }
     values["official_name"] = subject_version.official_name
+    profile = getattr(subject, "business_profile", None)
+    if profile is not None:
+        values["primary_business"] = profile.primary_business
+        values["brand_name"] = profile.brand_name
+        values["social_channels"] = copy.deepcopy(profile.social_channels)
     return values
+
+
+def _subject_regions(subject_version) -> list[dict[str, Any]]:
+    raw = subject_version.field_values.get("service_regions")
+    if not isinstance(raw, str) or not raw.strip():
+        return []
+    try:
+        parsed = json.loads(raw)
+    except (TypeError, ValueError):
+        try:
+            return normalize_region_entries([raw])
+        except KeywordNormalizationError:
+            return []
+    if not isinstance(parsed, dict) or parsed.get("nationwide") is True:
+        return []
+    try:
+        return normalize_region_entries(parsed.get("areas", []))
+    except KeywordNormalizationError:
+        return []
 
 
 def _historical_exclusions(subject_id) -> list[str]:
@@ -185,17 +262,30 @@ def create_keyword_generation_job(
     include_short: bool,
     include_long_tail: bool,
     include_regional: bool,
-    regions: list[str],
+    regions: list[object],
     regenerate: bool,
     idempotency_key: str,
     request_id,
+    generation_mode: str = KeywordGenerationJob.GenerationMode.SMART,
+    categories: list[str] | None = None,
+    intents: list[str] | None = None,
+    region_mode: str | None = None,
 ):
-    normalized_regions = _validate_config(
+    region_mode = region_mode or (
+        KeywordGenerationJob.RegionMode.CUSTOM
+        if include_regional
+        else KeywordGenerationJob.RegionMode.UNRESTRICTED
+    )
+    normalized_regions, normalized_categories, normalized_intents = _validate_config(
         target_count=target_count,
         include_short=include_short,
         include_long_tail=include_long_tail,
         include_regional=include_regional,
         regions=regions,
+        generation_mode=generation_mode,
+        categories=categories or [],
+        intents=intents or [],
+        region_mode=region_mode,
     )
     if type(expected_keyword_set_version) is not int or expected_keyword_set_version < 0:
         raise KeywordGenerationVersionConflict
@@ -216,6 +306,10 @@ def create_keyword_generation_job(
         include_regional=include_regional,
         regions=normalized_regions,
         regenerate=regenerate,
+        generation_mode=generation_mode,
+        categories=normalized_categories,
+        intents=normalized_intents,
+        region_mode=region_mode,
     )
     request_digest = canonical_digest(payload)
     user = User.objects.select_for_update().get(pk=user_id)
@@ -235,6 +329,9 @@ def create_keyword_generation_job(
         subject_id=subject_id,
         expected_subject_version_id=expected_subject_version_id,
     )
+    if region_mode == KeywordGenerationJob.RegionMode.SUBJECT:
+        normalized_regions = _subject_regions(subject_version)
+    include_regional = bool(normalized_regions)
     subscription = _lock_effective_subscription(user)
     limits = effective_entitlement_snapshot(subscription).get("limits", {})
     plan_generation_limit = limits.get("keyword_generation_limit")
@@ -281,7 +378,7 @@ def create_keyword_generation_job(
             request_id=request_id,
         )
 
-    subject_values = _subject_values(subject_version)
+    subject_values = _subject_values(subject, subject_version)
     exclusions = _historical_exclusions(subject.pk)
     input_digest = canonical_digest(
         {
@@ -307,6 +404,10 @@ def create_keyword_generation_job(
             include_long_tail=include_long_tail,
             include_regional=include_regional,
             regions=normalized_regions,
+            generation_mode=generation_mode,
+            requested_categories=normalized_categories,
+            requested_intents=normalized_intents,
+            region_mode=region_mode,
             input_subject_values=subject_values,
             historical_exclusions=exclusions,
             provider_key=provider.key,
@@ -347,6 +448,10 @@ def _request_for_job(job):
         include_regional=job.include_regional,
         regions=tuple(job.regions),
         historical_exclusions=tuple(job.historical_exclusions),
+        generation_mode=job.generation_mode,
+        categories=tuple(job.requested_categories),
+        intents=tuple(job.requested_intents),
+        region_mode=job.region_mode,
     )
 
 
@@ -404,7 +509,7 @@ def _settle_quota(job, action):
     )
 
 
-def _terminal_locked(job, *, status, code):
+def _terminal_locked(job, *, status, code, summary=None):
     if job.status in _TERMINAL:
         return {"status": job.status}
     _settle_quota(job, "release")
@@ -423,7 +528,7 @@ def _terminal_locked(job, *, status, code):
             "updated_at",
         ]
     )
-    _safe_event(job, status, code=code)
+    _safe_event(job, status, code=code, summary=summary)
     return {"status": status, "code": code}
 
 
@@ -466,22 +571,47 @@ def _schedule_retry(job_id, generation, code):
 def _generated_items(job, response):
     if response.model_key != job.model_key:
         raise KeywordGenerationInvalidResponse
-    raw = [
-        {
-            "text": item.text,
-            "structure_type": item.structure_type,
-            "is_regional": item.is_regional,
-            "region_level": item.region_level or "",
-            "region_text": item.region_text or "",
-            "base_keyword_text": item.base_keyword,
-            "business_category": item.business_category,
-            "search_intent": item.search_intent,
-            "relevance_score": item.relevance_score,
-            "priority": item.priority,
-            "ai_reason": item.ai_reason,
-        }
-        for item in response.items
-    ]
+    raw = []
+    source = (
+        "custom_generation"
+        if job.generation_mode == KeywordGenerationJob.GenerationMode.CUSTOM
+        else "smart_generation"
+    )
+    for item in response.items:
+        base_keyword = item.base_keyword
+        if base_keyword:
+            try:
+                if normalize_plain_text(base_keyword)[1] == normalize_plain_text(item.text)[1]:
+                    base_keyword = None
+            except KeywordNormalizationError:
+                pass
+        try:
+            category = normalize_category(item.business_category)
+            intents = list(
+                normalize_intents(
+                    item.search_intents or ([item.search_intent] if item.search_intent else [])
+                )
+            )
+        except ValueError as exc:
+            raise KeywordGenerationInvalidResponse from exc
+        raw.append(
+            {
+                "text": item.text,
+                "structure_type": item.structure_type,
+                "is_regional": item.is_regional,
+                "region_level": item.region_level or "",
+                "region_text": item.region_text or "",
+                "regions": list(item.regions),
+                "base_keyword_text": base_keyword,
+                "business_category": category,
+                "search_intents": intents,
+                "source": source,
+                "notes": item.notes,
+                "relevance_score": item.relevance_score,
+                "priority": item.priority,
+                "ai_reason": item.ai_reason,
+            }
+        )
     try:
         normalized = normalize_generated_keyword_items(
             raw,
@@ -498,18 +628,24 @@ def _generated_items(job, response):
         allowed_structures.add("long_tail")
     if not allowed_structures:
         allowed_structures.add("general")
-    allowed_regions = {normalize_plain_text(value, max_length=200)[1] for value in job.regions}
+    allowed_regions = {
+        (region.get("code") or normalize_plain_text(region["name"], max_length=200)[1])
+        for region in normalize_region_entries(job.regions)
+    }
     for item in normalized:
         if item.structure_type not in allowed_structures:
             raise KeywordGenerationInvalidResponse
         if item.is_regional:
             if not job.include_regional:
                 raise KeywordGenerationInvalidResponse
-            region_key = normalize_plain_text(
-                item.region_text,
-                max_length=200,
-            )[1]
-            if region_key not in allowed_regions:
+            item_regions = normalize_region_entries(item.regions)
+            if not item_regions:
+                raise KeywordGenerationInvalidResponse
+            if any(
+                (region.get("code") or normalize_plain_text(region["name"], max_length=200)[1])
+                not in allowed_regions
+                for region in item_regions
+            ):
                 raise KeywordGenerationInvalidResponse
     return normalized
 
@@ -547,13 +683,16 @@ def _finalize_success(job_id, generation, response):
         normalized = _generated_items(job, response)
         payload = [item.semantic_payload() for item in normalized]
         try:
-            updated = replace_keyword_draft_from_generation(
-                user_id=job.user_id,
-                subject_id=job.subject_id,
-                expected_version=job.expected_keyword_set_version,
-                expected_subject_version_id=job.subject_version_id,
-                items=payload,
-            )
+            with transaction.atomic():
+                updated, added_count, _ = append_keyword_draft_items(
+                    user_id=job.user_id,
+                    subject_id=job.subject_id,
+                    expected_version=job.expected_keyword_set_version,
+                    expected_subject_version_id=job.subject_version_id,
+                    items=payload,
+                )
+                if added_count != len(payload):
+                    raise KeywordVersionNoChanges
         except KeywordVersionNoChanges:
             return _terminal_locked(
                 job,
@@ -572,14 +711,21 @@ def _finalize_success(job_id, generation, response):
             )
             return _terminal_locked(job, status=status, code=exc.code)
 
+        draft_applied_version = updated.version
         output_digest = canonical_digest(payload)
         KeywordGenerationResult.objects.create(
             job=job,
             output_snapshot=payload,
             output_digest=output_digest,
             item_count=len(payload),
-            applied_keyword_set_version=updated.version,
+            applied_keyword_set_version=draft_applied_version,
             provider_metrics=_safe_provider_metrics(response.provider_metrics),
+        )
+        updated, _ = commit_keyword_version(
+            user_id=job.user_id,
+            subject_id=job.subject_id,
+            expected_version=draft_applied_version,
+            expected_subject_version_id=job.subject_version_id,
         )
         _settle_quota(job, "consume")
         job.status = "succeeded"
@@ -633,6 +779,7 @@ def execute_keyword_generation(*, job_id, expected_generation=None):
                 locked,
                 status="failed",
                 code=exc.code,
+                summary=getattr(exc, "diagnostic", None),
             )
     except KeywordGenerationError as exc:
         if not getattr(exc, "permanent", True):
@@ -645,6 +792,7 @@ def execute_keyword_generation(*, job_id, expected_generation=None):
                 locked,
                 status="failed",
                 code=exc.code,
+                summary=getattr(exc, "diagnostic", None),
             )
     except Exception as exc:
         raise KeywordGenerationUnexpectedError(

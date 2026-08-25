@@ -15,11 +15,11 @@ type DivisionOption = {
   children?: DivisionOption[];
 };
 
-type StoredAreaNode = Readonly<{ code: string; name: string }>;
+export type StoredAreaNode = Readonly<{ code: string; name: string }>;
 
 type StreetOption = Readonly<{ value: string; label: string }>;
 
-type StoredServiceArea = Readonly<{
+export type StoredServiceArea = Readonly<{
   version: 1;
   nationwide: boolean;
   areas: ReadonlyArray<{
@@ -43,7 +43,10 @@ function toOption(node: DivisionNode): DivisionOption {
 
 const emptyArea: StoredServiceArea = { version: 1, nationwide: false, areas: [] };
 
-function parseStoredValue(value: unknown): { data: StoredServiceArea; legacyText: string } {
+export function parseStoredServiceArea(value: unknown): {
+  data: StoredServiceArea;
+  legacyText: string;
+} {
   if (typeof value !== "string" || !value.trim()) return { data: emptyArea, legacyText: "" };
   if (["全国", "全国范围", "全国服务"].includes(value.trim())) {
     return { data: { version: 1, nationwide: true, areas: [] }, legacyText: "" };
@@ -119,7 +122,7 @@ export function SubjectServiceAreaSelector({
   disabled: boolean;
   onChange: (value: string) => void;
 }) {
-  const parsed = useMemo(() => parseStoredValue(value), [value]);
+  const parsed = useMemo(() => parseStoredServiceArea(value), [value]);
   const [selectedPath, setSelectedPath] = useState<string[]>([]);
   const [selectedStreet, setSelectedStreet] = useState<string>();
   const [streetOptions, setStreetOptions] = useState<StreetOption[]>([]);

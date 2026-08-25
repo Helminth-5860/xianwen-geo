@@ -112,6 +112,10 @@ def _job_payload(job):
             "include_long_tail": job.include_long_tail,
             "include_regional": job.include_regional,
             "regions": job.regions,
+            "generation_mode": job.generation_mode,
+            "categories": job.requested_categories,
+            "intents": job.requested_intents,
+            "region_mode": job.region_mode,
         },
         "provenance": {
             "provider_key": job.provider_key,

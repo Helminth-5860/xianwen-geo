@@ -1,9 +1,76 @@
 import { get, post, write } from "./auth-client";
 
 export type KeywordStructureType = "short" | "long_tail" | "general";
-export type KeywordRegionLevel = "country" | "province" | "city" | "district" | "custom";
-export type KeywordSearchIntent = "informational" | "navigational" | "commercial" | "transactional";
+export type KeywordRegionLevel = "country" | "province" | "city" | "district" | "street" | "custom";
+export type LegacyKeywordSearchIntent =
+  "informational" | "navigational" | "commercial" | "transactional";
+export type KeywordSearchIntent =
+  | "informational"
+  | "recommendation"
+  | "comparison"
+  | "transactional"
+  | "local"
+  | "navigational"
+  | "trust"
+  | "usage";
 export type KeywordPriority = "high" | "medium" | "low";
+
+export type KeywordRegionSelection = Readonly<{
+  code: string;
+  name: string;
+  level: "country" | "province" | "city" | "district" | "street" | "custom";
+  path: ReadonlyArray<Readonly<{ code: string; name: string }>>;
+}>;
+
+export const keywordBusinessCategoryOptions = [
+  { value: "entity", label: "企业与品牌" },
+  { value: "industry", label: "行业与赛道" },
+  { value: "product_category", label: "产品或服务类别" },
+  { value: "product", label: "具体产品" },
+  { value: "service", label: "具体服务" },
+  { value: "capability", label: "能力与功能" },
+  { value: "goal", label: "目标与收益" },
+  { value: "pain_point", label: "问题与痛点" },
+  { value: "solution", label: "解决方案" },
+  { value: "scenario", label: "使用场景" },
+  { value: "audience", label: "目标人群" },
+  { value: "competitor", label: "竞品与替代" },
+  { value: "trust", label: "信任与口碑" },
+  { value: "knowledge", label: "知识与教育" },
+] satisfies Array<{ value: string; label: string }>;
+
+export const keywordSearchIntentOptions: Array<{
+  value: KeywordSearchIntent;
+  label: string;
+}> = [
+  { value: "informational", label: "信息了解" },
+  { value: "recommendation", label: "推荐评估" },
+  { value: "comparison", label: "对比选择" },
+  { value: "transactional", label: "交易转化" },
+  { value: "local", label: "地域本地" },
+  { value: "navigational", label: "导航联系" },
+  { value: "trust", label: "信任口碑" },
+  { value: "usage", label: "使用服务" },
+];
+
+const legacyIntentBySearchIntent: Readonly<Record<KeywordSearchIntent, LegacyKeywordSearchIntent>> =
+  {
+    informational: "informational",
+    recommendation: "commercial",
+    comparison: "commercial",
+    transactional: "transactional",
+    local: "commercial",
+    navigational: "navigational",
+    trust: "commercial",
+    usage: "informational",
+  };
+
+export function legacyKeywordSearchIntent(
+  values: readonly KeywordSearchIntent[],
+): LegacyKeywordSearchIntent | null {
+  const first = values[0];
+  return first ? legacyIntentBySearchIntent[first] : null;
+}
 
 export type KeywordItem = Readonly<{
   id?: string;
@@ -12,9 +79,13 @@ export type KeywordItem = Readonly<{
   is_regional: boolean;
   region_level: KeywordRegionLevel | null;
   region_text: string | null;
+  regions?: KeywordRegionSelection[];
   base_keyword_text: string | null;
   business_category: string | null;
-  search_intent: KeywordSearchIntent | null;
+  search_intent: LegacyKeywordSearchIntent | null;
+  search_intents?: KeywordSearchIntent[];
+  source?: "legacy" | "manual" | "bulk" | "smart_generation" | "custom_generation";
+  notes?: string;
   relevance_score: number | null;
   priority: KeywordPriority | null;
   ai_reason: string | null;
@@ -49,6 +120,39 @@ export type KeywordVersion = Readonly<{
 export type KeywordGenerationStatus =
   "queued" | "running" | "retry_wait" | "succeeded" | "failed" | "conflict" | "superseded";
 
+const keywordErrorMessages: Readonly<Record<string, string>> = {
+  KEYWORD_GENERATION_PROVIDER_TIMEOUT: "AI 关键词服务响应超时，请稍后重试",
+  KEYWORD_GENERATION_PROVIDER_RATE_LIMITED: "AI 关键词服务当前请求较多，请稍后重试",
+  KEYWORD_GENERATION_PROVIDER_TEMPORARY: "AI 关键词服务暂时不可用，请稍后重试",
+  KEYWORD_GENERATION_PROVIDER_REJECTED: "AI 关键词服务拒绝了本次请求，请调整条件后重试",
+  KEYWORD_GENERATION_INVALID_RESPONSE: "AI 返回格式异常，请重新生成。",
+  KEYWORD_GENERATION_INTERNAL_ERROR: "关键词生成任务处理失败，请稍后重试",
+  KEYWORD_VERSION_CONFLICT: "关键词内容已经更新，请刷新后重试",
+  KEYWORD_SUBJECT_VERSION_CONFLICT: "主体资料已经更新，请刷新后重新生成",
+  DISTILLATION_PROVIDER_TIMEOUT: "关键词蒸馏服务响应超时，请稍后重试",
+  DISTILLATION_PROVIDER_RATE_LIMITED: "关键词蒸馏服务当前请求较多，请稍后重试",
+  DISTILLATION_PROVIDER_TEMPORARY: "关键词蒸馏服务暂时不可用，请稍后重试",
+  DISTILLATION_PROVIDER_REJECTED: "关键词蒸馏服务拒绝了本次请求，请稍后重试",
+  DISTILLATION_INVALID_RESPONSE: "AI 返回格式异常，请重新生成。",
+  DISTILLATION_INTERNAL_ERROR: "关键词蒸馏任务处理失败，请稍后重试",
+  DISTILLATION_VERSION_CONFLICT: "蒸馏内容已经更新，请刷新后重试",
+  DISTILLATION_KEYWORD_VERSION_CONFLICT: "关键词已经更新，请重新蒸馏",
+};
+
+export function keywordJobErrorMessage(code: string, fallback: string) {
+  return keywordErrorMessages[code] ?? fallback;
+}
+
+export const keywordJobStatusLabel: Readonly<Record<KeywordGenerationStatus, string>> = {
+  queued: "等待生成",
+  running: "正在生成",
+  retry_wait: "等待重试",
+  succeeded: "生成完成",
+  failed: "生成失败",
+  conflict: "内容已更新",
+  superseded: "任务已被替代",
+};
+
 export type KeywordGenerationJob = Readonly<{
   id: string;
   subject_id: string;
@@ -66,7 +170,11 @@ export type KeywordGenerationJob = Readonly<{
     include_short: boolean;
     include_long_tail: boolean;
     include_regional: boolean;
-    regions: string[];
+    regions: KeywordRegionSelection[];
+    generation_mode?: "smart" | "custom";
+    categories?: string[];
+    intents?: KeywordSearchIntent[];
+    region_mode?: "unrestricted" | "subject" | "custom";
   };
   provenance: {
     provider_key: string;
@@ -91,7 +199,11 @@ export type KeywordGenerationInput = Readonly<{
   includeShort: boolean;
   includeLongTail: boolean;
   includeRegional: boolean;
-  regions: string[];
+  regions: KeywordRegionSelection[];
+  generationMode: "smart" | "custom";
+  categories: string[];
+  intents: KeywordSearchIntent[];
+  regionMode: "unrestricted" | "subject" | "custom";
   regenerate: boolean;
 }>;
 
@@ -116,13 +228,98 @@ export const saveKeywordDraft = (
       is_regional: item.is_regional,
       region_level: item.region_level ?? "",
       region_text: item.region_text ?? "",
+      regions: item.regions ?? [],
       base_keyword_text: item.base_keyword_text,
       business_category: item.business_category,
       search_intent: item.search_intent,
+      search_intents: item.search_intents ?? [],
+      source: item.source ?? "legacy",
+      notes: item.notes ?? "",
       relevance_score: item.relevance_score,
       priority: item.priority,
       ai_reason: item.ai_reason,
     })),
+  });
+
+export type KeywordCandidateInput = Readonly<{
+  text: string;
+  category: string;
+  intents: KeywordSearchIntent[];
+  lengthType: "short" | "long_tail";
+  regions: KeywordRegionSelection[];
+  notes: string;
+}>;
+
+export const appendKeywordCandidates = (
+  subjectId: string,
+  input: {
+    expectedVersion: number;
+    expectedSubjectVersionId: string;
+    source: "manual" | "bulk";
+    items: KeywordCandidateInput[];
+  },
+) =>
+  post<{
+    added_count: number;
+    skipped_duplicates: string[];
+    candidate_pool: KeywordDraftState;
+  }>(`/subjects/${subjectId}/keywords/candidates`, {
+    expected_version: input.expectedVersion,
+    expected_subject_version_id: input.expectedSubjectVersionId,
+    source: input.source,
+    items: input.items.map((item) => ({
+      text: item.text,
+      category: item.category,
+      intents: item.intents,
+      length_type: item.lengthType,
+      regions: item.regions,
+      notes: item.notes,
+    })),
+  });
+
+export type KeywordAsset = Readonly<{
+  id: string;
+  text: string;
+  source_text: string;
+  related_keywords: string[];
+  audiences: string[];
+  scenarios: string[];
+  category: string | null;
+  intents: KeywordSearchIntent[];
+  regions: KeywordRegionSelection[];
+  source: string;
+  enabled: boolean;
+  usable_for_questions: boolean;
+  deleted: boolean;
+  updated_at: string;
+}>;
+
+export const getKeywordAssets = (subjectId: string) =>
+  get<{ items: KeywordAsset[] }>(`/subjects/${subjectId}/keyword-assets`);
+
+export const updateKeywordAsset = (
+  subjectId: string,
+  keywordId: string,
+  patch: {
+    displayText?: string;
+    category?: string;
+    intents?: KeywordSearchIntent[];
+    regions?: KeywordRegionSelection[];
+    enabled?: boolean;
+    usableForQuestions?: boolean;
+    deleted?: boolean;
+  },
+) =>
+  write<KeywordAsset>("PATCH", `/subjects/${subjectId}/keyword-assets/${keywordId}`, {
+    ...(patch.displayText === undefined ? {} : { display_text: patch.displayText }),
+    ...(patch.category === undefined ? {} : { category: patch.category }),
+    ...(patch.intents === undefined ? {} : { intents: patch.intents }),
+    ...(patch.regions === undefined ? {} : { regions: patch.regions }),
+    ...(patch.enabled === undefined ? {} : { enabled: patch.enabled }),
+    ...(patch.usableForQuestions === undefined
+      ? {}
+      : { usable_for_questions: patch.usableForQuestions }),
+    ...(patch.deleted === undefined ? {} : { deleted: patch.deleted }),
   });
 
 export const commitKeywords = (
@@ -156,6 +353,10 @@ export const createKeywordGeneration = (
       include_long_tail: input.includeLongTail,
       include_regional: input.includeRegional,
       regions: input.regions,
+      generation_mode: input.generationMode,
+      categories: input.categories,
+      intents: input.intents,
+      region_mode: input.regionMode,
       regenerate: input.regenerate,
     },
     { "Idempotency-Key": idempotencyKey },
@@ -167,6 +368,16 @@ export const getKeywordGenerationJob = (jobId: string) =>
 export type DistillationAction = "keep" | "merge" | "delete" | "low_value";
 export type DistillationStatus =
   "queued" | "running" | "retry_wait" | "succeeded" | "failed" | "conflict" | "superseded";
+
+export const distillationJobStatusLabel: Readonly<Record<DistillationStatus, string>> = {
+  queued: "等待蒸馏",
+  running: "正在蒸馏",
+  retry_wait: "等待重试",
+  succeeded: "蒸馏完成",
+  failed: "蒸馏失败",
+  conflict: "内容已更新",
+  superseded: "任务已被替代",
+};
 
 export type DistillationSourceKeyword = Readonly<{
   id: string;

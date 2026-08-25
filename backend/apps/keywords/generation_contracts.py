@@ -14,8 +14,12 @@ class KeywordGenerationRequest:
     include_short: bool
     include_long_tail: bool
     include_regional: bool
-    regions: tuple[str, ...]
+    regions: tuple[dict[str, Any], ...]
     historical_exclusions: tuple[str, ...]
+    generation_mode: str = "smart"
+    categories: tuple[str, ...] = ()
+    intents: tuple[str, ...] = ()
+    region_mode: str = "unrestricted"
 
 
 @dataclass(frozen=True)
@@ -27,10 +31,14 @@ class GeneratedKeyword:
     region_text: str | None
     base_keyword: str | None
     business_category: str
-    search_intent: str
-    relevance_score: int
-    priority: str
-    ai_reason: str
+    search_intent: str | None
+    relevance_score: int | None
+    priority: str | None
+    ai_reason: str | None
+    search_intents: tuple[str, ...] = ()
+    regions: tuple[dict[str, Any], ...] = ()
+    source: str = "smart_generation"
+    notes: str = ""
 
 
 @dataclass(frozen=True)

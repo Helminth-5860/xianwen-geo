@@ -8,8 +8,10 @@ import { AuthApiError, userMessage } from "@/lib/auth-client";
 import {
   confirmDistillation,
   createDistillation,
+  distillationJobStatusLabel,
   getDistillationDraft,
   getDistillationJob,
+  keywordJobErrorMessage,
   saveDistillationDraft,
   type DistillationAction,
   type DistillationDraftItem,
@@ -89,7 +91,7 @@ export default function DistillationPanel({ subjectId, keywordDirty, onDirtyChan
             setNotice("蒸馏建议已生成，请调整并明确确认");
             setError("");
           } else if (["failed", "conflict", "superseded"].includes(next.status)) {
-            setError(next.stable_error_code || "蒸馏失败，请重试");
+            setError(keywordJobErrorMessage(next.stable_error_code, "蒸馏失败，请重试"));
             setNotice("");
           }
         })
@@ -126,13 +128,31 @@ export default function DistillationPanel({ subjectId, keywordDirty, onDirtyChan
     );
   };
 
+  const splitMergeGroup = (groupKey: string) => {
+    setItems((current) =>
+      current.map((item) =>
+        item.merge_group_key === groupKey
+          ? {
+              ...item,
+              action: "keep",
+              canonical_keyword_id: null,
+              merge_group_key: null,
+            }
+          : item,
+      ),
+    );
+    setDirty(true);
+    setError("");
+    setNotice("合并组已拆分，请保存蒸馏调整");
+  };
+
   const start = async (regenerate: boolean) => {
     if (keywordDirty || dirty) {
       setError("请先保存或放弃本地未保存修改，再启动蒸馏");
       return;
     }
     if (!draft?.current_keyword_set_version) {
-      setError("请先提交关键词正式版本，再启动蒸馏");
+      setError("请先添加或生成关键词，再启动蒸馏");
       return;
     }
     setBusy(true);
@@ -180,7 +200,7 @@ export default function DistillationPanel({ subjectId, keywordDirty, onDirtyChan
       setItems(next.items.map(editableItem));
       setDirty(false);
       setError("");
-      setNotice("蒸馏调整草稿已保存，尚未形成正式版本");
+      setNotice("蒸馏调整已保存");
       return true;
     } catch (reason) {
       setError(userMessage(reason));
@@ -196,15 +216,15 @@ export default function DistillationPanel({ subjectId, keywordDirty, onDirtyChan
   const confirm = async () => {
     if (!draft) return;
     if (dirty) {
-      setError("请先保存蒸馏调整，再确认正式版本");
+      setError("请先保存蒸馏调整，再确认结果");
       return;
     }
     setBusy(true);
     try {
-      const result = await confirmDistillation(subjectId, draft.version);
+      await confirmDistillation(subjectId, draft.version);
       await reload();
       setError("");
-      setNotice(`蒸馏正式版本 v${result.version.version_no} 已确认`);
+      setNotice(`蒸馏结果已确认，关键词资产已更新`);
     } catch (reason) {
       setError(userMessage(reason));
       setNotice("");
@@ -221,17 +241,17 @@ export default function DistillationPanel({ subjectId, keywordDirty, onDirtyChan
         {error && <Alert type="error" showIcon message={error} />}
         {notice && <Alert type="success" showIcon message={notice} />}
         <Typography.Text type="secondary">
-          蒸馏只读取当前关键词正式版本；删除是建议，合并只建立组，不会修改历史关键词。
+          蒸馏只读取当前主体的待蒸馏关键词；确认后才会进入关键词资产。
         </Typography.Text>
         <Space wrap>
-          {draft?.current_keyword_set_version && (
-            <Tag color="blue">输入关键词版本 v{draft.current_keyword_set_version.version_no}</Tag>
-          )}
-          {draft?.current_distillation_version_no && (
-            <Tag color="green">已确认 v{draft.current_distillation_version_no}</Tag>
-          )}
+          {draft?.current_keyword_set_version ? <Tag color="blue">待蒸馏关键词已就绪</Tag> : null}
+          {draft?.current_distillation_version_no ? <Tag color="green">已有关键词资产</Tag> : null}
           {dirty && <Tag color="orange">有未保存蒸馏调整</Tag>}
-          {job && <Tag color={job.status === "succeeded" ? "green" : "blue"}>{job.status}</Tag>}
+          {job ? (
+            <Tag color={job.status === "succeeded" ? "green" : "blue"}>
+              {distillationJobStatusLabel[job.status]}
+            </Tag>
+          ) : null}
         </Space>
         <Space wrap>
           <Button
@@ -245,7 +265,7 @@ export default function DistillationPanel({ subjectId, keywordDirty, onDirtyChan
           {confirmRegeneration && (
             <Popconfirm
               title="确认消耗一次再蒸馏额度？"
-              description="成功写入调整草稿后扣除；失败、冲突或过期结果会释放。"
+              description="蒸馏成功后扣除；失败、冲突或过期结果会释放。"
               okText="确认再蒸馏"
               cancelText="取消"
               onConfirm={() => void start(true)}
@@ -256,6 +276,25 @@ export default function DistillationPanel({ subjectId, keywordDirty, onDirtyChan
             </Popconfirm>
           )}
         </Space>
+
+        {mergeGroups.length ? (
+          <Card size="small" title="合并组">
+            <Space wrap>
+              {mergeGroups.map((group) => (
+                <Popconfirm
+                  key={group.value}
+                  title={`拆分${group.label}？`}
+                  description="该组内关键词将全部恢复为保留状态。"
+                  okText="确认拆分"
+                  cancelText="取消"
+                  onConfirm={() => splitMergeGroup(group.value)}
+                >
+                  <Button disabled={disabled}>拆分{group.label}</Button>
+                </Popconfirm>
+              ))}
+            </Space>
+          </Card>
+        ) : null}
 
         {items.map((item, index) => {
           const compatible = items.filter(
@@ -332,9 +371,9 @@ export default function DistillationPanel({ subjectId, keywordDirty, onDirtyChan
               保存蒸馏调整
             </Button>
             <Popconfirm
-              title="确认蒸馏正式版本"
-              description="确认后形成不可修改的历史版本，但不会修改关键词正式版本。"
-              okText="确认版本"
+              title="确认蒸馏结果"
+              description="确认后，保留和合并后的关键词会进入关键词资产。"
+              okText="确认结果"
               cancelText="取消"
               onConfirm={() => void confirm()}
             >
