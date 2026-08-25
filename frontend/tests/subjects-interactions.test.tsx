@@ -12,7 +12,14 @@ import {
 } from "../components/subject-service-area-selector";
 import type { SubjectDetail, SubjectList, SubjectType } from "../lib/subjects-client";
 
-vi.mock("next/navigation", () => ({ useParams: () => ({ id: "subject-1" }) }));
+const push = vi.fn();
+let viewMode = false;
+
+vi.mock("next/navigation", () => ({
+  useParams: () => ({ id: "subject-1" }),
+  useRouter: () => ({ push }),
+  useSearchParams: () => new URLSearchParams(viewMode ? "mode=view" : ""),
+}));
 
 const getSubjectTypes = vi.fn();
 const getSubjectFormSchema = vi.fn();
@@ -21,7 +28,6 @@ const createSubject = vi.fn();
 const getSubject = vi.fn();
 const saveSubject = vi.fn();
 const deleteSubject = vi.fn();
-const activateSubject = vi.fn();
 const setCurrentSubject = vi.fn();
 
 vi.mock("../lib/subjects-client", async () => {
@@ -36,7 +42,6 @@ vi.mock("../lib/subjects-client", async () => {
     getSubject: (...args: unknown[]) => getSubject(...args),
     saveSubject: (...args: unknown[]) => saveSubject(...args),
     deleteSubject: (...args: unknown[]) => deleteSubject(...args),
-    activateSubject: (...args: unknown[]) => activateSubject(...args),
     setCurrentSubject: (...args: unknown[]) => setCurrentSubject(...args),
   };
 });
@@ -66,6 +71,7 @@ const detail: SubjectDetail = {
   is_current: true,
   current_version_no: null,
   official_name: null,
+  service_regions: JSON.stringify({ version: 1, nationwide: true, areas: [] }),
   retest_required: false,
   created_at: "2026-08-10T10:00:00+08:00",
   updated_at: "2026-08-10T10:00:00+08:00",
@@ -187,6 +193,7 @@ const list: SubjectList = {
       created_at: detail.created_at,
       current_version_no: detail.current_version_no,
       official_name: detail.official_name,
+      service_regions: detail.service_regions,
       retest_required: detail.retest_required,
       updated_at: detail.updated_at,
     },
@@ -218,6 +225,7 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
+  viewMode = false;
   getSubjectTypes.mockResolvedValue([subjectType]);
   getSubjects.mockResolvedValue(list);
   getSubject.mockResolvedValue(detail);
@@ -233,7 +241,6 @@ beforeEach(() => {
     version_created: true,
   });
   deleteSubject.mockResolvedValue({ ...detail, status: "archived" });
-  activateSubject.mockResolvedValue({ ...detail, status: "active" });
   setCurrentSubject.mockResolvedValue(list.context);
 });
 
@@ -318,39 +325,85 @@ describe("subject profile interactions", () => {
     expect(screen.getByRole("button", { name: "上传资料" })).toBeTruthy();
     expect(screen.getByLabelText("品牌图片")).toBeTruthy();
   });
-  it("creates a subject with the selected type and current schema version", async () => {
+  it("creates a subject and opens the edit page without an activation step", async () => {
     render(<SubjectsPage />);
-    await screen.findByText("\u521b\u5efa\u65f6\u4f01\u4e1a");
+    expect((await screen.findAllByText("\u521b\u5efa\u65f6\u4f01\u4e1a")).length).toBeGreaterThan(
+      0,
+    );
     await userEvent.click(screen.getByLabelText("\u4e3b\u4f53\u7c7b\u578b"));
     await userEvent.click(await screen.findByText("\u4f01\u4e1a"));
-    await userEvent.click(screen.getByRole("button", { name: "创建主体" }));
+    await userEvent.click(screen.getByRole("button", { name: "开始填写" }));
     await waitFor(() => expect(createSubject).toHaveBeenCalledWith("type-1", 9));
+    expect(push).toHaveBeenCalledWith("/subjects/subject-1");
+    expect(screen.queryByText("激活")).toBeNull();
+    expect(screen.queryByText("归档")).toBeNull();
   });
 
   it("requires confirmation before removing a subject from the active list", async () => {
     render(<SubjectsPage />);
-    await screen.findByText("创建企业资料");
+    await screen.findByText("新建主体档案");
     await userEvent.click(screen.getByRole("button", { name: /删\s*除/ }));
     expect(
-      await screen.findByText("删除后将从主体列表移除；已有任务和报告会安全保留。"),
+      await screen.findByText("删除后会自动切换到其他可用主体；如无其他主体，将清空当前主体。"),
     ).toBeTruthy();
     await userEvent.click(screen.getByRole("button", { name: /确认删除|确\s*认\s*删\s*除/ }));
     await waitFor(() => expect(deleteSubject).toHaveBeenCalledWith(list.subjects[0]));
   });
 
-  it("keeps archived subject values read-only and surfaces stable API errors", async () => {
+  it("keeps deleted subject values read-only", async () => {
     getSubject.mockResolvedValueOnce({ ...detail, status: "archived" });
     render(<SubjectDetailPage />);
-    expect(
-      (await screen.findByRole("button", {
-        name: "保存资料",
-      })) as HTMLButtonElement,
-    ).toHaveProperty("disabled", true);
+    expect(await screen.findByText("已删除")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "保存资料" })).toBeNull();
     expect(screen.getByLabelText("营业执照主体名称") as HTMLInputElement).toHaveProperty(
       "disabled",
       true,
     );
     expect(screen.queryByRole("button", { name: "提交正式版本" })).toBeNull();
+  });
+
+  it("renders a complete read-only subject view without modification actions", async () => {
+    viewMode = true;
+    render(<SubjectDetailPage />);
+
+    expect(await screen.findByRole("heading", { name: "查看主体档案" })).toBeTruthy();
+    expect(screen.getByLabelText("营业执照主体名称") as HTMLInputElement).toHaveProperty(
+      "disabled",
+      true,
+    );
+    expect(screen.queryByRole("button", { name: "保存资料" })).toBeNull();
+    expect(screen.queryByText("AI 帮我补充资料")).toBeNull();
+    expect(screen.getByRole("link", { name: "编辑主体" }).getAttribute("href")).toBe(
+      "/subjects/subject-1",
+    );
+  });
+
+  it("shows the field that caused a nested validation error", async () => {
+    saveSubject.mockRejectedValueOnce(
+      new (await import("../lib/auth-client")).AuthApiError(new Response(null, { status: 422 }), {
+        success: false,
+        error: {
+          code: "VALIDATION_ERROR",
+          message: "请求参数不正确",
+          details: {
+            fields: {
+              profile_values: {
+                contact_phone: [{ message: "该字符串格式不正确。", code: "invalid" }],
+              },
+            },
+          },
+        },
+        request_id: "request-1",
+      }),
+    );
+    render(<SubjectDetailPage />);
+    await screen.findByLabelText("营业执照主体名称");
+    await userEvent.click(screen.getByRole("button", { name: "保存资料" }));
+
+    expect(
+      await screen.findByText("联系电话格式不正确，请填写 5 至 32 位的手机号或座机号码"),
+    ).toBeTruthy();
+    expect(screen.queryByText("请求参数不正确")).toBeNull();
   });
 
   it("exposes one save action without draft or formal-version product steps", async () => {

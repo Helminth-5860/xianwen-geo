@@ -408,6 +408,7 @@ class SubjectSummarySerializer(serializers.ModelSerializer):
     is_current = serializers.SerializerMethodField()
     current_version_no = serializers.SerializerMethodField()
     official_name = serializers.SerializerMethodField()
+    service_regions = serializers.SerializerMethodField()
 
     class Meta:
         model = Subject
@@ -419,6 +420,7 @@ class SubjectSummarySerializer(serializers.ModelSerializer):
             "is_current",
             "current_version_no",
             "official_name",
+            "service_regions",
             "retest_required",
             "created_at",
             "updated_at",
@@ -440,7 +442,15 @@ class SubjectSummarySerializer(serializers.ModelSerializer):
         return obj.current_version.version_no if obj.current_version_id else None
 
     def get_official_name(self, obj):
-        return obj.current_version.official_name if obj.current_version_id else None
+        if obj.current_version_id:
+            return obj.current_version.official_name
+        draft_name = obj.draft_values.get("name")
+        return draft_name.strip() if isinstance(draft_name, str) and draft_name.strip() else None
+
+    def get_service_regions(self, obj):
+        values = obj.current_version.field_values if obj.current_version_id else obj.draft_values
+        service_regions = values.get("service_regions")
+        return service_regions if isinstance(service_regions, str) else ""
 
 
 class SubjectDetailSerializer(SubjectSummarySerializer):

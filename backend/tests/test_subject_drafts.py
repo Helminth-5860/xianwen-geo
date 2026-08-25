@@ -59,7 +59,7 @@ def create_payload(subject_type, values=None):
 
 
 @pytest.mark.django_db
-def test_create_materializes_defaults_selects_current_and_creates_no_version():
+def test_create_materializes_defaults_without_selecting_unsaved_subject():
     user = make_user()
     subject_type = SubjectType.objects.get(key="enterprise")
     response = client_for(user).post(
@@ -78,10 +78,9 @@ def test_create_materializes_defaults_selects_current_and_creates_no_version():
     assert subject.schema_snapshot_format_version == 1
     assert subject.schema_digest == snapshot_digest(subject.schema_snapshot)
     assert not SubjectVersion.objects.filter(subject=subject).exists()
-    assert SubjectContext.objects.get(user=user).current_subject == subject
+    assert SubjectContext.objects.get(user=user).current_subject is None
     assert set(subject.events.values_list("event_type", flat=True)) == {
         SubjectEvent.EventType.CREATED,
-        SubjectEvent.EventType.CURRENT_SELECTED,
     }
     assert payload["form_schema"]["schema_version"] == subject.schema_version
     assert "schema_snapshot" not in payload
@@ -254,6 +253,28 @@ def test_business_profile_persists_round_trips_and_keeps_old_subjects_compatible
 
 
 @pytest.mark.django_db
+def test_deleted_legacy_subject_without_business_profile_remains_readable():
+    user = make_user()
+    subject_type = SubjectType.objects.get(key="enterprise")
+    client = client_for(user)
+    created = client.post(
+        "/api/v1/subjects",
+        create_payload(subject_type, {"name": "历史主体"}),
+        format="json",
+    )
+    subject = Subject.objects.get(pk=data(created)["id"])
+    subject.status = Subject.Status.ARCHIVED
+    subject.save(update_fields=["status", "updated_at"])
+
+    response = client.get(f"/api/v1/subjects/{subject.pk}")
+
+    assert response.status_code == 200
+    assert data(response)["status"] == "archived"
+    assert data(response)["business_profile"]["contact_name"] == ""
+    assert not SubjectBusinessProfile.objects.filter(subject=subject).exists()
+
+
+@pytest.mark.django_db
 def test_single_save_persists_profile_and_makes_subject_values_effective():
     install_empty_published_risk_catalog()
     user = make_user()
@@ -288,10 +309,13 @@ def test_single_save_persists_profile_and_makes_subject_values_effective():
     assert saved.status_code == 200
     result = data(saved)
     assert result["version_created"] is True
+    assert result["subject"]["status"] == "active"
+    assert result["subject"]["is_current"] is True
     assert result["subject"]["current_version_no"] == 1
     assert result["version"]["field_values"]["summary"] == "已保存的企业简介"
     assert result["subject"]["business_profile"]["contact_name"] == "张三"
     assert SubjectVersion.objects.filter(subject_id=subject_id).count() == 1
+    assert str(SubjectContext.objects.get(user=user).current_subject_id) == subject_id
 
     profile_only = client.put(
         f"/api/v1/subjects/{subject_id}",
@@ -309,7 +333,52 @@ def test_single_save_persists_profile_and_makes_subject_values_effective():
 
 
 @pytest.mark.django_db
-def test_no_plan_allows_only_one_current_draft_but_archived_does_not_count():
+def test_invalid_profile_field_returns_exact_nested_validation_response():
+    user = make_user()
+    subject_type = SubjectType.objects.get(key="enterprise")
+    client = client_for(user)
+    created = client.post(
+        "/api/v1/subjects",
+        create_payload(subject_type, {"name": "校验示例企业"}),
+        format="json",
+    )
+
+    response = client.put(
+        f"/api/v1/subjects/{data(created)['id']}",
+        {
+            "expected_version": data(created)["version"],
+            "values": data(created)["draft_values"],
+            "profile_values": {
+                "legal_entity_type": "company",
+                "contact_name": "张三",
+                "contact_phone": "不是电话号码",
+                "business_address": "广东省广州市天河区",
+                "primary_business": "企业 GEO 服务",
+                "brand_name": "",
+                "social_channels": {},
+            },
+        },
+        format="json",
+    )
+
+    assert response.status_code == 422
+    body = response.json()
+    assert body["success"] is False
+    assert body["error"] == {
+        "code": "VALIDATION_ERROR",
+        "message": "请求参数不正确",
+        "details": {
+            "fields": {
+                "profile_values": {
+                    "contact_phone": [{"message": "输入值不匹配要求的模式。", "code": "invalid"}]
+                }
+            }
+        },
+    }
+
+
+@pytest.mark.django_db
+def test_no_plan_allows_only_one_subject_but_deleted_subject_does_not_count():
     user = make_user()
     subject_type = SubjectType.objects.get(key="enterprise")
     client = client_for(user)
@@ -386,12 +455,45 @@ def test_cancel_pending_is_read_only_and_inactive_type_keeps_existing_detail_edi
 
 @pytest.mark.django_db
 def test_current_same_subject_is_noop_and_detail_get_is_read_only():
+    install_empty_published_risk_catalog()
     user = make_user()
     subject_type = SubjectType.objects.get(key="enterprise")
     client = client_for(user)
-    created = client.post("/api/v1/subjects", create_payload(subject_type), format="json")
+    created = client.post(
+        "/api/v1/subjects",
+        create_payload(subject_type, {"name": "当前主体"}),
+        format="json",
+    )
     subject_id = data(created)["id"]
     context = SubjectContext.objects.get(user=user)
+
+    unsaved = client.put(
+        "/api/v1/subjects/current",
+        {"subject_id": subject_id, "expected_version": context.version},
+        format="json",
+    )
+    assert unsaved.status_code == 409
+    assert unsaved.json()["error"]["code"] == "SUBJECT_STATE_CONFLICT"
+
+    saved = client.put(
+        f"/api/v1/subjects/{subject_id}",
+        {
+            "expected_version": data(created)["version"],
+            "values": data(created)["draft_values"],
+            "profile_values": {
+                "legal_entity_type": "company",
+                "contact_name": "张三",
+                "contact_phone": "0755-12345678",
+                "business_address": "广东省深圳市南山区",
+                "primary_business": "企业 GEO 服务",
+                "brand_name": "",
+                "social_channels": {},
+            },
+        },
+        format="json",
+    )
+    assert saved.status_code == 200
+    context.refresh_from_db()
     event_count = SubjectEvent.objects.count()
 
     response = client.put(
@@ -410,6 +512,64 @@ def test_current_same_subject_is_noop_and_detail_get_is_read_only():
         query["sql"].lstrip().upper().startswith(("INSERT", "UPDATE", "DELETE"))
         for query in queries
     )
+
+
+@pytest.mark.django_db
+def test_deleting_current_subject_selects_another_saved_subject():
+    install_empty_published_risk_catalog()
+    user = make_user()
+    user.is_test_account = True
+    user.save(update_fields=["is_test_account", "updated_at"])
+    subject_type = SubjectType.objects.get(key="enterprise")
+    client = client_for(user)
+    profile = {
+        "legal_entity_type": "company",
+        "contact_name": "张三",
+        "contact_phone": "0755-12345678",
+        "business_address": "广东省深圳市南山区",
+        "primary_business": "企业 GEO 服务",
+        "brand_name": "",
+        "social_channels": {},
+    }
+
+    saved_ids = []
+    for name in ("第一主体", "第二主体"):
+        created = client.post(
+            "/api/v1/subjects",
+            create_payload(subject_type, {"name": name}),
+            format="json",
+        )
+        saved = client.put(
+            f"/api/v1/subjects/{data(created)['id']}",
+            {
+                "expected_version": data(created)["version"],
+                "values": data(created)["draft_values"],
+                "profile_values": profile,
+            },
+            format="json",
+        )
+        assert saved.status_code == 200
+        saved_ids.append(data(saved)["subject"]["id"])
+
+    context = SubjectContext.objects.get(user=user)
+    switched = client.put(
+        "/api/v1/subjects/current",
+        {"subject_id": saved_ids[1], "expected_version": context.version},
+        format="json",
+    )
+    assert switched.status_code == 200
+    second = Subject.objects.get(pk=saved_ids[1])
+    deleted = client.post(
+        f"/api/v1/subjects/{second.pk}/archive",
+        {"expected_version": second.version},
+        format="json",
+    )
+
+    assert deleted.status_code == 200
+    context.refresh_from_db()
+    assert str(context.current_subject_id) == saved_ids[0]
+    rows = data(client.get("/api/v1/subjects"))["subjects"]
+    assert [row["id"] for row in rows] == [saved_ids[0]]
 
 
 @pytest.mark.django_db

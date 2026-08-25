@@ -211,11 +211,17 @@ def create_subject(
     _ensure_subject_write_allowed(user)
     moment = timezone.now()
     subscription = _effective_subscription_locked(user=user, moment=moment)
-    if (
-        subscription is None
-        and Subject.objects.filter(user=user, status=Subject.Status.DRAFT).exists()
-    ):
-        raise SubjectLimitReached
+    if not user.is_test_account:
+        existing_count = (
+            Subject.objects.filter(user=user).exclude(status=Subject.Status.ARCHIVED).count()
+        )
+        if subscription is None:
+            if existing_count >= 1:
+                raise SubjectLimitReached
+        else:
+            limit = effective_subject_activation_limit(user=user, subscription=subscription)
+            if existing_count >= limit:
+                raise SubjectLimitReached
     try:
         subject_type = SubjectType.objects.select_for_update().get(
             pk=subject_type_id,
@@ -258,18 +264,52 @@ def create_subject(
         from_status="",
         actor=user,
         request_id=request_id,
-        summary="Subject draft created.",
+        summary="Subject created.",
     )
+    SubjectContext.objects.get_or_create(user=user, defaults={"current_subject": None})
+    return subject
+
+
+@transaction.atomic
+def mark_subject_usable_after_save(*, user_id, subject_id, request_id) -> Subject:
+    """Make a successfully saved subject usable and select the first saved subject globally."""
+    user = User.objects.select_for_update().get(pk=user_id)
+    _ensure_subject_write_allowed(user)
+    subject = subject_for_user_or_404(user=user, subject_id=subject_id, lock=True)
+    if subject.status == Subject.Status.ARCHIVED or subject.current_version_id is None:
+        raise SubjectStateConflict
+    if subject.status != Subject.Status.ACTIVE:
+        previous = subject.status
+        subject.status = Subject.Status.ACTIVE
+        subject.version += 1
+        subject.save(update_fields=["status", "version", "updated_at"])
+        _subject_event(
+            subject=subject,
+            event_type=SubjectEvent.EventType.ACTIVATED,
+            from_status=previous,
+            actor=user,
+            request_id=request_id,
+            summary="Saved subject became usable.",
+        )
     context = SubjectContext.objects.select_for_update().filter(user=user).first()
     if context is None:
         SubjectContext.objects.create(user=user, current_subject=subject)
+        selected = True
+    elif context.current_subject_id is None:
+        context.current_subject = subject
+        context.version += 1
+        context.save(update_fields=["current_subject", "version", "updated_at"])
+        selected = True
+    else:
+        selected = False
+    if selected:
         _subject_event(
             subject=subject,
             event_type=SubjectEvent.EventType.CURRENT_SELECTED,
             from_status=subject.status,
             actor=user,
             request_id=request_id,
-            summary="First subject selected as current.",
+            summary="First saved subject selected as current.",
         )
     return subject
 
@@ -356,24 +396,44 @@ def archive_subject(
     subject.save(update_fields=["status", "version", "updated_at"])
     context = SubjectContext.objects.select_for_update().filter(user=user).first()
     if context is not None and context.current_subject_id == subject.pk:
-        context.current_subject = None
+        replacement = (
+            Subject.objects.select_for_update()
+            .filter(
+                user=user,
+                status=Subject.Status.ACTIVE,
+                current_version__isnull=False,
+            )
+            .exclude(pk=subject.pk)
+            .order_by("-updated_at", "id")
+            .first()
+        )
+        context.current_subject = replacement
         context.version += 1
         context.save(update_fields=["current_subject", "version", "updated_at"])
         _subject_event(
             subject=subject,
             event_type=SubjectEvent.EventType.CURRENT_CLEARED,
-            from_status=subject.status,
+            from_status=previous,
             actor=user,
             request_id=request_id,
-            summary="Archived current subject cleared.",
+            summary="Deleted current subject context cleared.",
         )
+        if replacement is not None:
+            _subject_event(
+                subject=replacement,
+                event_type=SubjectEvent.EventType.CURRENT_SELECTED,
+                from_status=replacement.status,
+                actor=user,
+                request_id=request_id,
+                summary="Replacement current subject selected.",
+            )
     _subject_event(
         subject=subject,
         event_type=SubjectEvent.EventType.ARCHIVED,
         from_status=previous,
         actor=user,
         request_id=request_id,
-        summary="Subject archived.",
+        summary="Subject soft deleted.",
     )
     return subject
 
@@ -431,7 +491,7 @@ def set_current_subject(
     user = User.objects.select_for_update().get(pk=user_id)
     _ensure_subject_write_allowed(user)
     subject = subject_for_user_or_404(user=user, subject_id=subject_id, lock=True)
-    if subject.status == Subject.Status.ARCHIVED:
+    if subject.status == Subject.Status.ARCHIVED or subject.current_version_id is None:
         raise SubjectStateConflict
     context = SubjectContext.objects.select_for_update().filter(user=user).first()
     if context is None:

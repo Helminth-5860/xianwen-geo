@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import PublicHome from "../app/page";
@@ -8,6 +9,8 @@ import { UserWorkspaceNavigation } from "../components/user-workspace-navigation
 
 const getCurrentUser = vi.fn();
 const getSubjects = vi.fn();
+const setCurrentSubject = vi.fn();
+const reloadWorkspaceAfterSubjectChange = vi.fn();
 const getReportHistory = vi.fn();
 const getQuestionBankDraft = vi.fn();
 let pathname = "/workspace";
@@ -25,7 +28,12 @@ vi.mock("../lib/auth-client", async () => {
 vi.mock("../lib/subjects-client", async () => {
   const actual =
     await vi.importActual<typeof import("../lib/subjects-client")>("../lib/subjects-client");
-  return { ...actual, getSubjects: (...args: unknown[]) => getSubjects(...args) };
+  return {
+    ...actual,
+    getSubjects: (...args: unknown[]) => getSubjects(...args),
+    setCurrentSubject: (...args: unknown[]) => setCurrentSubject(...args),
+    reloadWorkspaceAfterSubjectChange: () => reloadWorkspaceAfterSubjectChange(),
+  };
 });
 vi.mock("../lib/geo-report-client", async () => {
   const actual = await vi.importActual<typeof import("../lib/geo-report-client")>(
@@ -67,9 +75,18 @@ const subject = {
   is_current: true,
   current_version_no: 2,
   official_name: "显问科技",
+  service_regions: JSON.stringify({ version: 1, nationwide: true, areas: [] }),
   retest_required: false,
   created_at: "2026-08-01T00:00:00Z",
   updated_at: "2026-08-20T00:00:00Z",
+};
+
+const otherSubject = {
+  ...subject,
+  id: "subject-2",
+  is_current: false,
+  official_name: "显问华南",
+  updated_at: "2026-08-21T00:00:00Z",
 };
 
 const latestReport = {
@@ -128,6 +145,7 @@ beforeEach(() => {
   });
   getReportHistory.mockResolvedValue({ items: [latestReport] });
   getQuestionBankDraft.mockResolvedValue({ current_question_bank_version_no: 3 });
+  setCurrentSubject.mockResolvedValue({ current_subject_id: subject.id, version: 2 });
 });
 
 afterEach(() => {
@@ -146,7 +164,7 @@ describe("GEO 产品工作台", () => {
     expect(await screen.findByRole("heading", { name: "GEO 总览" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "显问科技" })).toBeTruthy();
     expect(screen.getAllByText("68.2").length).toBeGreaterThan(0);
-    expect(screen.getByText("1. 主体与知识")).toBeTruthy();
+    expect(screen.getByText("1. 主体档案")).toBeTruthy();
     expect(screen.getByText("3. AI 可见度检测")).toBeTruthy();
     expect(screen.getByText("5. 优化策略")).toBeTruthy();
     expect(screen.getByText("7. 复测验证")).toBeTruthy();
@@ -179,6 +197,8 @@ describe("GEO 产品工作台", () => {
   it("左侧导航按 GEO 主线组织，并彻底移除内部 AI 对话入口", async () => {
     const { rerender } = render(<UserWorkspaceNavigation />);
     expect(await screen.findByRole("navigation", { name: "GEO 工作台导航" })).toBeTruthy();
+    expect(screen.getByLabelText("当前主体")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "主体档案" }).getAttribute("href")).toBe("/subjects");
     expect(screen.getByRole("link", { name: "GEO 总览" }).getAttribute("href")).toBe("/workspace");
     expect(screen.getByRole("link", { name: "关键词与问题" }).getAttribute("href")).toBe(
       "/subjects/subject-1/keywords",
@@ -203,5 +223,19 @@ describe("GEO 产品工作台", () => {
     await waitFor(() =>
       expect(screen.queryByRole("navigation", { name: "GEO 工作台导航" })).toBeNull(),
     );
+  });
+
+  it("切换当前主体后刷新整个工作区，避免保留上一个主体的页面状态", async () => {
+    getSubjects.mockResolvedValue({
+      subjects: [subject, otherSubject],
+      context: { current_subject_id: subject.id, version: 7 },
+    });
+    render(<UserWorkspaceNavigation />);
+    const selector = await screen.findByLabelText("当前主体");
+    await userEvent.click(selector);
+    await userEvent.click(await screen.findByText("显问华南"));
+
+    await waitFor(() => expect(setCurrentSubject).toHaveBeenCalledWith("subject-2", 7));
+    expect(reloadWorkspaceAfterSubjectChange).toHaveBeenCalledTimes(1);
   });
 });

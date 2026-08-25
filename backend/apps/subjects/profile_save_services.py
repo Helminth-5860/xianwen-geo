@@ -2,7 +2,11 @@ from django.db import transaction
 
 from .models import Subject, SubjectVersion
 from .schema_snapshots import derive_product_candidates
-from .subject_services import subject_for_user_or_404, update_subject_draft
+from .subject_services import (
+    mark_subject_usable_after_save,
+    subject_for_user_or_404,
+    update_subject_draft,
+)
 from .version_services import SubjectVersionNoChanges, commit_subject_version
 
 
@@ -41,9 +45,19 @@ def save_subject_profile(
             product_confirmations=confirmations,
             request_id=request_id,
         )
+        subject = mark_subject_usable_after_save(
+            user_id=user_id,
+            subject_id=subject_id,
+            request_id=request_id,
+        )
         return subject, version, True
     except SubjectVersionNoChanges:
         subject = subject_for_user_or_404(user=subject.user, subject_id=subject_id)
         if subject.current_version is None:
             raise
+        subject = mark_subject_usable_after_save(
+            user_id=user_id,
+            subject_id=subject_id,
+            request_id=request_id,
+        )
         return subject, subject.current_version, False

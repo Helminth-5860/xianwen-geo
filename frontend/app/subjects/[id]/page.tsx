@@ -15,8 +15,8 @@ import {
   Typography,
 } from "antd";
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useParams, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
 
 import { SubjectAiEnrichment } from "@/components/subject-ai-enrichment";
 import { SubjectDocuments } from "@/components/subject-documents";
@@ -27,18 +27,13 @@ import type { SubjectDocument } from "@/lib/documents-client";
 import {
   emptySubjectBusinessProfile,
   getSubject,
+  notifySubjectContextUpdated,
   saveSubject,
   type PersistedSubjectField,
   type SubjectBusinessProfile,
   type SubjectDetail,
   type SubjectSocialChannels,
 } from "@/lib/subjects-client";
-
-const statusLabels = {
-  draft: "资料可编辑",
-  active: "正常",
-  archived: "\u5df2\u5f52\u6863",
-} as const;
 
 const fieldLabels: Record<string, string> = {
   name: "营业执照主体名称",
@@ -234,7 +229,43 @@ function subjectErrorMessage(reason: unknown, subject: SubjectDetail) {
       return `${fieldLabels[fieldKey] ?? schemaField?.label ?? "主体资料"}格式不正确，请检查后再保存`;
     }
   }
+  if (reason instanceof AuthApiError && reason.code === "VALIDATION_ERROR") {
+    const firstIssue = findFirstValidationIssue(reason.details.fields);
+    if (firstIssue) {
+      const fieldKey = [...firstIssue.path].reverse().find((item) => item !== "profile_values");
+      if (fieldKey === "official_url") {
+        return "官网格式不正确，请填写以 http:// 或 https:// 开头的完整网址";
+      }
+      if (fieldKey === "contact_phone") {
+        return "联系电话格式不正确，请填写 5 至 32 位的手机号或座机号码";
+      }
+      const schemaField = subject.form_schema.fields.find((field) => field.field_key === fieldKey);
+      const label = fieldKey ? (fieldLabels[fieldKey] ?? schemaField?.label) : undefined;
+      if (label) return `${label}格式不正确，请检查后再保存`;
+    }
+  }
   return userMessage(reason);
+}
+
+function findFirstValidationIssue(
+  value: unknown,
+  path: string[] = [],
+): { path: string[]; message: string } | null {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findFirstValidationIssue(item, path);
+      if (found) return found;
+    }
+    return null;
+  }
+  if (typeof value !== "object" || value === null) return null;
+  const record = value as Record<string, unknown>;
+  if (typeof record.message === "string") return { path, message: record.message };
+  for (const [key, item] of Object.entries(record)) {
+    const found = findFirstValidationIssue(item, [...path, key]);
+    if (found) return found;
+  }
+  return null;
 }
 
 function businessProfileValue(profile: SubjectBusinessProfile, key: ProfileFieldKey): string {
@@ -424,8 +455,10 @@ function FieldInput({
   );
 }
 
-export default function SubjectDetailPage() {
+function SubjectDetailContent() {
   const params = useParams<{ id: string }>();
+  const searchParams = useSearchParams();
+  const readOnly = searchParams.get("mode") === "view";
   const [subject, setSubject] = useState<SubjectDetail>();
   const [values, setValues] = useState<Record<string, unknown>>({});
   const [businessProfile, setBusinessProfile] = useState<SubjectBusinessProfile>(
@@ -508,6 +541,7 @@ export default function SubjectDetailPage() {
     setSubject(result.subject);
     setValues(result.subject.draft_values);
     setBusinessProfile(result.subject.business_profile);
+    notifySubjectContextUpdated();
     setError("");
     if (showSuccess) setNotice("保存成功，资料已生效");
     return result.subject;
@@ -539,7 +573,7 @@ export default function SubjectDetailPage() {
       <ProfileFieldInput
         field={field}
         value={businessProfileValue(businessProfile, field.key)}
-        disabled={subject?.status === "archived"}
+        disabled={readOnly || subject?.status === "archived"}
         onChange={(value) => updateBusinessProfileField(field.key, value)}
       />
     </Form.Item>
@@ -547,7 +581,7 @@ export default function SubjectDetailPage() {
 
   return (
     <main className="page-shell subject-profile-page">
-      <Link href="/subjects">返回主体列表</Link>
+      <Link href="/subjects">返回主体管理</Link>
       {error && <Alert type="error" showIcon message={error} style={{ marginTop: 20 }} />}
       {notice && (
         <Alert
@@ -562,24 +596,35 @@ export default function SubjectDetailPage() {
         <>
           <header className="subject-profile-header">
             <div>
-              <Typography.Text className="subject-profile-eyebrow">企业资料</Typography.Text>
-              <Typography.Title>完善企业经营资料</Typography.Title>
+              <Typography.Text className="subject-profile-eyebrow">主体档案</Typography.Text>
+              <Typography.Title>{readOnly ? "查看主体档案" : "完善企业经营资料"}</Typography.Title>
               <Typography.Paragraph type="secondary">
-                完整、真实的经营资料能帮助系统更准确地理解企业、品牌和服务范围。
+                {readOnly
+                  ? "查看已保存的企业经营、品牌与公开资料。"
+                  : "完整、真实的经营资料能帮助系统更准确地理解企业、品牌和服务范围。"}
               </Typography.Paragraph>
             </div>
             <Space wrap>
-              <Tag>{statusLabels[subject.status]}</Tag>
-              {subject.is_current && <Tag color="blue">当前主体</Tag>}
-              {subject.current_version_no !== null && <Tag color="green">资料已生效</Tag>}
-              {subject.retest_required && <Tag color="orange">资料已更新，建议复测</Tag>}
+              {subject.status === "archived" ? (
+                <Tag>已删除</Tag>
+              ) : subject.current_version_no === null ? (
+                <Tag color="orange">待完善</Tag>
+              ) : (
+                <Tag color="green">可用</Tag>
+              )}
+              {subject.is_current && <Tag color="blue">当前</Tag>}
+              {readOnly && subject.status !== "archived" && (
+                <Button href={`/subjects/${subject.id}`}>编辑主体</Button>
+              )}
             </Space>
           </header>
-          <div className="subject-profile-progress" aria-label="资料完善进度">
-            <span className="subject-profile-progress__active">1&nbsp; 完善经营资料</span>
-            <span>2&nbsp; 配置关键词</span>
-            <span>3&nbsp; 开始 GEO 工作</span>
-          </div>
+          {!readOnly && (
+            <div className="subject-profile-progress" aria-label="资料完善进度">
+              <span className="subject-profile-progress__active">1&nbsp; 完善经营资料</span>
+              <span>2&nbsp; 配置关键词</span>
+              <span>3&nbsp; 开始 GEO 工作</span>
+            </div>
+          )}
           {subject.risk.public_reason && (
             <Alert
               type="warning"
@@ -669,7 +714,7 @@ export default function SubjectDetailPage() {
                           <FieldInput
                             field={field}
                             value={values[field.field_key]}
-                            disabled={subject.status === "archived"}
+                            disabled={readOnly || subject.status === "archived"}
                             documents={documents}
                             onChange={(value) => {
                               setError("");
@@ -687,19 +732,18 @@ export default function SubjectDetailPage() {
                   </div>
                 </section>
               ))}
-              <Space>
-                <Button
-                  htmlType="submit"
-                  type="primary"
-                  loading={saving}
-                  disabled={subject.status === "archived"}
-                >
-                  保存资料
-                </Button>
-              </Space>
-              <Typography.Text type="secondary" className="subject-profile-save-note">
-                保存后资料立即生效并停留在当前页面，不会自动创建关键词任务或进入后续流程。
-              </Typography.Text>
+              {!readOnly && subject.status !== "archived" && (
+                <>
+                  <Space>
+                    <Button htmlType="submit" type="primary" loading={saving}>
+                      保存资料
+                    </Button>
+                  </Space>
+                  <Typography.Text type="secondary" className="subject-profile-save-note">
+                    保存后资料立即生效并停留在当前页面，不会自动创建关键词任务或进入后续流程。
+                  </Typography.Text>
+                </>
+              )}
             </Form>
           </Card>
           <Collapse
@@ -715,42 +759,52 @@ export default function SubjectDetailPage() {
                     </Typography.Paragraph>
                     <SubjectDocuments
                       subjectId={subject.id}
-                      disabled={subject.status === "archived"}
+                      disabled={readOnly || subject.status === "archived"}
                       onDocumentsChange={setDocuments}
                     />
                     <SubjectWebSources
                       subjectId={subject.id}
-                      disabled={subject.status === "archived"}
+                      disabled={readOnly || subject.status === "archived"}
                     />
                   </>
                 ),
               },
             ]}
           />
-          <Collapse
-            className="subject-profile-collapse"
-            items={[
-              {
-                key: "ai",
-                label: "AI 帮我补充资料",
-                children: (
-                  <SubjectAiEnrichment
-                    subject={subject}
-                    disabled={subject.status === "archived"}
-                    onSyncBeforeStart={() => persist(subject, values, businessProfile, false)}
-                    onApplied={(updated) =>
-                      persist(updated, updated.draft_values, businessProfile, false)
-                    }
-                  />
-                ),
-              },
-            ]}
-          />
+          {!readOnly && subject.status !== "archived" && (
+            <Collapse
+              className="subject-profile-collapse"
+              items={[
+                {
+                  key: "ai",
+                  label: "AI 帮我补充资料",
+                  children: (
+                    <SubjectAiEnrichment
+                      subject={subject}
+                      disabled={false}
+                      onSyncBeforeStart={() => persist(subject, values, businessProfile, false)}
+                      onApplied={(updated) =>
+                        persist(updated, updated.draft_values, businessProfile, false)
+                      }
+                    />
+                  ),
+                },
+              ]}
+            />
+          )}
           <Typography.Paragraph className="subject-profile-version-link">
             <Link href={`/subjects/${subject.id}/versions`}>查看资料更新记录</Link>
           </Typography.Paragraph>
         </>
       )}
     </main>
+  );
+}
+
+export default function SubjectDetailPage() {
+  return (
+    <Suspense fallback={<Spin fullscreen description="正在加载企业资料" />}>
+      <SubjectDetailContent />
+    </Suspense>
   );
 }

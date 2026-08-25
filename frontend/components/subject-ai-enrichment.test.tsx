@@ -25,6 +25,7 @@ const subject = {
   is_current: true,
   current_version_no: null,
   official_name: "示例企业",
+  service_regions: "",
   retest_required: false,
   created_at: "2026-08-14T00:00:00Z",
   updated_at: "2026-08-14T00:00:00Z",

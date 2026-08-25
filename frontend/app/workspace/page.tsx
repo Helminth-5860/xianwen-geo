@@ -110,7 +110,7 @@ export default function WorkspacePage() {
     const subjectReady = currentSubject.current_version_no !== null;
     return [
       {
-        title: "1. 主体与知识",
+        title: "1. 主体档案",
         description: "完善品牌、产品、资料和公开来源，建立 GEO 的事实基础。",
         status: subjectReady ? "资料已保存" : "待完善资料",
         href: `/subjects/${currentSubject.id}`,
@@ -235,14 +235,9 @@ export default function WorkspacePage() {
                 <Title level={3}>{subjectName}</Title>
               </div>
               <Space wrap>
-                <Tag color={currentSubject.status === "active" ? "green" : "default"}>
-                  {currentSubject.status === "active"
-                    ? "正常"
-                    : currentSubject.status === "draft"
-                      ? "资料可编辑"
-                      : "已归档"}
+                <Tag color={currentSubject.current_version_no !== null ? "green" : "orange"}>
+                  {currentSubject.current_version_no !== null ? "可用" : "待完善"}
                 </Tag>
-                {currentSubject.current_version_no !== null && <Tag>资料已生效</Tag>}
                 {currentSubject.retest_required && <Tag color="orange">需要复测</Tag>}
               </Space>
             </section>
@@ -379,7 +374,7 @@ export default function WorkspacePage() {
 
         {subjects.length > 1 && (
           <Text type="secondary" className="geo-dashboard__subject-count">
-            当前账号共有 {subjects.length} 个主体，可在“主体与知识”中切换当前 GEO 主体。
+            当前账号共有 {subjects.length} 个主体，可通过左侧“当前主体”直接切换。
           </Text>
         )}
       </main>

@@ -10,12 +10,19 @@ import {
   SyncOutlined,
   TagsOutlined,
 } from "@ant-design/icons";
-import { Button, Divider, Typography } from "antd";
+import { Button, Divider, Select, Typography } from "antd";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { getCurrentUser, type AccountUser } from "@/lib/auth-client";
-import { getSubjects } from "@/lib/subjects-client";
+import {
+  getSubjects,
+  reloadWorkspaceAfterSubjectChange,
+  SUBJECT_CONTEXT_UPDATED_EVENT,
+  setCurrentSubject,
+  type SubjectContext,
+  type SubjectSummary,
+} from "@/lib/subjects-client";
 
 const HIDDEN_PREFIXES = [
   "/admin",
@@ -41,7 +48,7 @@ const workflowItems: NavItem[] = [
     active: (pathname) => pathname === "/workspace",
   },
   {
-    label: "主体与知识",
+    label: "主体档案",
     href: "/subjects",
     icon: SettingOutlined,
     active: (pathname) =>
@@ -94,39 +101,54 @@ export function UserWorkspaceNavigation() {
   const pathname = usePathname();
   const hidden = HIDDEN_PREFIXES.some((prefix) => pathname.startsWith(prefix));
   const [user, setUser] = useState<AccountUser | null>(null);
+  const [subjects, setSubjects] = useState<SubjectSummary[]>([]);
+  const [subjectContext, setSubjectContext] = useState<SubjectContext>({
+    current_subject_id: null,
+    version: 0,
+  });
   const [currentSubjectId, setCurrentSubjectId] = useState<string | null>(null);
   const [currentSubjectName, setCurrentSubjectName] = useState("");
+  const [switchingSubject, setSwitchingSubject] = useState(false);
 
   useEffect(() => {
     let current = true;
     if (hidden) return () => undefined;
 
-    void getCurrentUser()
-      .then(async (value) => {
-        if (!current) return;
-        setUser(value);
-        try {
-          const data = await getSubjects();
+    const loadNavigation = () =>
+      getCurrentUser()
+        .then(async (value) => {
           if (!current) return;
-          const subject =
-            data.subjects.find((item) => item.id === data.context.current_subject_id) ??
-            data.subjects.find((item) => item.is_current) ??
-            null;
-          setCurrentSubjectId(subject?.id ?? null);
-          setCurrentSubjectName(subject?.official_name || "");
-        } catch {
-          if (current) {
-            setCurrentSubjectId(null);
-            setCurrentSubjectName("");
+          setUser(value);
+          try {
+            const data = await getSubjects();
+            if (!current) return;
+            const subject =
+              data.subjects.find((item) => item.id === data.context.current_subject_id) ??
+              data.subjects.find((item) => item.is_current) ??
+              null;
+            setSubjects(data.subjects);
+            setSubjectContext(data.context);
+            setCurrentSubjectId(subject?.id ?? null);
+            setCurrentSubjectName(subject?.official_name || subject?.subject_type.name || "");
+          } catch {
+            if (current) {
+              setSubjects([]);
+              setSubjectContext({ current_subject_id: null, version: 0 });
+              setCurrentSubjectId(null);
+              setCurrentSubjectName("");
+            }
           }
-        }
-      })
-      .catch(() => {
-        if (current) setUser(null);
-      });
+        })
+        .catch(() => {
+          if (current) setUser(null);
+        });
+
+    void loadNavigation();
+    window.addEventListener(SUBJECT_CONTEXT_UPDATED_EVENT, loadNavigation);
 
     return () => {
       current = false;
+      window.removeEventListener(SUBJECT_CONTEXT_UPDATED_EVENT, loadNavigation);
     };
   }, [hidden]);
 
@@ -141,9 +163,31 @@ export function UserWorkspaceNavigation() {
 
       <div className="geo-sidebar__subject">
         <Typography.Text type="secondary">当前主体</Typography.Text>
-        <Typography.Text strong ellipsis={{ tooltip: currentSubjectName || "尚未选择主体" }}>
-          {currentSubjectName || "尚未选择主体"}
-        </Typography.Text>
+        {subjects.some((subject) => subject.current_version_no !== null) ? (
+          <Select
+            aria-label="当前主体"
+            value={currentSubjectId ?? undefined}
+            loading={switchingSubject}
+            disabled={switchingSubject}
+            placeholder="请选择主体"
+            options={subjects
+              .filter((subject) => subject.current_version_no !== null)
+              .map((subject) => ({
+                value: subject.id,
+                label: subject.official_name || subject.subject_type.name,
+              }))}
+            onChange={(subjectId) => {
+              setSwitchingSubject(true);
+              void setCurrentSubject(subjectId, subjectContext.version)
+                .then(reloadWorkspaceAfterSubjectChange)
+                .catch(() => setSwitchingSubject(false));
+            }}
+          />
+        ) : (
+          <Typography.Text strong ellipsis={{ tooltip: currentSubjectName || "尚未选择主体" }}>
+            {currentSubjectName || "尚未选择主体"}
+          </Typography.Text>
+        )}
       </div>
 
       <nav aria-label="GEO 工作台导航">

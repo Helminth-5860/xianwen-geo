@@ -223,6 +223,7 @@ export type SubjectSummary = Readonly<{
   is_current: boolean;
   current_version_no: number | null;
   official_name: string | null;
+  service_regions: string;
   retest_required: boolean;
   created_at: string;
   updated_at: string;
@@ -335,6 +336,18 @@ export type SubjectList = Readonly<{
   subjects: SubjectSummary[];
   context: SubjectContext;
 }>;
+
+export const SUBJECT_CONTEXT_UPDATED_EVENT = "xianwen:subject-context-updated";
+
+export function notifySubjectContextUpdated() {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(SUBJECT_CONTEXT_UPDATED_EVENT));
+  }
+}
+
+export function reloadWorkspaceAfterSubjectChange() {
+  if (typeof window !== "undefined") window.location.reload();
+}
 
 export const getSubjects = (status = "") =>
   get<SubjectList>(`/subjects${status ? `?status=${encodeURIComponent(status)}` : ""}`);

@@ -2,28 +2,63 @@
 
 import { Alert, Button, Card, Popconfirm, Select, Space, Spin, Table, Tag, Typography } from "antd";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import { userMessage } from "@/lib/auth-client";
 import {
-  activateSubject,
   createSubject,
   deleteSubject,
   getSubjects,
   getSubjectTypes,
+  notifySubjectContextUpdated,
   setCurrentSubject,
   type SubjectContext,
   type SubjectSummary,
   type SubjectType,
 } from "@/lib/subjects-client";
 
-const statusLabels = {
-  draft: "资料可编辑",
-  active: "正常",
-  archived: "\u5df2\u5f52\u6863",
-} as const;
+function formatUpdatedAt(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date);
+}
+
+function serviceAreaLabel(value: string) {
+  if (!value) return "待完善";
+  try {
+    const parsed = JSON.parse(value) as {
+      nationwide?: boolean;
+      areas?: Array<{ name?: string; path?: Array<{ name?: string }> }>;
+    };
+    if (parsed.nationwide) return "全国";
+    const areas = Array.isArray(parsed.areas) ? parsed.areas : [];
+    const names = areas.map((area) => {
+      const path = Array.isArray(area.path) ? area.path : [];
+      return (
+        path
+          .map((item) => item.name)
+          .filter(Boolean)
+          .join(" / ") ||
+        area.name ||
+        ""
+      );
+    });
+    return names.filter(Boolean).join("；") || "待完善";
+  } catch {
+    return value;
+  }
+}
 
 export default function SubjectsPage() {
+  const router = useRouter();
   const [subjects, setSubjects] = useState<SubjectSummary[]>();
   const [context, setContext] = useState<SubjectContext>({
     current_subject_id: null,
@@ -68,6 +103,7 @@ export default function SubjectsPage() {
     try {
       await operation();
       await load();
+      notifySubjectContextUpdated();
       setError("");
       setNotice(message);
     } catch (reason) {
@@ -80,20 +116,33 @@ export default function SubjectsPage() {
 
   const selected = types.find((item) => item.id === selectedType);
 
+  const create = async () => {
+    if (!selected) return;
+    setBusy(true);
+    try {
+      const created = await createSubject(selected.id, selected.schema_version);
+      router.push(`/subjects/${created.id}`);
+    } catch (reason) {
+      setNotice("");
+      setError(userMessage(reason));
+      setBusy(false);
+    }
+  };
+
   if (subjects === undefined && !error) {
-    return <Spin fullscreen description="\u6b63\u5728\u52a0\u8f7d\u4e3b\u4f53" />;
+    return <Spin fullscreen description="正在加载主体档案" />;
   }
 
   return (
     <main className="page-shell">
       <Space wrap align="baseline">
-        <Typography.Title>{"\u6211\u7684\u4e3b\u4f53"}</Typography.Title>
+        <Typography.Title>主体管理</Typography.Title>
         <Button href="/assistant" type="primary">
           显问 AI 助手
         </Button>
       </Space>
       <Typography.Paragraph type="secondary">
-        创建后即可完善并保存企业资料；启用状态仅用于管理当前套餐的主体名额。
+        统一管理企业主体档案。保存后的主体立即可用，可随时查看、编辑、切换或删除。
       </Typography.Paragraph>
       {error && (
         <Alert type="error" showIcon message={error} closable onClose={() => setError("")} />
@@ -101,12 +150,12 @@ export default function SubjectsPage() {
       {notice && (
         <Alert type="success" showIcon message={notice} closable onClose={() => setNotice("")} />
       )}
-      <Card title="创建企业资料" style={{ marginBottom: 20 }}>
+      <Card title="新建主体档案" style={{ marginBottom: 20 }}>
         <Space wrap>
           <Select
-            aria-label={"\u4e3b\u4f53\u7c7b\u578b"}
+            aria-label="主体类型"
             value={selectedType || undefined}
-            placeholder={"\u9009\u62e9\u4e3b\u4f53\u7c7b\u578b"}
+            placeholder="选择主体类型"
             onChange={setSelectedType}
             style={{ minWidth: 240 }}
             options={types.map((item) => ({
@@ -114,19 +163,8 @@ export default function SubjectsPage() {
               label: item.name,
             }))}
           />
-          <Button
-            type="primary"
-            loading={busy}
-            disabled={!selected}
-            onClick={() => {
-              if (!selected) return;
-              void execute(
-                () => createSubject(selected.id, selected.schema_version),
-                "企业资料已创建",
-              );
-            }}
-          >
-            创建主体
+          <Button type="primary" loading={busy} disabled={!selected} onClick={() => void create()}>
+            开始填写
           </Button>
         </Space>
       </Card>
@@ -134,64 +172,74 @@ export default function SubjectsPage() {
         rowKey="id"
         dataSource={subjects ?? []}
         pagination={false}
-        locale={{ emptyText: "暂无企业资料" }}
+        locale={{ emptyText: "暂无主体档案" }}
         columns={[
           {
-            title: "\u4e3b\u4f53",
+            title: "主体名称",
             render: (_, item) => (
               <Space>
-                <Link href={`/subjects/${item.id}`}>{item.subject_type.name}</Link>
-                {item.is_current && <Tag color="blue">{"\u5f53\u524d"}</Tag>}
+                <Link href={`/subjects/${item.id}?mode=view`}>
+                  {item.official_name || item.subject_type.name}
+                </Link>
+                {item.is_current && <Tag color="blue">当前</Tag>}
               </Space>
             ),
           },
+          { title: "主体类型", render: (_, item) => item.subject_type.name },
           {
-            title: "\u72b6\u6001",
-            render: (_, item) => <Tag>{statusLabels[item.status]}</Tag>,
+            title: "服务区域",
+            render: (_, item) => serviceAreaLabel(item.service_regions),
           },
-          { title: "\u66f4\u65b0\u65f6\u95f4", dataIndex: "updated_at" },
           {
-            title: "\u64cd\u4f5c",
+            title: "更新时间",
+            render: (_, item) => formatUpdatedAt(item.updated_at),
+          },
+          {
+            title: "当前状态",
+            render: (_, item) =>
+              item.is_current ? (
+                <Tag color="blue">当前</Tag>
+              ) : item.current_version_no !== null ? (
+                <Tag color="green">可用</Tag>
+              ) : (
+                <Tag color="orange">待完善</Tag>
+              ),
+          },
+          {
+            title: "操作",
             render: (_, item) => (
               <Space wrap>
-                <Link href={`/subjects/${item.id}`}>{"\u7f16\u8f91"}</Link>
-                {!item.is_current && item.status !== "archived" && (
+                <Link href={`/subjects/${item.id}?mode=view`}>查看</Link>
+                <Link href={`/subjects/${item.id}`}>编辑</Link>
+                {!item.is_current && item.current_version_no !== null && (
                   <Button
                     disabled={busy}
                     onClick={() =>
                       void execute(
                         () => setCurrentSubject(item.id, context.version),
-                        "\u5f53\u524d\u4e3b\u4f53\u5df2\u66f4\u65b0",
+                        "当前主体已更新",
                       )
                     }
                   >
-                    {"\u8bbe\u4e3a\u5f53\u524d"}
+                    设为当前
                   </Button>
                 )}
-                {item.status !== "active" && (
-                  <Button
-                    disabled={busy}
-                    onClick={() =>
-                      void execute(() => activateSubject(item), "\u4e3b\u4f53\u5df2\u6fc0\u6d3b")
-                    }
-                  >
-                    {"\u6fc0\u6d3b"}
+                <Popconfirm
+                  title={item.is_current ? "确认删除当前主体？" : "确认删除这个主体？"}
+                  description={
+                    item.is_current
+                      ? "删除后会自动切换到其他可用主体；如无其他主体，将清空当前主体。"
+                      : "删除后将从主体管理中移除；已有任务和报告会安全保留。"
+                  }
+                  okText="确认删除"
+                  cancelText="取消"
+                  okButtonProps={{ danger: true }}
+                  onConfirm={() => void execute(() => deleteSubject(item), "主体已删除")}
+                >
+                  <Button danger disabled={busy}>
+                    删除
                   </Button>
-                )}
-                {item.status !== "archived" && (
-                  <Popconfirm
-                    title="确认删除这个主体？"
-                    description="删除后将从主体列表移除；已有任务和报告会安全保留。"
-                    okText="确认删除"
-                    cancelText="取消"
-                    okButtonProps={{ danger: true }}
-                    onConfirm={() => void execute(() => deleteSubject(item), "主体已删除")}
-                  >
-                    <Button danger disabled={busy}>
-                      删除
-                    </Button>
-                  </Popconfirm>
-                )}
+                </Popconfirm>
               </Space>
             ),
           },
