@@ -123,3 +123,30 @@ def test_semantic_output_accepts_bounded_derived_questions_without_question_bank
         allowed_question_ids=frozenset(),
     )
     assert len(validated.result["question_assessments"]) == 6
+
+
+def test_semantic_output_verifies_citeable_excerpt_against_crawled_text():
+    source_text = "显问提供 AI 搜索可见度诊断。通过公开官网内容帮助企业发现 GEO 内容缺口。"
+    validated = validate_semantic_audit_output(
+        _payload(),
+        allowed_urls=frozenset({"https://example.com/", "https://example.com/service"}),
+        allowed_question_ids=frozenset({"q1"}),
+        page_text_by_url={
+            "https://example.com/": source_text,
+            "https://example.com/service": "官网仅说明提供服务。",
+        },
+    )
+    assert validated.result["citeable_passages"][0]["excerpt"] == "显问提供 AI 搜索可见度诊断。"
+
+
+def test_semantic_output_rejects_citeable_excerpt_not_in_source():
+    with pytest.raises(SemanticAuditSchemaError, match="passage_excerpt_not_in_source"):
+        validate_semantic_audit_output(
+            _payload(),
+            allowed_urls=frozenset({"https://example.com/", "https://example.com/service"}),
+            allowed_question_ids=frozenset({"q1"}),
+            page_text_by_url={
+                "https://example.com/": "这里没有模型声称的引用句。",
+                "https://example.com/service": "官网仅说明提供服务。",
+            },
+        )
