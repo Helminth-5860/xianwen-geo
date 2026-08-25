@@ -3,7 +3,7 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-    dependencies = [("subjects", "0013_subject_enrichment_postgresql_guards")]
+    dependencies = [("subjects", "0015_remove_catalog_revision_approval")]
 
     operations = [
         migrations.CreateModel(
