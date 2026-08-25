@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections import Counter
+
 from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
@@ -8,7 +10,8 @@ from apps.subjects.models import Subject
 from apps.web_sources.url_security import canonicalize_url
 
 from .crawler import crawl_website
-from .models import WebsiteAudit, WebsiteAuditLink, WebsiteAuditPage
+from .models import WebsiteAudit, WebsiteAuditFinding, WebsiteAuditLink, WebsiteAuditPage
+from .rules import evaluate_deterministic_checks
 
 
 class WebsiteAuditNotFound(Exception):
@@ -53,7 +56,9 @@ def _start_audit(audit_id) -> WebsiteAudit:
         audit.started_at = timezone.now()
         audit.finished_at = None
         audit.stable_error_code = ""
-        audit.save(update_fields=("status", "started_at", "finished_at", "stable_error_code", "updated_at"))
+        audit.save(
+            update_fields=("status", "started_at", "finished_at", "stable_error_code", "updated_at")
+        )
         return audit
 
 
@@ -77,14 +82,23 @@ def execute_website_audit(audit_id) -> dict[str, int | str]:
             max_pages=audit.max_pages,
             max_sitemaps=settings.WEBSITE_AUDIT_MAX_SITEMAPS,
         )
+        finding_drafts = evaluate_deterministic_checks(result)
     except Exception:
         fail_website_audit(audit.id)
         raise
 
+    internal_by_source = Counter(
+        link.source_url for link in result.links if link.is_internal
+    )
+    external_by_source = Counter(
+        link.source_url for link in result.links if not link.is_internal
+    )
+
     with transaction.atomic():
         locked = WebsiteAudit.objects.select_for_update().get(pk=audit.pk)
-        locked.pages.all().delete()
+        locked.findings.all().delete()
         locked.links.all().delete()
+        locked.pages.all().delete()
 
         page_by_url: dict[str, WebsiteAuditPage] = {}
         fetched_count = 0
@@ -116,12 +130,22 @@ def execute_website_audit(audit_id) -> dict[str, int | str]:
                 open_graph=evidence.open_graph if evidence else {},
                 twitter_card=evidence.twitter_card if evidence else {},
                 schema_types=evidence.schema_types if evidence else [],
+                schema_entities=evidence.schema_entities if evidence else [],
+                jsonld_block_count=evidence.jsonld_block_count if evidence else 0,
+                jsonld_invalid_count=evidence.jsonld_invalid_count if evidence else 0,
                 image_count=evidence.image_count if evidence else 0,
                 image_alt_missing_count=evidence.image_alt_missing_count if evidence else 0,
-                internal_links_count=sum(1 for link in result.links if link.source_url == crawled.url and link.is_internal),
-                external_links_count=sum(1 for link in result.links if link.source_url == crawled.url and not link.is_internal),
+                paragraph_count=evidence.paragraph_count if evidence else 0,
+                list_count=evidence.list_count if evidence else 0,
+                table_count=evidence.table_count if evidence else 0,
+                internal_links_count=internal_by_source[crawled.url],
+                external_links_count=external_by_source[crawled.url],
                 text_characters=len(evidence.text) if evidence else 0,
-                text_sample=(evidence.text[: settings.WEBSITE_AUDIT_TEXT_SAMPLE_CHARACTERS] if evidence else ""),
+                text_sample=(
+                    evidence.text[: settings.WEBSITE_AUDIT_TEXT_SAMPLE_CHARACTERS]
+                    if evidence
+                    else ""
+                ),
                 response_sha256=crawled.response_sha256,
                 fetch_error=crawled.fetch_error,
                 fetched_at=timezone.now(),
@@ -142,6 +166,28 @@ def execute_website_audit(audit_id) -> dict[str, int | str]:
         ]
         if link_rows:
             WebsiteAuditLink.objects.bulk_create(link_rows, batch_size=1000)
+
+        finding_rows = [
+            WebsiteAuditFinding(
+                audit=locked,
+                category=draft.category,
+                dimension=draft.dimension,
+                check_key=draft.check_key,
+                rule_version=draft.rule_version,
+                method=draft.method,
+                severity=draft.severity,
+                result=draft.result,
+                title=draft.title,
+                summary=draft.summary,
+                impact=draft.impact,
+                recommendation=draft.recommendation,
+                affected_count=draft.affected_count,
+                evidence=draft.evidence,
+            )
+            for draft in finding_drafts
+        ]
+        if finding_rows:
+            WebsiteAuditFinding.objects.bulk_create(finding_rows, batch_size=500)
 
         locked.root_url = result.root_url
         locked.root_host = result.root_host
@@ -166,4 +212,5 @@ def execute_website_audit(audit_id) -> dict[str, int | str]:
         "discovered": len(result.discovered_urls),
         "pages": len(result.pages),
         "links": len(result.links),
+        "findings": len(finding_drafts),
     }
