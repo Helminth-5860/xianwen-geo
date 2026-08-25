@@ -40,8 +40,7 @@ body {
 }
 
 .keyword-center-stats {
-  padding-top: 14px;
-  border-top: 1px solid #eef2f7;
+  width: 100%;
 }
 
 .geo-sidebar {
@@ -93,22 +92,36 @@ body {
 }
 
 .geo-sidebar nav {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
-.geo-sidebar nav .ant-btn {
-  text-align: left;
-  justify-content: flex-start;
-  height: 42px;
-  padding-inline: 12px;
+.geo-sidebar__menu {
+  border-inline-end: 0 !important;
+  background: transparent;
+}
+
+.geo-sidebar__menu .ant-menu-item,
+.geo-sidebar__menu .ant-menu-submenu-title {
+  width: 100%;
+  min-height: 40px;
+  margin-inline: 0;
+  margin-block: 2px;
   font-weight: 500;
 }
 
-.geo-sidebar nav .ant-btn > span:last-child {
-  overflow: hidden;
-  text-overflow: ellipsis;
+.geo-sidebar__menu .ant-menu-submenu .ant-menu-item {
+  min-height: 36px;
+  font-size: 13px;
+}
+
+.geo-sidebar__menu .ant-menu-item-selected {
+  font-weight: 650;
+}
+
+.geo-sidebar__menu .ant-menu-item-disabled {
+  color: #9aa4b2 !important;
 }
 
 .geo-sidebar__footer {
@@ -398,13 +411,8 @@ body {
   }
 
   .geo-sidebar nav {
-    flex-direction: row;
-    overflow-x: auto;
-    padding-bottom: 2px;
-  }
-
-  .geo-sidebar nav .ant-btn {
-    flex: 0 0 auto;
+    max-height: 60vh;
+    overflow-y: auto;
   }
 
   .subject-workspace-topbar {

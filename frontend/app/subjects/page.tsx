@@ -1,21 +1,17 @@
 "use client";
 
-import { Alert, Button, Card, Popconfirm, Select, Space, Spin, Table, Tag, Typography } from "antd";
+import { Alert, Button, Popconfirm, Space, Spin, Table, Tag, Typography } from "antd";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import { userMessage } from "@/lib/auth-client";
 import {
-  createSubject,
   deleteSubject,
   getSubjects,
-  getSubjectTypes,
   notifySubjectContextUpdated,
   setCurrentSubject,
   type SubjectContext,
   type SubjectSummary,
-  type SubjectType,
 } from "@/lib/subjects-client";
 
 function formatUpdatedAt(value: string) {
@@ -58,34 +54,29 @@ function serviceAreaLabel(value: string) {
 }
 
 export default function SubjectsPage() {
-  const router = useRouter();
   const [subjects, setSubjects] = useState<SubjectSummary[]>();
   const [context, setContext] = useState<SubjectContext>({
     current_subject_id: null,
     version: 0,
   });
-  const [types, setTypes] = useState<SubjectType[]>([]);
-  const [selectedType, setSelectedType] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
-    const [subjectData, typeData] = await Promise.all([getSubjects(), getSubjectTypes()]);
+    const subjectData = await getSubjects();
     setSubjects(subjectData.subjects);
     setContext(subjectData.context);
-    setTypes(typeData);
   }, []);
 
   useEffect(() => {
     let current = true;
     const loadInitial = async () => {
       try {
-        const [subjectData, typeData] = await Promise.all([getSubjects(), getSubjectTypes()]);
+        const subjectData = await getSubjects();
         if (!current) return;
         setSubjects(subjectData.subjects);
         setContext(subjectData.context);
-        setTypes(typeData);
       } catch (reason) {
         if (current) setError(userMessage(reason));
       }
@@ -114,21 +105,6 @@ export default function SubjectsPage() {
     }
   };
 
-  const selected = types.find((item) => item.id === selectedType);
-
-  const create = async () => {
-    if (!selected) return;
-    setBusy(true);
-    try {
-      const created = await createSubject(selected.id, selected.schema_version);
-      router.push(`/subjects/${created.id}`);
-    } catch (reason) {
-      setNotice("");
-      setError(userMessage(reason));
-      setBusy(false);
-    }
-  };
-
   if (subjects === undefined && !error) {
     return <Spin fullscreen description="正在加载主体档案" />;
   }
@@ -150,24 +126,6 @@ export default function SubjectsPage() {
       {notice && (
         <Alert type="success" showIcon message={notice} closable onClose={() => setNotice("")} />
       )}
-      <Card title="新建主体档案" style={{ marginBottom: 20 }}>
-        <Space wrap>
-          <Select
-            aria-label="主体类型"
-            value={selectedType || undefined}
-            placeholder="选择主体类型"
-            onChange={setSelectedType}
-            style={{ minWidth: 240 }}
-            options={types.map((item) => ({
-              value: item.id,
-              label: item.name,
-            }))}
-          />
-          <Button type="primary" loading={busy} disabled={!selected} onClick={() => void create()}>
-            开始填写
-          </Button>
-        </Space>
-      </Card>
       <Table
         rowKey="id"
         dataSource={subjects ?? []}

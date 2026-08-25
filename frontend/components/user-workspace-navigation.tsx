@@ -1,97 +1,191 @@
 "use client";
 
 import {
+  ApartmentOutlined,
   AreaChartOutlined,
   BarChartOutlined,
   FileTextOutlined,
   FundProjectionScreenOutlined,
+  ProfileOutlined,
+  QuestionCircleOutlined,
   RadarChartOutlined,
-  SettingOutlined,
-  SyncOutlined,
   TagsOutlined,
 } from "@ant-design/icons";
-import { Button, Divider, Typography } from "antd";
+import { Button, Divider, Menu, Typography, type MenuProps } from "antd";
+import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useState } from "react";
 
 import { useSubjectWorkspace } from "@/components/subject-workspace-context";
 
-type NavItem = Readonly<{
-  label: string;
-  href: string | ((subjectId: string | null) => string);
-  icon: typeof AreaChartOutlined;
-  active: (pathname: string) => boolean;
-}>;
+type MenuItem = Required<MenuProps>["items"][number];
 
-const workflowItems: NavItem[] = [
-  {
-    label: "GEO 总览",
-    href: "/workspace",
-    icon: AreaChartOutlined,
-    active: (pathname) => pathname === "/workspace",
-  },
-  {
-    label: "主体档案",
-    href: "/subjects",
-    icon: SettingOutlined,
-    active: (pathname) =>
-      pathname.startsWith("/subjects") &&
-      !pathname.includes("/keywords") &&
-      !pathname.includes("/articles"),
-  },
-  {
-    label: "关键词中心",
-    href: (subjectId) => (subjectId ? `/subjects/${subjectId}/keywords` : "/subjects"),
-    icon: TagsOutlined,
-    active: (pathname) => pathname.includes("/keywords"),
-  },
-  {
-    label: "问题库",
-    href: (subjectId) => (subjectId ? `/subjects/${subjectId}/questions` : "/subjects"),
-    icon: TagsOutlined,
-    active: (pathname) => pathname.includes("/questions"),
-  },
-  {
-    label: "AI 可见度检测",
-    href: "/geo/detections",
-    icon: RadarChartOutlined,
-    active: (pathname) => pathname.startsWith("/geo/detections"),
-  },
-  {
-    label: "GEO 报告与洞察",
-    href: "/geo/reports",
-    icon: BarChartOutlined,
-    active: (pathname) =>
-      pathname.startsWith("/geo/reports") &&
-      !pathname.includes("/strategy") &&
-      !pathname.startsWith("/geo/retest"),
-  },
-  {
-    label: "优化策略",
-    href: "/geo/strategy",
-    icon: FundProjectionScreenOutlined,
-    active: (pathname) => pathname.startsWith("/geo/strategy") || pathname.includes("/strategy"),
-  },
-  {
-    label: "内容执行",
-    href: (subjectId) => (subjectId ? `/subjects/${subjectId}/articles/new` : "/subjects"),
-    icon: FileTextOutlined,
-    active: (pathname) => pathname.includes("/articles"),
-  },
-  {
-    label: "复测验证",
-    href: "/geo/retest",
-    icon: SyncOutlined,
-    active: (pathname) => pathname.startsWith("/geo/retest"),
-  },
-];
+const unavailableItem = (key: string, label: string): MenuItem => ({
+  key,
+  label,
+  disabled: true,
+});
+
+const linkedItem = (key: string, label: string, href: string): MenuItem => ({
+  key,
+  label: <Link href={href}>{label}</Link>,
+});
+
+function workspaceMenu(subjectId: string | null): MenuItem[] {
+  const subjectHome = subjectId ? `/subjects/${subjectId}` : "/subjects";
+  const keywordHome = subjectId ? `/subjects/${subjectId}/keywords` : "/subjects";
+  const distillHome = subjectId ? `/subjects/${subjectId}/keywords/distill` : "/subjects";
+  const assetHome = subjectId ? `/subjects/${subjectId}/keywords/assets` : "/subjects";
+  const questionHome = subjectId ? `/subjects/${subjectId}/questions` : "/subjects";
+  const articleHome = subjectId ? `/subjects/${subjectId}/articles/new` : "/subjects";
+
+  return [
+    {
+      key: "overview",
+      icon: <AreaChartOutlined />,
+      label: <Link href="/workspace">GEO 总览</Link>,
+    },
+    {
+      key: "subject",
+      icon: <ProfileOutlined />,
+      label: "主体档案",
+      children: [
+        linkedItem("subject-edit", "编辑主体", subjectHome),
+        linkedItem("subject-manage", "主体管理", "/subjects"),
+      ],
+    },
+    {
+      key: "keywords",
+      icon: <TagsOutlined />,
+      label: "关键词中心",
+      children: [
+        linkedItem("keywords-generate", "关键词生成", keywordHome),
+        linkedItem("keywords-distill", "关键词蒸馏", distillHome),
+        linkedItem("keywords-assets", "关键词资产", assetHome),
+      ],
+    },
+    {
+      key: "questions",
+      icon: <QuestionCircleOutlined />,
+      label: "问题库",
+      children: [
+        linkedItem("questions-generate", "问题生成", questionHome),
+        linkedItem("questions-manage", "问题管理", questionHome),
+      ],
+    },
+    {
+      key: "detections",
+      icon: <RadarChartOutlined />,
+      label: "检测中心",
+      children: [
+        linkedItem("detections-subject", "主体检测", "/geo/detections"),
+        unavailableItem("detections-website", "官网检测"),
+      ],
+    },
+    {
+      key: "insights",
+      icon: <BarChartOutlined />,
+      label: "GEO 洞察",
+      children: [
+        linkedItem("insights-reports", "检测报告", "/geo/reports"),
+        unavailableItem("insights-history", "历史报告对比"),
+        unavailableItem("insights-exposure", "曝光指数"),
+        unavailableItem("insights-competitors", "竞品对比"),
+      ],
+    },
+    {
+      key: "knowledge-graph",
+      icon: <ApartmentOutlined />,
+      label: "知识图谱建设",
+      children: [
+        unavailableItem("knowledge-subject", "主体实体建设"),
+        unavailableItem("knowledge-map", "地图实体建设"),
+        unavailableItem("knowledge-website", "官网实体建设"),
+        unavailableItem("knowledge-media", "媒体信号建设"),
+      ],
+    },
+    {
+      key: "optimization",
+      icon: <FundProjectionScreenOutlined />,
+      label: "优化中心",
+      children: [
+        linkedItem("optimization-strategy", "优化策略", "/geo/strategy"),
+        unavailableItem("optimization-execution", "执行计划"),
+      ],
+    },
+    {
+      key: "content",
+      icon: <FileTextOutlined />,
+      label: "内容资产中心",
+      children: [
+        linkedItem("content-articles", "文章生成", articleHome),
+        unavailableItem("content-images", "图片生成"),
+        unavailableItem("content-video", "视频脚本生成"),
+        unavailableItem("content-library", "内容库"),
+        unavailableItem("content-publishing", "发布管理"),
+      ],
+    },
+  ];
+}
+
+function selectedMenuKey(pathname: string) {
+  if (pathname === "/workspace") return "overview";
+  if (pathname === "/subjects") return "subject-manage";
+  if (/^\/subjects\/[^/]+$/.test(pathname)) return "subject-edit";
+  if (pathname.includes("/keywords/distill")) return "keywords-distill";
+  if (pathname.includes("/keywords/assets")) return "keywords-assets";
+  if (pathname.includes("/keywords")) return "keywords-generate";
+  if (pathname.includes("/questions")) return "questions-generate";
+  if (pathname.startsWith("/geo/detections")) return "detections-subject";
+  if (pathname.startsWith("/geo/reports")) return "insights-reports";
+  if (pathname.startsWith("/geo/strategy") || pathname.includes("/strategy")) {
+    return "optimization-strategy";
+  }
+  if (pathname.includes("/articles")) return "content-articles";
+  return "";
+}
+
+const menuGroupByChild: Readonly<Record<string, string>> = {
+  "subject-edit": "subject",
+  "subject-manage": "subject",
+  "keywords-generate": "keywords",
+  "keywords-distill": "keywords",
+  "keywords-assets": "keywords",
+  "questions-generate": "questions",
+  "questions-manage": "questions",
+  "detections-subject": "detections",
+  "detections-website": "detections",
+  "insights-reports": "insights",
+  "insights-history": "insights",
+  "insights-exposure": "insights",
+  "insights-competitors": "insights",
+  "knowledge-subject": "knowledge-graph",
+  "knowledge-map": "knowledge-graph",
+  "knowledge-website": "knowledge-graph",
+  "knowledge-media": "knowledge-graph",
+  "optimization-strategy": "optimization",
+  "optimization-execution": "optimization",
+  "content-articles": "content",
+  "content-images": "content",
+  "content-video": "content",
+  "content-library": "content",
+  "content-publishing": "content",
+};
 
 export function UserWorkspaceNavigation() {
   const pathname = usePathname();
   const { active, currentSubject, user } = useSubjectWorkspace();
+  const selectedKey = selectedMenuKey(pathname);
+  const activeGroup = menuGroupByChild[selectedKey] ?? null;
+  const [openState, setOpenState] = useState<{
+    pathname: string;
+    key: string | null;
+  }>({ pathname, key: activeGroup });
   if (!active || !user) return null;
   const currentSubjectId = currentSubject?.id ?? null;
   const currentSubjectName =
     currentSubject?.official_name || currentSubject?.subject_type.name || "尚未选择主体";
+  const effectiveOpenKey = openState.pathname === pathname ? openState.key : activeGroup;
 
   return (
     <aside className="geo-sidebar">
@@ -108,21 +202,18 @@ export function UserWorkspaceNavigation() {
       </div>
 
       <nav aria-label="GEO 工作台导航">
-        {workflowItems.map((item) => {
-          const href = typeof item.href === "function" ? item.href(currentSubjectId) : item.href;
-          const Icon = item.icon;
-          return (
-            <Button
-              key={item.label}
-              aria-label={item.label}
-              href={href}
-              type={item.active(pathname) ? "primary" : "text"}
-            >
-              <Icon />
-              {item.label}
-            </Button>
-          );
-        })}
+        <Menu
+          className="geo-sidebar__menu"
+          mode="inline"
+          inlineIndent={18}
+          items={workspaceMenu(currentSubjectId)}
+          selectedKeys={selectedKey ? [selectedKey] : []}
+          openKeys={effectiveOpenKey ? [effectiveOpenKey] : []}
+          onOpenChange={(keys) => {
+            const next = keys.find((key) => key !== effectiveOpenKey) ?? null;
+            setOpenState({ pathname, key: next });
+          }}
+        />
       </nav>
 
       <div className="geo-sidebar__footer">

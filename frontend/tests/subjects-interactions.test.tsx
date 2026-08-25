@@ -10,21 +10,18 @@ import {
   isDistrictSelection,
   SubjectServiceAreaSelector,
 } from "../components/subject-service-area-selector";
-import type { SubjectDetail, SubjectList, SubjectType } from "../lib/subjects-client";
+import type { SubjectDetail, SubjectList } from "../lib/subjects-client";
 
-const push = vi.fn();
 let viewMode = false;
 
 vi.mock("next/navigation", () => ({
   useParams: () => ({ id: "subject-1" }),
-  useRouter: () => ({ push }),
+  useRouter: () => ({ push: vi.fn() }),
   useSearchParams: () => new URLSearchParams(viewMode ? "mode=view" : ""),
 }));
 
-const getSubjectTypes = vi.fn();
 const getSubjectFormSchema = vi.fn();
 const getSubjects = vi.fn();
-const createSubject = vi.fn();
 const getSubject = vi.fn();
 const saveSubject = vi.fn();
 const deleteSubject = vi.fn();
@@ -35,28 +32,14 @@ vi.mock("../lib/subjects-client", async () => {
     await vi.importActual<typeof import("../lib/subjects-client")>("../lib/subjects-client");
   return {
     ...actual,
-    getSubjectTypes: (...args: unknown[]) => getSubjectTypes(...args),
     getSubjectFormSchema: (...args: unknown[]) => getSubjectFormSchema(...args),
     getSubjects: (...args: unknown[]) => getSubjects(...args),
-    createSubject: (...args: unknown[]) => createSubject(...args),
     getSubject: (...args: unknown[]) => getSubject(...args),
     saveSubject: (...args: unknown[]) => saveSubject(...args),
     deleteSubject: (...args: unknown[]) => deleteSubject(...args),
     setCurrentSubject: (...args: unknown[]) => setCurrentSubject(...args),
   };
 });
-
-const subjectType: SubjectType = {
-  id: "type-1",
-  key: "enterprise",
-  name: "\u4f01\u4e1a",
-  description: "\u5f53\u524d\u76ee\u5f55\u63cf\u8ff0",
-  icon_key: "building",
-  status: "active",
-  sort_order: 10,
-  schema_version: 9,
-  version: 3,
-};
 
 const detail: SubjectDetail = {
   id: "subject-1",
@@ -226,10 +209,8 @@ beforeAll(() => {
 
 beforeEach(() => {
   viewMode = false;
-  getSubjectTypes.mockResolvedValue([subjectType]);
   getSubjects.mockResolvedValue(list);
   getSubject.mockResolvedValue(detail);
-  createSubject.mockResolvedValue(detail);
   saveSubject.mockResolvedValue({
     subject: {
       ...detail,
@@ -325,23 +306,10 @@ describe("subject profile interactions", () => {
     expect(screen.getByRole("button", { name: "上传资料" })).toBeTruthy();
     expect(screen.getByLabelText("品牌图片")).toBeTruthy();
   });
-  it("creates a subject and opens the edit page without an activation step", async () => {
-    render(<SubjectsPage />);
-    expect((await screen.findAllByText("\u521b\u5efa\u65f6\u4f01\u4e1a")).length).toBeGreaterThan(
-      0,
-    );
-    await userEvent.click(screen.getByLabelText("\u4e3b\u4f53\u7c7b\u578b"));
-    await userEvent.click(await screen.findByText("\u4f01\u4e1a"));
-    await userEvent.click(screen.getByRole("button", { name: "开始填写" }));
-    await waitFor(() => expect(createSubject).toHaveBeenCalledWith("type-1", 9));
-    expect(push).toHaveBeenCalledWith("/subjects/subject-1");
-    expect(screen.queryByText("激活")).toBeNull();
-    expect(screen.queryByText("归档")).toBeNull();
-  });
-
   it("requires confirmation before removing a subject from the active list", async () => {
     render(<SubjectsPage />);
-    await screen.findByText("新建主体档案");
+    await screen.findByRole("heading", { name: "主体管理" });
+    expect(screen.queryByText("新建主体档案")).toBeNull();
     await userEvent.click(screen.getByRole("button", { name: /删\s*除/ }));
     expect(
       await screen.findByText("删除后会自动切换到其他可用主体；如无其他主体，将清空当前主体。"),

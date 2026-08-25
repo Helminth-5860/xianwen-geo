@@ -272,8 +272,8 @@ def test_production_missing_required_environment_fails_fast(missing):
             "Mock keyword generation provider is forbidden",
         ),
         (
-            {"KEYWORD_GENERATION_PROVIDER": "deepseek"},
-            "Only unavailable keyword generation provider is supported",
+            {"KEYWORD_GENERATION_PROVIDER": "unsupported"},
+            "Only unavailable or deepseek keyword generation provider is supported",
         ),
         (
             {"DISTILLATION_IDEMPOTENCY_HMAC_KEY": "weak"},
@@ -329,6 +329,11 @@ def test_production_rejects_unsafe_configuration(overrides, expected_error):
 
 def test_production_accepts_complete_safe_configuration():
     result = import_settings()
+    assert result.returncode == 0, result.stderr
+
+
+def test_production_accepts_deepseek_keyword_generation_provider():
+    result = import_settings(overrides={"KEYWORD_GENERATION_PROVIDER": "deepseek"})
     assert result.returncode == 0, result.stderr
 
 

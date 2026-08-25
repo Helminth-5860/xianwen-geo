@@ -325,13 +325,6 @@ export function KeywordCenterPage({
       ? currentKeywordVersion.item_count
       : 0;
 
-  const stageLinks: ReadonlyArray<{ key: KeywordCenterStage; label: string; href: string }> = [
-    { key: "generate", label: "1. 关键词生成", href: `/subjects/${params.id}/keywords` },
-    { key: "distill", label: "2. 关键词蒸馏", href: `/subjects/${params.id}/keywords/distill` },
-    { key: "assets", label: "3. 关键词资产", href: `/subjects/${params.id}/keywords/assets` },
-    { key: "questions", label: "问题库", href: `/subjects/${params.id}/questions` },
-  ];
-
   return (
     <main className="page-shell">
       <Link href={`/subjects/${params.id}`}>返回主体详情</Link>
@@ -341,17 +334,6 @@ export function KeywordCenterPage({
         当前企业：{currentSubject?.official_name || currentSubject?.subject_type.name || "当前主体"}
       </Typography.Paragraph>
       <Card className="keyword-center-summary" style={{ marginBottom: 20 }}>
-        <Space wrap size="middle">
-          {stageLinks.map((item) => (
-            <Button
-              key={item.key}
-              type={stage === item.key ? "primary" : "default"}
-              href={item.href}
-            >
-              {item.label}
-            </Button>
-          ))}
-        </Space>
         <Space wrap className="keyword-center-stats">
           <Tag>当前批次 {generation ? generation.id.slice(0, 8) : "当前草稿"}</Tag>
           <Tag color="blue">生成数 {items.length}</Tag>

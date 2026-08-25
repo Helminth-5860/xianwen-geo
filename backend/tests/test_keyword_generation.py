@@ -515,6 +515,16 @@ def test_plan_limit_and_unavailable_provider_fail_before_job_creation():
     assert not KeywordGenerationJob.objects.exists()
 
 
+@override_settings(KEYWORD_GENERATION_PROVIDER="deepseek")
+def test_deepseek_provider_requires_enabled_capability_runtime_before_job_creation():
+    user, subject, version, _ = _facts(generation_limit=2)
+
+    with pytest.raises(KeywordGenerationProviderUnavailable):
+        _create(user, subject, version, target_count=2)
+
+    assert not KeywordGenerationJob.objects.exists()
+
+
 @pytest.mark.django_db(transaction=True)
 def test_generation_api_is_strict_async_owner_scoped_and_hides_internal_data():
     user, subject, version, _ = _facts()

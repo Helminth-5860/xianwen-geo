@@ -211,15 +211,19 @@ class _DeepSeekStructuredContentAdapter:
                 client.close()
 
 
-class DeepSeekStrategyAdapter(_DeepSeekStructuredContentAdapter):
+# Capability adapters outside this module reuse the same hardened DeepSeek JSON transport.
+DeepSeekStructuredContentAdapter = _DeepSeekStructuredContentAdapter
+
+
+class DeepSeekStrategyAdapter(DeepSeekStructuredContentAdapter):
     descriptor = DEEPSEEK_STRATEGY_DESCRIPTOR
 
 
-class DeepSeekSubjectAssistantAdapter(_DeepSeekStructuredContentAdapter):
+class DeepSeekSubjectAssistantAdapter(DeepSeekStructuredContentAdapter):
     descriptor = DEEPSEEK_ASSISTANT_DESCRIPTOR
 
 
-class DeepSeekArticleAdapter(_DeepSeekStructuredContentAdapter):
+class DeepSeekArticleAdapter(DeepSeekStructuredContentAdapter):
     descriptor = DEEPSEEK_ARTICLE_DESCRIPTOR
 
 

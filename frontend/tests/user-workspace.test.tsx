@@ -209,7 +209,7 @@ describe("GEO 产品工作台", () => {
     expect(screen.queryByText("创建账号")).toBeNull();
   });
 
-  it("左侧导航按 GEO 主线组织，并彻底移除内部 AI 对话入口", async () => {
+  it("左侧导航按最终结构使用单开 accordion，并高亮当前二级菜单", async () => {
     const shell = () => (
       <SubjectWorkspaceProvider>
         <SubjectWorkspaceTopbar />
@@ -219,27 +219,50 @@ describe("GEO 产品工作台", () => {
     const { rerender } = render(shell());
     expect(await screen.findByRole("navigation", { name: "GEO 工作台导航" })).toBeTruthy();
     expect(screen.getByLabelText("Workspace 当前主体")).toBeTruthy();
-    expect(screen.getByRole("link", { name: "主体档案" }).getAttribute("href")).toBe("/subjects");
     expect(screen.getByRole("link", { name: "GEO 总览" }).getAttribute("href")).toBe("/workspace");
-    expect(screen.getByRole("link", { name: "关键词中心" }).getAttribute("href")).toBe(
+    for (const label of [
+      "主体档案",
+      "关键词中心",
+      "问题库",
+      "检测中心",
+      "GEO 洞察",
+      "知识图谱建设",
+      "优化中心",
+      "内容资产中心",
+    ]) {
+      expect(screen.getByText(label)).toBeTruthy();
+    }
+    expect(screen.getByRole("link", { name: "套餐与额度" })).toBeTruthy();
+    expect(screen.queryByText("验证优化效果")).toBeNull();
+
+    const subjectMenu = screen.getByRole("menuitem", { name: /主体档案/ });
+    expect(subjectMenu.getAttribute("aria-expanded")).toBe("false");
+    await userEvent.click(screen.getByText("主体档案"));
+    expect(subjectMenu.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByRole("link", { name: "编辑主体" }).getAttribute("href")).toBe(
+      "/subjects/subject-1",
+    );
+    expect(screen.getByRole("link", { name: "主体管理" }).getAttribute("href")).toBe("/subjects");
+    await userEvent.click(screen.getByText("主体档案"));
+    expect(subjectMenu.getAttribute("aria-expanded")).toBe("false");
+
+    await userEvent.click(screen.getByText("关键词中心"));
+    expect(screen.getByRole("link", { name: "关键词生成" }).getAttribute("href")).toBe(
       "/subjects/subject-1/keywords",
     );
-    expect(screen.getByRole("link", { name: "问题库" }).getAttribute("href")).toBe(
-      "/subjects/subject-1/questions",
+    expect(screen.getByRole("link", { name: "关键词蒸馏" }).getAttribute("href")).toBe(
+      "/subjects/subject-1/keywords/distill",
     );
-    expect(screen.getByRole("link", { name: "AI 可见度检测" }).getAttribute("href")).toBe(
-      "/geo/detections",
+    expect(screen.getByRole("link", { name: "关键词资产" }).getAttribute("href")).toBe(
+      "/subjects/subject-1/keywords/assets",
     );
-    expect(screen.getByRole("link", { name: "GEO 报告与洞察" }).getAttribute("href")).toBe(
-      "/geo/reports",
+
+    await userEvent.click(screen.getByText("问题库"));
+    expect(screen.getByRole("link", { name: "问题生成" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "问题管理" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: /关键词中心/ }).getAttribute("aria-expanded")).toBe(
+      "false",
     );
-    expect(screen.getByRole("link", { name: "优化策略" }).getAttribute("href")).toBe(
-      "/geo/strategy",
-    );
-    expect(screen.getByRole("link", { name: "内容执行" }).getAttribute("href")).toBe(
-      "/subjects/subject-1/articles/new",
-    );
-    expect(screen.getByRole("link", { name: "复测验证" }).getAttribute("href")).toBe("/geo/retest");
     expect(screen.queryByRole("link", { name: "显问 AI 助手" })).toBeNull();
 
     pathname = "/admin";

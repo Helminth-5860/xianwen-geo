@@ -163,9 +163,9 @@ for reused in (
 
 if KEYWORD_GENERATION_PROVIDER == "mock":
     raise ImproperlyConfigured("Mock keyword generation provider is forbidden in production.")
-if KEYWORD_GENERATION_PROVIDER != "unavailable":
+if KEYWORD_GENERATION_PROVIDER not in {"unavailable", "deepseek"}:
     raise ImproperlyConfigured(
-        "Only unavailable keyword generation provider is supported in production."
+        "Only unavailable or deepseek keyword generation provider is supported in production."
     )
 if len(KEYWORD_GENERATION_IDEMPOTENCY_HMAC_KEY) < 50:
     raise ImproperlyConfigured(
