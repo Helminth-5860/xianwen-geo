@@ -6,7 +6,10 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 
 import SubjectDetailPage from "../app/subjects/[id]/page";
 import SubjectsPage from "../app/subjects/page";
-import { SubjectServiceAreaSelector } from "../components/subject-service-area-selector";
+import {
+  SubjectServiceAreaSelector,
+  townOptionsForDistrict,
+} from "../components/subject-service-area-selector";
 import type { SubjectDetail, SubjectList, SubjectType } from "../lib/subjects-client";
 
 vi.mock("next/navigation", () => ({ useParams: () => ({ id: "subject-1" }) }));
@@ -16,11 +19,10 @@ const getSubjectFormSchema = vi.fn();
 const getSubjects = vi.fn();
 const createSubject = vi.fn();
 const getSubject = vi.fn();
-const updateSubjectDraft = vi.fn();
+const saveSubject = vi.fn();
 const archiveSubject = vi.fn();
 const activateSubject = vi.fn();
 const setCurrentSubject = vi.fn();
-const commitSubject = vi.fn();
 
 vi.mock("../lib/subjects-client", async () => {
   const actual =
@@ -32,11 +34,10 @@ vi.mock("../lib/subjects-client", async () => {
     getSubjects: (...args: unknown[]) => getSubjects(...args),
     createSubject: (...args: unknown[]) => createSubject(...args),
     getSubject: (...args: unknown[]) => getSubject(...args),
-    updateSubjectDraft: (...args: unknown[]) => updateSubjectDraft(...args),
+    saveSubject: (...args: unknown[]) => saveSubject(...args),
     archiveSubject: (...args: unknown[]) => archiveSubject(...args),
     activateSubject: (...args: unknown[]) => activateSubject(...args),
     setCurrentSubject: (...args: unknown[]) => setCurrentSubject(...args),
-    commitSubject: (...args: unknown[]) => commitSubject(...args),
   };
 });
 
@@ -221,34 +222,19 @@ beforeEach(() => {
   getSubjects.mockResolvedValue(list);
   getSubject.mockResolvedValue(detail);
   createSubject.mockResolvedValue(detail);
-  updateSubjectDraft.mockResolvedValue({
-    ...detail,
-    version: 5,
-    draft_values: { ...detail.draft_values, name: "\u66f4\u65b0\u540d\u79f0" },
+  saveSubject.mockResolvedValue({
+    subject: {
+      ...detail,
+      version: 6,
+      current_version_no: 1,
+      draft_values: { ...detail.draft_values, name: "\u66f4\u65b0\u540d\u79f0" },
+    },
+    version: { version_no: 1 },
+    version_created: true,
   });
   archiveSubject.mockResolvedValue({ ...detail, status: "archived" });
   activateSubject.mockResolvedValue({ ...detail, status: "active" });
   setCurrentSubject.mockResolvedValue(list.context);
-  commitSubject.mockResolvedValue({
-    subject: {
-      ...detail,
-      version: 5,
-      current_version_no: 1,
-      official_name: "\u5386\u53f2\u540d\u79f0",
-      has_uncommitted_changes: false,
-    },
-    version: {
-      id: "version-1",
-      version_no: 1,
-      official_name: "\u5386\u53f2\u540d\u79f0",
-      created_at: "2026-08-11T10:00:00+08:00",
-      schema_version: 2,
-      field_values: detail.draft_values,
-      form_schema: detail.form_schema,
-      names: [],
-      products: [],
-    },
-  });
 });
 
 afterEach(() => {
@@ -256,7 +242,7 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("subject draft interactions", () => {
+describe("subject profile interactions", () => {
   it("renders and edits an existing subject exclusively from its persisted form schema", async () => {
     render(<SubjectDetailPage />);
     const name = await screen.findByLabelText("营业执照主体名称");
@@ -271,7 +257,7 @@ describe("subject draft interactions", () => {
     await userEvent.type(name, "\u66f4\u65b0\u540d\u79f0");
     await userEvent.click(screen.getByRole("button", { name: "保存资料" }));
     await waitFor(() =>
-      expect(updateSubjectDraft).toHaveBeenCalledWith(
+      expect(saveSubject).toHaveBeenCalledWith(
         detail,
         expect.objectContaining({
           name: "\u66f4\u65b0\u540d\u79f0",
@@ -282,17 +268,22 @@ describe("subject draft interactions", () => {
         detail.business_profile,
       ),
     );
-    expect(await screen.findByText("保存成功")).toBeTruthy();
-    expect(commitSubject).not.toHaveBeenCalled();
+    expect(await screen.findByText("保存成功，资料已生效")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "提交正式版本" })).toBeNull();
   });
 
   it("saves the operating profile fields and re-renders the returned values", async () => {
-    updateSubjectDraft.mockImplementationOnce(
+    saveSubject.mockImplementationOnce(
       async (_subject, draftValues, profileValues: SubjectDetail["business_profile"]) => ({
-        ...detail,
-        version: 5,
-        draft_values: draftValues,
-        business_profile: profileValues,
+        subject: {
+          ...detail,
+          version: 6,
+          current_version_no: 1,
+          draft_values: draftValues,
+          business_profile: profileValues,
+        },
+        version: { version_no: 1 },
+        version_created: true,
       }),
     );
     render(<SubjectDetailPage />);
@@ -305,7 +296,7 @@ describe("subject draft interactions", () => {
     await userEvent.click(screen.getByRole("button", { name: "保存资料" }));
 
     await waitFor(() =>
-      expect(updateSubjectDraft).toHaveBeenCalledWith(
+      expect(saveSubject).toHaveBeenCalledWith(
         detail,
         detail.draft_values,
         expect.objectContaining({
@@ -314,7 +305,7 @@ describe("subject draft interactions", () => {
         }),
       ),
     );
-    expect(await screen.findByText("保存成功")).toBeTruthy();
+    expect(await screen.findByText("保存成功，资料已生效")).toBeTruthy();
     expect((screen.getByLabelText("联系人") as HTMLInputElement).value).toBe("李四");
     expect((screen.getByLabelText("小红书") as HTMLInputElement).value).toBe("显问 GEO 主页");
   });
@@ -348,56 +339,15 @@ describe("subject draft interactions", () => {
       "disabled",
       true,
     );
-    expect(
-      screen.getByRole("button", {
-        name: "\u63d0\u4ea4\u6b63\u5f0f\u7248\u672c",
-      }) as HTMLButtonElement,
-    ).toHaveProperty("disabled", true);
+    expect(screen.queryByRole("button", { name: "提交正式版本" })).toBeNull();
   });
 
-  it("submits only server candidates and explicit product confirmations", async () => {
+  it("exposes one save action without draft or formal-version product steps", async () => {
     render(<SubjectDetailPage />);
-    await screen.findByText("\u4ea7\u54c1\u5019\u9009\u786e\u8ba4");
-    const mention = screen.getByLabelText(
-      "\u534e\u4e1c\u52a0\u5165\u63d0\u53ca\u8bcd",
-    ) as HTMLInputElement;
-    expect(mention.disabled).toBe(true);
-    await userEvent.click(
-      screen.getByLabelText("\u534e\u4e1c\u552f\u4e00\u6027\u5df2\u786e\u8ba4"),
-    );
-    expect(mention.disabled).toBe(false);
-    await userEvent.click(mention);
-    await userEvent.click(
-      screen.getByRole("button", { name: "\u63d0\u4ea4\u6b63\u5f0f\u7248\u672c" }),
-    );
-    await userEvent.click(await screen.findByRole("button", { name: "\u786e\u8ba4\u63d0\u4ea4" }));
-    await waitFor(() =>
-      expect(commitSubject).toHaveBeenCalledWith(detail, [
-        {
-          candidate_key: "a".repeat(64),
-          uniqueness_confirmed: true,
-          include_in_mention: true,
-        },
-      ]),
-    );
-    expect(await screen.findByText("\u6b63\u5f0f\u7248\u672c v1 \u5df2\u63d0\u4ea4")).toBeTruthy();
-  });
-
-  it("requires local draft edits to be saved before formal commit", async () => {
-    render(<SubjectDetailPage />);
-    const name = await screen.findByLabelText("营业执照主体名称");
-    await userEvent.clear(name);
-    await userEvent.type(name, "\u672a\u4fdd\u5b58\u540d\u79f0");
-    await userEvent.click(
-      screen.getByRole("button", { name: "\u63d0\u4ea4\u6b63\u5f0f\u7248\u672c" }),
-    );
-    await userEvent.click(await screen.findByRole("button", { name: "\u786e\u8ba4\u63d0\u4ea4" }));
-    expect(
-      await screen.findByText(
-        "\u8bf7\u5148\u4fdd\u5b58\u8349\u7a3f\uff0c\u518d\u63d0\u4ea4\u6b63\u5f0f\u7248\u672c",
-      ),
-    ).toBeTruthy();
-    expect(commitSubject).not.toHaveBeenCalled();
+    await screen.findByRole("button", { name: "保存资料" });
+    expect(screen.queryByText("草稿")).toBeNull();
+    expect(screen.queryByText(/提交正式版本/)).toBeNull();
+    expect(screen.queryByText("产品候选确认")).toBeNull();
   });
 });
 describe("subject risk public boundary", () => {
@@ -420,6 +370,22 @@ describe("subject risk public boundary", () => {
 });
 
 describe("subject service area selector", () => {
+  it("maps district town data to stable 12-digit street codes", () => {
+    expect(
+      townOptionsForDistrict(
+        [
+          { code: "440106", name: "五山街道", town: "001000" },
+          { code: "440106", name: "员村街道", town: "002000" },
+          { code: "440305", name: "南头街道", town: "001000" },
+        ],
+        "440106",
+      ),
+    ).toEqual([
+      { value: "440106001000", label: "五山街道" },
+      { value: "440106002000", label: "员村街道" },
+    ]);
+  });
+
   it("keeps code and name for multiple mainland area levels and supports nationwide", async () => {
     const onChange = vi.fn();
     render(

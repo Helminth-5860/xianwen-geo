@@ -4,12 +4,10 @@ import {
   Alert,
   Button,
   Card,
-  Checkbox,
   Collapse,
   Form,
   Input,
   InputNumber,
-  Popconfirm,
   Select,
   Space,
   Spin,
@@ -24,23 +22,21 @@ import { SubjectAiEnrichment } from "@/components/subject-ai-enrichment";
 import { SubjectDocuments } from "@/components/subject-documents";
 import { SubjectServiceAreaSelector } from "@/components/subject-service-area-selector";
 import { SubjectWebSources } from "@/components/subject-web-sources";
-import { userMessage } from "@/lib/auth-client";
+import { AuthApiError, userMessage } from "@/lib/auth-client";
 import type { SubjectDocument } from "@/lib/documents-client";
 import {
-  commitSubject,
   emptySubjectBusinessProfile,
   getSubject,
-  updateSubjectDraft,
+  saveSubject,
   type PersistedSubjectField,
   type SubjectBusinessProfile,
   type SubjectDetail,
-  type SubjectProductConfirmation,
   type SubjectSocialChannels,
 } from "@/lib/subjects-client";
 
 const statusLabels = {
-  draft: "\u8349\u7a3f",
-  active: "\u5df2\u6fc0\u6d3b",
+  draft: "资料可编辑",
+  active: "正常",
   archived: "\u5df2\u5f52\u6863",
 } as const;
 
@@ -212,6 +208,33 @@ function normalizedValue(field: PersistedSubjectField, value: unknown): unknown 
   if (field.field_type === "multi") return Array.isArray(value) ? value : [];
   if (field.field_type === "number") return typeof value === "number" ? value : null;
   return value ?? "";
+}
+
+function valuesForSave(subject: SubjectDetail, values: Record<string, unknown>) {
+  return Object.fromEntries(
+    subject.form_schema.fields.map((field) => {
+      const value = values[field.field_key];
+      if (field.field_type === "url" && typeof value === "string" && !value.trim()) {
+        return [field.field_key, null];
+      }
+      return [field.field_key, value];
+    }),
+  );
+}
+
+function subjectErrorMessage(reason: unknown, subject: SubjectDetail) {
+  if (reason instanceof AuthApiError && reason.code === "SUBJECT_FIELD_VALUES_INVALID") {
+    const fields = reason.details.fields;
+    if (fields && typeof fields === "object" && !Array.isArray(fields)) {
+      const fieldKey = Object.keys(fields)[0];
+      if (fieldKey === "official_url") {
+        return "官网格式不正确，请填写以 http:// 或 https:// 开头的完整网址";
+      }
+      const schemaField = subject.form_schema.fields.find((field) => field.field_key === fieldKey);
+      return `${fieldLabels[fieldKey] ?? schemaField?.label ?? "主体资料"}格式不正确，请检查后再保存`;
+    }
+  }
+  return userMessage(reason);
 }
 
 function businessProfileValue(profile: SubjectBusinessProfile, key: ProfileFieldKey): string {
@@ -401,19 +424,6 @@ function FieldInput({
   );
 }
 
-function defaultProductConfirmations(subject: SubjectDetail) {
-  return Object.fromEntries(
-    subject.product_candidates.map((candidate) => [
-      candidate.candidate_key,
-      {
-        candidate_key: candidate.candidate_key,
-        uniqueness_confirmed: false,
-        include_in_mention: false,
-      },
-    ]),
-  ) as Record<string, SubjectProductConfirmation>;
-}
-
 export default function SubjectDetailPage() {
   const params = useParams<{ id: string }>();
   const [subject, setSubject] = useState<SubjectDetail>();
@@ -424,10 +434,6 @@ export default function SubjectDetailPage() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [saving, setSaving] = useState(false);
-  const [committing, setCommitting] = useState(false);
-  const [productConfirmations, setProductConfirmations] = useState<
-    Record<string, SubjectProductConfirmation>
-  >({});
   const [documents, setDocuments] = useState<SubjectDocument[]>([]);
 
   const updateBusinessProfileField = (key: ProfileFieldKey, value: string) => {
@@ -455,7 +461,6 @@ export default function SubjectDetailPage() {
         setSubject(data);
         setValues(data.draft_values);
         setBusinessProfile(data.business_profile);
-        setProductConfirmations(defaultProductConfirmations(data));
       })
       .catch((reason) => {
         if (current) setError(userMessage(reason));
@@ -465,89 +470,63 @@ export default function SubjectDetailPage() {
     };
   }, [params.id]);
 
-  const save = async () => {
-    if (!subject) return;
-    const missing = subject.form_schema.fields
+  const validationMessage = (
+    currentSubject: SubjectDetail,
+    currentValues: Record<string, unknown>,
+    currentProfile: SubjectBusinessProfile,
+  ) => {
+    const missing = currentSubject.form_schema.fields
       .map(presentedField)
-      .filter((field) => field.required && profileValueMissing(field, values[field.field_key]));
+      .filter(
+        (field) => field.required && profileValueMissing(field, currentValues[field.field_key]),
+      );
     if (missing.length) {
-      setNotice("");
-      setError(`请先填写：${missing.map((field) => field.label).join("、")}`);
-      return;
+      return `请先填写：${missing.map((field) => field.label).join("、")}`;
     }
     const missingProfile = requiredBusinessProfileFields.filter((field) =>
-      valueMissing(businessProfileValue(businessProfile, field.key)),
+      valueMissing(businessProfileValue(currentProfile, field.key)),
     );
     if (missingProfile.length) {
-      setNotice("");
-      setError(`请先填写：${missingProfile.map((field) => field.label).join("、")}`);
-      return;
+      return `请先填写：${missingProfile.map((field) => field.label).join("、")}`;
     }
+    return "";
+  };
+
+  const persist = async (
+    currentSubject: SubjectDetail,
+    currentValues: Record<string, unknown>,
+    currentProfile: SubjectBusinessProfile,
+    showSuccess: boolean,
+  ) => {
+    const invalid = validationMessage(currentSubject, currentValues, currentProfile);
+    if (invalid) throw new Error(invalid);
+    const result = await saveSubject(
+      currentSubject,
+      valuesForSave(currentSubject, currentValues),
+      currentProfile,
+    );
+    setSubject(result.subject);
+    setValues(result.subject.draft_values);
+    setBusinessProfile(result.subject.business_profile);
+    setError("");
+    if (showSuccess) setNotice("保存成功，资料已生效");
+    return result.subject;
+  };
+
+  const save = async () => {
+    if (!subject) return;
     setSaving(true);
     try {
-      const updated = await updateSubjectDraft(subject, values, businessProfile);
-      setSubject(updated);
-      setValues(updated.draft_values);
-      setBusinessProfile(updated.business_profile);
-      setError("");
-      setProductConfirmations(defaultProductConfirmations(updated));
-      setNotice("保存成功");
+      await persist(subject, values, businessProfile, true);
     } catch (reason) {
       setNotice("");
-      setError(userMessage(reason));
+      setError(subjectErrorMessage(reason, subject));
     } finally {
       setSaving(false);
     }
   };
-
-  const commit = async () => {
-    if (!subject) return;
-    if (JSON.stringify(values) !== JSON.stringify(subject.draft_values)) {
-      setError(
-        "\u8bf7\u5148\u4fdd\u5b58\u8349\u7a3f\uff0c\u518d\u63d0\u4ea4\u6b63\u5f0f\u7248\u672c",
-      );
-      return;
-    }
-    const missingRequired = subject.form_schema.fields.some((field) => {
-      if (!field.required) return false;
-      const value = subject.draft_values[field.field_key];
-      if (value === null || value === undefined) return true;
-      if (typeof value === "string") return value.trim().length === 0;
-      if (Array.isArray(value)) return value.length === 0;
-      return false;
-    });
-    if (missingRequired) {
-      setError("\u8bf7\u5148\u5b8c\u6574\u586b\u5199\u6240\u6709\u5fc5\u586b\u5b57\u6bb5");
-      return;
-    }
-    setCommitting(true);
-    try {
-      const result = await commitSubject(
-        subject,
-        subject.product_candidates.map(
-          (candidate) =>
-            productConfirmations[candidate.candidate_key] ?? {
-              candidate_key: candidate.candidate_key,
-              uniqueness_confirmed: false,
-              include_in_mention: false,
-            },
-        ),
-      );
-      setSubject(result.subject);
-      setValues(result.subject.draft_values);
-      setBusinessProfile(result.subject.business_profile);
-      setProductConfirmations(defaultProductConfirmations(result.subject));
-      setError("");
-      setNotice(`\u6b63\u5f0f\u7248\u672c v${result.version.version_no} \u5df2\u63d0\u4ea4`);
-    } catch (reason) {
-      setNotice("");
-      setError(userMessage(reason));
-    } finally {
-      setCommitting(false);
-    }
-  };
   if (!subject && !error) {
-    return <Spin fullscreen description={"\u6b63\u5728\u52a0\u8f7d\u4e3b\u4f53\u8349\u7a3f"} />;
+    return <Spin fullscreen description="正在加载企业资料" />;
   }
 
   const renderBusinessProfileField = (field: ProfileField) => (
@@ -592,9 +571,7 @@ export default function SubjectDetailPage() {
             <Space wrap>
               <Tag>{statusLabels[subject.status]}</Tag>
               {subject.is_current && <Tag color="blue">当前主体</Tag>}
-              {subject.current_version_no !== null && (
-                <Tag color="green">{`正式版本 v${subject.current_version_no}`}</Tag>
-              )}
+              {subject.current_version_no !== null && <Tag color="green">资料已生效</Tag>}
               {subject.retest_required && <Tag color="orange">资料已更新，建议复测</Tag>}
             </Space>
           </header>
@@ -710,67 +687,6 @@ export default function SubjectDetailPage() {
                   </div>
                 </section>
               ))}
-              {subject.product_candidates.length > 0 && (
-                <Card
-                  size="small"
-                  title={"\u4ea7\u54c1\u5019\u9009\u786e\u8ba4"}
-                  style={{ marginBottom: 20 }}
-                >
-                  <Typography.Paragraph type="secondary">
-                    {
-                      "\u5019\u9009\u4ea7\u54c1\u7531\u670d\u52a1\u7aef\u4ece\u5df2\u4fdd\u5b58\u8349\u7a3f\u6d3e\u751f\uff0c\u4e0d\u80fd\u81ea\u884c\u6dfb\u52a0\u3002"
-                    }
-                  </Typography.Paragraph>
-                  <Space direction="vertical">
-                    {subject.product_candidates.map((candidate) => {
-                      const confirmation = productConfirmations[candidate.candidate_key];
-                      const unique = confirmation?.uniqueness_confirmed ?? false;
-                      return (
-                        <Space key={candidate.candidate_key} wrap>
-                          <Typography.Text>{candidate.display_value}</Typography.Text>
-                          <Checkbox
-                            aria-label={`${candidate.display_value}\u552f\u4e00\u6027\u5df2\u786e\u8ba4`}
-                            checked={unique}
-                            disabled={subject.status === "archived"}
-                            onChange={(event) =>
-                              setProductConfirmations((current) => ({
-                                ...current,
-                                [candidate.candidate_key]: {
-                                  candidate_key: candidate.candidate_key,
-                                  uniqueness_confirmed: event.target.checked,
-                                  include_in_mention: event.target.checked
-                                    ? (current[candidate.candidate_key]?.include_in_mention ??
-                                      false)
-                                    : false,
-                                },
-                              }))
-                            }
-                          >
-                            {"\u5df2\u786e\u8ba4\u552f\u4e00\u6027"}
-                          </Checkbox>
-                          <Checkbox
-                            aria-label={`${candidate.display_value}\u52a0\u5165\u63d0\u53ca\u8bcd`}
-                            checked={confirmation?.include_in_mention ?? false}
-                            disabled={subject.status === "archived" || !unique}
-                            onChange={(event) =>
-                              setProductConfirmations((current) => ({
-                                ...current,
-                                [candidate.candidate_key]: {
-                                  candidate_key: candidate.candidate_key,
-                                  uniqueness_confirmed: true,
-                                  include_in_mention: event.target.checked,
-                                },
-                              }))
-                            }
-                          >
-                            {"\u52a0\u5165\u63d0\u53ca\u8bcd"}
-                          </Checkbox>
-                        </Space>
-                      );
-                    })}
-                  </Space>
-                </Card>
-              )}
               <Space>
                 <Button
                   htmlType="submit"
@@ -780,22 +696,9 @@ export default function SubjectDetailPage() {
                 >
                   保存资料
                 </Button>
-                <Popconfirm
-                  title={"\u63d0\u4ea4\u6b63\u5f0f\u7248\u672c"}
-                  description={
-                    "\u6b63\u5f0f\u7248\u672c\u5c06\u4f5c\u4e3a\u4e0d\u53ef\u53d8\u5386\u53f2\u4fdd\u5b58\u3002"
-                  }
-                  okText={"\u786e\u8ba4\u63d0\u4ea4"}
-                  cancelText={"\u53d6\u6d88"}
-                  onConfirm={() => void commit()}
-                >
-                  <Button loading={committing} disabled={subject.status === "archived"}>
-                    {"\u63d0\u4ea4\u6b63\u5f0f\u7248\u672c"}
-                  </Button>
-                </Popconfirm>
               </Space>
               <Typography.Text type="secondary" className="subject-profile-save-note">
-                保存后停留在当前页面，不会自动创建关键词任务或进入后续流程。
+                保存后资料立即生效并停留在当前页面，不会自动创建关键词任务或进入后续流程。
               </Typography.Text>
             </Form>
           </Card>
@@ -833,20 +736,18 @@ export default function SubjectDetailPage() {
                 children: (
                   <SubjectAiEnrichment
                     subject={subject}
-                    localValues={values}
                     disabled={subject.status === "archived"}
-                    onApplied={(updated) => {
-                      setSubject(updated);
-                      setValues(updated.draft_values);
-                      setProductConfirmations(defaultProductConfirmations(updated));
-                    }}
+                    onSyncBeforeStart={() => persist(subject, values, businessProfile, false)}
+                    onApplied={(updated) =>
+                      persist(updated, updated.draft_values, businessProfile, false)
+                    }
                   />
                 ),
               },
             ]}
           />
           <Typography.Paragraph className="subject-profile-version-link">
-            <Link href={`/subjects/${subject.id}/versions`}>查看正式版本历史</Link>
+            <Link href={`/subjects/${subject.id}/versions`}>查看资料更新记录</Link>
           </Typography.Paragraph>
         </>
       )}

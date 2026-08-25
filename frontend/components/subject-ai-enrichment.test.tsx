@@ -120,13 +120,12 @@ describe("SubjectAiEnrichment", () => {
     render(
       <SubjectAiEnrichment
         subject={subject}
-        localValues={subject.draft_values}
-        onApplied={vi.fn()}
+        onSyncBeforeStart={vi.fn().mockResolvedValue(subject)}
+        onApplied={vi.fn().mockResolvedValue(subject)}
       />,
     );
 
     await userEvent.click(await screen.findByRole("checkbox", { name: /example.com\/about/ }));
-    await userEvent.click(screen.getByRole("checkbox", { name: "主体简介" }));
     await userEvent.click(screen.getByRole("button", { name: "开始 AI 补充" }));
 
     await waitFor(() =>
@@ -158,22 +157,22 @@ describe("SubjectAiEnrichment", () => {
       confirmation_id: "44444444-4444-4444-8444-444444444444",
       subject: appliedSubject,
     });
-    const onApplied = vi.fn();
+    const onApplied = vi.fn().mockResolvedValue(appliedSubject);
     render(
       <SubjectAiEnrichment
         subject={subject}
-        localValues={subject.draft_values}
+        onSyncBeforeStart={vi.fn().mockResolvedValue(subject)}
         onApplied={onApplied}
       />,
     );
 
     await screen.findByText("与当前值冲突");
-    await userEvent.click(screen.getByRole("button", { name: "批量确认并写入草稿" }));
+    await userEvent.click(screen.getByRole("button", { name: "确认并保存" }));
     expect(await screen.findByText("请逐项决定采纳或拒绝全部 AI 建议")).toBeTruthy();
     expect(api.confirmEnrichment).not.toHaveBeenCalled();
 
     await userEvent.click(screen.getByRole("button", { name: "采纳" }));
-    await userEvent.click(screen.getByRole("button", { name: "批量确认并写入草稿" }));
+    await userEvent.click(screen.getByRole("button", { name: "确认并保存" }));
     await waitFor(() => expect(api.confirmEnrichment).toHaveBeenCalledTimes(1));
     expect(api.confirmEnrichment).toHaveBeenCalledWith(subject.id, succeededJob, subject.version, [
       { suggestion_id: succeededJob.suggestions[0].id, accepted: true },
@@ -181,16 +180,27 @@ describe("SubjectAiEnrichment", () => {
     expect(onApplied).toHaveBeenCalledWith(appliedSubject);
   });
 
-  it("blocks starting AI enrichment while manual draft edits are unsaved", async () => {
+  it("automatically synchronizes the current form and can start without external sources", async () => {
+    const syncedSubject = { ...subject, version: 4 };
+    const onSyncBeforeStart = vi.fn().mockResolvedValue(syncedSubject);
+    api.createEnrichment.mockResolvedValue({ ...succeededJob, status: "queued", suggestions: [] });
     render(
       <SubjectAiEnrichment
         subject={subject}
-        localValues={{ ...subject.draft_values, summary: "本地未保存" }}
-        onApplied={vi.fn()}
+        onSyncBeforeStart={onSyncBeforeStart}
+        onApplied={vi.fn().mockResolvedValue(syncedSubject)}
       />,
     );
 
-    expect(await screen.findByText("存在未保存的手工修改，请先保存草稿")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "开始 AI 补充" })).toHaveProperty("disabled", true);
+    await screen.findByRole("checkbox", { name: "主体简介" });
+    await userEvent.click(screen.getByRole("button", { name: "开始 AI 补充" }));
+    await waitFor(() => expect(onSyncBeforeStart).toHaveBeenCalledTimes(1));
+    expect(api.createEnrichment).toHaveBeenCalledWith(
+      subject.id,
+      syncedSubject.version,
+      [],
+      ["summary"],
+    );
+    expect(screen.queryByText(/请先保存草稿/)).toBeNull();
   });
 });

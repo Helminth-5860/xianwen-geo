@@ -21,6 +21,7 @@ from apps.subjects.subject_services import (
     subject_limit_preview,
 )
 from apps.users.models import User
+from tests.subject_risk_helpers import install_empty_published_risk_catalog
 
 PASSWORD = "Correct-Horse-Battery-2026!"
 
@@ -250,6 +251,61 @@ def test_business_profile_persists_round_trips_and_keeps_old_subjects_compatible
     assert data(refreshed)["business_profile"]["contact_name"] == "李四"
     assert data(refreshed)["business_profile"]["social_channels"]["xiaohongshu"] == "示例小红书主页"
     assert SubjectBusinessProfile.objects.filter(subject_id=subject_id).count() == 1
+
+
+@pytest.mark.django_db
+def test_single_save_persists_profile_and_makes_subject_values_effective():
+    install_empty_published_risk_catalog()
+    user = make_user()
+    subject_type = SubjectType.objects.get(key="enterprise")
+    client = client_for(user)
+    created = client.post(
+        "/api/v1/subjects",
+        create_payload(subject_type, {"name": "保存即生效企业"}),
+        format="json",
+    )
+    subject_id = data(created)["id"]
+    profile = {
+        "legal_entity_type": "company",
+        "contact_name": "张三",
+        "contact_phone": "0755-12345678",
+        "business_address": "广东省深圳市南山区示例路 1 号",
+        "primary_business": "企业 GEO 服务",
+        "brand_name": "显问示例",
+        "social_channels": {},
+    }
+
+    saved = client.put(
+        f"/api/v1/subjects/{subject_id}",
+        {
+            "expected_version": data(created)["version"],
+            "values": {**data(created)["draft_values"], "summary": "已保存的企业简介"},
+            "profile_values": profile,
+        },
+        format="json",
+    )
+
+    assert saved.status_code == 200
+    result = data(saved)
+    assert result["version_created"] is True
+    assert result["subject"]["current_version_no"] == 1
+    assert result["version"]["field_values"]["summary"] == "已保存的企业简介"
+    assert result["subject"]["business_profile"]["contact_name"] == "张三"
+    assert SubjectVersion.objects.filter(subject_id=subject_id).count() == 1
+
+    profile_only = client.put(
+        f"/api/v1/subjects/{subject_id}",
+        {
+            "expected_version": result["subject"]["version"],
+            "values": result["subject"]["draft_values"],
+            "profile_values": {**profile, "contact_name": "李四"},
+        },
+        format="json",
+    )
+    assert profile_only.status_code == 200
+    assert data(profile_only)["version_created"] is False
+    assert data(profile_only)["subject"]["business_profile"]["contact_name"] == "李四"
+    assert SubjectVersion.objects.filter(subject_id=subject_id).count() == 1
 
 
 @pytest.mark.django_db

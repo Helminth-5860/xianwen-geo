@@ -332,6 +332,10 @@ class SubjectDraftUpdateRequestSerializer(StrictSerializer):
     profile_values = SubjectBusinessProfileInputSerializer(required=False)
 
 
+class SubjectSaveRequestSerializer(SubjectDraftUpdateRequestSerializer):
+    pass
+
+
 class SubjectStatusRequestSerializer(StrictSerializer):
     expected_version = serializers.IntegerField(min_value=1)
 

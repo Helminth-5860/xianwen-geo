@@ -1,7 +1,7 @@
 "use client";
 
 import { Alert, Button, Card, Checkbox, List, Space, Tag, Typography } from "antd";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { userMessage } from "@/lib/auth-client";
 import {
@@ -25,14 +25,14 @@ function displayValue(value: unknown) {
 
 export function SubjectAiEnrichment({
   subject,
-  localValues,
   disabled = false,
+  onSyncBeforeStart,
   onApplied,
 }: {
   subject: SubjectDetail;
-  localValues: Record<string, unknown>;
   disabled?: boolean;
-  onApplied: (subject: SubjectDetail) => void;
+  onSyncBeforeStart: () => Promise<SubjectDetail>;
+  onApplied: (subject: SubjectDetail) => Promise<SubjectDetail>;
 }) {
   const [sources, setSources] = useState<EnrichmentSource[]>([]);
   const [targets, setTargets] = useState<EnrichmentTarget[]>([]);
@@ -44,15 +44,13 @@ export function SubjectAiEnrichment({
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
-  const dirty = useMemo(
-    () => JSON.stringify(localValues) !== JSON.stringify(subject.draft_values),
-    [localValues, subject.draft_values],
-  );
-
   const load = async () => {
     const result = await getEnrichmentSources(subject.id);
     setSources(result.sources);
     setTargets(result.target_fields);
+    setSelectedTargets((current) =>
+      current.length ? current : result.target_fields.slice(0, 20).map((item) => item.field_key),
+    );
     setJob(result.latest_job);
     if (result.latest_job?.suggestions.length) {
       setDecisions({});
@@ -66,6 +64,11 @@ export function SubjectAiEnrichment({
         if (!current) return;
         setSources(result.sources);
         setTargets(result.target_fields);
+        setSelectedTargets((selected) =>
+          selected.length
+            ? selected
+            : result.target_fields.slice(0, 20).map((item) => item.field_key),
+        );
         setJob(result.latest_job);
       })
       .catch((reason) => current && setError(userMessage(reason)));
@@ -88,23 +91,20 @@ export function SubjectAiEnrichment({
   }, [job?.id, job?.status, subject.id]);
 
   const start = async () => {
-    if (dirty) {
-      setError("请先保存当前手工修改的草稿，再使用 AI 辅助补充");
-      return;
-    }
     const chosenSources = sources.filter((source) =>
       selectedSources.includes(`${source.source_type}:${source.parsed_version_id}`),
     );
-    if (!chosenSources.length || !selectedTargets.length) {
-      setError("请至少选择一个已确认来源和一个目标字段");
+    if (!selectedTargets.length) {
+      setError("请至少选择一个需要 AI 补充的字段");
       return;
     }
     setBusy(true);
     setError("");
     try {
+      const syncedSubject = await onSyncBeforeStart();
       const created = await createEnrichment(
-        subject.id,
-        subject.version,
+        syncedSubject.id,
+        syncedSubject.version,
         chosenSources,
         selectedTargets,
       );
@@ -136,8 +136,8 @@ export function SubjectAiEnrichment({
           accepted: decisions[suggestion.id],
         })),
       );
-      onApplied(result.subject);
-      setMessage("AI 建议决定已应用到草稿；仍需由你另行提交正式版本");
+      await onApplied(result.subject);
+      setMessage("AI 建议已保存并生效");
       await load();
     } catch (reason) {
       setError(userMessage(reason));
@@ -149,12 +149,11 @@ export function SubjectAiEnrichment({
   return (
     <Card title="AI 辅助补充" style={{ marginBottom: 20 }}>
       <Typography.Paragraph type="secondary">
-        AI 只读取你明确选择的已确认资料。建议确认前不会写入主体草稿，也不会自动提交正式版本。
+        点击开始时会先自动保存当前表单。AI 读取当前企业资料；已确认的文件或网页可作为可选补充来源。
       </Typography.Paragraph>
-      {dirty && <Alert type="warning" showIcon message="存在未保存的手工修改，请先保存草稿" />}
       {error && <Alert type="error" showIcon message={error} />}
       {message && <Alert type="info" showIcon message={message} />}
-      <Typography.Title level={5}>已确认资料来源（最多选择 8 个）</Typography.Title>
+      <Typography.Title level={5}>可选资料来源（最多选择 8 个）</Typography.Title>
       <List
         size="small"
         dataSource={sources}
@@ -206,7 +205,7 @@ export function SubjectAiEnrichment({
       <div style={{ marginTop: 16 }}>
         <Button
           type="primary"
-          disabled={disabled || busy || dirty}
+          disabled={disabled || busy}
           loading={busy}
           onClick={() => void start()}
         >
@@ -282,7 +281,7 @@ export function SubjectAiEnrichment({
                 disabled={disabled}
                 onClick={() => void apply()}
               >
-                批量确认并写入草稿
+                确认并保存
               </Button>
             </>
           )}

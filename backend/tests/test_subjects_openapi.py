@@ -54,6 +54,7 @@ def test_subject_schema_writes_require_csrf_and_expected_versions():
         ("/subjects/{subjectId}/archive", "post"),
         ("/subjects/{subjectId}/activate", "post"),
         ("/subjects/{subjectId}/commit", "post"),
+        ("/subjects/{subjectId}", "put"),
         ("/subjects/current", "put"),
         ("/admin/subject-types/{subjectTypeId}", "patch"),
         ("/admin/subject-types/{subjectTypeId}/enable", "post"),
@@ -86,6 +87,11 @@ def test_subject_schema_writes_require_csrf_and_expected_versions():
     assert "expected_config_version" in schemas["SubjectFieldOptionCreateRequest"]["required"]
     assert "expected_schema_version" in schemas["SubjectCreateRequest"]["required"]
     assert "expected_version" in schemas["SubjectDraftUpdateRequest"]["required"]
+    assert set(schemas["SubjectSaveRequest"]["required"]) == {
+        "expected_version",
+        "values",
+        "profile_values",
+    }
     assert "expected_version" in schemas["SubjectStatusRequest"]["required"]
     assert "expected_version" in schemas["SubjectCurrentRequest"]["required"]
     commit = schemas["SubjectCommitRequest"]

@@ -352,6 +352,21 @@ export const createSubject = (
 
 export const getSubject = (id: string) => get<SubjectDetail>(`/subjects/${id}`);
 
+export const saveSubject = (
+  subject: Pick<SubjectDetail, "id" | "version">,
+  values: Record<string, unknown>,
+  profileValues: SubjectBusinessProfile,
+) =>
+  write<{
+    subject: SubjectDetail;
+    version: SubjectVersionDetail;
+    version_created: boolean;
+  }>("PUT", `/subjects/${subject.id}`, {
+    expected_version: subject.version,
+    values,
+    profile_values: profileValues,
+  });
+
 export const updateSubjectDraft = (
   subject: Pick<SubjectDetail, "id" | "version">,
   values: Record<string, unknown>,

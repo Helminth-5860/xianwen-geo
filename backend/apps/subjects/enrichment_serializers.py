@@ -13,7 +13,7 @@ class SubjectEnrichmentCreateSerializer(StrictSerializer):
     expected_subject_version = serializers.IntegerField(min_value=1)
     sources = SubjectEnrichmentSourceRefSerializer(
         many=True,
-        allow_empty=False,
+        allow_empty=True,
     )
     target_field_keys = serializers.ListField(
         child=serializers.CharField(max_length=64),

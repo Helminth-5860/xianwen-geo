@@ -17,6 +17,7 @@ def test_enrichment_openapi_paths_are_strict_and_owner_scoped():
     confirm_schema = SPEC["components"]["schemas"]["SubjectEnrichmentConfirmRequest"]
     assert create_schema["additionalProperties"] is False
     assert create_schema["properties"]["sources"]["maxItems"] == 8
+    assert "minItems" not in create_schema["properties"]["sources"]
     assert create_schema["properties"]["target_field_keys"]["maxItems"] == 20
     assert confirm_schema["additionalProperties"] is False
     assert "job_id" not in confirm_schema["properties"]

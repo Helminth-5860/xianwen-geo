@@ -1,6 +1,6 @@
 "use client";
 
-import { Alert, Button, Cascader, Checkbox, Empty, Input, Space, Tag, Typography } from "antd";
+import { Alert, Button, Cascader, Checkbox, Empty, Select, Space, Tag, Typography } from "antd";
 import { useMemo, useState } from "react";
 
 type DivisionNode = Readonly<{
@@ -16,6 +16,14 @@ type DivisionOption = {
 };
 
 type StoredAreaNode = Readonly<{ code: string; name: string }>;
+
+type TownNode = Readonly<{
+  code: string;
+  name: string;
+  town: string | 0;
+}>;
+
+type StreetOption = Readonly<{ value: string; label: string }>;
 
 type StoredServiceArea = Readonly<{
   version: 1;
@@ -102,6 +110,15 @@ function areaLevel(path: readonly StoredAreaNode[], hasStreet: boolean) {
   return "city" as const;
 }
 
+export function townOptionsForDistrict(
+  towns: readonly TownNode[],
+  districtCode: string,
+): StreetOption[] {
+  return towns
+    .filter((item) => item.code === districtCode && typeof item.town === "string")
+    .map((item) => ({ value: `${item.code}${item.town}`, label: item.name }));
+}
+
 export function SubjectServiceAreaSelector({
   value,
   disabled,
@@ -113,11 +130,12 @@ export function SubjectServiceAreaSelector({
 }) {
   const parsed = useMemo(() => parseStoredValue(value), [value]);
   const [selectedPath, setSelectedPath] = useState<string[]>([]);
-  const [streetName, setStreetName] = useState("");
-  const [streetCode, setStreetCode] = useState("");
+  const [selectedStreet, setSelectedStreet] = useState<string>();
+  const [streetOptions, setStreetOptions] = useState<StreetOption[]>([]);
   const [validationMessage, setValidationMessage] = useState("");
   const [mainlandOptions, setMainlandOptions] = useState<DivisionOption[]>([]);
   const [loadingOptions, setLoadingOptions] = useState(false);
+  const [loadingStreets, setLoadingStreets] = useState(false);
 
   const update = (next: StoredServiceArea) => {
     setValidationMessage("");
@@ -141,20 +159,36 @@ export function SubjectServiceAreaSelector({
     }
   };
 
+  const loadStreetOptions = async (path: readonly string[]) => {
+    const districtCode = path[path.length - 1];
+    if (path.length < 3 || !districtCode) {
+      setStreetOptions([]);
+      return;
+    }
+    setLoadingStreets(true);
+    try {
+      const townModule = await import("@province-city-china/town");
+      setStreetOptions(
+        townOptionsForDistrict(townModule.default as readonly TownNode[], districtCode),
+      );
+    } catch {
+      setStreetOptions([]);
+      setValidationMessage("乡镇街道数据暂时无法加载，可先保存到区县后稍后补充");
+    } finally {
+      setLoadingStreets(false);
+    }
+  };
+
   const addArea = () => {
     const path = resolvePath(mainlandOptions, selectedPath);
     if (!path.length) {
       setValidationMessage("请先选择省、市或区县");
       return;
     }
-    if (Boolean(streetName.trim()) !== Boolean(streetCode.trim())) {
-      setValidationMessage("填写乡镇/街道时，名称和行政区划代码需要同时填写");
-      return;
-    }
-    const street =
-      streetName.trim() && streetCode.trim()
-        ? { code: streetCode.trim(), name: streetName.trim() }
-        : undefined;
+    const streetOption = streetOptions.find((option) => option.value === selectedStreet);
+    const street = streetOption
+      ? { code: streetOption.value, name: streetOption.label }
+      : undefined;
     const fullPath = street ? [...path, street] : path;
     const leaf = fullPath[fullPath.length - 1];
     if (!leaf) return;
@@ -174,8 +208,8 @@ export function SubjectServiceAreaSelector({
       update({ version: 1, nationwide: false, areas: [...parsed.data.areas, candidate] });
     }
     setSelectedPath([]);
-    setStreetName("");
-    setStreetCode("");
+    setSelectedStreet(undefined);
+    setStreetOptions([]);
   };
 
   return (
@@ -204,25 +238,35 @@ export function SubjectServiceAreaSelector({
             options={mainlandOptions}
             placeholder={loadingOptions ? "正在加载行政区划…" : "选择省 / 市 / 区县"}
             style={{ width: "100%" }}
-            onChange={(next) => setSelectedPath(next.map(String))}
+            onChange={(next) => {
+              const path = next.map(String);
+              setSelectedPath(path);
+              setSelectedStreet(undefined);
+              setValidationMessage("");
+              void loadStreetOptions(path);
+            }}
             onOpenChange={(open) => {
               if (open) void loadDivisionOptions();
             }}
           />
           <div className="subject-area-street-grid">
-            <Input
-              aria-label="乡镇或街道名称"
-              value={streetName}
-              disabled={disabled}
-              placeholder="乡镇 / 街道（选填）"
-              onChange={(event) => setStreetName(event.target.value)}
-            />
-            <Input
-              aria-label="乡镇或街道代码"
-              value={streetCode}
-              disabled={disabled}
-              placeholder="行政区划代码（选填）"
-              onChange={(event) => setStreetCode(event.target.value)}
+            <Select
+              aria-label="乡镇或街道"
+              value={selectedStreet}
+              disabled={disabled || selectedPath.length < 3}
+              loading={loadingStreets}
+              allowClear
+              showSearch
+              optionFilterProp="label"
+              options={streetOptions}
+              placeholder={
+                selectedPath.length < 3
+                  ? "请先选择到区县"
+                  : loadingStreets
+                    ? "正在加载乡镇街道…"
+                    : "选择乡镇 / 街道（选填）"
+              }
+              onChange={setSelectedStreet}
             />
             <Button disabled={disabled} onClick={addArea}>
               添加服务区域
@@ -261,7 +305,7 @@ export function SubjectServiceAreaSelector({
         </Space>
       )}
       <Typography.Text type="secondary">
-        支持多选；系统同时保存行政区划代码与名称。乡镇/街道可按实际经营范围补充。
+        支持多选；可选择到省、市、区县或乡镇街道，系统同时保存行政区划代码与名称。门牌号请在上方经营地址中填写。
       </Typography.Text>
     </Space>
   );

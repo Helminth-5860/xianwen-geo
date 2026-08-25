@@ -825,6 +825,29 @@ paths:
               schema: {$ref: '#/components/schemas/SubjectEnvelope'}
         '401': {$ref: '#/components/responses/AuthRequired'}
         '404': {$ref: '#/components/responses/ResourceNotFound'}
+    put:
+      tags: [Subjects]
+      summary: Save subject profile and make its current semantic values effective
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SubjectSaveRequest'}
+      responses:
+        '200':
+          description: Profile saved and effective version returned
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SubjectSaveEnvelope'}
+        '400': {$ref: '#/components/responses/InvalidJson'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/CsrfFailed'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+        '409': {$ref: '#/components/responses/BusinessConflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
   /subjects/{subjectId}/commit:
     parameters:
       - $ref: '#/components/parameters/SubjectId'
@@ -4461,6 +4484,26 @@ components:
       properties:
         expected_version: {type: integer, minimum: 1}
         values: {type: object, additionalProperties: true}
+    SubjectBusinessProfileInput:
+      type: object
+      additionalProperties: false
+      required: [legal_entity_type, contact_name, contact_phone, business_address, primary_business]
+      properties:
+        legal_entity_type: {type: string, enum: [company, individual_business]}
+        contact_name: {type: string, maxLength: 100}
+        contact_phone: {type: string, maxLength: 32}
+        business_address: {type: string, maxLength: 500}
+        primary_business: {type: string, maxLength: 5000}
+        brand_name: {type: string, maxLength: 200, default: ''}
+        social_channels: {type: object, additionalProperties: {type: string}, default: {}}
+    SubjectSaveRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version, values, profile_values]
+      properties:
+        expected_version: {type: integer, minimum: 1}
+        values: {type: object, additionalProperties: true}
+        profile_values: {$ref: '#/components/schemas/SubjectBusinessProfileInput'}
     SubjectStatusRequest:
       type: object
       additionalProperties: false
@@ -4705,10 +4748,11 @@ components:
       allOf:
         - $ref: '#/components/schemas/SubjectSummary'
         - type: object
-          required: [schema_version, draft_values, form_schema, product_candidates, has_uncommitted_changes, risk]
+          required: [schema_version, draft_values, business_profile, form_schema, product_candidates, has_uncommitted_changes, risk]
           properties:
             schema_version: {type: integer, minimum: 1}
             draft_values: {type: object, additionalProperties: true}
+            business_profile: {$ref: '#/components/schemas/SubjectBusinessProfileInput'}
             form_schema: {$ref: '#/components/schemas/PersistedSubjectFormSchema'}
             product_candidates:
               type: array
@@ -4760,6 +4804,14 @@ components:
       properties:
         subject: {$ref: '#/components/schemas/SubjectDetail'}
         version: {$ref: '#/components/schemas/SubjectVersionDetail'}
+    SubjectSaveResult:
+      type: object
+      additionalProperties: false
+      required: [subject, version, version_created]
+      properties:
+        subject: {$ref: '#/components/schemas/SubjectDetail'}
+        version: {$ref: '#/components/schemas/SubjectVersionDetail'}
+        version_created: {type: boolean}
     SubjectContext:
       type: object
       additionalProperties: false
@@ -4771,6 +4823,8 @@ components:
       allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, properties: {data: {$ref: '#/components/schemas/SubjectDetail'}}}]
     SubjectCommitEnvelope:
       allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, properties: {data: {$ref: '#/components/schemas/SubjectCommitResult'}}}]
+    SubjectSaveEnvelope:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, properties: {data: {$ref: '#/components/schemas/SubjectSaveResult'}}}]
     SubjectVersionEnvelope:
       allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, properties: {data: {$ref: '#/components/schemas/SubjectVersionDetail'}}}]
     SubjectVersionListEnvelope:
@@ -7411,7 +7465,7 @@ components:
       required: [expected_subject_version, sources, target_field_keys]
       properties:
         expected_subject_version: {type: integer, minimum: 1}
-        sources: {type: array, minItems: 1, maxItems: 8, uniqueItems: true, items: {$ref: '#/components/schemas/SubjectEnrichmentSourceRef'}}
+        sources: {type: array, maxItems: 8, uniqueItems: true, items: {$ref: '#/components/schemas/SubjectEnrichmentSourceRef'}}
         target_field_keys: {type: array, minItems: 1, maxItems: 20, uniqueItems: true, items: {type: string, maxLength: 64}}
     SubjectEnrichmentDecision:
       type: object

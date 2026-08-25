@@ -402,6 +402,27 @@ def test_unavailable_provider_fails_before_creating_job():
     assert not SubjectEnrichmentJob.objects.exists()
 
 
+def test_current_subject_values_can_drive_enrichment_without_external_sources():
+    user, subject = _facts()
+    request = RequestFactory().post("/", REMOTE_ADDR="127.0.0.1")
+    with patch("apps.subjects.enrichment_services.enforce_enrichment_limits"):
+        job, created = create_enrichment_job(
+            request=request,
+            user_id=user.pk,
+            subject_id=subject.pk,
+            expected_subject_version=subject.version,
+            source_refs=[],
+            target_field_keys=["summary"],
+            idempotency_key="subject-enrichment-current-values-only",
+            request_id=uuid.uuid4(),
+        )
+
+    assert created is True
+    assert job.sources.count() == 0
+    assert execute_enrichment(job_id=job.pk)["status"] == "succeeded"
+    assert job.suggestions.count() == 1
+
+
 @override_settings(SUBJECT_ENRICHMENT_MOCK_SCENARIO="temporary")
 def test_transient_provider_failure_persists_retry_wait_without_suggestions():
     user, subject = _facts()

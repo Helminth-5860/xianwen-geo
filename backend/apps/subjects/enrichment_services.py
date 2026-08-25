@@ -160,7 +160,7 @@ class SelectedSource:
 def _selected_sources_locked(
     *, user: User, subject: Subject, refs: list[dict[str, Any]]
 ) -> list[SelectedSource]:
-    if not refs or len(refs) > settings.SUBJECT_ENRICHMENT_MAX_SOURCES:
+    if len(refs) > settings.SUBJECT_ENRICHMENT_MAX_SOURCES:
         raise SubjectEnrichmentSourceInvalid
     seen: set[tuple[str, str]] = set()
     rows: list[SelectedSource] = []
@@ -574,9 +574,11 @@ def _validate_response(job: SubjectEnrichmentJob, response):
         seen.add(suggestion.field_key)
         if suggestion.confidence not in {"high", "medium", "low"}:
             raise SubjectEnrichmentInvalidResponse
-        if not suggestion.source_ids or len(suggestion.source_ids) != len(
-            set(suggestion.source_ids)
-        ):
+        if len(suggestion.source_ids) != len(set(suggestion.source_ids)):
+            raise SubjectEnrichmentInvalidResponse
+        if source_ids and not suggestion.source_ids:
+            raise SubjectEnrichmentInvalidResponse
+        if not source_ids and suggestion.source_ids:
             raise SubjectEnrichmentInvalidResponse
         if not set(suggestion.source_ids) <= source_ids:
             raise SubjectEnrichmentInvalidResponse

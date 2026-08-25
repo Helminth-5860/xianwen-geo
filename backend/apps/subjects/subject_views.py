@@ -13,6 +13,7 @@ from apps.core.error_codes import ErrorCode
 from apps.core.responses import error_response
 
 from .permissions import IsAvailableAuthenticatedUser
+from .profile_save_services import save_subject_profile
 from .risk_services import SubjectRiskError
 from .serializers import (
     SubjectCommitRequestSerializer,
@@ -21,6 +22,7 @@ from .serializers import (
     SubjectCurrentRequestSerializer,
     SubjectDetailSerializer,
     SubjectDraftUpdateRequestSerializer,
+    SubjectSaveRequestSerializer,
     SubjectStatusRequestSerializer,
     SubjectSummarySerializer,
     SubjectVersionDetailSerializer,
@@ -145,6 +147,37 @@ class SubjectDetailView(APIView):
                 subject,
                 current_subject_id=context.current_subject_id if context else None,
             )
+        )
+
+    @method_decorator(csrf_protect)
+    def put(self, request, subject_id):
+        serializer = SubjectSaveRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            subject, version, version_created = save_subject_profile(
+                user_id=request.user.pk,
+                subject_id=subject_id,
+                expected_version=serializer.validated_data["expected_version"],
+                values=dict(serializer.validated_data["values"]),
+                profile_values=(
+                    dict(serializer.validated_data["profile_values"])
+                    if "profile_values" in serializer.validated_data
+                    else None
+                ),
+                request_id=request.request_id,
+            )
+        except (SubjectBusinessError, SubjectRiskError) as exc:
+            return _error(exc, request)
+        context = subject_context_for_user(request.user)
+        return Response(
+            {
+                "subject": _detail(
+                    subject,
+                    current_subject_id=context.current_subject_id if context else None,
+                ),
+                "version": SubjectVersionDetailSerializer(version).data,
+                "version_created": version_created,
+            }
         )
 
 
