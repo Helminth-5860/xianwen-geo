@@ -328,6 +328,9 @@ def test_no_plan_allows_only_one_current_draft_but_archived_does_not_count():
     assert archived.status_code == 200
     assert data(archived)["status"] == "archived"
     assert SubjectContext.objects.get(user=user).current_subject is None
+    assert data(client.get("/api/v1/subjects"))["subjects"] == []
+    archived_rows = data(client.get("/api/v1/subjects?status=archived"))["subjects"]
+    assert [row["id"] for row in archived_rows] == [first_id]
 
     replacement = client.post("/api/v1/subjects", create_payload(subject_type), format="json")
     assert replacement.status_code == 201

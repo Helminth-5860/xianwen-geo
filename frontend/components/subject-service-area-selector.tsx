@@ -1,7 +1,7 @@
 "use client";
 
 import { Alert, Button, Cascader, Checkbox, Empty, Select, Space, Tag, Typography } from "antd";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 type DivisionNode = Readonly<{
   code: string;
@@ -16,12 +16,6 @@ type DivisionOption = {
 };
 
 type StoredAreaNode = Readonly<{ code: string; name: string }>;
-
-type TownNode = Readonly<{
-  code: string;
-  name: string;
-  town: string | 0;
-}>;
 
 type StreetOption = Readonly<{ value: string; label: string }>;
 
@@ -110,14 +104,11 @@ function areaLevel(path: readonly StoredAreaNode[], hasStreet: boolean) {
   return "city" as const;
 }
 
-export function townOptionsForDistrict(
-  towns: readonly TownNode[],
-  districtCode: string,
-): StreetOption[] {
-  return towns
-    .filter((item) => item.code === districtCode && typeof item.town === "string")
-    .map((item) => ({ value: `${item.code}${item.town}`, label: item.name }));
+export function isDistrictSelection(path: readonly string[]) {
+  return path.length >= 3 || (path.length >= 2 && DIRECT_MUNICIPALITY_CODES.has(path[0] ?? ""));
 }
+
+const streetCache = new Map<string, StreetOption[]>();
 
 export function SubjectServiceAreaSelector({
   value,
@@ -136,6 +127,7 @@ export function SubjectServiceAreaSelector({
   const [mainlandOptions, setMainlandOptions] = useState<DivisionOption[]>([]);
   const [loadingOptions, setLoadingOptions] = useState(false);
   const [loadingStreets, setLoadingStreets] = useState(false);
+  const streetRequestId = useRef(0);
 
   const update = (next: StoredServiceArea) => {
     setValidationMessage("");
@@ -160,22 +152,44 @@ export function SubjectServiceAreaSelector({
   };
 
   const loadStreetOptions = async (path: readonly string[]) => {
+    const requestId = ++streetRequestId.current;
     const districtCode = path[path.length - 1];
-    if (path.length < 3 || !districtCode) {
+    if (!isDistrictSelection(path) || !districtCode) {
       setStreetOptions([]);
+      setLoadingStreets(false);
+      return;
+    }
+    const cached = streetCache.get(districtCode);
+    if (cached) {
+      setStreetOptions(cached);
+      setLoadingStreets(false);
       return;
     }
     setLoadingStreets(true);
     try {
-      const townModule = await import("@province-city-china/town");
-      setStreetOptions(
-        townOptionsForDistrict(townModule.default as readonly TownNode[], districtCode),
-      );
+      const response = await fetch(`/region-data/towns/${encodeURIComponent(districtCode)}`, {
+        headers: { Accept: "application/json" },
+      });
+      if (!response.ok) throw new Error("Town data request failed");
+      const payload = (await response.json()) as { towns?: unknown };
+      const options = Array.isArray(payload.towns)
+        ? payload.towns.filter(
+            (item): item is StreetOption =>
+              typeof item === "object" &&
+              item !== null &&
+              typeof (item as StreetOption).value === "string" &&
+              typeof (item as StreetOption).label === "string",
+          )
+        : [];
+      streetCache.set(districtCode, options);
+      if (streetRequestId.current === requestId) setStreetOptions(options);
     } catch {
-      setStreetOptions([]);
-      setValidationMessage("乡镇街道数据暂时无法加载，可先保存到区县后稍后补充");
+      if (streetRequestId.current === requestId) {
+        setStreetOptions([]);
+        setValidationMessage("乡镇街道数据暂时无法加载，可先保存到区县后稍后补充");
+      }
     } finally {
-      setLoadingStreets(false);
+      if (streetRequestId.current === requestId) setLoadingStreets(false);
     }
   };
 
@@ -253,14 +267,14 @@ export function SubjectServiceAreaSelector({
             <Select
               aria-label="乡镇或街道"
               value={selectedStreet}
-              disabled={disabled || selectedPath.length < 3}
+              disabled={disabled || !isDistrictSelection(selectedPath)}
               loading={loadingStreets}
               allowClear
               showSearch
               optionFilterProp="label"
               options={streetOptions}
               placeholder={
-                selectedPath.length < 3
+                !isDistrictSelection(selectedPath)
                   ? "请先选择到区县"
                   : loadingStreets
                     ? "正在加载乡镇街道…"

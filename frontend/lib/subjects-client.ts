@@ -383,6 +383,8 @@ export const archiveSubject = (subject: Pick<SubjectSummary, "id" | "version">) 
     expected_version: subject.version,
   });
 
+export const deleteSubject = archiveSubject;
+
 export const activateSubject = (subject: Pick<SubjectSummary, "id" | "version">) =>
   post<SubjectDetail>(`/subjects/${subject.id}/activate`, {
     expected_version: subject.version,

@@ -97,6 +97,8 @@ class SubjectListCreateView(APIView):
         status_value = request.query_params.get("status")
         if status_value in {"draft", "active", "archived"}:
             rows = rows.filter(status=status_value)
+        else:
+            rows = rows.exclude(status="archived")
         return Response(
             {
                 "subjects": SubjectSummarySerializer(

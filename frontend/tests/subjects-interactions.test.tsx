@@ -7,8 +7,8 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 import SubjectDetailPage from "../app/subjects/[id]/page";
 import SubjectsPage from "../app/subjects/page";
 import {
+  isDistrictSelection,
   SubjectServiceAreaSelector,
-  townOptionsForDistrict,
 } from "../components/subject-service-area-selector";
 import type { SubjectDetail, SubjectList, SubjectType } from "../lib/subjects-client";
 
@@ -20,7 +20,7 @@ const getSubjects = vi.fn();
 const createSubject = vi.fn();
 const getSubject = vi.fn();
 const saveSubject = vi.fn();
-const archiveSubject = vi.fn();
+const deleteSubject = vi.fn();
 const activateSubject = vi.fn();
 const setCurrentSubject = vi.fn();
 
@@ -35,7 +35,7 @@ vi.mock("../lib/subjects-client", async () => {
     createSubject: (...args: unknown[]) => createSubject(...args),
     getSubject: (...args: unknown[]) => getSubject(...args),
     saveSubject: (...args: unknown[]) => saveSubject(...args),
-    archiveSubject: (...args: unknown[]) => archiveSubject(...args),
+    deleteSubject: (...args: unknown[]) => deleteSubject(...args),
     activateSubject: (...args: unknown[]) => activateSubject(...args),
     setCurrentSubject: (...args: unknown[]) => setCurrentSubject(...args),
   };
@@ -232,7 +232,7 @@ beforeEach(() => {
     version: { version_no: 1 },
     version_created: true,
   });
-  archiveSubject.mockResolvedValue({ ...detail, status: "archived" });
+  deleteSubject.mockResolvedValue({ ...detail, status: "archived" });
   activateSubject.mockResolvedValue({ ...detail, status: "active" });
   setCurrentSubject.mockResolvedValue(list.context);
 });
@@ -318,13 +318,24 @@ describe("subject profile interactions", () => {
     expect(screen.getByRole("button", { name: "上传资料" })).toBeTruthy();
     expect(screen.getByLabelText("品牌图片")).toBeTruthy();
   });
-  it("creates a draft with the selected type and current schema version", async () => {
+  it("creates a subject with the selected type and current schema version", async () => {
     render(<SubjectsPage />);
     await screen.findByText("\u521b\u5efa\u65f6\u4f01\u4e1a");
     await userEvent.click(screen.getByLabelText("\u4e3b\u4f53\u7c7b\u578b"));
     await userEvent.click(await screen.findByText("\u4f01\u4e1a"));
     await userEvent.click(screen.getByRole("button", { name: "创建主体" }));
     await waitFor(() => expect(createSubject).toHaveBeenCalledWith("type-1", 9));
+  });
+
+  it("requires confirmation before removing a subject from the active list", async () => {
+    render(<SubjectsPage />);
+    await screen.findByText("创建企业资料");
+    await userEvent.click(screen.getByRole("button", { name: /删\s*除/ }));
+    expect(
+      await screen.findByText("删除后将从主体列表移除；已有任务和报告会安全保留。"),
+    ).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: /确认删除|确\s*认\s*删\s*除/ }));
+    await waitFor(() => expect(deleteSubject).toHaveBeenCalledWith(list.subjects[0]));
   });
 
   it("keeps archived subject values read-only and surfaces stable API errors", async () => {
@@ -370,20 +381,10 @@ describe("subject risk public boundary", () => {
 });
 
 describe("subject service area selector", () => {
-  it("maps district town data to stable 12-digit street codes", () => {
-    expect(
-      townOptionsForDistrict(
-        [
-          { code: "440106", name: "五山街道", town: "001000" },
-          { code: "440106", name: "员村街道", town: "002000" },
-          { code: "440305", name: "南头街道", town: "001000" },
-        ],
-        "440106",
-      ),
-    ).toEqual([
-      { value: "440106001000", label: "五山街道" },
-      { value: "440106002000", label: "员村街道" },
-    ]);
+  it("recognizes both ordinary and direct-municipality district paths", () => {
+    expect(isDistrictSelection(["440000", "440100", "440106"])).toBe(true);
+    expect(isDistrictSelection(["110000", "110101"])).toBe(true);
+    expect(isDistrictSelection(["440000", "440100"])).toBe(false);
   });
 
   it("keeps code and name for multiple mainland area levels and supports nationwide", async () => {

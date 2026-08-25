@@ -1,14 +1,14 @@
 "use client";
 
-import { Alert, Button, Card, Select, Space, Spin, Table, Tag, Typography } from "antd";
+import { Alert, Button, Card, Popconfirm, Select, Space, Spin, Table, Tag, Typography } from "antd";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 import { userMessage } from "@/lib/auth-client";
 import {
   activateSubject,
-  archiveSubject,
   createSubject,
+  deleteSubject,
   getSubjects,
   getSubjectTypes,
   setCurrentSubject,
@@ -179,15 +179,18 @@ export default function SubjectsPage() {
                   </Button>
                 )}
                 {item.status !== "archived" && (
-                  <Button
-                    danger
-                    disabled={busy}
-                    onClick={() =>
-                      void execute(() => archiveSubject(item), "\u4e3b\u4f53\u5df2\u5f52\u6863")
-                    }
+                  <Popconfirm
+                    title="确认删除这个主体？"
+                    description="删除后将从主体列表移除；已有任务和报告会安全保留。"
+                    okText="确认删除"
+                    cancelText="取消"
+                    okButtonProps={{ danger: true }}
+                    onConfirm={() => void execute(() => deleteSubject(item), "主体已删除")}
                   >
-                    {"\u5f52\u6863"}
-                  </Button>
+                    <Button danger disabled={busy}>
+                      删除
+                    </Button>
+                  </Popconfirm>
                 )}
               </Space>
             ),
