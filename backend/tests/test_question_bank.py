@@ -34,6 +34,7 @@ from apps.questions.generation_services import (
     confirm_question_bank,
     create_question_generation_job,
     execute_question_generation,
+    remove_current_question_bank_items,
     save_question_bank_draft,
 )
 from apps.questions.generation_tasks import dispatch_question_generation_jobs
@@ -294,6 +295,140 @@ def test_normalization_uniqueness_and_optimistic_locking():
     assert getattr(error.value, "code", "") == "QUESTION_BANK_VALUES_INVALID"
 
 
+def test_bulk_remove_advances_formal_version_without_deleting_history():
+    user, subject, _, _, distilled = facts(limit=3)
+    job, _ = create_job(user, subject, distilled)
+    assert execute_question_generation(job_id=job.pk) == {"status": "succeeded"}
+    workspace = QuestionBankWorkspace.objects.get(subject=subject)
+    workspace, first = confirm_question_bank(
+        user_id=user.pk,
+        subject_id=subject.pk,
+        expected_version=workspace.version,
+    )
+    original_ids = list(first.questions.order_by("sort_order").values_list("id", flat=True))
+
+    workspace, second, removed_count = remove_current_question_bank_items(
+        user_id=user.pk,
+        subject_id=subject.pk,
+        expected_version_id=first.pk,
+        question_ids=original_ids[:1],
+    )
+
+    assert removed_count == 1
+    assert second is not None and second.version_no == 2
+    assert second.item_count == len(original_ids) - 1
+    assert workspace.current_version_id == second.pk
+    assert first.questions.count() == len(original_ids)
+    assert set(first.questions.values_list("id", flat=True)) == set(original_ids)
+    assert list(second.questions.order_by("sort_order").values_list("text", flat=True)) == list(
+        first.questions.order_by("sort_order").values_list("text", flat=True)[1:]
+    )
+    assert workspace.draft_items.count() == len(original_ids) - 1
+
+
+def test_bulk_remove_all_clears_current_bank_but_keeps_formal_history():
+    user, subject, _, _, distilled = facts(limit=2)
+    job, _ = create_job(user, subject, distilled)
+    assert execute_question_generation(job_id=job.pk) == {"status": "succeeded"}
+    workspace = QuestionBankWorkspace.objects.get(subject=subject)
+    workspace, first = confirm_question_bank(
+        user_id=user.pk,
+        subject_id=subject.pk,
+        expected_version=workspace.version,
+    )
+    question_ids = list(first.questions.values_list("id", flat=True))
+
+    workspace, current, removed_count = remove_current_question_bank_items(
+        user_id=user.pk,
+        subject_id=subject.pk,
+        expected_version_id=first.pk,
+        question_ids=question_ids,
+    )
+
+    assert current is None and removed_count == 2
+    assert workspace.current_version_id is None
+    assert workspace.draft_items.count() == 0
+    assert QuestionBankVersion.objects.filter(pk=first.pk).exists()
+    assert Question.objects.filter(question_bank_version=first).count() == 2
+
+    regeneration, _ = create_job(
+        user,
+        subject,
+        distilled,
+        version=workspace.version,
+        regenerate=True,
+    )
+    assert execute_question_generation(job_id=regeneration.pk) == {"status": "succeeded"}
+    workspace.refresh_from_db()
+    workspace, replacement = confirm_question_bank(
+        user_id=user.pk,
+        subject_id=subject.pk,
+        expected_version=workspace.version,
+    )
+    assert replacement.version_no == 2
+    assert workspace.current_version_id == replacement.pk
+
+
+def test_bulk_remove_old_formal_bank_preserves_newer_upstream_draft():
+    user, subject, _, _, first_distilled = facts(limit=3)
+    first_job, _ = create_job(user, subject, first_distilled)
+    assert execute_question_generation(job_id=first_job.pk) == {"status": "succeeded"}
+    workspace = QuestionBankWorkspace.objects.get(subject=subject)
+    workspace, first_formal = confirm_question_bank(
+        user_id=user.pk,
+        subject_id=subject.pk,
+        expected_version=workspace.version,
+    )
+
+    distillation_workspace = DistillationWorkspace.objects.get(subject=subject)
+    second_distillation_job, _ = create_distillation(
+        user,
+        subject,
+        first_distilled.input_keyword_set_version,
+        workspace_version=distillation_workspace.version,
+        regenerate=True,
+    )
+    assert execute_distillation(job_id=second_distillation_job.pk) == {"status": "succeeded"}
+    distillation_workspace.refresh_from_db()
+    _, second_distilled = confirm_distillation(
+        user_id=user.pk,
+        subject_id=subject.pk,
+        expected_version=distillation_workspace.version,
+    )
+    workspace.refresh_from_db()
+    second_job, _ = create_job(
+        user,
+        subject,
+        second_distilled,
+        version=workspace.version,
+        regenerate=True,
+    )
+    assert execute_question_generation(job_id=second_job.pk) == {"status": "succeeded"}
+    workspace.refresh_from_db()
+    newer_draft_ids = list(
+        workspace.draft_items.order_by("sort_order").values_list("id", flat=True)
+    )
+    newer_source_result_id = workspace.draft_source_result_id
+    assert workspace.draft_distillation_set_id == second_distilled.pk
+    assert first_formal.distillation_set_id != second_distilled.pk
+
+    removed_id = first_formal.questions.order_by("sort_order").first().pk
+    workspace, second_formal, removed_count = remove_current_question_bank_items(
+        user_id=user.pk,
+        subject_id=subject.pk,
+        expected_version_id=first_formal.pk,
+        question_ids=[removed_id],
+    )
+
+    assert removed_count == 1 and second_formal is not None
+    assert second_formal.distillation_set_id == first_formal.distillation_set_id
+    assert workspace.draft_distillation_set_id == second_distilled.pk
+    assert workspace.draft_source_result_id == newer_source_result_id
+    assert list(workspace.draft_items.order_by("sort_order").values_list("id", flat=True)) == (
+        newer_draft_ids
+    )
+
+
 def test_prompt_injection_is_untrusted_literal_data():
     user, subject, _, _, distilled = facts(limit=1)
     row = (
@@ -430,3 +565,52 @@ def test_api_generation_draft_confirm_versions_and_owner_scope(
     other.force_authenticate(outsider)
     assert other.get(f"/api/v1/question-bank-jobs/{job_id}").status_code == 404
     assert other.get(f"/api/v1/subjects/{subject.pk}/question-banks/draft").status_code == 404
+
+
+def test_api_bulk_remove_is_owner_scoped_and_optimistically_locked():
+    user, subject, _, _, distilled = facts(limit=3)
+    job, _ = create_job(user, subject, distilled)
+    assert execute_question_generation(job_id=job.pk) == {"status": "succeeded"}
+    workspace = QuestionBankWorkspace.objects.get(subject=subject)
+    _, first = confirm_question_bank(
+        user_id=user.pk,
+        subject_id=subject.pk,
+        expected_version=workspace.version,
+    )
+    remove_id = first.questions.order_by("sort_order").first().pk
+    client = APIClient()
+    client.force_authenticate(user)
+
+    response = client.post(
+        f"/api/v1/subjects/{subject.pk}/question-banks/remove",
+        {"expected_version_id": str(first.pk), "question_ids": [str(remove_id)]},
+        format="json",
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["removed_count"] == 1 and data["current"]["version_no"] == 2
+    stale = client.post(
+        f"/api/v1/subjects/{subject.pk}/question-banks/remove",
+        {"expected_version_id": str(first.pk), "question_ids": [str(remove_id)]},
+        format="json",
+    )
+    assert stale.status_code == 409
+    assert stale.json()["error"]["code"] == "QUESTION_BANK_VERSION_CONFLICT"
+
+    outsider = User.objects.create_user(
+        phone=f"136{uuid.uuid4().int % 100000000:08d}",
+        nickname="Question bulk remove outsider",
+        password="Correct-Horse-Battery-2026!",
+    )
+    other = APIClient()
+    other.force_authenticate(outsider)
+    denied = other.post(
+        f"/api/v1/subjects/{subject.pk}/question-banks/remove",
+        {
+            "expected_version_id": data["current"]["id"],
+            "question_ids": [data["current"]["items"][0]["id"]],
+        },
+        format="json",
+    )
+    assert denied.status_code == 404

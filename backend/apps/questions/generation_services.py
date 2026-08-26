@@ -65,7 +65,11 @@ from .generation_providers import (
     get_question_generation_provider,
     require_available_question_generation_provider,
 )
-from .generation_validation import validate_draft_items, validate_generated_questions
+from .generation_validation import (
+    NormalizedQuestion,
+    validate_draft_items,
+    validate_generated_questions,
+)
 from .models import QuestionCategory, QuestionTag
 
 User = get_user_model()
@@ -839,9 +843,13 @@ def confirm_question_bank(*, user_id, subject_id, expected_version):
     )
     if workspace.current_version and workspace.current_version.content_digest == digest:
         raise QuestionBankVersionNoChanges
-    next_version = (
-        1 if workspace.current_version is None else workspace.current_version.version_no + 1
+    latest_version_no = (
+        QuestionBankVersion.objects.filter(workspace=workspace).aggregate(
+            maximum=models.Max("version_no")
+        )["maximum"]
+        or 0
     )
+    next_version = latest_version_no + 1
     version = QuestionBankVersion.objects.create(
         workspace=workspace,
         user=user,
@@ -908,6 +916,213 @@ def confirm_question_bank(*, user_id, subject_id, expected_version):
     workspace.version += 1
     workspace.save(update_fields=("current_version", "version", "updated_at"))
     return workspace, version
+
+
+def _formal_rows_match_draft(rows, draft_rows):
+    if len(rows) != len(draft_rows):
+        return False
+    for row, draft_row in zip(rows, draft_rows, strict=True):
+        if (
+            row.text != draft_row.text
+            or row.matching_text != draft_row.matching_text
+            or row.primary_category_id != draft_row.primary_category_id
+            or row.priority != draft_row.priority
+            or row.question_type != draft_row.question_type
+            or row.participates_in_scoring != draft_row.participates_in_scoring
+            or row.ai_reason != draft_row.ai_reason
+            or {str(link.tag_id) for link in row.tag_links.all()} != set(draft_row.tag_ids)
+            or {str(link.keyword_id) for link in row.keyword_links.all()}
+            != set(draft_row.keyword_ids)
+        ):
+            return False
+    return True
+
+
+def _normalized_formal_rows(rows):
+    return [
+        NormalizedQuestion(
+            text=row.text,
+            matching_text=row.matching_text,
+            primary_category_id=row.primary_category_id,
+            tag_ids=tuple(link.tag_id for link in row.tag_links.all()),
+            keyword_ids=tuple(link.keyword_id for link in row.keyword_links.all()),
+            priority=row.priority,
+            question_type=row.question_type,
+            participates_in_scoring=row.participates_in_scoring,
+            reason=row.ai_reason,
+        )
+        for row in rows
+    ]
+
+
+@transaction.atomic
+def remove_current_question_bank_items(*, user_id, subject_id, expected_version_id, question_ids):
+    """Remove questions by advancing the append-only formal question-bank history."""
+
+    user = User.objects.select_for_update().get(pk=user_id)
+    _assert_user_write_allowed(user)
+    subject = subject_for_user_or_404(user=user, subject_id=subject_id, lock=True)
+    if subject.status != subject.Status.ACTIVE:
+        raise QuestionBankInputConflict
+    try:
+        workspace = (
+            QuestionBankWorkspace.objects.select_for_update(of=("self",))
+            .select_related(
+                "draft_subject_version",
+                "draft_distillation_set",
+                "draft_source_result",
+                "current_version",
+            )
+            .get(subject=subject, user=user)
+        )
+    except QuestionBankWorkspace.DoesNotExist as exc:
+        raise QuestionBankValuesInvalid from exc
+    current = workspace.current_version
+    if current is None or current.pk != expected_version_id:
+        raise QuestionBankVersionConflict
+    rows = list(
+        current.questions.select_related("primary_category")
+        .prefetch_related("tag_links", "keyword_links")
+        .order_by("sort_order", "id")
+    )
+    remove_ids = set(question_ids)
+    available_ids = {row.pk for row in rows}
+    if not remove_ids or not remove_ids.issubset(available_ids):
+        raise QuestionBankValuesInvalid
+    remaining = [row for row in rows if row.pk not in remove_ids]
+    draft_rows = list(
+        workspace.draft_items.select_related("primary_category").order_by("sort_order", "id")
+    )
+    draft_binding_matches = (
+        workspace.draft_subject_version_id == current.subject_version_id
+        and workspace.draft_distillation_set_id == current.distillation_set_id
+        and workspace.draft_source_result_id == current.source_result_id
+    )
+    sync_draft = draft_binding_matches and _formal_rows_match_draft(rows, draft_rows)
+
+    if not remaining:
+        if sync_draft:
+            QuestionDraftItem.objects.filter(workspace=workspace).delete()
+            workspace.draft_source_result = None
+        workspace.current_version = None
+        workspace.version += 1
+        update_fields = ["current_version", "version", "updated_at"]
+        if sync_draft:
+            update_fields.append("draft_source_result")
+        workspace.save(update_fields=update_fields)
+        return workspace, None, len(remove_ids)
+
+    payload = [
+        {
+            "text": row.text,
+            "primary_category_id": str(row.primary_category_id),
+            "tag_ids": [str(link.tag_id) for link in row.tag_links.all()],
+            "keyword_ids": [str(link.keyword_id) for link in row.keyword_links.all()],
+            "priority": row.priority,
+            "question_type": row.question_type,
+            "participates_in_scoring": row.participates_in_scoring,
+            "ai_reason": row.ai_reason,
+            "sort_order": index,
+        }
+        for index, row in enumerate(remaining)
+    ]
+    next_version = current.version_no + 1
+    restore_draft_binding = (
+        workspace.draft_subject_version_id != current.subject_version_id
+        or workspace.draft_distillation_set_id != current.distillation_set_id
+    )
+    draft_subject_version_id = workspace.draft_subject_version_id
+    draft_distillation_set_id = workspace.draft_distillation_set_id
+    if restore_draft_binding:
+        # PostgreSQL protects each formal version binding against the workspace draft input.
+        # Rebind only inside this transaction, then restore the newer unconfirmed draft below.
+        workspace.draft_subject_version_id = current.subject_version_id
+        workspace.draft_distillation_set_id = current.distillation_set_id
+        workspace.version += 1
+        workspace.save(
+            update_fields=(
+                "draft_subject_version",
+                "draft_distillation_set",
+                "version",
+                "updated_at",
+            )
+        )
+    version = QuestionBankVersion.objects.create(
+        workspace=workspace,
+        user=user,
+        subject=subject,
+        subject_version=current.subject_version,
+        distillation_set=current.distillation_set,
+        source_result=current.source_result,
+        version_no=next_version,
+        content_digest=canonical_digest(
+            {
+                "subject_version_id": str(current.subject_version_id),
+                "distillation_set_id": str(current.distillation_set_id),
+                "items": payload,
+            }
+        ),
+        item_count=len(remaining),
+        confirmed_by=user,
+        confirmed_at=timezone.now(),
+    )
+    question_ids_by_index = [uuid.uuid4() for _ in remaining]
+    Question.objects.bulk_create(
+        [
+            Question(
+                id=question_ids_by_index[index],
+                question_bank_version=version,
+                text=row.text,
+                matching_text=row.matching_text,
+                primary_category=row.primary_category,
+                primary_category_key=row.primary_category_key,
+                primary_category_name=row.primary_category_name,
+                primary_category_version=row.primary_category_version,
+                priority=row.priority,
+                question_type=row.question_type,
+                participates_in_scoring=row.participates_in_scoring,
+                ai_reason=row.ai_reason,
+                sort_order=index,
+            )
+            for index, row in enumerate(remaining)
+        ]
+    )
+    QuestionTagLink.objects.bulk_create(
+        [
+            QuestionTagLink(
+                question_id=question_ids_by_index[index],
+                tag_id=link.tag_id,
+                tag_key=link.tag_key,
+                tag_name=link.tag_name,
+                tag_version=link.tag_version,
+            )
+            for index, row in enumerate(remaining)
+            for link in row.tag_links.all()
+        ]
+    )
+    QuestionKeywordLink.objects.bulk_create(
+        [
+            QuestionKeywordLink(
+                question_id=question_ids_by_index[index],
+                keyword_id=link.keyword_id,
+                keyword_text=link.keyword_text,
+            )
+            for index, row in enumerate(remaining)
+            for link in row.keyword_links.all()
+        ]
+    )
+    if sync_draft:
+        _replace_draft(workspace, _normalized_formal_rows(remaining))
+    if restore_draft_binding:
+        workspace.draft_subject_version_id = draft_subject_version_id
+        workspace.draft_distillation_set_id = draft_distillation_set_id
+    workspace.current_version = version
+    workspace.version += 1
+    update_fields = ["current_version", "version", "updated_at"]
+    if restore_draft_binding:
+        update_fields.extend(("draft_subject_version", "draft_distillation_set"))
+    workspace.save(update_fields=update_fields)
+    return workspace, version, len(remove_ids)
 
 
 def question_bank_versions_for_user(*, user, subject_id):

@@ -218,6 +218,7 @@ export function KeywordCenterPage({
   const [pendingKeywordCount, setPendingKeywordCount] = useState(0);
   const [assets, setAssets] = useState<KeywordAsset[]>([]);
   const [assetPage, setAssetPage] = useState(1);
+  const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>([]);
   const [viewingAssetId, setViewingAssetId] = useState<string>();
   const [editingAssetId, setEditingAssetId] = useState<string>();
   const [assetText, setAssetText] = useState("");
@@ -265,6 +266,7 @@ export function KeywordCenterPage({
     setPendingKeywordCount(nextDistillation.pending_item_count);
     setAssets(nextAssets.items.filter((asset) => !asset.deleted));
     setAssetPage(1);
+    setSelectedAssetIds([]);
   }, [params.id]);
 
   useEffect(() => {
@@ -466,6 +468,9 @@ export function KeywordCenterPage({
           ? current.filter((item) => item.id !== updated.id)
           : current.map((item) => (item.id === updated.id ? updated : item)),
       );
+      if (updated.deleted) {
+        setSelectedAssetIds((current) => current.filter((id) => id !== updated.id));
+      }
       setEditingAssetId(undefined);
       setError("");
       setNotice(updated.deleted ? "关键词已删除" : "关键词资产已更新");
@@ -482,6 +487,32 @@ export function KeywordCenterPage({
     setAssetText(asset.text);
     setAssetCategory(asset.category ?? undefined);
     setAssetIntents(asset.intents);
+  };
+
+  const deleteSelectedAssets = async () => {
+    const existingIds = new Set(assets.map((asset) => asset.id));
+    const targetIds = selectedAssetIds.filter((id) => existingIds.has(id));
+    if (!targetIds.length) return;
+
+    setBusy(true);
+    try {
+      const results = await Promise.allSettled(
+        targetIds.map((id) => updateKeywordAsset(params.id, id, { deleted: true })),
+      );
+      const deletedIds = new Set(
+        targetIds.filter(
+          (_id, index) => results[index].status === "fulfilled" && results[index].value.deleted,
+        ),
+      );
+      const failedIds = targetIds.filter((id) => !deletedIds.has(id));
+
+      setAssets((current) => current.filter((asset) => !deletedIds.has(asset.id)));
+      setSelectedAssetIds(failedIds);
+      setNotice(deletedIds.size ? `已批量删除 ${deletedIds.size} 个关键词资产` : "");
+      setError(failedIds.length ? `${failedIds.length} 个关键词资产删除失败，请重试` : "");
+    } finally {
+      setBusy(false);
+    }
   };
 
   const toggleBusinessCategory = (value: string, checked: boolean) => {
@@ -514,6 +545,23 @@ export function KeywordCenterPage({
     (effectiveAssetPage - 1) * KEYWORD_PAGE_SIZE,
     effectiveAssetPage * KEYWORD_PAGE_SIZE,
   );
+  const selectedAssetIdSet = new Set(selectedAssetIds);
+  const visibleAssetIds = visibleAssets.map((asset) => asset.id);
+  const allVisibleAssetsSelected =
+    visibleAssetIds.length > 0 && visibleAssetIds.every((id) => selectedAssetIdSet.has(id));
+  const someVisibleAssetsSelected = visibleAssetIds.some((id) => selectedAssetIdSet.has(id));
+  const toggleVisibleAssets = (checked: boolean) => {
+    setSelectedAssetIds((current) => {
+      const next = new Set(current);
+      visibleAssetIds.forEach((id) => (checked ? next.add(id) : next.delete(id)));
+      return Array.from(next);
+    });
+  };
+  const toggleAssetSelection = (assetId: string, checked: boolean) => {
+    setSelectedAssetIds((current) =>
+      checked ? Array.from(new Set([...current, assetId])) : current.filter((id) => id !== assetId),
+    );
+  };
   const pageTitle =
     stage === "generate"
       ? "智能关键词"
@@ -885,7 +933,32 @@ export function KeywordCenterPage({
               <Typography.Text type="secondary">
                 这里只展示当前主体已确认的蒸馏结果；问题库只读取这组稳定关键词资产。
               </Typography.Text>
-              <Tag color="green">资产数量 {assets.length}</Tag>
+              <Space wrap>
+                <Tag color="green">资产数量 {assets.length}</Tag>
+                <Checkbox
+                  aria-label="选择本页关键词资产"
+                  checked={allVisibleAssetsSelected}
+                  indeterminate={someVisibleAssetsSelected && !allVisibleAssetsSelected}
+                  disabled={busy || visibleAssets.length === 0}
+                  onChange={(event) => toggleVisibleAssets(event.target.checked)}
+                >
+                  本页全选
+                </Checkbox>
+                <Typography.Text type="secondary">
+                  已选择 {selectedAssetIds.length} 项
+                </Typography.Text>
+                <Popconfirm
+                  title="批量删除关键词资产？"
+                  description={`将删除选中的 ${selectedAssetIds.length} 个关键词资产，删除后不再用于问题生成。`}
+                  okText="确认批量删除"
+                  cancelText="取消"
+                  onConfirm={() => void deleteSelectedAssets()}
+                >
+                  <Button danger disabled={busy || selectedAssetIds.length === 0}>
+                    批量删除{selectedAssetIds.length ? `（${selectedAssetIds.length}）` : ""}
+                  </Button>
+                </Popconfirm>
+              </Space>
               {visibleAssets.map((asset) => {
                 const editing = editingAssetId === asset.id;
                 const viewing = viewingAssetId === asset.id;
@@ -943,6 +1016,14 @@ export function KeywordCenterPage({
                       ) : (
                         <>
                           <Space wrap>
+                            <Checkbox
+                              aria-label={`选择关键词资产-${asset.id}`}
+                              checked={selectedAssetIdSet.has(asset.id)}
+                              disabled={busy}
+                              onChange={(event) =>
+                                toggleAssetSelection(asset.id, event.target.checked)
+                              }
+                            />
                             <Typography.Text strong>{asset.text}</Typography.Text>
                             <Tag color={asset.enabled ? "green" : "default"}>
                               {asset.enabled ? "已启用" : "已停用"}

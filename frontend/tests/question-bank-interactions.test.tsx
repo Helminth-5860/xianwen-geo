@@ -16,6 +16,7 @@ const api = vi.hoisted(() => ({
   getQuestionGenerationJob: vi.fn(),
   confirmQuestionBank: vi.fn(),
   getCurrentQuestionBank: vi.fn(),
+  removeCurrentQuestionBankItems: vi.fn(),
 }));
 const keywordApi = vi.hoisted(() => ({
   getKeywordAssets: vi.fn(),
@@ -151,6 +152,10 @@ beforeEach(() => {
     item_count: 1,
     confirmed_at: "2026-08-16T00:00:02Z",
     items: [questionItem],
+  });
+  api.removeCurrentQuestionBankItems.mockResolvedValue({
+    current: null,
+    removed_count: 20,
   });
   keywordApi.getKeywordAssets.mockResolvedValue({ items: [asset] });
   keywordApi.updateKeywordAsset.mockImplementation(
@@ -313,6 +318,43 @@ describe("问题生成与问题管理", () => {
     expect(screen.getByText("第 1-20 条，共 21 条")).toBeTruthy();
     await userEvent.click(within(screen.getByLabelText("问题管理分页")).getByTitle("2"));
     expect(await screen.findByText("正式问题 21")).toBeTruthy();
+  });
+
+  it("问题管理支持逐项勾选、当页全选和安全批量删除", async () => {
+    api.getCurrentQuestionBank.mockResolvedValue({
+      id: "version-1",
+      version_no: 1,
+      subject_version_id: "subject-version-1",
+      distillation_set_id: "distillation-1",
+      source_result_id: "result-1",
+      item_count: 21,
+      confirmed_at: "2026-08-16T00:00:02Z",
+      items: Array.from({ length: 21 }, (_, index) => ({
+        ...questionItem,
+        id: `formal-question-${index + 1}`,
+        text: `正式问题 ${index + 1}`,
+        sort_order: index,
+      })),
+    });
+    render(<QuestionManagementPanel subjectId="subject-1" />);
+
+    expect(await screen.findByText("正式问题 1")).toBeTruthy();
+    await userEvent.click(screen.getByRole("checkbox", { name: "全选本页问题" }));
+    expect(screen.getByText("已选择 20 条")).toBeTruthy();
+    expect(screen.getByRole("checkbox", { name: "选择问题-formal-question-1" })).toHaveProperty(
+      "checked",
+      true,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "批量删除" }));
+    await userEvent.click(await screen.findByRole("button", { name: "确认删除" }));
+
+    await waitFor(() =>
+      expect(api.removeCurrentQuestionBankItems).toHaveBeenCalledWith("subject-1", {
+        expectedVersionId: "version-1",
+        questionIds: Array.from({ length: 20 }, (_, index) => `formal-question-${index + 1}`),
+      }),
+    );
+    expect(await screen.findByText("已删除 20 条问题，历史检测记录不受影响")).toBeTruthy();
   });
 
   it("任务失败时不暴露英文错误码", async () => {

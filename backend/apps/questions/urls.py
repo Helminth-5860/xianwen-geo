@@ -1,6 +1,7 @@
 from django.urls import path
 
 from .generation_views import (
+    QuestionBankBulkRemoveView,
     QuestionBankConfirmView,
     QuestionBankCurrentView,
     QuestionBankDraftView,
@@ -29,6 +30,10 @@ urlpatterns = [
     path("subjects/<uuid:subject_id>/question-banks/draft", QuestionBankDraftView.as_view()),
     path("subjects/<uuid:subject_id>/question-banks/confirm", QuestionBankConfirmView.as_view()),
     path("subjects/<uuid:subject_id>/question-banks/current", QuestionBankCurrentView.as_view()),
+    path(
+        "subjects/<uuid:subject_id>/question-banks/remove",
+        QuestionBankBulkRemoveView.as_view(),
+    ),
     path(
         "subjects/<uuid:subject_id>/question-banks/versions", QuestionBankVersionListView.as_view()
     ),

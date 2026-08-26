@@ -35,3 +35,17 @@ class QuestionDraftSaveSerializer(StrictSerializer):
 
 class QuestionBankConfirmSerializer(StrictSerializer):
     expected_version = serializers.IntegerField(min_value=1)
+
+
+class QuestionBankBulkRemoveSerializer(StrictSerializer):
+    expected_version_id = serializers.UUIDField()
+    question_ids = serializers.ListField(
+        child=serializers.UUIDField(),
+        allow_empty=False,
+        max_length=1000,
+    )
+
+    def validate_question_ids(self, values):
+        if len(values) != len(set(values)):
+            raise serializers.ValidationError("Question ids must be unique.")
+        return values

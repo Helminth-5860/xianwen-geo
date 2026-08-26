@@ -400,7 +400,7 @@ describe("关键词中心四页", () => {
       ),
     );
 
-    await userEvent.click(screen.getByRole("button", { name: /删\s*除/ }));
+    await userEvent.click(screen.getByRole("button", { name: /^删\s*除$/ }));
     await userEvent.click(await screen.findByRole("button", { name: "确认删除" }));
     await waitFor(() =>
       expect(api.updateKeywordAsset).toHaveBeenCalledWith("subject-1", "asset-1", {
@@ -428,6 +428,47 @@ describe("关键词中心四页", () => {
     expect(await screen.findByText("资产关键词 21")).toBeTruthy();
     expect(screen.queryByText("资产关键词 1")).toBeNull();
     expect(screen.getByText("第 21-21 条，共 21 条")).toBeTruthy();
+  });
+
+  it("关键词资产支持勾选、本页全选和批量删除", async () => {
+    api.getKeywordAssets.mockResolvedValue({
+      items: Array.from({ length: 21 }, (_, index) => ({
+        ...asset,
+        id: `asset-${index + 1}`,
+        text: `资产关键词 ${index + 1}`,
+      })),
+    });
+    render(<KeywordCenterPage stage="assets" />);
+
+    expect(await screen.findByText("资产关键词 1")).toBeTruthy();
+    await userEvent.click(screen.getByRole("checkbox", { name: "选择本页关键词资产" }));
+
+    expect(screen.getByText("已选择 20 项")).toBeTruthy();
+    expect(
+      (
+        screen.getByRole("checkbox", {
+          name: "选择关键词资产-asset-1",
+        }) as HTMLInputElement
+      ).checked,
+    ).toBe(true);
+    expect(screen.queryByRole("checkbox", { name: "选择关键词资产-asset-21" })).toBeNull();
+
+    await userEvent.click(screen.getByRole("button", { name: "批量删除（20）" }));
+    await userEvent.click(await screen.findByRole("button", { name: "确认批量删除" }));
+
+    await waitFor(() => expect(api.updateKeywordAsset).toHaveBeenCalledTimes(20));
+    expect(api.updateKeywordAsset).toHaveBeenCalledWith("subject-1", "asset-1", {
+      deleted: true,
+    });
+    expect(api.updateKeywordAsset).toHaveBeenCalledWith("subject-1", "asset-20", {
+      deleted: true,
+    });
+    expect(api.updateKeywordAsset).not.toHaveBeenCalledWith("subject-1", "asset-21", {
+      deleted: true,
+    });
+    expect(await screen.findByText("已批量删除 20 个关键词资产")).toBeTruthy();
+    expect(screen.getByText("资产关键词 21")).toBeTruthy();
+    expect(screen.getByText("已选择 0 项")).toBeTruthy();
   });
 
   it("AI 返回结构异常时只显示明确中文，不暴露英文错误码", async () => {

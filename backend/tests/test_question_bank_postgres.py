@@ -6,6 +6,8 @@ from django.core.management import call_command
 from django.db import DatabaseError, connection, transaction
 from django.utils import timezone
 
+from apps.keywords.distillation_services import confirm_distillation, execute_distillation
+from apps.keywords.models import DistillationWorkspace
 from apps.questions.bank_models import (
     QuestionBankWorkspace,
     QuestionGenerationResult,
@@ -15,9 +17,11 @@ from apps.questions.generation_services import (
     claim_question_generation_job,
     confirm_question_bank,
     execute_question_generation,
+    remove_current_question_bank_items,
 )
 from apps.questions.models import QuestionCategory
 from apps.quotas.services import _create_initialized_account
+from tests.test_distillation import _create as create_distillation
 from tests.test_question_bank import create_job, draft_payload, facts
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -144,3 +148,57 @@ def test_workspace_current_version_must_point_to_latest_formal_version():
                 "version = version + 1 WHERE id = %s",
                 [first.pk, workspace.pk],
             )
+
+
+def test_bulk_remove_old_formal_version_restores_newer_draft_binding():
+    user, subject, _, first_distilled, _, workspace = succeeded()
+    workspace, first_formal = confirm_question_bank(
+        user_id=user.pk,
+        subject_id=subject.pk,
+        expected_version=workspace.version,
+    )
+    distillation_workspace = DistillationWorkspace.objects.get(subject=subject)
+    second_distillation_job, _ = create_distillation(
+        user,
+        subject,
+        first_distilled.input_keyword_set_version,
+        workspace_version=distillation_workspace.version,
+        regenerate=True,
+    )
+    assert execute_distillation(job_id=second_distillation_job.pk)["status"] == "succeeded"
+    distillation_workspace.refresh_from_db()
+    _, second_distilled = confirm_distillation(
+        user_id=user.pk,
+        subject_id=subject.pk,
+        expected_version=distillation_workspace.version,
+    )
+    workspace.refresh_from_db()
+    second_job, _ = create_job(
+        user,
+        subject,
+        second_distilled,
+        version=workspace.version,
+        regenerate=True,
+    )
+    assert execute_question_generation(job_id=second_job.pk)["status"] == "succeeded"
+    workspace.refresh_from_db()
+    newer_draft_ids = list(
+        workspace.draft_items.order_by("sort_order").values_list("id", flat=True)
+    )
+    newer_source_result_id = workspace.draft_source_result_id
+    removed_id = first_formal.questions.order_by("sort_order").first().pk
+
+    workspace, second_formal, removed_count = remove_current_question_bank_items(
+        user_id=user.pk,
+        subject_id=subject.pk,
+        expected_version_id=first_formal.pk,
+        question_ids=[removed_id],
+    )
+
+    assert removed_count == 1 and second_formal is not None
+    assert second_formal.distillation_set_id == first_formal.distillation_set_id
+    assert workspace.draft_distillation_set_id == second_distilled.pk
+    assert workspace.draft_source_result_id == newer_source_result_id
+    assert list(workspace.draft_items.order_by("sort_order").values_list("id", flat=True)) == (
+        newer_draft_ids
+    )

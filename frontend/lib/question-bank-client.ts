@@ -172,3 +172,15 @@ export const getQuestionBankVersions = (subjectId: string) =>
 
 export const getCurrentQuestionBank = (subjectId: string) =>
   get<QuestionBankVersion>(`/subjects/${subjectId}/question-banks/current`);
+
+export const removeCurrentQuestionBankItems = (
+  subjectId: string,
+  input: { expectedVersionId: string; questionIds: string[] },
+) =>
+  post<{ current: QuestionBankVersion | null; removed_count: number }>(
+    `/subjects/${subjectId}/question-banks/remove`,
+    {
+      expected_version_id: input.expectedVersionId,
+      question_ids: input.questionIds,
+    },
+  );

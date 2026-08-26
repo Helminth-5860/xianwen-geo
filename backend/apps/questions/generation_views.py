@@ -25,6 +25,7 @@ from apps.subjects.subject_services import subject_for_user_or_404
 
 from .generation_exceptions import QuestionBankError
 from .generation_serializers import (
+    QuestionBankBulkRemoveSerializer,
     QuestionBankConfirmSerializer,
     QuestionDraftSaveSerializer,
     QuestionGenerationCreateSerializer,
@@ -39,6 +40,7 @@ from .generation_services import (
     question_bank_workspace_for_subject,
     question_generation_job_for_user_or_404,
     question_generation_quota_payload,
+    remove_current_question_bank_items,
     save_question_bank_draft,
 )
 from .generation_tasks import execute_question_generation_task
@@ -352,6 +354,31 @@ class QuestionBankCurrentView(APIView):
                 _version_payload(
                     current_question_bank_for_user_or_404(user=request.user, subject_id=subject_id)
                 )
+            )
+        )
+
+
+class QuestionBankBulkRemoveView(APIView):
+    permission_classes = [IsAvailableAuthenticatedUser]
+
+    @method_decorator(csrf_protect)
+    def post(self, request, subject_id):
+        serializer = QuestionBankBulkRemoveSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            _, version, removed_count = remove_current_question_bank_items(
+                user_id=request.user.pk,
+                subject_id=subject_id,
+                **serializer.validated_data,
+            )
+        except (QuestionBankError, KeywordError) as exc:
+            return _error(exc, request)
+        return _no_store(
+            Response(
+                {
+                    "current": _version_payload(version) if version else None,
+                    "removed_count": removed_count,
+                }
             )
         )
 

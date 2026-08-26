@@ -20,7 +20,6 @@ from apps.ai.errors import AIAdapterError, AIAdapterErrorCategory
 from apps.ai.models import AIModel, AIModelRuntimeConfig, APICredential
 from apps.ai.registry import model_registry
 from apps.ai.runtime import get_runtime_snapshot
-from apps.keywords.models import DistillationWorkspace, KeywordSet
 from apps.plans.models import Subscription
 from apps.plans.subscription_services import effective_entitlement_snapshot
 from apps.questions.bank_models import Question, QuestionBankWorkspace
@@ -182,41 +181,33 @@ def models_for_user(*, user) -> dict:
 def _current_detection_inputs(*, user, subject: Subject):
     if subject.status != Subject.Status.ACTIVE or subject.current_version_id is None:
         raise GeoDetectionInputConflict
-    keyword_set = (
-        KeywordSet.objects.select_related("current_version")
-        .filter(user=user, subject=subject)
-        .first()
-    )
-    distillation_workspace = (
-        DistillationWorkspace.objects.select_related("current_set__input_keyword_set_version")
-        .filter(user=user, subject=subject)
-        .first()
-    )
+    # A confirmed question-bank version is the detection boundary. It already owns an
+    # immutable distillation -> keyword lineage, so newer upstream drafts or confirmed
+    # assets must not invalidate questions the user has explicitly saved for detection.
     question_workspace = (
-        QuestionBankWorkspace.objects.select_related("current_version__distillation_set")
+        QuestionBankWorkspace.objects.select_related(
+            "current_version__distillation_set__input_keyword_set_version"
+        )
         .filter(user=user, subject=subject)
         .first()
     )
-    if (
-        keyword_set is None
-        or keyword_set.current_version_id is None
-        or distillation_workspace is None
-        or distillation_workspace.current_set_id is None
-        or question_workspace is None
-        or question_workspace.current_version_id is None
-    ):
+    if question_workspace is None or question_workspace.current_version_id is None:
         raise GeoDetectionInputConflict
-    keyword_version = keyword_set.current_version
-    distillation = distillation_workspace.current_set
     question_bank = question_workspace.current_version
+    distillation = question_bank.distillation_set if question_bank else None
+    keyword_version = distillation.input_keyword_set_version if distillation else None
     if keyword_version is None or distillation is None or question_bank is None:
         raise GeoDetectionInputConflict
     if (
         keyword_version.subject_version_id != subject.current_version_id
         or distillation.subject_version_id != subject.current_version_id
-        or distillation.input_keyword_set_version_id != keyword_version.pk
         or question_bank.subject_version_id != subject.current_version_id
-        or question_bank.distillation_set_id != distillation.pk
+        or keyword_version.subject_id != subject.pk
+        or distillation.subject_id != subject.pk
+        or question_bank.subject_id != subject.pk
+        or keyword_version.user_id != user.pk
+        or distillation.user_id != user.pk
+        or question_bank.user_id != user.pk
     ):
         raise GeoDetectionInputConflict
     return keyword_version, distillation, question_bank

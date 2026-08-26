@@ -29,10 +29,13 @@ from apps.geo.models import GeoDetectionJob, GeoDetectionModelRun, ModelCall, Mo
 from apps.geo.services import (
     cancel_detection,
     create_detection_job,
+    detection_options,
     due_model_call_ids,
     estimate_detection,
     execute_model_call,
 )
+from apps.keywords.distillation_services import confirm_distillation, execute_distillation
+from apps.keywords.models import DistillationWorkspace
 from apps.questions.bank_models import QuestionBankWorkspace
 from apps.questions.generation_services import confirm_question_bank, execute_question_generation
 from apps.quotas.models import QuotaAccount, QuotaLedgerEntry
@@ -200,6 +203,46 @@ def test_estimate_and_create_freeze_immutable_snapshot_and_matrix(geo_facts):
     assert account.available == 18
     with pytest.raises(TypeError):
         job.snapshot.save()
+
+
+def test_detection_keeps_using_current_formal_question_chain_after_new_distillation(geo_facts):
+    user, subject, _, _, _ = geo_facts
+    question_workspace = QuestionBankWorkspace.objects.select_related(
+        "current_version__distillation_set__input_keyword_set_version"
+    ).get(subject=subject)
+    question_bank = question_workspace.current_version
+    original_distillation = question_bank.distillation_set
+    original_keyword_version = original_distillation.input_keyword_set_version
+
+    distillation_workspace = DistillationWorkspace.objects.get(subject=subject)
+    regeneration, _ = distillation_tests._create(
+        user,
+        subject,
+        original_keyword_version,
+        workspace_version=distillation_workspace.version,
+        regenerate=True,
+    )
+    assert execute_distillation(job_id=regeneration.pk) == {"status": "succeeded"}
+    distillation_workspace.refresh_from_db()
+    _, latest_distillation = confirm_distillation(
+        user_id=user.pk,
+        subject_id=subject.pk,
+        expected_version=distillation_workspace.version,
+    )
+    assert latest_distillation.pk != original_distillation.pk
+
+    options = detection_options(user=user, subject_id=subject.pk)
+    assert options["question_bank_version_id"] == str(question_bank.pk)
+    assert options["question_count"] == question_bank.item_count
+
+    job, created = _create(
+        geo_facts,
+        key="geo-detection-formal-question-chain-after-new-distillation",
+    )
+    assert created is True
+    assert job.snapshot.question_bank_version_id == question_bank.pk
+    assert job.snapshot.distillation_set_id == original_distillation.pk
+    assert job.snapshot.keyword_set_version_id == original_keyword_version.pk
 
 
 def test_create_idempotency_replays_and_mismatched_payload_conflicts(geo_facts):
