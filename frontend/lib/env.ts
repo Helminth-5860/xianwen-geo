@@ -9,8 +9,12 @@ const LOCAL_API_BASE_URL = "http://localhost:8000/api/v1";
 const PUBLIC_SECRET_PATTERN = /(API_KEY|SECRET|TOKEN|PASSWORD|PRIVATE_KEY)/i;
 const REMOTE_ENVIRONMENTS = new Set(["staging", "production"]);
 
-function normalizeApiBaseUrl(rawValue: string, *, remote: boolean): string {
+function normalizeApiBaseUrl(
+  rawValue: string,
+  options: Readonly<{ remote: boolean }>,
+): string {
   const raw = rawValue.trim();
+  const { remote } = options;
   if (!raw) throw new Error("NEXT_PUBLIC_API_BASE_URL 不能为空");
 
   if (raw.startsWith("/")) {
