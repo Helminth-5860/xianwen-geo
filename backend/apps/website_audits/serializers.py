@@ -6,6 +6,7 @@ from .models import (
     WebsiteAuditFinding,
     WebsiteAuditPage,
 )
+from .reporting import build_website_audit_report
 
 
 class WebsiteAuditCreateSerializer(serializers.Serializer):
@@ -185,10 +186,15 @@ class WebsiteAuditDetailSerializer(serializers.ModelSerializer):
     pages = WebsiteAuditPageSerializer(many=True, read_only=True)
     browser_snapshots = WebsiteAuditBrowserSnapshotSerializer(many=True, read_only=True)
     findings = WebsiteAuditFindingSerializer(many=True, read_only=True)
+    report = serializers.SerializerMethodField()
+
+    def get_report(self, obj):
+        return build_website_audit_report(obj)
 
     class Meta:
         model = WebsiteAudit
         fields = _SUMMARY_FIELDS + _SEMANTIC_DETAIL_FIELDS + (
+            "report",
             "pages",
             "browser_snapshots",
             "findings",

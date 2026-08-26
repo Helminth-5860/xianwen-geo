@@ -80,11 +80,11 @@ def queue_semantic_audit(audit_id) -> bool:
 
 def _start_semantic_audit(audit_id) -> WebsiteAudit:
     with transaction.atomic():
-        audit = (
-            WebsiteAudit.objects.select_for_update()
-            .select_related("subject__current_version")
-            .get(pk=audit_id)
-        )
+        # Lock only the audit row. Subject.current_version is nullable, so joining it
+        # here would create a LEFT OUTER JOIN that PostgreSQL cannot lock with
+        # SELECT ... FOR UPDATE. Related subject data is loaded after this state
+        # transition by the non-locking query in execute_semantic_audit().
+        audit = WebsiteAudit.objects.select_for_update().get(pk=audit_id)
         if audit.status != WebsiteAudit.Status.SUCCEEDED:
             raise WebsiteSemanticAuditNotReady
         if audit.semantic_status == WebsiteAudit.SemanticStatus.SUCCEEDED:
