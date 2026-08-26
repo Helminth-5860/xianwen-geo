@@ -23,6 +23,14 @@ vi.mock("@/lib/keywords-client", async () => {
 vi.mock("next/navigation", () => ({ useParams: () => ({ id: "subject-1" }) }));
 vi.mock("@/components/subject-workspace-context", () => ({
   useSubjectWorkspace: () => ({
+    subjects: [
+      {
+        id: "subject-1",
+        official_name: "示例企业",
+        subject_type: { name: "企业" },
+        service_regions: JSON.stringify({ version: 1, nationwide: true, areas: [] }),
+      },
+    ],
     currentSubject: {
       id: "subject-1",
       official_name: "示例企业",
@@ -204,10 +212,43 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("关键词中心四页", () => {
-  it("智能关键词提供数量、长度和三种地域模式，并直接生成待蒸馏关键词", async () => {
+  it("智能关键词提供四组14类、8类意图和完整生成设置", async () => {
     render(<SmartKeywordPage />);
 
     expect(await screen.findByRole("heading", { name: "智能关键词" })).toBeTruthy();
+    for (const group of ["品牌与供给", "用户需求", "市场决策", "内容认知"]) {
+      expect(screen.getByText(group)).toBeTruthy();
+    }
+    for (const category of [
+      "主体/实体",
+      "行业",
+      "品类",
+      "产品",
+      "服务",
+      "功能/能力",
+      "需求",
+      "痛点/问题",
+      "解决方案",
+      "场景/用途",
+      "客群/角色",
+      "竞品/替代",
+      "证据/信任",
+      "内容/知识主题",
+    ]) {
+      expect(screen.getByRole("checkbox", { name: category })).toBeTruthy();
+    }
+    for (const intent of [
+      "信息",
+      "商业调查",
+      "对比",
+      "交易",
+      "本地",
+      "品牌导航",
+      "信任验证",
+      "售后/使用",
+    ]) {
+      expect(screen.getByRole("checkbox", { name: intent })).toBeTruthy();
+    }
     for (const label of ["10 个", "20 个", "50 个", "100 个"]) {
       expect(screen.getByText(label)).toBeTruthy();
     }
@@ -221,8 +262,14 @@ describe("关键词中心四页", () => {
     expect(screen.queryByText("版本历史")).toBeNull();
     expect(screen.queryByText("当前批次")).toBeNull();
 
+    const clearButtons = screen.getAllByRole("button", { name: /清\s*空/ });
+    await userEvent.click(clearButtons[0]);
+    await userEvent.click(screen.getAllByRole("button", { name: "本组全选" })[0]);
+    await userEvent.click(clearButtons[1]);
+    await userEvent.click(screen.getByRole("checkbox", { name: "信息" }));
+    await userEvent.click(screen.getByRole("checkbox", { name: "对比" }));
     await userEvent.click(screen.getByRole("radio", { name: "不限地域" }));
-    await userEvent.click(screen.getByRole("button", { name: "一键生成关键词" }));
+    await userEvent.click(screen.getByRole("button", { name: "AI 生成关键词" }));
 
     await waitFor(() => expect(api.createKeywordGeneration).toHaveBeenCalledTimes(1));
     expect(api.createKeywordGeneration.mock.calls[0][1]).toMatchObject({
@@ -231,75 +278,53 @@ describe("关键词中心四页", () => {
       includeLongTail: true,
       regionMode: "unrestricted",
       generationMode: "smart",
+      categories: ["entity", "industry", "product_category", "product", "service"],
+      intents: ["informational", "comparison"],
       regions: [],
     });
     expect(await screen.findByText("关键词已生成并加入待蒸馏关键词")).toBeTruthy();
   });
 
-  it("自定义 AI 生成直接展示四组 14 类与 8 类用户意图", async () => {
+  it("自定义关键词只提供手工单条添加，不包含任何 AI 生成能力", async () => {
     render(<KeywordCenterPage stage="custom" />);
 
     expect(await screen.findByRole("heading", { name: "自定义关键词" })).toBeTruthy();
-    for (const group of ["品牌与业务", "服务与能力", "需求与场景", "竞争与信任"]) {
-      expect(screen.getByText(group)).toBeTruthy();
-    }
-    for (const category of [
-      "企业与品牌",
-      "行业与赛道",
-      "产品或服务类别",
-      "具体产品",
-      "具体服务",
-      "能力与功能",
-      "目标与收益",
-      "问题与痛点",
-      "解决方案",
-      "使用场景",
-      "目标人群",
-      "竞品与替代",
-      "信任与口碑",
-      "知识与教育",
-    ]) {
-      expect(screen.getByRole("checkbox", { name: category })).toBeTruthy();
-    }
-    for (const intent of [
-      "信息了解",
-      "推荐评估",
-      "对比选择",
-      "交易转化",
-      "地域本地",
-      "导航联系",
-      "信任口碑",
-      "使用服务",
-    ]) {
-      expect(screen.getByRole("checkbox", { name: intent })).toBeTruthy();
-    }
+    expect(screen.getByText("手工添加和管理关键词")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "AI 生成关键词" })).toBeNull();
+    expect(screen.queryByText(/DeepSeek/i)).toBeNull();
+    expect(screen.queryByText(/智能推荐/)).toBeNull();
+    expect(screen.queryByText(/自动生成类别/)).toBeNull();
+    expect(screen.queryByText(/自动生成意图/)).toBeNull();
 
-    await userEvent.click(screen.getByRole("button", { name: "全部选择" }));
-    await userEvent.click(screen.getByRole("checkbox", { name: "信息了解" }));
-    await userEvent.click(screen.getByRole("radio", { name: "不限地域" }));
-    await userEvent.click(screen.getByRole("button", { name: "生成自定义关键词" }));
+    await userEvent.type(screen.getByLabelText("手工关键词"), "广州 GEO 服务");
+    await userEvent.click(screen.getByLabelText("手工关键词分类"));
+    await userEvent.click(
+      await screen.findByText("主体/实体", { selector: ".ant-select-item-option-content" }),
+    );
+    await userEvent.click(screen.getByLabelText("手工用户意图"));
+    await userEvent.click(
+      await screen.findByText("信息", { selector: ".ant-select-item-option-content" }),
+    );
+    await userEvent.type(screen.getByLabelText("手工关键词备注"), "人工录入");
+    await userEvent.click(screen.getByRole("button", { name: "添加关键词" }));
 
-    await waitFor(() => expect(api.createKeywordGeneration).toHaveBeenCalledTimes(1));
-    expect(api.createKeywordGeneration.mock.calls[0][1]).toMatchObject({
-      generationMode: "custom",
-      categories: [
-        "entity",
-        "industry",
-        "product_category",
-        "product",
-        "service",
-        "capability",
-        "goal",
-        "pain_point",
-        "solution",
-        "scenario",
-        "audience",
-        "competitor",
-        "trust",
-        "knowledge",
+    await waitFor(() => expect(api.appendKeywordCandidates).toHaveBeenCalledTimes(1));
+    expect(api.appendKeywordCandidates).toHaveBeenCalledWith("subject-1", {
+      expectedVersion: 1,
+      expectedSubjectVersionId: "sv-1",
+      source: "manual",
+      items: [
+        {
+          text: "广州 GEO 服务",
+          category: "entity",
+          intents: ["informational"],
+          lengthType: "short",
+          regions: [],
+          notes: "人工录入",
+        },
       ],
-      intents: ["informational"],
     });
+    expect(api.createKeywordGeneration).not.toHaveBeenCalled();
   });
 
   it("批量添加明确合并本地和服务端重复项提示", async () => {
@@ -314,13 +339,13 @@ describe("关键词中心四页", () => {
     await userEvent.type(screen.getByLabelText("批量关键词"), "新词一\n新词一\n新词二");
     await userEvent.click(screen.getByLabelText("批量关键词分类"));
     await userEvent.click(
-      await screen.findByText("企业与品牌", { selector: ".ant-select-item-option-content" }),
+      await screen.findByText("主体/实体", { selector: ".ant-select-item-option-content" }),
     );
     await userEvent.click(screen.getByLabelText("批量用户意图"));
     await userEvent.click(
-      await screen.findByText("信息了解", { selector: ".ant-select-item-option-content" }),
+      await screen.findByText("信息", { selector: ".ant-select-item-option-content" }),
     );
-    await userEvent.click(screen.getByRole("button", { name: "批量加入待蒸馏关键词" }));
+    await userEvent.click(screen.getByRole("button", { name: "批量添加" }));
 
     await waitFor(() => expect(api.appendKeywordCandidates).toHaveBeenCalledTimes(1));
     expect(api.appendKeywordCandidates.mock.calls[0][1].items).toHaveLength(2);
@@ -385,7 +410,7 @@ describe("关键词中心四页", () => {
     });
     render(<SmartKeywordPage />);
     expect(await screen.findByRole("heading", { name: "智能关键词" })).toBeTruthy();
-    await userEvent.click(screen.getByRole("button", { name: "一键生成关键词" }));
+    await userEvent.click(screen.getByRole("button", { name: "AI 生成关键词" }));
 
     expect(
       await screen.findByText("AI 返回格式异常，请重新生成。", {}, { timeout: 2500 }),

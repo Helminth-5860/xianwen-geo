@@ -294,11 +294,17 @@ describe("GEO 产品工作台", () => {
   });
 
   it("动态主体路由切换到同一功能的新主体，历史对象详情回到所属模块列表", () => {
+    expect(subjectSwitchTargetPath("/subjects/subject-1/keywords", "subject-2")).toBe(
+      "/subjects/subject-2/keywords",
+    );
     expect(subjectSwitchTargetPath("/subjects/subject-1/keywords/distill", "subject-2")).toBe(
       "/subjects/subject-2/keywords/distill",
     );
     expect(subjectSwitchTargetPath("/subjects/subject-1/keywords/custom", "subject-2")).toBe(
       "/subjects/subject-2/keywords/custom",
+    );
+    expect(subjectSwitchTargetPath("/subjects/subject-1/keywords/assets", "subject-2")).toBe(
+      "/subjects/subject-2/keywords/assets",
     );
     expect(subjectSwitchTargetPath("/subjects/subject-1/versions/version-1", "subject-2")).toBe(
       "/subjects/subject-2",

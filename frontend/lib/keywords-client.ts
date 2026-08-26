@@ -23,34 +23,34 @@ export type KeywordRegionSelection = Readonly<{
 }>;
 
 export const keywordBusinessCategoryOptions = [
-  { value: "entity", label: "企业与品牌" },
-  { value: "industry", label: "行业与赛道" },
-  { value: "product_category", label: "产品或服务类别" },
-  { value: "product", label: "具体产品" },
-  { value: "service", label: "具体服务" },
-  { value: "capability", label: "能力与功能" },
-  { value: "goal", label: "目标与收益" },
-  { value: "pain_point", label: "问题与痛点" },
+  { value: "entity", label: "主体/实体" },
+  { value: "industry", label: "行业" },
+  { value: "product_category", label: "品类" },
+  { value: "product", label: "产品" },
+  { value: "service", label: "服务" },
+  { value: "capability", label: "功能/能力" },
+  { value: "goal", label: "需求" },
+  { value: "pain_point", label: "痛点/问题" },
   { value: "solution", label: "解决方案" },
-  { value: "scenario", label: "使用场景" },
-  { value: "audience", label: "目标人群" },
-  { value: "competitor", label: "竞品与替代" },
-  { value: "trust", label: "信任与口碑" },
-  { value: "knowledge", label: "知识与教育" },
+  { value: "scenario", label: "场景/用途" },
+  { value: "audience", label: "客群/角色" },
+  { value: "competitor", label: "竞品/替代" },
+  { value: "trust", label: "证据/信任" },
+  { value: "knowledge", label: "内容/知识主题" },
 ] satisfies Array<{ value: string; label: string }>;
 
 export const keywordSearchIntentOptions: Array<{
   value: KeywordSearchIntent;
   label: string;
 }> = [
-  { value: "informational", label: "信息了解" },
-  { value: "recommendation", label: "推荐评估" },
-  { value: "comparison", label: "对比选择" },
-  { value: "transactional", label: "交易转化" },
-  { value: "local", label: "地域本地" },
-  { value: "navigational", label: "导航联系" },
-  { value: "trust", label: "信任口碑" },
-  { value: "usage", label: "使用服务" },
+  { value: "informational", label: "信息" },
+  { value: "recommendation", label: "商业调查" },
+  { value: "comparison", label: "对比" },
+  { value: "transactional", label: "交易" },
+  { value: "local", label: "本地" },
+  { value: "navigational", label: "品牌导航" },
+  { value: "trust", label: "信任验证" },
+  { value: "usage", label: "售后/使用" },
 ];
 
 const legacyIntentBySearchIntent: Readonly<Record<KeywordSearchIntent, LegacyKeywordSearchIntent>> =
@@ -128,6 +128,7 @@ const keywordErrorMessages: Readonly<Record<string, string>> = {
   KEYWORD_GENERATION_INVALID_RESPONSE: "AI 返回格式异常，请重新生成。",
   KEYWORD_GENERATION_INTERNAL_ERROR: "关键词生成任务处理失败，请稍后重试",
   KEYWORD_VALUES_INVALID: "已有关键词数据不完整，请刷新后重新生成",
+  KEYWORD_VERSION_NO_CHANGES: "本次没有生成新的关键词，请调整条件后重试",
   KEYWORD_VERSION_CONFLICT: "关键词内容已经更新，请刷新后重试",
   KEYWORD_SUBJECT_VERSION_CONFLICT: "主体资料已经更新，请刷新后重新生成",
   DISTILLATION_PROVIDER_TIMEOUT: "关键词蒸馏服务响应超时，请稍后重试",

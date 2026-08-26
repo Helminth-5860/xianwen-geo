@@ -56,14 +56,23 @@ const sourceLabels: Readonly<Record<string, string>> = {
   manual: "手工添加",
   bulk: "批量添加",
   smart_generation: "智能生成",
-  custom_generation: "自定义生成",
+  custom_generation: "智能生成",
 };
 
 const categoryGroups = [
-  { title: "品牌与业务", values: ["entity", "industry", "product_category", "product"] },
-  { title: "服务与能力", values: ["service", "capability", "goal"] },
-  { title: "需求与场景", values: ["pain_point", "solution", "scenario", "audience"] },
-  { title: "竞争与信任", values: ["competitor", "trust", "knowledge"] },
+  {
+    title: "品牌与供给",
+    values: ["entity", "industry", "product_category", "product", "service"],
+  },
+  {
+    title: "用户需求",
+    values: ["capability", "goal", "pain_point", "solution"],
+  },
+  {
+    title: "市场决策",
+    values: ["scenario", "audience", "competitor", "trust"],
+  },
+  { title: "内容认知", values: ["knowledge"] },
 ] as const;
 
 const legacyIntentMap: Readonly<Record<string, KeywordSearchIntent>> = {
@@ -129,7 +138,7 @@ function GenerationControls({
   return (
     <Space direction="vertical" size="middle" style={{ width: "100%" }}>
       <div>
-        <Typography.Text strong>1. 生成数量</Typography.Text>
+        <Typography.Text strong>3. 生成数量</Typography.Text>
         <div style={{ marginTop: 8 }}>
           <Space wrap>
             <Radio.Group
@@ -159,7 +168,7 @@ function GenerationControls({
         </div>
       </div>
       <div>
-        <Typography.Text strong>2. 关键词长度</Typography.Text>
+        <Typography.Text strong>4. 关键词长度</Typography.Text>
         <div style={{ marginTop: 8 }}>
           <Space wrap>
             <Checkbox
@@ -180,7 +189,7 @@ function GenerationControls({
         </div>
       </div>
       <div>
-        <Typography.Text strong>3. 地域范围</Typography.Text>
+        <Typography.Text strong>5. 地域范围</Typography.Text>
         <div style={{ marginTop: 8 }}>
           <Radio.Group
             aria-label="地域范围"
@@ -213,7 +222,8 @@ export function KeywordCenterPage({
   stage = "generate",
 }: Readonly<{ stage?: KeywordCenterStage }>) {
   const params = useParams<{ id: string }>();
-  const { currentSubject } = useSubjectWorkspace();
+  const { currentSubject, subjects } = useSubjectWorkspace();
+  const routeSubject = subjects.find((subject) => subject.id === params.id) ?? currentSubject;
   const [draft, setDraft] = useState<KeywordDraftState>();
   const [items, setItems] = useState<KeywordItem[]>([]);
   const [assets, setAssets] = useState<KeywordAsset[]>([]);
@@ -233,8 +243,12 @@ export function KeywordCenterPage({
   const [includeLongTail, setIncludeLongTail] = useState(true);
   const [regionMode, setRegionMode] = useState<RegionMode>("subject");
   const [regionSelections, setRegionSelections] = useState<KeywordRegionSelection[]>([]);
-  const [businessCategories, setBusinessCategories] = useState<string[]>([]);
-  const [searchIntents, setSearchIntents] = useState<KeywordSearchIntent[]>([]);
+  const [businessCategories, setBusinessCategories] = useState<string[]>(() =>
+    keywordBusinessCategoryOptions.map((option) => option.value),
+  );
+  const [searchIntents, setSearchIntents] = useState<KeywordSearchIntent[]>(() =>
+    keywordSearchIntentOptions.map((option) => option.value),
+  );
   const [manualText, setManualText] = useState("");
   const [manualCategory, setManualCategory] = useState<string>();
   const [manualIntents, setManualIntents] = useState<KeywordSearchIntent[]>([]);
@@ -288,7 +302,7 @@ export function KeywordCenterPage({
     return () => window.clearTimeout(timer);
   }, [generation, generationActive, reload]);
 
-  const startGeneration = async (regenerate: boolean, generationMode: "smart" | "custom") => {
+  const startGeneration = async (regenerate: boolean) => {
     if (!draft?.subject_version) return;
     if (!includeShort && !includeLongTail) {
       setError("请至少选择一种关键词长度");
@@ -298,8 +312,8 @@ export function KeywordCenterPage({
       setError("请选择至少一个自定义地域");
       return;
     }
-    if (generationMode === "custom" && (!businessCategories.length || !searchIntents.length)) {
-      setError("自定义 AI 生成至少需要选择一个关键词分类和一个用户意图");
+    if (!businessCategories.length || !searchIntents.length) {
+      setError("请至少选择一个关键词类别和一个用户意图");
       return;
     }
     setBusy(true);
@@ -317,11 +331,11 @@ export function KeywordCenterPage({
             regionMode === "custom"
               ? regionSelections
               : regionMode === "subject"
-                ? keywordRegionSelectionsFromServiceArea(currentSubject?.service_regions ?? "")
+                ? keywordRegionSelectionsFromServiceArea(routeSubject?.service_regions ?? "")
                 : [],
-          generationMode,
-          categories: generationMode === "custom" ? businessCategories : [],
-          intents: generationMode === "custom" ? searchIntents : [],
+          generationMode: "smart",
+          categories: businessCategories,
+          intents: searchIntents,
           regionMode,
           regenerate,
         },
@@ -500,7 +514,7 @@ export function KeywordCenterPage({
     draft.draft_subject_version &&
     draft.subject_version.id !== draft.draft_subject_version.id,
   );
-  const serviceRegions = currentSubject?.service_regions ?? "";
+  const serviceRegions = routeSubject?.service_regions ?? "";
   const pageTitle =
     stage === "generate"
       ? "智能关键词"
@@ -511,13 +525,24 @@ export function KeywordCenterPage({
           : stage === "assets"
             ? "关键词资产"
             : "问题库";
+  const pageSubtitle =
+    stage === "generate"
+      ? "根据当前主体、关键词类别、用户意图和地域范围智能生成关键词"
+      : stage === "custom"
+        ? "手工添加和管理关键词"
+        : stage === "distill"
+          ? "整理并确认当前主体的待蒸馏关键词"
+          : stage === "assets"
+            ? "管理当前主体已确认的正式关键词"
+            : "管理当前主体的问题";
 
   return (
     <main className="page-shell">
       <Link href={`/subjects/${params.id}`}>返回主体详情</Link>
       <Typography.Title style={{ marginTop: 16 }}>{pageTitle}</Typography.Title>
+      <Typography.Paragraph type="secondary">{pageSubtitle}</Typography.Paragraph>
       <Typography.Paragraph type="secondary">
-        当前企业：{currentSubject?.official_name || currentSubject?.subject_type.name || "当前主体"}
+        当前企业：{routeSubject?.official_name || routeSubject?.subject_type.name || "当前主体"}
       </Typography.Paragraph>
       <Card className="keyword-center-summary" style={{ marginBottom: 20 }}>
         <Space wrap className="keyword-center-stats">
@@ -548,28 +573,120 @@ export function KeywordCenterPage({
 
       {stage === "generate" ? (
         <Card title="智能生成设置">
-          <GenerationControls
-            targetCount={targetCount}
-            includeShort={includeShort}
-            includeLongTail={includeLongTail}
-            regionMode={regionMode}
-            regionSelections={regionSelections}
-            serviceRegions={serviceRegions}
-            disabled={disabled}
-            onTargetCountChange={setTargetCount}
-            onIncludeShortChange={setIncludeShort}
-            onIncludeLongTailChange={setIncludeLongTail}
-            onRegionModeChange={setRegionMode}
-            onRegionSelectionsChange={setRegionSelections}
-          />
+          <Space direction="vertical" size="large" style={{ width: "100%" }}>
+            <div>
+              <Space wrap style={{ marginBottom: 12 }}>
+                <Typography.Text strong>1. 关键词类别（可多选）</Typography.Text>
+                <Button
+                  size="small"
+                  disabled={disabled}
+                  onClick={() =>
+                    setBusinessCategories(
+                      keywordBusinessCategoryOptions.map((option) => option.value),
+                    )
+                  }
+                >
+                  全部选择
+                </Button>
+                <Button
+                  size="small"
+                  disabled={disabled || businessCategories.length === 0}
+                  onClick={() => setBusinessCategories([])}
+                >
+                  清空
+                </Button>
+              </Space>
+              <Space direction="vertical" size="small" style={{ width: "100%" }}>
+                {categoryGroups.map((group) => (
+                  <Card key={group.title} size="small">
+                    <Space direction="vertical" size="small" style={{ width: "100%" }}>
+                      <Space wrap>
+                        <Typography.Text strong>{group.title}</Typography.Text>
+                        <Button
+                          size="small"
+                          disabled={disabled}
+                          onClick={() => selectCategoryGroup(group.values)}
+                        >
+                          本组全选
+                        </Button>
+                      </Space>
+                      <Space wrap>
+                        {group.values.map((value) => (
+                          <Checkbox
+                            key={value}
+                            checked={businessCategories.includes(value)}
+                            disabled={disabled}
+                            onChange={(event) =>
+                              toggleBusinessCategory(value, event.target.checked)
+                            }
+                          >
+                            {categoryLabel(value)}
+                          </Checkbox>
+                        ))}
+                      </Space>
+                    </Space>
+                  </Card>
+                ))}
+              </Space>
+            </div>
+
+            <div>
+              <Space wrap style={{ marginBottom: 8 }}>
+                <Typography.Text strong>2. 用户意图（可多选）</Typography.Text>
+                <Button
+                  size="small"
+                  disabled={disabled}
+                  onClick={() =>
+                    setSearchIntents(keywordSearchIntentOptions.map((option) => option.value))
+                  }
+                >
+                  全部选择
+                </Button>
+                <Button
+                  size="small"
+                  disabled={disabled || searchIntents.length === 0}
+                  onClick={() => setSearchIntents([])}
+                >
+                  清空
+                </Button>
+              </Space>
+              <Space wrap>
+                {keywordSearchIntentOptions.map((option) => (
+                  <Checkbox
+                    key={option.value}
+                    checked={searchIntents.includes(option.value)}
+                    disabled={disabled}
+                    onChange={(event) => toggleSearchIntent(option.value, event.target.checked)}
+                  >
+                    {option.label}
+                  </Checkbox>
+                ))}
+              </Space>
+            </div>
+
+            <GenerationControls
+              targetCount={targetCount}
+              includeShort={includeShort}
+              includeLongTail={includeLongTail}
+              regionMode={regionMode}
+              regionSelections={regionSelections}
+              serviceRegions={serviceRegions}
+              disabled={disabled}
+              onTargetCountChange={setTargetCount}
+              onIncludeShortChange={setIncludeShort}
+              onIncludeLongTailChange={setIncludeLongTail}
+              onRegionModeChange={setRegionMode}
+              onRegionSelectionsChange={setRegionSelections}
+            />
+          </Space>
           <Space wrap style={{ marginTop: 20 }}>
             <Button
               type="primary"
               loading={busy}
               disabled={disabled}
-              onClick={() => void startGeneration(false, "smart")}
+              onClick={() => void startGeneration(false)}
             >
-              一键生成关键词
+              AI 生成关键词
             </Button>
             {generation ? (
               <Tag color={generation.status === "succeeded" ? "green" : "blue"}>
@@ -582,7 +699,7 @@ export function KeywordCenterPage({
                 description="任务成功后才会扣除，失败会释放额度。"
                 okText="确认再生成"
                 cancelText="取消"
-                onConfirm={() => void startGeneration(true, "smart")}
+                onConfirm={() => void startGeneration(true)}
               >
                 <Button danger disabled={disabled}>
                   确认消耗额度并再生成
@@ -597,14 +714,44 @@ export function KeywordCenterPage({
         <Space direction="vertical" size="large" style={{ width: "100%" }}>
           <Card title="手工添加">
             <Space direction="vertical" size="middle" style={{ width: "100%" }}>
-              <Input
-                aria-label="手工关键词"
-                value={manualText}
-                disabled={disabled}
-                placeholder="输入一个关键词"
-                onChange={(event) => setManualText(event.target.value)}
-              />
-              <Space wrap>
+              <div>
+                <Typography.Text strong>关键词 *</Typography.Text>
+                <Input
+                  aria-label="手工关键词"
+                  value={manualText}
+                  disabled={disabled}
+                  placeholder="输入一个关键词"
+                  style={{ marginTop: 8 }}
+                  onChange={(event) => setManualText(event.target.value)}
+                />
+              </div>
+              <div>
+                <Typography.Text strong>关键词类别 *</Typography.Text>
+                <Select
+                  aria-label="手工关键词分类"
+                  value={manualCategory}
+                  disabled={disabled}
+                  options={keywordBusinessCategoryOptions}
+                  placeholder="选择关键词分类"
+                  style={{ width: "100%", marginTop: 8 }}
+                  onChange={setManualCategory}
+                />
+              </div>
+              <div>
+                <Typography.Text strong>用户意图（可多选）*</Typography.Text>
+                <Select
+                  aria-label="手工用户意图"
+                  mode="multiple"
+                  value={manualIntents}
+                  disabled={disabled}
+                  options={keywordSearchIntentOptions}
+                  placeholder="选择用户意图（可多选）"
+                  style={{ width: "100%", marginTop: 8 }}
+                  onChange={setManualIntents}
+                />
+              </div>
+              <div>
+                <Typography.Text strong>关键词长度 *</Typography.Text>
                 <Select
                   aria-label="手工关键词长度"
                   value={manualLength}
@@ -613,45 +760,35 @@ export function KeywordCenterPage({
                     { value: "short", label: "短关键词" },
                     { value: "long_tail", label: "长尾关键词" },
                   ]}
-                  style={{ width: 150 }}
+                  style={{ width: 180, marginTop: 8 }}
                   onChange={setManualLength}
                 />
-                <Select
-                  aria-label="手工关键词分类"
-                  value={manualCategory}
+              </div>
+              <div>
+                <Typography.Text strong>地域（可选）</Typography.Text>
+                <div style={{ marginTop: 8 }}>
+                  <KeywordRegionSelector
+                    mode="custom"
+                    serviceRegions={serviceRegions}
+                    value={manualRegions}
+                    disabled={disabled}
+                    onChange={setManualRegions}
+                  />
+                </div>
+              </div>
+              <div>
+                <Typography.Text strong>备注（可选）</Typography.Text>
+                <Input.TextArea
+                  aria-label="手工关键词备注"
+                  value={manualNotes}
                   disabled={disabled}
-                  options={keywordBusinessCategoryOptions}
-                  placeholder="选择关键词分类"
-                  style={{ minWidth: 200 }}
-                  onChange={setManualCategory}
+                  rows={2}
+                  maxLength={1000}
+                  placeholder="补充说明"
+                  style={{ marginTop: 8 }}
+                  onChange={(event) => setManualNotes(event.target.value)}
                 />
-                <Select
-                  aria-label="手工用户意图"
-                  mode="multiple"
-                  value={manualIntents}
-                  disabled={disabled}
-                  options={keywordSearchIntentOptions}
-                  placeholder="选择用户意图（可多选）"
-                  style={{ minWidth: 320 }}
-                  onChange={setManualIntents}
-                />
-              </Space>
-              <KeywordRegionSelector
-                mode="custom"
-                serviceRegions={serviceRegions}
-                value={manualRegions}
-                disabled={disabled}
-                onChange={setManualRegions}
-              />
-              <Input.TextArea
-                aria-label="手工关键词备注"
-                value={manualNotes}
-                disabled={disabled}
-                rows={2}
-                maxLength={1000}
-                placeholder="备注（选填）"
-                onChange={(event) => setManualNotes(event.target.value)}
-              />
+              </div>
               <Button type="primary" loading={busy} disabled={disabled} onClick={addManualKeyword}>
                 添加关键词
               </Button>
@@ -660,15 +797,45 @@ export function KeywordCenterPage({
 
           <Card title="批量添加">
             <Space direction="vertical" size="middle" style={{ width: "100%" }}>
-              <Input.TextArea
-                aria-label="批量关键词"
-                value={batchText}
-                disabled={disabled}
-                rows={6}
-                placeholder="每行一个关键词，最多 200 个"
-                onChange={(event) => setBatchText(event.target.value)}
-              />
-              <Space wrap>
+              <div>
+                <Typography.Text strong>关键词（每行一个）*</Typography.Text>
+                <Input.TextArea
+                  aria-label="批量关键词"
+                  value={batchText}
+                  disabled={disabled}
+                  rows={6}
+                  placeholder={"GEO优化\nAI搜索优化\nGEO优化公司\n广州GEO服务\nAI搜索排名优化"}
+                  style={{ marginTop: 8 }}
+                  onChange={(event) => setBatchText(event.target.value)}
+                />
+              </div>
+              <div>
+                <Typography.Text strong>默认关键词类别 *</Typography.Text>
+                <Select
+                  aria-label="批量关键词分类"
+                  value={batchCategory}
+                  disabled={disabled}
+                  options={keywordBusinessCategoryOptions}
+                  placeholder="选择默认关键词类别"
+                  style={{ width: "100%", marginTop: 8 }}
+                  onChange={setBatchCategory}
+                />
+              </div>
+              <div>
+                <Typography.Text strong>默认用户意图（可多选）*</Typography.Text>
+                <Select
+                  aria-label="批量用户意图"
+                  mode="multiple"
+                  value={batchIntents}
+                  disabled={disabled}
+                  options={keywordSearchIntentOptions}
+                  placeholder="选择默认用户意图"
+                  style={{ width: "100%", marginTop: 8 }}
+                  onChange={setBatchIntents}
+                />
+              </div>
+              <div>
+                <Typography.Text strong>默认关键词长度 *</Typography.Text>
                 <Select
                   aria-label="批量关键词长度"
                   value={batchLength}
@@ -677,137 +844,24 @@ export function KeywordCenterPage({
                     { value: "short", label: "短关键词" },
                     { value: "long_tail", label: "长尾关键词" },
                   ]}
-                  style={{ width: 150 }}
+                  style={{ width: 180, marginTop: 8 }}
                   onChange={setBatchLength}
                 />
-                <Select
-                  aria-label="批量关键词分类"
-                  value={batchCategory}
-                  disabled={disabled}
-                  options={keywordBusinessCategoryOptions}
-                  placeholder="选择统一分类"
-                  style={{ minWidth: 200 }}
-                  onChange={setBatchCategory}
-                />
-                <Select
-                  aria-label="批量用户意图"
-                  mode="multiple"
-                  value={batchIntents}
-                  disabled={disabled}
-                  options={keywordSearchIntentOptions}
-                  placeholder="选择统一用户意图"
-                  style={{ minWidth: 320 }}
-                  onChange={setBatchIntents}
-                />
-              </Space>
-              <KeywordRegionSelector
-                mode="custom"
-                serviceRegions={serviceRegions}
-                value={batchRegions}
-                disabled={disabled}
-                onChange={setBatchRegions}
-              />
-              <Button type="primary" loading={busy} disabled={disabled} onClick={addBatchKeywords}>
-                批量加入待蒸馏关键词
-              </Button>
-            </Space>
-          </Card>
-
-          <Card title="按分类和意图 AI 生成">
-            <Space direction="vertical" size="middle" style={{ width: "100%" }}>
-              <div>
-                <Space wrap style={{ marginBottom: 12 }}>
-                  <Typography.Text strong>关键词分类（可多选）</Typography.Text>
-                  <Button
-                    size="small"
-                    disabled={disabled}
-                    onClick={() =>
-                      setBusinessCategories(
-                        keywordBusinessCategoryOptions.map((option) => option.value),
-                      )
-                    }
-                  >
-                    全部选择
-                  </Button>
-                  <Button
-                    size="small"
-                    disabled={disabled || businessCategories.length === 0}
-                    onClick={() => setBusinessCategories([])}
-                  >
-                    清空
-                  </Button>
-                </Space>
-                <Space direction="vertical" size="small" style={{ width: "100%" }}>
-                  {categoryGroups.map((group) => (
-                    <Card key={group.title} size="small">
-                      <Space direction="vertical" size="small" style={{ width: "100%" }}>
-                        <Space wrap>
-                          <Typography.Text strong>{group.title}</Typography.Text>
-                          <Button
-                            size="small"
-                            disabled={disabled}
-                            onClick={() => selectCategoryGroup(group.values)}
-                          >
-                            本组全选
-                          </Button>
-                        </Space>
-                        <Space wrap>
-                          {group.values.map((value) => (
-                            <Checkbox
-                              key={value}
-                              checked={businessCategories.includes(value)}
-                              disabled={disabled}
-                              onChange={(event) =>
-                                toggleBusinessCategory(value, event.target.checked)
-                              }
-                            >
-                              {categoryLabel(value)}
-                            </Checkbox>
-                          ))}
-                        </Space>
-                      </Space>
-                    </Card>
-                  ))}
-                </Space>
               </div>
               <div>
-                <Typography.Text strong>用户意图（可多选）</Typography.Text>
+                <Typography.Text strong>默认地域（可选）</Typography.Text>
                 <div style={{ marginTop: 8 }}>
-                  <Space wrap>
-                    {keywordSearchIntentOptions.map((option) => (
-                      <Checkbox
-                        key={option.value}
-                        checked={searchIntents.includes(option.value)}
-                        disabled={disabled}
-                        onChange={(event) => toggleSearchIntent(option.value, event.target.checked)}
-                      >
-                        {option.label}
-                      </Checkbox>
-                    ))}
-                  </Space>
+                  <KeywordRegionSelector
+                    mode="custom"
+                    serviceRegions={serviceRegions}
+                    value={batchRegions}
+                    disabled={disabled}
+                    onChange={setBatchRegions}
+                  />
                 </div>
               </div>
-              <GenerationControls
-                targetCount={targetCount}
-                includeShort={includeShort}
-                includeLongTail={includeLongTail}
-                regionMode={regionMode}
-                regionSelections={regionSelections}
-                serviceRegions={serviceRegions}
-                disabled={disabled}
-                onTargetCountChange={setTargetCount}
-                onIncludeShortChange={setIncludeShort}
-                onIncludeLongTailChange={setIncludeLongTail}
-                onRegionModeChange={setRegionMode}
-                onRegionSelectionsChange={setRegionSelections}
-              />
-              <Button
-                type="primary"
-                loading={busy}
-                disabled={disabled}
-                onClick={() => void startGeneration(false, "custom")}
-              >
-                生成自定义关键词
+              <Button type="primary" loading={busy} disabled={disabled} onClick={addBatchKeywords}>
+                批量添加
               </Button>
             </Space>
           </Card>
@@ -840,7 +894,7 @@ export function KeywordCenterPage({
               </Space>
             ) : (
               <Typography.Text type="secondary">
-                暂无待蒸馏关键词，可通过手工、批量或 AI 方式添加。
+                暂无待蒸馏关键词，可通过单条或批量方式添加。
               </Typography.Text>
             )}
           </Card>
