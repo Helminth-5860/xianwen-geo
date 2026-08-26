@@ -11,6 +11,7 @@ import { UserWorkspaceNavigation } from "@/components/user-workspace-navigation"
 import "./globals.css";
 import "./product-shell.css";
 import "./assistant-widget.css";
+import "./website-audit.css";
 
 export const metadata: Metadata = {
   title: "显问 GEO 智能体系统",
