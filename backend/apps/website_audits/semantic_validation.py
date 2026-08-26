@@ -86,6 +86,7 @@ def validate_semantic_audit_output(
     allowed_question_ids: frozenset[str],
     page_url_by_id: dict[str, str],
     page_text_by_id: dict[str, str] | None = None,
+    evidence_span_by_id: dict[str, dict[str, str]] | None = None,
 ) -> ValidatedSemanticAudit:
     if not isinstance(payload, dict):
         raise SemanticAuditSchemaError("root_not_object")
@@ -255,27 +256,55 @@ def validate_semantic_audit_output(
     if not isinstance(raw_passages, list) or len(raw_passages) > 25:
         raise SemanticAuditSchemaError("citeable_passages_invalid")
     passages: list[dict[str, object]] = []
-    source_texts = page_text_by_id or {}
-    for row in raw_passages:
-        if not isinstance(row, dict):
-            raise SemanticAuditSchemaError("citeable_passage_row_invalid")
-        page_id = _text(row.get("page_id"), maximum=100)
-        if page_id not in allowed_page_ids:
-            raise SemanticAuditSchemaError("invented_passage_page_id")
-        excerpt = _text(row.get("excerpt"), maximum=300)
-        if source_texts:
-            source = _normalized_evidence_text(source_texts.get(page_id, ""))
-            needle = _normalized_evidence_text(excerpt)
-            if not source or not needle or needle not in source:
-                raise SemanticAuditSchemaError("passage_excerpt_not_in_source")
-        passages.append(
-            {
-                "page_id": page_id,
-                "url": page_url_by_id[page_id],
-                "reason": _text(row.get("reason"), maximum=800),
-                "excerpt": excerpt,
-            }
-        )
+
+    if evidence_span_by_id is not None:
+        if not evidence_span_by_id:
+            raise SemanticAuditSchemaError("evidence_span_contract_invalid")
+        for row in raw_passages:
+            if not isinstance(row, dict):
+                raise SemanticAuditSchemaError("citeable_passage_row_invalid")
+            span_id = _text(row.get("evidence_span_id"), maximum=120)
+            span = evidence_span_by_id.get(span_id)
+            if not isinstance(span, dict):
+                raise SemanticAuditSchemaError("invented_evidence_span_id")
+            page_id = _text(span.get("page_id"), maximum=100)
+            url = _text(span.get("url"), maximum=4096)
+            excerpt = _text(span.get("text"), maximum=300)
+            if page_id not in allowed_page_ids:
+                raise SemanticAuditSchemaError("evidence_span_page_invalid")
+            if page_url_by_id.get(page_id) != url:
+                raise SemanticAuditSchemaError("evidence_span_url_mapping_invalid")
+            passages.append(
+                {
+                    "evidence_span_id": span_id,
+                    "page_id": page_id,
+                    "url": url,
+                    "reason": _text(row.get("reason"), maximum=800),
+                    "excerpt": excerpt,
+                }
+            )
+    else:
+        source_texts = page_text_by_id or {}
+        for row in raw_passages:
+            if not isinstance(row, dict):
+                raise SemanticAuditSchemaError("citeable_passage_row_invalid")
+            page_id = _text(row.get("page_id"), maximum=100)
+            if page_id not in allowed_page_ids:
+                raise SemanticAuditSchemaError("invented_passage_page_id")
+            excerpt = _text(row.get("excerpt"), maximum=300)
+            if source_texts:
+                source = _normalized_evidence_text(source_texts.get(page_id, ""))
+                needle = _normalized_evidence_text(excerpt)
+                if not source or not needle or needle not in source:
+                    raise SemanticAuditSchemaError("passage_excerpt_not_in_source")
+            passages.append(
+                {
+                    "page_id": page_id,
+                    "url": page_url_by_id[page_id],
+                    "reason": _text(row.get("reason"), maximum=800),
+                    "excerpt": excerpt,
+                }
+            )
 
     normalized = {
         "summary": summary,
