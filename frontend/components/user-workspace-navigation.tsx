@@ -38,6 +38,7 @@ function workspaceMenu(subjectId: string | null): MenuItem[] {
   const distillHome = subjectId ? `/subjects/${subjectId}/keywords/distill` : "/subjects";
   const assetHome = subjectId ? `/subjects/${subjectId}/keywords/assets` : "/subjects";
   const questionHome = subjectId ? `/subjects/${subjectId}/questions` : "/subjects";
+  const questionManageHome = subjectId ? `/subjects/${subjectId}/questions/manage` : "/subjects";
   const articleHome = subjectId ? `/subjects/${subjectId}/articles/new` : "/subjects";
 
   return [
@@ -72,7 +73,7 @@ function workspaceMenu(subjectId: string | null): MenuItem[] {
       label: "问题库",
       children: [
         linkedItem("questions-generate", "问题生成", questionHome),
-        linkedItem("questions-manage", "问题管理", questionHome),
+        linkedItem("questions-manage", "问题管理", questionManageHome),
       ],
     },
     {
@@ -138,6 +139,7 @@ function selectedMenuKey(pathname: string) {
   if (pathname.includes("/keywords/assets")) return "keywords-assets";
   if (pathname.includes("/keywords/custom")) return "keywords-custom";
   if (pathname.includes("/keywords")) return "keywords-smart";
+  if (pathname.includes("/questions/manage")) return "questions-manage";
   if (pathname.includes("/questions")) return "questions-generate";
   if (pathname.startsWith("/geo/website-audits")) return "detections-website";
   if (pathname.startsWith("/geo/detections")) return "detections-subject";

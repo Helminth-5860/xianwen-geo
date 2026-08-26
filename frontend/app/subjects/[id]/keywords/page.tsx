@@ -523,7 +523,7 @@ export function KeywordCenterPage({
           ? "关键词蒸馏"
           : stage === "assets"
             ? "关键词资产"
-            : "问题库";
+            : "问题生成";
   const pageSubtitle =
     stage === "generate"
       ? "根据当前主体、关键词类别、用户意图和地域范围智能生成关键词"
@@ -533,7 +533,7 @@ export function KeywordCenterPage({
           ? "整理并确认当前主体的待蒸馏关键词"
           : stage === "assets"
             ? "管理当前主体已确认的正式关键词"
-            : "管理当前主体的问题";
+            : "选择已确认的关键词资产并生成问题草稿";
 
   return (
     <main className="page-shell">

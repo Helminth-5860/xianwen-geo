@@ -42,6 +42,8 @@ merge 组至少包含两个输入关键词；组内 canonical_keyword_id 必须�
 source_keyword_id；组内 merge_group_key 必须是同一个合法 UUID。不得跨地域合并。
 reason 必须是简洁中文，不得包含联系方式、提示词或任何密钥。
 不得新增、遗漏或改写 source_keyword_id。
+如果不能确定某组合并是否同时满足同地域、至少两个成员且标准词属于组内，必须使用 keep，
+不得输出不完整或跨地域的 merge 组。
 当任务为 repair_geo_keyword_distillation_json 时，必须逐条修正 invalid_output，
 并严格使用 required_source_keyword_ids，仍然只返回上述 JSON 对象。
 """.strip()
@@ -178,6 +180,91 @@ def _normalize_merge_canonical_members(items, inputs):
             merge_group_key=item.merge_group_key,
         )
     return tuple(output)
+
+
+_SAFE_MERGE_DOWNGRADE_REASONS = frozenset(
+    {
+        "canonical_keyword_id_invalid",
+        "merge_group_key_invalid",
+        "merge_group_singleton",
+        "merge_group_canonical_mismatch",
+        "merge_group_canonical_not_member",
+        "merge_group_region_mismatch",
+    }
+)
+
+
+def _canonical_uuid(value):
+    try:
+        return str(uuid.UUID(str(value)))
+    except (TypeError, ValueError, AttributeError):
+        return None
+
+
+def _normalize_safe_semantics(items, inputs, *, downgrade_invalid_merge_groups):
+    """Apply finite, lossless cleanup to a provider response.
+
+    Non-merge rows cannot use merge metadata, so clearing that metadata is
+    unambiguous. After the single provider repair attempt, an invalid merge
+    group is conservatively downgraded to ``keep`` instead of discarding an
+    otherwise complete batch. Input coverage and source IDs remain subject to
+    the strict validator.
+    """
+
+    output = list(items)
+    input_map = {_canonical_uuid(item.id): item for item in inputs}
+    groups: dict[str, list[int]] = {}
+    cleaned_non_merge_items = 0
+    for index, item in enumerate(output):
+        if item.action != "merge":
+            if item.canonical_keyword_id is not None or item.merge_group_key is not None:
+                output[index] = replace(
+                    item,
+                    canonical_keyword_id=None,
+                    merge_group_key=None,
+                )
+                cleaned_non_merge_items += 1
+            continue
+        group_key = item.merge_group_key or f"missing-group:{index}"
+        groups.setdefault(group_key, []).append(index)
+
+    downgraded_merge_items = 0
+    if downgrade_invalid_merge_groups:
+        for group_key, indexes in groups.items():
+            members = [output[index] for index in indexes]
+            source_ids = {_canonical_uuid(item.source_keyword_id) for item in members}
+            canonical_ids = {_canonical_uuid(item.canonical_keyword_id) for item in members}
+            signatures = {
+                (
+                    input_map[source_id].is_regional,
+                    input_map[source_id].region_matching_key,
+                )
+                for source_id in source_ids
+                if source_id in input_map
+            }
+            valid = (
+                not group_key.startswith("missing-group:")
+                and _canonical_uuid(group_key) is not None
+                and None not in source_ids
+                and source_ids.issubset(input_map)
+                and len(indexes) >= 2
+                and len(canonical_ids) == 1
+                and None not in canonical_ids
+                and next(iter(canonical_ids)) in source_ids
+                and len(signatures) == 1
+            )
+            if valid:
+                continue
+            for index in indexes:
+                output[index] = replace(
+                    output[index],
+                    action="keep",
+                    canonical_keyword_id=None,
+                    merge_group_key=None,
+                )
+                downgraded_merge_items += 1
+
+    return tuple(output), cleaned_non_merge_items, downgraded_merge_items
 
 
 def _required_text(row, key):
@@ -342,6 +429,8 @@ class DeepSeekDistillationProvider(DeepSeekStructuredContentAdapter):
         diagnostic = None
         response = None
         items = None
+        cleaned_non_merge_items = 0
+        downgraded_merge_items = 0
         for request_index in range(2):
             normalized = self._adapter_request(
                 runtime,
@@ -378,6 +467,12 @@ class DeepSeekDistillationProvider(DeepSeekStructuredContentAdapter):
                     self._items(response.output.content, request),
                     request.keywords,
                 )
+                items, cleaned_count, _ = _normalize_safe_semantics(
+                    items,
+                    request.keywords,
+                    downgrade_invalid_merge_groups=False,
+                )
+                cleaned_non_merge_items = cleaned_count
                 candidate = DistillationResponse(
                     items=items,
                     model_key=self.model_key,
@@ -390,14 +485,31 @@ class DeepSeekDistillationProvider(DeepSeekStructuredContentAdapter):
 
                 validate_provider_response(inputs=request.keywords, response=candidate)
             except DistillationInvalidResponse as exc:
-                diagnostic = exc.diagnostic or _structure_diagnostic(
+                diagnostic = _structure_diagnostic(
                     response.output.content,
                     exc.reason,
                     input_count=len(request.keywords),
                 )
+                diagnostic.update(exc.diagnostic)
                 if request_index == 0:
                     repair_output = response.output.content
                     continue
+                if exc.reason in _SAFE_MERGE_DOWNGRADE_REASONS and items is not None:
+                    items, cleaned_count, downgraded_merge_items = _normalize_safe_semantics(
+                        items,
+                        request.keywords,
+                        downgrade_invalid_merge_groups=True,
+                    )
+                    cleaned_non_merge_items += cleaned_count
+                    validate_provider_response(
+                        inputs=request.keywords,
+                        response=DistillationResponse(
+                            items=items,
+                            model_key=self.model_key,
+                            provider_metrics={},
+                        ),
+                    )
+                    break
                 raise DistillationInvalidResponse(
                     exc.reason,
                     diagnostic=diagnostic,
@@ -414,6 +526,10 @@ class DeepSeekDistillationProvider(DeepSeekStructuredContentAdapter):
         if response.usage.total_tokens is not None:
             metrics["total_tokens"] = response.usage.total_tokens
         metrics["request_count"] = 2 if repair_output is not None else 1
+        if cleaned_non_merge_items:
+            metrics["normalized_non_merge_items"] = cleaned_non_merge_items
+        if downgraded_merge_items:
+            metrics["downgraded_merge_items"] = downgraded_merge_items
         return DistillationResponse(
             items=items,
             model_key=self.model_key,

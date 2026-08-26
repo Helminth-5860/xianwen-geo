@@ -182,7 +182,7 @@ def test_deepseek_distillation_invalid_schema_fails_closed():
         provider.distill(request)
 
 
-def test_deepseek_distillation_does_not_merge_across_regions():
+def test_deepseek_distillation_safely_downgrades_cross_region_merge_after_one_repair():
     request = distillation_request()
     request = replace(
         request,
@@ -232,8 +232,12 @@ def test_deepseek_distillation_does_not_merge_across_regions():
         runtime_resolver=runtime_snapshot,
     )
 
-    with pytest.raises(DistillationInvalidResponse):
-        provider.distill(request)
+    response = provider.distill(request)
+
+    normalized = validate_provider_response(inputs=request.keywords, response=response)
+    assert [item.action for item in normalized] == ["keep", "keep", "delete"]
+    assert response.provider_metrics["request_count"] == 2
+    assert response.provider_metrics["downgraded_merge_items"] == 1
 
 
 def test_deepseek_distillation_repairs_semantic_schema_once():
@@ -362,6 +366,59 @@ def test_deepseek_distillation_preserves_complete_coverage_for_32_inputs():
 
     assert len(validate_provider_response(inputs=request.keywords, response=response)) == 32
     assert response.provider_metrics["request_count"] == 1
+
+
+def test_deepseek_distillation_preserves_61_items_when_one_merge_is_invalid():
+    base = distillation_request()
+    request = replace(
+        base,
+        keywords=tuple(
+            replace(
+                base.keywords[index % len(base.keywords)],
+                id=str(uuid.UUID(int=index + 1)),
+                text=f"测试关键词 {index + 1}",
+                is_regional=index == 0,
+                region_matching_key="regions:national" if index == 0 else "",
+            )
+            for index in range(61)
+        ),
+    )
+    group_key = str(uuid.UUID(int=300))
+
+    def handler(raw):
+        rows = [
+            {
+                "source_keyword_id": item.id,
+                "action": "keep",
+                "canonical_keyword_id": None,
+                "merge_group_key": None,
+                "reason": "保留当前关键词",
+            }
+            for item in request.keywords
+        ]
+        rows[1].update(
+            {
+                "action": "merge",
+                "canonical_keyword_id": request.keywords[0].id,
+                "merge_group_key": group_key,
+                "reason": "模型尝试跨地域合并",
+            }
+        )
+        return _provider_response(raw, {"items": rows}, input_count=61)
+
+    provider = DeepSeekDistillationProvider(
+        credential_resolver=CredentialResolver(),
+        transport=httpx.MockTransport(handler),
+        runtime_resolver=runtime_snapshot,
+    )
+
+    response = provider.distill(request)
+
+    normalized = validate_provider_response(inputs=request.keywords, response=response)
+    assert len(normalized) == 61
+    assert all(item.action == "keep" for item in normalized)
+    assert response.provider_metrics["request_count"] == 2
+    assert response.provider_metrics["downgraded_merge_items"] == 1
 
 
 def test_deepseek_distillation_fails_after_one_repair_with_safe_diagnostic():

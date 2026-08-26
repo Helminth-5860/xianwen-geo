@@ -261,8 +261,12 @@ describe("GEO 产品工作台", () => {
     );
 
     await userEvent.click(screen.getByText("问题库"));
-    expect(screen.getByRole("link", { name: "问题生成" })).toBeTruthy();
-    expect(screen.getByRole("link", { name: "问题管理" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "问题生成" }).getAttribute("href")).toBe(
+      "/subjects/subject-1/questions",
+    );
+    expect(screen.getByRole("link", { name: "问题管理" }).getAttribute("href")).toBe(
+      "/subjects/subject-1/questions/manage",
+    );
     expect(screen.getByRole("menuitem", { name: /关键词中心/ }).getAttribute("aria-expanded")).toBe(
       "false",
     );

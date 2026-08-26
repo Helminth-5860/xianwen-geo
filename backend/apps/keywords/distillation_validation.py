@@ -10,6 +10,28 @@ from .normalization import KeywordNormalizationError, normalize_plain_text
 ACTIONS = {"keep", "merge", "delete", "low_value"}
 
 
+def _provider_invalid(reason, *, source_keyword_ids=(), merge_group_key=None, **details):
+    diagnostic = {
+        "root_cause": "provider_semantic_mismatch",
+        "parse_failure_reason": reason,
+        "source_keyword_ids": sorted({str(value) for value in source_keyword_ids})[:20],
+    }
+    if merge_group_key is not None:
+        diagnostic["merge_group_key"] = str(merge_group_key)[:64]
+    diagnostic.update(details)
+    raise DistillationInvalidResponse(reason, diagnostic=diagnostic)
+
+
+def _raise_validation_error(error_type, reason, *, items=(), merge_group_key=None):
+    if error_type is DistillationInvalidResponse:
+        _provider_invalid(
+            reason,
+            source_keyword_ids=(item.source_keyword_id for item in items),
+            merge_group_key=merge_group_key,
+        )
+    raise error_type
+
+
 @dataclass(frozen=True)
 class NormalizedDistillationItem:
     source_keyword_id: uuid.UUID
@@ -30,22 +52,22 @@ class NormalizedDistillationItem:
         }
 
 
-def _uuid(value, *, required: bool) -> uuid.UUID | None:
+def _uuid(value, *, required: bool, reason: str = "uuid_invalid") -> uuid.UUID | None:
     if value in (None, "") and not required:
         return None
     try:
         return uuid.UUID(str(value))
     except (TypeError, ValueError, AttributeError) as exc:
-        raise DistillationInvalidResponse from exc
+        raise DistillationInvalidResponse(reason) from exc
 
 
 def _reason(value) -> str:
     if not isinstance(value, str):
-        raise DistillationInvalidResponse
+        raise DistillationInvalidResponse("reason_type")
     try:
         normalized, _ = normalize_plain_text(value, max_length=1000)
     except KeywordNormalizationError as exc:
-        raise DistillationInvalidResponse from exc
+        raise DistillationInvalidResponse("reason_invalid") from exc
     return normalized
 
 
@@ -58,11 +80,29 @@ def _validate_merge_groups(items, input_map, error_type):
     for members in groups.values():
         source_ids = {item.source_keyword_id for item in members}
         canonical_ids = {item.canonical_keyword_id for item in members}
-        if len(members) < 2 or len(canonical_ids) != 1:
-            raise error_type
+        merge_group_key = members[0].merge_group_key
+        if len(members) < 2:
+            _raise_validation_error(
+                error_type,
+                "merge_group_singleton",
+                items=members,
+                merge_group_key=merge_group_key,
+            )
+        if len(canonical_ids) != 1:
+            _raise_validation_error(
+                error_type,
+                "merge_group_canonical_mismatch",
+                items=members,
+                merge_group_key=merge_group_key,
+            )
         canonical_id = next(iter(canonical_ids))
         if canonical_id not in source_ids:
-            raise error_type
+            _raise_validation_error(
+                error_type,
+                "merge_group_canonical_not_member",
+                items=members,
+                merge_group_key=merge_group_key,
+            )
         signatures = {
             (
                 input_map[item.source_keyword_id].is_regional,
@@ -71,28 +111,58 @@ def _validate_merge_groups(items, input_map, error_type):
             for item in members
         }
         if len(signatures) != 1:
-            raise error_type
+            _raise_validation_error(
+                error_type,
+                "merge_group_region_mismatch",
+                items=members,
+                merge_group_key=merge_group_key,
+            )
 
 
 def validate_provider_response(
     *, inputs: tuple[DistillationKeywordInput, ...], response: DistillationResponse
 ) -> list[NormalizedDistillationItem]:
-    input_map = {uuid.UUID(item.id): item for item in inputs}
-    if len(input_map) != len(inputs) or len(response.items) != len(inputs):
-        raise DistillationInvalidResponse
+    try:
+        input_map = {uuid.UUID(item.id): item for item in inputs}
+    except (TypeError, ValueError, AttributeError) as exc:
+        raise DistillationInvalidResponse("input_id_invalid") from exc
+    if len(input_map) != len(inputs):
+        raise DistillationInvalidResponse("input_id_duplicate")
+    if len(response.items) != len(inputs):
+        _provider_invalid(
+            "item_count_mismatch",
+            expected_item_count=len(inputs),
+            actual_item_count=len(response.items),
+        )
     normalized = []
     seen = set()
     for item in response.items:
-        source_id = _uuid(item.source_keyword_id, required=True)
+        source_id = _uuid(
+            item.source_keyword_id,
+            required=True,
+            reason="source_keyword_id_invalid",
+        )
         assert source_id is not None
-        if source_id not in input_map or source_id in seen or item.action not in ACTIONS:
-            raise DistillationInvalidResponse
+        if source_id not in input_map:
+            _provider_invalid("source_keyword_id_unknown", source_keyword_ids=(source_id,))
+        if source_id in seen:
+            _provider_invalid("source_keyword_id_duplicate", source_keyword_ids=(source_id,))
+        if item.action not in ACTIONS:
+            _provider_invalid("action_invalid", source_keyword_ids=(source_id,))
         seen.add(source_id)
         is_merge = item.action == "merge"
-        canonical_id = _uuid(item.canonical_keyword_id, required=is_merge)
-        group_key = _uuid(item.merge_group_key, required=is_merge)
+        canonical_id = _uuid(
+            item.canonical_keyword_id,
+            required=is_merge,
+            reason="canonical_keyword_id_invalid",
+        )
+        group_key = _uuid(
+            item.merge_group_key,
+            required=is_merge,
+            reason="merge_group_key_invalid",
+        )
         if not is_merge and (canonical_id is not None or group_key is not None):
-            raise DistillationInvalidResponse
+            _provider_invalid("non_merge_metadata_present", source_keyword_ids=(source_id,))
         normalized.append(
             NormalizedDistillationItem(
                 source_keyword_id=source_id,
@@ -103,7 +173,10 @@ def validate_provider_response(
             )
         )
     if seen != set(input_map):
-        raise DistillationInvalidResponse
+        _provider_invalid(
+            "source_keyword_id_missing",
+            source_keyword_ids=(set(input_map) - seen),
+        )
     _validate_merge_groups(normalized, input_map, DistillationInvalidResponse)
     return normalized
 
