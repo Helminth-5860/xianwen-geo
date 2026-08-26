@@ -30,6 +30,7 @@ from .distillation_services import (
     confirm_distillation,
     create_distillation_job,
     current_distillation_for_user_or_404,
+    distillation_draft_content_digest,
     distillation_job_for_user_or_404,
     distillation_quota_payload,
     distillation_workspace_for_subject,
@@ -171,6 +172,45 @@ def _workspace_payload(*, user, subject, workspace=None):
     state = keyword_write_state(user=user, subject=subject)
     keyword_set = getattr(subject, "keyword_set", None)
     current_keyword_version = getattr(keyword_set, "current_version", None)
+    current_keyword_rows = (
+        list(current_keyword_version.keywords.order_by("sort_order", "id"))
+        if current_keyword_version
+        else []
+    )
+    consumed_keys = set()
+    if workspace and workspace.current_set_id:
+        consumed_keys = {
+            (
+                item.source_keyword.matching_text,
+                item.source_keyword.region_matching_key,
+            )
+            for item in workspace.current_set.items.select_related("source_keyword")
+        }
+    pending_rows = [
+        row
+        for row in current_keyword_rows
+        if (row.matching_text, row.region_matching_key) not in consumed_keys
+    ]
+    draft_rows = (
+        list(
+            workspace.draft_items.select_related(
+                "source_keyword", "canonical_keyword", "ai_canonical_keyword"
+            ).order_by("sort_order", "id")
+        )
+        if workspace
+        else []
+    )
+    has_unconfirmed_result = bool(
+        workspace
+        and draft_rows
+        and (
+            workspace.current_set_id is None
+            or workspace.current_set.input_keyword_set_version_id
+            != workspace.draft_input_version_id
+            or workspace.current_set.content_digest
+            != distillation_draft_content_digest(workspace, rows=draft_rows)
+        )
+    )
     return {
         "version": workspace.version if workspace else 0,
         "can_write": state.can_write,
@@ -197,16 +237,10 @@ def _workspace_payload(*, user, subject, workspace=None):
         "current_distillation_version_no": (
             workspace.current_set.version_no if workspace and workspace.current_set else None
         ),
-        "items": (
-            [
-                _item_payload(item)
-                for item in workspace.draft_items.select_related(
-                    "source_keyword", "canonical_keyword", "ai_canonical_keyword"
-                ).order_by("sort_order", "id")
-            ]
-            if workspace
-            else []
-        ),
+        "pending_item_count": len(pending_rows),
+        "pending_items": [_keyword_payload(row) for row in pending_rows],
+        "has_unconfirmed_result": has_unconfirmed_result,
+        "items": [_item_payload(item) for item in draft_rows],
     }
 
 

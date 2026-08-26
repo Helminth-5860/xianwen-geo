@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -58,6 +58,15 @@ const draft = {
   draft_input_version: { id: "keyword-version-1", version_no: 1, item_count: 5 },
   source_result_id: "result-1",
   current_distillation_version_no: null,
+  pending_item_count: 5,
+  pending_items: [
+    source("keyword-1", "品牌咨询", 0),
+    source("keyword-2", "企业品牌服务", 1),
+    source("keyword-3", "品牌企业服务", 2),
+    source("keyword-4", "无关旧词", 3),
+    source("keyword-5", "低价值宽泛词", 4),
+  ],
+  has_unconfirmed_result: true,
   items: [
     item("keyword-1", "品牌咨询", "keep", 0),
     item("keyword-2", "企业品牌服务", "merge", 1),
@@ -117,6 +126,10 @@ afterEach(cleanup);
 
 describe("DistillationPanel", () => {
   it("starts, polls success, and protects unsaved keyword changes", async () => {
+    api.getDistillationDraft.mockResolvedValue({
+      ...draft,
+      has_unconfirmed_result: false,
+    });
     const { rerender } = render(<DistillationPanel subjectId="subject-1" keywordDirty />);
     expect(await screen.findByText("关键词蒸馏")).toBeTruthy();
     expect(screen.getByRole("button", { name: "AI 蒸馏关键词" })).toHaveProperty("disabled", true);
@@ -146,6 +159,7 @@ describe("DistillationPanel", () => {
   });
 
   it("saves user adjustment separately and confirms an immutable version", async () => {
+    const onConfirmed = vi.fn().mockResolvedValue(undefined);
     api.saveDistillationDraft.mockImplementation(async (_subjectId, _version, items) => ({
       ...draft,
       version: 2,
@@ -163,7 +177,9 @@ describe("DistillationPanel", () => {
         items: draft.items,
       },
     });
-    render(<DistillationPanel subjectId="subject-1" keywordDirty={false} />);
+    render(
+      <DistillationPanel subjectId="subject-1" keywordDirty={false} onConfirmed={onConfirmed} />,
+    );
     expect(await screen.findByText("无关旧词")).toBeTruthy();
 
     await userEvent.click(screen.getByLabelText("蒸馏动作-4"));
@@ -183,6 +199,7 @@ describe("DistillationPanel", () => {
     await userEvent.click(screen.getByRole("button", { name: "确认蒸馏结果" }));
     await userEvent.click(await screen.findByRole("button", { name: "确认结果" }));
     await waitFor(() => expect(api.confirmDistillation).toHaveBeenCalledWith("subject-1", 2));
+    await waitFor(() => expect(onConfirmed).toHaveBeenCalledTimes(1));
   });
 
   it("拆分合并组时原子恢复组内全部关键词", async () => {
@@ -209,7 +226,82 @@ describe("DistillationPanel", () => {
     }
   });
 
+  it("首屏展示确认操作并将蒸馏结果按每页20条分页", async () => {
+    api.getDistillationDraft.mockResolvedValue({
+      ...draft,
+      current_keyword_set_version: {
+        ...draft.current_keyword_set_version,
+        item_count: 25,
+      },
+      items: Array.from({ length: 25 }, (_, index) =>
+        item(`keyword-${index + 1}`, `分页关键词 ${index + 1}`, "keep", index),
+      ),
+    });
+    render(<DistillationPanel subjectId="subject-1" keywordDirty={false} />);
+
+    const firstItem = await screen.findByText("分页关键词 1");
+    const confirmButton = screen.getByRole("button", { name: "确认蒸馏结果" });
+    expect(
+      Boolean(confirmButton.compareDocumentPosition(firstItem) & Node.DOCUMENT_POSITION_FOLLOWING),
+    ).toBe(true);
+    expect(screen.getByText("分页关键词 20")).toBeTruthy();
+    expect(screen.queryByText("分页关键词 21")).toBeNull();
+    expect(screen.getByText("第 1-20 条，共 25 条")).toBeTruthy();
+
+    await userEvent.click(within(screen.getByLabelText("蒸馏结果分页")).getByTitle("2"));
+    expect(await screen.findByText("分页关键词 21")).toBeTruthy();
+    expect(screen.queryByText("分页关键词 1")).toBeNull();
+    expect(screen.getByText("第 21-25 条，共 25 条")).toBeTruthy();
+  });
+
+  it("待蒸馏候选只在蒸馏页展示并按每页20条分页", async () => {
+    api.getDistillationDraft.mockResolvedValue({
+      ...draft,
+      current_keyword_set_version: {
+        ...draft.current_keyword_set_version,
+        item_count: 25,
+      },
+      pending_item_count: 25,
+      pending_items: Array.from({ length: 25 }, (_, index) =>
+        source(`pending-${index + 1}`, `待处理关键词 ${index + 1}`, index),
+      ),
+      has_unconfirmed_result: false,
+    });
+    render(<DistillationPanel subjectId="subject-1" keywordDirty={false} />);
+
+    expect(await screen.findByText("待处理关键词 1")).toBeTruthy();
+    expect(screen.getByText("待处理关键词 20")).toBeTruthy();
+    expect(screen.queryByText("待处理关键词 21")).toBeNull();
+    expect(screen.getByText("第 1-20 条，共 25 条")).toBeTruthy();
+    await userEvent.click(within(screen.getByLabelText("待蒸馏关键词分页")).getByTitle("2"));
+    expect(await screen.findByText("待处理关键词 21")).toBeTruthy();
+    expect(screen.queryByText("待处理关键词 1")).toBeNull();
+    expect(screen.queryByRole("button", { name: "确认蒸馏结果" })).toBeNull();
+  });
+
+  it("已确认且没有新增关键词时不再重复展示历史蒸馏结果", async () => {
+    api.getDistillationDraft.mockResolvedValue({
+      ...draft,
+      current_distillation_version_no: 2,
+      pending_item_count: 0,
+      pending_items: [],
+      has_unconfirmed_result: false,
+    });
+    render(<DistillationPanel subjectId="subject-1" keywordDirty={false} />);
+
+    expect(await screen.findByText("当前没有待蒸馏关键词。")).toBeTruthy();
+    expect(screen.getByText("待蒸馏关键词 0")).toBeTruthy();
+    expect(screen.queryByText("品牌咨询")).toBeNull();
+    expect(screen.queryByRole("button", { name: "确认蒸馏结果" })).toBeNull();
+    expect(screen.getByRole("button", { name: "AI 蒸馏关键词" })).toHaveProperty("disabled", true);
+  });
+
   it("requires explicit confirmation before billable re-distillation", async () => {
+    api.getDistillationDraft.mockResolvedValue({
+      ...draft,
+      current_distillation_version_no: 1,
+      has_unconfirmed_result: false,
+    });
     api.createDistillation
       .mockRejectedValueOnce(
         new AuthApiError(new Response(null, { status: 409 }), {

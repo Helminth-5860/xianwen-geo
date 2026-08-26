@@ -36,7 +36,11 @@ from apps.keywords.models import (
     DistillationSet,
     DistillationWorkspace,
 )
-from apps.keywords.services import commit_keyword_version, save_keyword_draft
+from apps.keywords.services import (
+    append_keyword_draft_items,
+    commit_keyword_version,
+    save_keyword_draft,
+)
 from apps.plans.models import Plan, PlanVersion, Subscription
 from apps.quotas.catalog import QUOTA_CATALOG
 from apps.quotas.models import QuotaAccount, QuotaLedgerEntry
@@ -480,6 +484,9 @@ def test_distillation_api_async_draft_confirm_owner_scope_and_safe_payloads():
     draft = client.get(f"/api/v1/subjects/{subject.pk}/distillations/draft")
     draft_data = draft.json()["data"]
     assert draft.status_code == 200 and len(draft_data["items"]) == 5
+    assert draft_data["pending_item_count"] == 5
+    assert len(draft_data["pending_items"]) == 5
+    assert draft_data["has_unconfirmed_result"] is True
     payload = _draft_request(DistillationWorkspace.objects.get(subject=subject))
     saved = client.patch(
         f"/api/v1/subjects/{subject.pk}/distillations/draft",
@@ -493,6 +500,44 @@ def test_distillation_api_async_draft_confirm_owner_scope_and_safe_payloads():
         format="json",
     )
     assert confirmed.status_code == 201
+    confirmed_draft = client.get(f"/api/v1/subjects/{subject.pk}/distillations/draft")
+    confirmed_draft_data = confirmed_draft.json()["data"]
+    assert confirmed_draft_data["pending_item_count"] == 0
+    assert confirmed_draft_data["pending_items"] == []
+    assert confirmed_draft_data["has_unconfirmed_result"] is False
+
+    keyword_set = version.keyword_set
+    keyword_set, added, _ = append_keyword_draft_items(
+        user_id=user.pk,
+        subject_id=subject.pk,
+        expected_version=keyword_set.version,
+        expected_subject_version_id=subject.current_version_id,
+        items=[
+            {
+                "text": "新增待蒸馏词",
+                "structure_type": "long_tail",
+                "is_regional": False,
+                "source": "manual",
+            }
+        ],
+    )
+    assert added == 1
+    _, next_keyword_version = commit_keyword_version(
+        user_id=user.pk,
+        subject_id=subject.pk,
+        expected_version=keyword_set.version,
+        expected_subject_version_id=subject.current_version_id,
+    )
+    pending_draft = client.get(f"/api/v1/subjects/{subject.pk}/distillations/draft")
+    pending_draft_data = pending_draft.json()["data"]
+    assert pending_draft_data["current_keyword_set_version"]["id"] == str(
+        next_keyword_version.pk
+    )
+    assert pending_draft_data["pending_item_count"] == 1
+    assert [item["text"] for item in pending_draft_data["pending_items"]] == [
+        "新增待蒸馏词"
+    ]
+    assert pending_draft_data["has_unconfirmed_result"] is False
     current = client.get(f"/api/v1/subjects/{subject.pk}/distillations/current")
     assert current.status_code == 200 and current.json()["data"]["version_no"] == 1
 

@@ -7376,7 +7376,7 @@ components:
     DistillationDraft:
       type: object
       additionalProperties: false
-      required: [version, can_write, read_only_reason, current_keyword_set_version, draft_input_version, source_result_id, current_distillation_version_no, items]
+      required: [version, can_write, read_only_reason, current_keyword_set_version, draft_input_version, source_result_id, current_distillation_version_no, pending_item_count, pending_items, has_unconfirmed_result, items]
       properties:
         version: {type: integer, minimum: 0}
         can_write: {type: boolean}
@@ -7387,6 +7387,9 @@ components:
           oneOf: [{$ref: '#/components/schemas/DistillationKeywordVersionRef'}, {type: 'null'}]
         source_result_id: {type: [string, 'null'], format: uuid}
         current_distillation_version_no: {type: [integer, 'null'], minimum: 1}
+        pending_item_count: {type: integer, minimum: 0}
+        pending_items: {type: array, items: {$ref: '#/components/schemas/DistillationKeywordProjection'}}
+        has_unconfirmed_result: {type: boolean}
         items: {type: array, items: {$ref: '#/components/schemas/DistillationItem'}}
     DistillationVersion:
       type: object

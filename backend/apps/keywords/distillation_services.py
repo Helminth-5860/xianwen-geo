@@ -614,6 +614,51 @@ def _draft_payload_rows(workspace):
     ]
 
 
+def distillation_draft_content_digest(workspace, *, rows=None):
+    """Return the immutable digest used when confirming the current draft.
+
+    Keeping this calculation in one place lets read APIs distinguish an AI/user
+    draft that still needs confirmation from the already-confirmed evidence set.
+    """
+    rows = list(
+        rows
+        if rows is not None
+        else workspace.draft_items.select_related(
+            "source_keyword", "canonical_keyword", "ai_canonical_keyword"
+        ).order_by("sort_order", "id")
+    )
+    payload = [
+        {
+            "source_keyword_id": str(row.source_keyword_id),
+            "action": row.action,
+            "canonical_keyword_id": (
+                str(row.canonical_keyword_id) if row.canonical_keyword_id else None
+            ),
+            "merge_group_key": str(row.merge_group_key) if row.merge_group_key else None,
+            "ai_action": row.ai_action,
+            "ai_canonical_keyword_id": (
+                str(row.ai_canonical_keyword_id) if row.ai_canonical_keyword_id else None
+            ),
+            "ai_merge_group_key": (
+                str(row.ai_merge_group_key) if row.ai_merge_group_key else None
+            ),
+            "ai_reason": row.ai_reason,
+            "user_reason": row.user_reason,
+            "user_overridden": row.user_overridden,
+            "sort_order": row.sort_order,
+        }
+        for row in rows
+    ]
+    return canonical_digest(
+        {
+            "subject_version_id": str(workspace.draft_input_version.subject_version_id),
+            "keyword_set_version_id": str(workspace.draft_input_version_id),
+            "source_result_id": str(workspace.draft_source_result_id),
+            "items": payload,
+        }
+    )
+
+
 @transaction.atomic
 def save_distillation_draft(*, user_id, subject_id, expected_version: int, items):
     user = User.objects.select_for_update().get(pk=user_id)
@@ -701,34 +746,7 @@ def confirm_distillation(*, user_id, subject_id, expected_version: int):
     )
     if not rows or len(rows) != workspace.draft_input_version.item_count:
         raise DistillationValuesInvalid
-    payload = [
-        {
-            "source_keyword_id": str(row.source_keyword_id),
-            "action": row.action,
-            "canonical_keyword_id": (
-                str(row.canonical_keyword_id) if row.canonical_keyword_id else None
-            ),
-            "merge_group_key": str(row.merge_group_key) if row.merge_group_key else None,
-            "ai_action": row.ai_action,
-            "ai_canonical_keyword_id": (
-                str(row.ai_canonical_keyword_id) if row.ai_canonical_keyword_id else None
-            ),
-            "ai_merge_group_key": (str(row.ai_merge_group_key) if row.ai_merge_group_key else None),
-            "ai_reason": row.ai_reason,
-            "user_reason": row.user_reason,
-            "user_overridden": row.user_overridden,
-            "sort_order": row.sort_order,
-        }
-        for row in rows
-    ]
-    digest = canonical_digest(
-        {
-            "subject_version_id": str(workspace.draft_input_version.subject_version_id),
-            "keyword_set_version_id": str(workspace.draft_input_version_id),
-            "source_result_id": str(workspace.draft_source_result_id),
-            "items": payload,
-        }
-    )
+    digest = distillation_draft_content_digest(workspace, rows=rows)
     if (
         workspace.current_set is not None
         and workspace.current_set.input_keyword_set_version_id == workspace.draft_input_version_id

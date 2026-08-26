@@ -206,9 +206,9 @@ if DISTILLATION_IDEMPOTENCY_HMAC_KEY in {
 
 if QUESTION_GENERATION_PROVIDER == "mock":
     raise ImproperlyConfigured("Mock question generation provider is forbidden in production.")
-if QUESTION_GENERATION_PROVIDER != "unavailable":
+if QUESTION_GENERATION_PROVIDER not in {"unavailable", "deepseek"}:
     raise ImproperlyConfigured(
-        "Only unavailable question generation provider is supported in production."
+        "Only unavailable or deepseek question generation provider is supported in production."
     )
 if len(QUESTION_GENERATION_IDEMPOTENCY_HMAC_KEY) < 50:
     raise ImproperlyConfigured(

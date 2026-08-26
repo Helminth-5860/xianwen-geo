@@ -9,6 +9,7 @@ import SmartKeywordPage, { KeywordCenterPage } from "@/app/subjects/[id]/keyword
 const api = vi.hoisted(() => ({
   appendKeywordCandidates: vi.fn(),
   createKeywordGeneration: vi.fn(),
+  getDistillationDraft: vi.fn(),
   getKeywordAssets: vi.fn(),
   getKeywordDraft: vi.fn(),
   getKeywordGenerationJob: vi.fn(),
@@ -190,6 +191,12 @@ beforeEach(() => {
   vi.clearAllMocks();
   api.getKeywordDraft.mockResolvedValue(draft);
   api.getKeywordAssets.mockResolvedValue({ items: [] });
+  api.getDistillationDraft.mockResolvedValue({
+    pending_item_count: 1,
+    pending_items: [],
+    has_unconfirmed_result: false,
+    items: [],
+  });
   api.createKeywordGeneration.mockResolvedValue(succeededJob);
   api.appendKeywordCandidates.mockResolvedValue({
     candidate_pool: { ...draft, version: 2 },
@@ -295,6 +302,8 @@ describe("关键词中心四页", () => {
     expect(screen.queryByText(/智能推荐/)).toBeNull();
     expect(screen.queryByText(/自动生成类别/)).toBeNull();
     expect(screen.queryByText(/自动生成意图/)).toBeNull();
+    expect(screen.queryByText("待蒸馏关键词")).toBeNull();
+    expect(screen.queryByText("GEO", { exact: true })).toBeNull();
 
     await userEvent.type(screen.getByLabelText("手工关键词"), "广州 GEO 服务");
     await userEvent.click(screen.getByLabelText("手工关键词分类"));
@@ -398,6 +407,27 @@ describe("关键词中心四页", () => {
         deleted: true,
       }),
     );
+  });
+
+  it("关键词资产每页显示20条并使用中文分页", async () => {
+    api.getKeywordAssets.mockResolvedValue({
+      items: Array.from({ length: 21 }, (_, index) => ({
+        ...asset,
+        id: `asset-${index + 1}`,
+        text: `资产关键词 ${index + 1}`,
+      })),
+    });
+    render(<KeywordCenterPage stage="assets" />);
+
+    expect(await screen.findByText("资产关键词 1")).toBeTruthy();
+    expect(screen.getByText("资产关键词 20")).toBeTruthy();
+    expect(screen.queryByText("资产关键词 21")).toBeNull();
+    expect(screen.getByText("第 1-20 条，共 21 条")).toBeTruthy();
+
+    await userEvent.click(screen.getByTitle("2"));
+    expect(await screen.findByText("资产关键词 21")).toBeTruthy();
+    expect(screen.queryByText("资产关键词 1")).toBeNull();
+    expect(screen.getByText("第 21-21 条，共 21 条")).toBeTruthy();
   });
 
   it("AI 返回结构异常时只显示明确中文，不暴露英文错误码", async () => {

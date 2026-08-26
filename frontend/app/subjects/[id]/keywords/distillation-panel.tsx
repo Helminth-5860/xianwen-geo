@@ -1,6 +1,17 @@
 "use client";
 
-import { Alert, Button, Card, Input, Popconfirm, Select, Space, Tag, Typography } from "antd";
+import {
+  Alert,
+  Button,
+  Card,
+  Input,
+  Pagination,
+  Popconfirm,
+  Select,
+  Space,
+  Tag,
+  Typography,
+} from "antd";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useSubjectSwitchGuard } from "@/components/subject-workspace-context";
@@ -17,6 +28,7 @@ import {
   type DistillationDraftItem,
   type DistillationDraftState,
   type DistillationJob,
+  type DistillationSourceKeyword,
 } from "@/lib/keywords-client";
 
 const actionOptions = [
@@ -33,20 +45,31 @@ const actionLabels: Record<DistillationAction, string> = {
   low_value: "低价值",
 };
 
+const DISTILLATION_PAGE_SIZE = 20;
+
 type Props = Readonly<{
   subjectId: string;
   keywordDirty: boolean;
   onDirtyChange?: (dirty: boolean) => void;
+  onConfirmed?: () => void | Promise<void>;
 }>;
 
 function editableItem(item: DistillationDraftItem): DistillationDraftItem {
   return { ...item };
 }
 
-export default function DistillationPanel({ subjectId, keywordDirty, onDirtyChange }: Props) {
+export default function DistillationPanel({
+  subjectId,
+  keywordDirty,
+  onDirtyChange,
+  onConfirmed,
+}: Props) {
   const [draft, setDraft] = useState<DistillationDraftState>();
+  const [pendingItems, setPendingItems] = useState<DistillationSourceKeyword[]>([]);
   const [items, setItems] = useState<DistillationDraftItem[]>([]);
   const [job, setJob] = useState<DistillationJob>();
+  const [pendingPage, setPendingPage] = useState(1);
+  const [resultPage, setResultPage] = useState(1);
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -57,7 +80,10 @@ export default function DistillationPanel({ subjectId, keywordDirty, onDirtyChan
   const reload = useCallback(async () => {
     const next = await getDistillationDraft(subjectId);
     setDraft(next);
-    setItems(next.items.map(editableItem));
+    setPendingItems(next.pending_items);
+    setItems(next.has_unconfirmed_result ? next.items.map(editableItem) : []);
+    setPendingPage(1);
+    setResultPage(1);
     setDirty(false);
   }, [subjectId]);
 
@@ -151,8 +177,8 @@ export default function DistillationPanel({ subjectId, keywordDirty, onDirtyChan
       setError("请先保存或放弃本地未保存修改，再启动蒸馏");
       return;
     }
-    if (!draft?.current_keyword_set_version) {
-      setError("请先添加或生成关键词，再启动蒸馏");
+    if (!draft?.current_keyword_set_version || draft.pending_item_count === 0) {
+      setError("当前没有待蒸馏关键词，请先添加或生成新关键词");
       return;
     }
     setBusy(true);
@@ -223,6 +249,7 @@ export default function DistillationPanel({ subjectId, keywordDirty, onDirtyChan
     try {
       await confirmDistillation(subjectId, draft.version);
       await reload();
+      await onConfirmed?.();
       setError("");
       setNotice(`蒸馏结果已确认，关键词资产已更新`);
     } catch (reason) {
@@ -234,6 +261,17 @@ export default function DistillationPanel({ subjectId, keywordDirty, onDirtyChan
   };
 
   const disabled = !draft?.can_write || busy || active;
+  const pendingPageCount = Math.max(1, Math.ceil(pendingItems.length / DISTILLATION_PAGE_SIZE));
+  const effectivePendingPage = Math.min(pendingPage, pendingPageCount);
+  const pendingPageStart = (effectivePendingPage - 1) * DISTILLATION_PAGE_SIZE;
+  const visiblePendingItems = pendingItems.slice(
+    pendingPageStart,
+    pendingPageStart + DISTILLATION_PAGE_SIZE,
+  );
+  const resultPageCount = Math.max(1, Math.ceil(items.length / DISTILLATION_PAGE_SIZE));
+  const effectiveResultPage = Math.min(resultPage, resultPageCount);
+  const resultPageStart = (effectiveResultPage - 1) * DISTILLATION_PAGE_SIZE;
+  const visibleItems = items.slice(resultPageStart, resultPageStart + DISTILLATION_PAGE_SIZE);
 
   return (
     <Card title="关键词蒸馏" style={{ marginTop: 20 }}>
@@ -244,7 +282,9 @@ export default function DistillationPanel({ subjectId, keywordDirty, onDirtyChan
           蒸馏只读取当前主体的待蒸馏关键词；确认后才会进入关键词资产。
         </Typography.Text>
         <Space wrap>
-          {draft?.current_keyword_set_version ? <Tag color="blue">待蒸馏关键词已就绪</Tag> : null}
+          <Tag color={draft?.pending_item_count ? "blue" : "default"}>
+            待蒸馏关键词 {draft?.pending_item_count ?? 0}
+          </Tag>
           {draft?.current_distillation_version_no ? <Tag color="green">已有关键词资产</Tag> : null}
           {dirty && <Tag color="orange">有未保存蒸馏调整</Tag>}
           {job ? (
@@ -255,8 +295,15 @@ export default function DistillationPanel({ subjectId, keywordDirty, onDirtyChan
         </Space>
         <Space wrap>
           <Button
-            type="primary"
-            disabled={disabled || dirty || keywordDirty || !draft?.current_keyword_set_version}
+            type={draft?.has_unconfirmed_result ? "default" : "primary"}
+            disabled={
+              disabled ||
+              dirty ||
+              keywordDirty ||
+              !draft?.current_keyword_set_version ||
+              draft.pending_item_count === 0 ||
+              draft.has_unconfirmed_result
+            }
             loading={busy}
             onClick={() => void start(false)}
           >
@@ -275,9 +322,56 @@ export default function DistillationPanel({ subjectId, keywordDirty, onDirtyChan
               </Button>
             </Popconfirm>
           )}
+          {draft?.has_unconfirmed_result && items.length > 0 ? (
+            <>
+              <Button disabled={disabled || !dirty} onClick={() => void save()}>
+                保存蒸馏调整
+              </Button>
+              <Popconfirm
+                title="确认蒸馏结果"
+                description="确认后，保留和合并后的关键词会进入关键词资产。"
+                okText="确认结果"
+                cancelText="取消"
+                onConfirm={() => void confirm()}
+              >
+                <Button type="primary" disabled={disabled || dirty}>
+                  确认蒸馏结果
+                </Button>
+              </Popconfirm>
+            </>
+          ) : null}
         </Space>
 
-        {mergeGroups.length ? (
+        {pendingItems.length > 0 && !draft?.has_unconfirmed_result ? (
+          <Card size="small" title="待蒸馏关键词">
+            <Space direction="vertical" size="small" style={{ width: "100%" }}>
+              {visiblePendingItems.map((item) => (
+                <Card key={item.id} size="small">
+                  <Space wrap>
+                    <Typography.Text strong>{item.text}</Typography.Text>
+                    <Tag>{item.structure_type === "long_tail" ? "长尾关键词" : "短关键词"}</Tag>
+                    {item.region_text ? <Tag color="cyan">{item.region_text}</Tag> : null}
+                  </Space>
+                </Card>
+              ))}
+              {pendingItems.length > DISTILLATION_PAGE_SIZE ? (
+                <Pagination
+                  aria-label="待蒸馏关键词分页"
+                  current={effectivePendingPage}
+                  pageSize={DISTILLATION_PAGE_SIZE}
+                  total={pendingItems.length}
+                  showSizeChanger={false}
+                  showTotal={(total, range) => `第 ${range[0]}-${range[1]} 条，共 ${total} 条`}
+                  onChange={setPendingPage}
+                />
+              ) : null}
+            </Space>
+          </Card>
+        ) : !draft?.has_unconfirmed_result ? (
+          <Typography.Text type="secondary">当前没有待蒸馏关键词。</Typography.Text>
+        ) : null}
+
+        {draft?.has_unconfirmed_result && mergeGroups.length ? (
           <Card size="small" title="合并组">
             <Space wrap>
               {mergeGroups.map((group) => (
@@ -296,7 +390,8 @@ export default function DistillationPanel({ subjectId, keywordDirty, onDirtyChan
           </Card>
         ) : null}
 
-        {items.map((item, index) => {
+        {visibleItems.map((item, index) => {
+          const itemNumber = resultPageStart + index + 1;
           const compatible = items.filter(
             (candidate) =>
               candidate.source_keyword.is_regional === item.source_keyword.is_regional &&
@@ -315,7 +410,7 @@ export default function DistillationPanel({ subjectId, keywordDirty, onDirtyChan
                 <Typography.Text type="secondary">{item.ai_reason}</Typography.Text>
                 <Space wrap>
                   <Select
-                    aria-label={`蒸馏动作-${index + 1}`}
+                    aria-label={`蒸馏动作-${itemNumber}`}
                     value={item.action}
                     options={actionOptions}
                     disabled={disabled}
@@ -325,7 +420,7 @@ export default function DistillationPanel({ subjectId, keywordDirty, onDirtyChan
                   {item.action === "merge" && (
                     <>
                       <Select
-                        aria-label={`合并代表词-${index + 1}`}
+                        aria-label={`合并代表词-${itemNumber}`}
                         value={item.canonical_keyword_id ?? undefined}
                         disabled={disabled}
                         style={{ width: 220 }}
@@ -338,7 +433,7 @@ export default function DistillationPanel({ subjectId, keywordDirty, onDirtyChan
                         }
                       />
                       <Select
-                        aria-label={`合并组-${index + 1}`}
+                        aria-label={`合并组-${itemNumber}`}
                         value={item.merge_group_key ?? undefined}
                         disabled={disabled}
                         style={{ width: 160 }}
@@ -350,7 +445,7 @@ export default function DistillationPanel({ subjectId, keywordDirty, onDirtyChan
                     </>
                   )}
                   <Input
-                    aria-label={`人工说明-${index + 1}`}
+                    aria-label={`人工说明-${itemNumber}`}
                     value={item.user_reason}
                     disabled={disabled}
                     placeholder="人工调整说明（可选）"
@@ -365,22 +460,17 @@ export default function DistillationPanel({ subjectId, keywordDirty, onDirtyChan
           );
         })}
 
-        {items.length > 0 && (
-          <Space>
-            <Button type="primary" disabled={disabled || !dirty} onClick={() => void save()}>
-              保存蒸馏调整
-            </Button>
-            <Popconfirm
-              title="确认蒸馏结果"
-              description="确认后，保留和合并后的关键词会进入关键词资产。"
-              okText="确认结果"
-              cancelText="取消"
-              onConfirm={() => void confirm()}
-            >
-              <Button disabled={disabled || dirty}>确认蒸馏结果</Button>
-            </Popconfirm>
-          </Space>
-        )}
+        {items.length > DISTILLATION_PAGE_SIZE ? (
+          <Pagination
+            aria-label="蒸馏结果分页"
+            current={effectiveResultPage}
+            pageSize={DISTILLATION_PAGE_SIZE}
+            total={items.length}
+            showSizeChanger={false}
+            showTotal={(total, range) => `第 ${range[0]}-${range[1]} 条，共 ${total} 条`}
+            onChange={setResultPage}
+          />
+        ) : null}
       </Space>
     </Card>
   );

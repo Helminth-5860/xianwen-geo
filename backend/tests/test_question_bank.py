@@ -27,6 +27,7 @@ from apps.questions.generation_exceptions import (
     QuestionGenerationProviderUnavailable,
     QuestionGenerationRegenerationConfirmationRequired,
 )
+from apps.questions.generation_providers import DeepSeekQuestionGenerationProvider
 from apps.questions.generation_services import (
     _effective_keywords,
     claim_question_generation_job,
@@ -347,6 +348,24 @@ def test_unavailable_provider_fails_before_job_and_hold():
         with pytest.raises(QuestionGenerationProviderUnavailable):
             create_job(user, subject, distilled)
     assert not QuestionGenerationJob.objects.exists()
+
+
+@override_settings(QUESTION_GENERATION_PROVIDER="deepseek")
+def test_available_deepseek_provider_preflight_and_provenance_are_used_by_service():
+    user, subject, _, _, distilled = facts()
+    with patch.object(
+        DeepSeekQuestionGenerationProvider,
+        "ensure_available",
+        return_value=object(),
+    ) as ensure_available:
+        job, created = create_job(user, subject, distilled)
+
+    assert created is True
+    assert job.provider_key == "deepseek"
+    assert job.model_key == "deepseek"
+    assert job.adapter_version == "deepseek-question-generation-v1"
+    assert job.prompt_version == "question-generation-v2"
+    ensure_available.assert_called_once()
 
 
 def test_api_generation_draft_confirm_versions_and_owner_scope(

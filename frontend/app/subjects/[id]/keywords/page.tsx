@@ -7,6 +7,7 @@ import {
   Checkbox,
   Input,
   InputNumber,
+  Pagination,
   Popconfirm,
   Radio,
   Select,
@@ -28,6 +29,7 @@ import { AuthApiError, userMessage } from "@/lib/auth-client";
 import {
   appendKeywordCandidates,
   createKeywordGeneration,
+  getDistillationDraft,
   getKeywordAssets,
   getKeywordDraft,
   getKeywordGenerationJob,
@@ -39,7 +41,6 @@ import {
   type KeywordDraftState,
   type KeywordGenerationJob,
   type KeywordAsset,
-  type KeywordItem,
   type KeywordRegionSelection,
   type KeywordSearchIntent,
 } from "@/lib/keywords-client";
@@ -50,6 +51,8 @@ import QuestionBankPanel from "./question-bank-panel";
 export type KeywordCenterStage = "generate" | "custom" | "distill" | "assets" | "questions";
 type RegionMode = "unrestricted" | "subject" | "custom";
 type LengthType = "short" | "long_tail";
+
+const KEYWORD_PAGE_SIZE = 20;
 
 const sourceLabels: Readonly<Record<string, string>> = {
   legacy: "已有关键词",
@@ -74,19 +77,6 @@ const categoryGroups = [
   },
   { title: "内容认知", values: ["knowledge"] },
 ] as const;
-
-const legacyIntentMap: Readonly<Record<string, KeywordSearchIntent>> = {
-  informational: "informational",
-  navigational: "navigational",
-  commercial: "recommendation",
-  transactional: "transactional",
-};
-
-function itemIntents(item: KeywordItem): KeywordSearchIntent[] {
-  if (item.search_intents?.length) return item.search_intents;
-  const legacy = item.search_intent ? legacyIntentMap[item.search_intent] : undefined;
-  return legacy ? [legacy] : [];
-}
 
 function categoryLabel(value: string | null) {
   return keywordBusinessCategoryOptions.find((option) => option.value === value)?.label ?? value;
@@ -225,8 +215,9 @@ export function KeywordCenterPage({
   const { currentSubject, subjects } = useSubjectWorkspace();
   const routeSubject = subjects.find((subject) => subject.id === params.id) ?? currentSubject;
   const [draft, setDraft] = useState<KeywordDraftState>();
-  const [items, setItems] = useState<KeywordItem[]>([]);
+  const [pendingKeywordCount, setPendingKeywordCount] = useState(0);
   const [assets, setAssets] = useState<KeywordAsset[]>([]);
+  const [assetPage, setAssetPage] = useState(1);
   const [viewingAssetId, setViewingAssetId] = useState<string>();
   const [editingAssetId, setEditingAssetId] = useState<string>();
   const [assetText, setAssetText] = useState("");
@@ -265,13 +256,15 @@ export function KeywordCenterPage({
   );
 
   const reload = useCallback(async () => {
-    const [nextDraft, nextAssets] = await Promise.all([
+    const [nextDraft, nextAssets, nextDistillation] = await Promise.all([
       getKeywordDraft(params.id),
       getKeywordAssets(params.id),
+      getDistillationDraft(params.id),
     ]);
     setDraft(nextDraft);
-    setItems(nextDraft.items);
+    setPendingKeywordCount(nextDistillation.pending_item_count);
     setAssets(nextAssets.items.filter((asset) => !asset.deleted));
+    setAssetPage(1);
   }, [params.id]);
 
   useEffect(() => {
@@ -392,7 +385,7 @@ export function KeywordCenterPage({
         items: values,
       });
       setDraft(result.candidate_pool);
-      setItems(result.candidate_pool.items);
+      setPendingKeywordCount((current) => current + result.added_count);
       setError("");
       setNotice(
         result.skipped_duplicates.length
@@ -515,6 +508,12 @@ export function KeywordCenterPage({
     draft.subject_version.id !== draft.draft_subject_version.id,
   );
   const serviceRegions = routeSubject?.service_regions ?? "";
+  const assetPageCount = Math.max(1, Math.ceil(assets.length / KEYWORD_PAGE_SIZE));
+  const effectiveAssetPage = Math.min(assetPage, assetPageCount);
+  const visibleAssets = assets.slice(
+    (effectiveAssetPage - 1) * KEYWORD_PAGE_SIZE,
+    effectiveAssetPage * KEYWORD_PAGE_SIZE,
+  );
   const pageTitle =
     stage === "generate"
       ? "智能关键词"
@@ -546,7 +545,7 @@ export function KeywordCenterPage({
       </Typography.Paragraph>
       <Card className="keyword-center-summary" style={{ marginBottom: 20 }}>
         <Space wrap className="keyword-center-stats">
-          <Tag color="orange">待蒸馏关键词 {items.length}</Tag>
+          <Tag color="orange">待蒸馏关键词 {pendingKeywordCount}</Tag>
           <Tag color="green">关键词资产 {assets.length}</Tag>
         </Space>
       </Card>
@@ -865,39 +864,6 @@ export function KeywordCenterPage({
               </Button>
             </Space>
           </Card>
-
-          <Card title="待蒸馏关键词">
-            {items.length ? (
-              <Space direction="vertical" size="small" style={{ width: "100%" }}>
-                {items.map((item, index) => (
-                  <Card key={item.id ?? `${item.text}-${index}`} size="small">
-                    <Space wrap>
-                      <Typography.Text strong>{item.text}</Typography.Text>
-                      <Tag>{item.structure_type === "long_tail" ? "长尾关键词" : "短关键词"}</Tag>
-                      {item.business_category ? (
-                        <Tag color="blue">{categoryLabel(item.business_category)}</Tag>
-                      ) : null}
-                      {itemIntents(item).map((intent) => (
-                        <Tag key={intent} color="purple">
-                          {intentLabel(intent)}
-                        </Tag>
-                      ))}
-                      {(item.regions ?? []).map((region) => (
-                        <Tag key={region.path.map((node) => node.code).join("/")} color="cyan">
-                          {region.path.map((node) => node.name).join(" / ")}
-                        </Tag>
-                      ))}
-                      <Tag>{sourceLabels[item.source ?? "legacy"] ?? "已有关键词"}</Tag>
-                    </Space>
-                  </Card>
-                ))}
-              </Space>
-            ) : (
-              <Typography.Text type="secondary">
-                暂无待蒸馏关键词，可通过单条或批量方式添加。
-              </Typography.Text>
-            )}
-          </Card>
         </Space>
       ) : null}
 
@@ -906,6 +872,7 @@ export function KeywordCenterPage({
           subjectId={params.id}
           keywordDirty={false}
           onDirtyChange={setDistillationDirty}
+          onConfirmed={reload}
         />
       ) : null}
       {stage === "questions" ? (
@@ -919,7 +886,7 @@ export function KeywordCenterPage({
                 这里只展示当前主体已确认的蒸馏结果；问题库只读取这组稳定关键词资产。
               </Typography.Text>
               <Tag color="green">资产数量 {assets.length}</Tag>
-              {assets.map((asset) => {
+              {visibleAssets.map((asset) => {
                 const editing = editingAssetId === asset.id;
                 const viewing = viewingAssetId === asset.id;
                 return (
@@ -1071,6 +1038,17 @@ export function KeywordCenterPage({
                   </Card>
                 );
               })}
+              {assets.length > KEYWORD_PAGE_SIZE ? (
+                <Pagination
+                  aria-label="关键词资产分页"
+                  current={effectiveAssetPage}
+                  pageSize={KEYWORD_PAGE_SIZE}
+                  total={assets.length}
+                  showSizeChanger={false}
+                  showTotal={(total, range) => `第 ${range[0]}-${range[1]} 条，共 ${total} 条`}
+                  onChange={setAssetPage}
+                />
+              ) : null}
             </Space>
           ) : (
             <Typography.Text type="secondary">

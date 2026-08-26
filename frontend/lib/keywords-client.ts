@@ -421,6 +421,9 @@ export type DistillationDraftState = Readonly<{
   } | null;
   source_result_id: string | null;
   current_distillation_version_no: number | null;
+  pending_item_count: number;
+  pending_items: DistillationSourceKeyword[];
+  has_unconfirmed_result: boolean;
   items: DistillationDraftItem[];
 }>;
 

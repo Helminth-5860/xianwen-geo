@@ -22,6 +22,7 @@ import {
   getQuestionBankDraft,
   getQuestionBankVersions,
   getQuestionGenerationJob,
+  questionGenerationErrorMessage,
   saveQuestionBankDraft,
   type QuestionBankDraft,
   type QuestionBankVersion,
@@ -95,7 +96,7 @@ export default function QuestionBankPanel({ subjectId, upstreamDirty }: Props) {
             setNotice("问题建议已写入草稿，请审核并确认正式版本");
             setError("");
           } else if (["failed", "conflict", "superseded"].includes(next.status)) {
-            setError(next.stable_error_code || "问题库生成失败，请重试");
+            setError(questionGenerationErrorMessage(next.stable_error_code));
             setNotice("");
           }
         })
@@ -158,6 +159,9 @@ export default function QuestionBankPanel({ subjectId, upstreamDirty }: Props) {
         setConfirmRegeneration(true);
         setError("");
         setNotice("该主体已有成功问题生成，请确认消耗一次重生成额度");
+      } else if (reason instanceof AuthApiError && reason.code.startsWith("QUESTION_GENERATION_")) {
+        setError(questionGenerationErrorMessage(reason.code));
+        setNotice("");
       } else {
         setError(userMessage(reason));
         setNotice("");

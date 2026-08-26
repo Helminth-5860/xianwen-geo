@@ -54,6 +54,7 @@ def test_question_generation_production_and_postgresql_guards_are_explicit():
     ).read_text(encoding="utf-8")
     openapi = (ROOT / "openapi/openapi-v1.yaml").read_text(encoding="utf-8")
     assert 'QUESTION_GENERATION_PROVIDER == "mock"' in production
+    assert 'QUESTION_GENERATION_PROVIDER not in {"unavailable", "deepseek"}' in production
     assert "QUESTION_GENERATION_IDEMPOTENCY_HMAC_KEY" in production
     assert "questions.dispatch_generation_jobs" in base
     assert 'schema_editor.connection.vendor == "postgresql"' in migration

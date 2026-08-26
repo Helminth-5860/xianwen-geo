@@ -304,8 +304,8 @@ def test_production_missing_required_environment_fails_fast(missing):
             "Mock question generation provider is forbidden",
         ),
         (
-            {"QUESTION_GENERATION_PROVIDER": "deepseek"},
-            "Only unavailable question generation provider is supported",
+            {"QUESTION_GENERATION_PROVIDER": "unsupported"},
+            "Only unavailable or deepseek question generation provider is supported",
         ),
         (
             {"ARTICLE_IDEMPOTENCY_HMAC_KEY": "weak"},
@@ -339,6 +339,11 @@ def test_production_accepts_deepseek_keyword_generation_provider():
 
 def test_production_accepts_deepseek_distillation_provider():
     result = import_settings(overrides={"DISTILLATION_PROVIDER": "deepseek"})
+    assert result.returncode == 0, result.stderr
+
+
+def test_production_accepts_deepseek_question_generation_provider():
+    result = import_settings(overrides={"QUESTION_GENERATION_PROVIDER": "deepseek"})
     assert result.returncode == 0, result.stderr
 
 

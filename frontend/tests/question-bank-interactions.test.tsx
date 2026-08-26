@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import QuestionBankPanel from "@/app/subjects/[id]/keywords/question-bank-panel";
 import { AuthApiError } from "@/lib/auth-client";
+import { questionGenerationErrorMessage } from "@/lib/question-bank-client";
 
 const api = vi.hoisted(() => ({
   getQuestionBankDraft: vi.fn(),
@@ -120,6 +121,23 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("QuestionBankPanel", () => {
+  it("将问题生成错误码统一转换为中文用户提示", () => {
+    const cases = [
+      ["QUESTION_GENERATION_PROVIDER_UNAVAILABLE", "问题生成服务暂未启用，请联系管理员配置后再试"],
+      ["QUESTION_GENERATION_INVALID_RESPONSE", "AI 返回格式异常，请重新生成。"],
+      ["QUESTION_GENERATION_PROVIDER_ERROR", "问题生成服务暂时不可用，请稍后重试"],
+      ["QUESTION_GENERATION_INTERNAL_ERROR", "问题生成服务暂时不可用，请稍后重试"],
+      ["QUESTION_GENERATION_IN_PROGRESS", "已有问题生成任务正在处理中，请稍候"],
+    ] as const;
+
+    for (const [code, message] of cases) {
+      expect(questionGenerationErrorMessage(code)).toBe(message);
+    }
+    expect(questionGenerationErrorMessage("UNKNOWN_ENGLISH_ERROR")).toBe(
+      "问题库生成失败，请稍后重试",
+    );
+  });
+
   it("blocks on upstream edits, then starts and polls a bounded generation job", async () => {
     const { rerender } = render(<QuestionBankPanel subjectId="subject-1" upstreamDirty />);
     expect(await screen.findByText("问题库生成与编辑")).toBeTruthy();
@@ -210,5 +228,30 @@ describe("QuestionBankPanel", () => {
     await userEvent.click(await screen.findByRole("button", { name: "确认重生成" }));
     await waitFor(() => expect(api.createQuestionGeneration).toHaveBeenCalledTimes(2));
     expect(api.createQuestionGeneration.mock.calls[1][1].regenerate).toBe(true);
+  });
+
+  it("任务失败时不向用户暴露英文错误码或后端英文消息", async () => {
+    api.createQuestionGeneration.mockResolvedValue(queued);
+    api.getQuestionGenerationJob.mockResolvedValue({
+      ...queued,
+      status: "failed",
+      stable_error_code: "QUESTION_GENERATION_PROVIDER_UNAVAILABLE",
+      finished_at: "2026-08-16T00:00:01Z",
+    });
+    render(<QuestionBankPanel subjectId="subject-1" upstreamDirty={false} />);
+    expect(await screen.findByText("问题库生成与编辑")).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "AI 生成问题库" }));
+
+    expect(
+      await screen.findByText(
+        "问题生成服务暂未启用，请联系管理员配置后再试",
+        {},
+        {
+          timeout: 2500,
+        },
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText("Question generation is unavailable")).toBeNull();
+    expect(screen.queryByText("QUESTION_GENERATION_PROVIDER_UNAVAILABLE")).toBeNull();
   });
 });
