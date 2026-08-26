@@ -1,0 +1,211 @@
+.website-audit-page .ant-card {
+  border-color: #e6ebf2;
+  box-shadow: none;
+}
+
+.website-audit-launch-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.85fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.website-audit-launch-card .ant-card-body {
+  padding: 24px;
+}
+
+.website-audit-current-head,
+.website-audit-stage-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.website-audit-current-head > span,
+.website-audit-stage-head > span,
+.website-audit-page-cell {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.website-audit-history {
+  display: flex;
+  flex-direction: column;
+}
+
+.website-audit-stage-card .ant-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.website-audit-stage-icon {
+  color: #1677ff;
+  font-size: 20px;
+}
+
+.website-audit-stage-icon--success {
+  color: #389e0d;
+}
+
+.website-audit-stage-icon--warning {
+  color: #d46b08;
+}
+
+.website-audit-score-hero {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.62fr) minmax(0, 1.8fr);
+  gap: 16px;
+}
+
+.website-audit-overall-score.ant-card {
+  min-height: 224px;
+}
+
+.website-audit-overall-score .ant-card-body {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+}
+
+.website-audit-overall-score__value {
+  margin: 8px 0 2px;
+  font-size: clamp(56px, 7vw, 82px);
+  line-height: 1;
+  font-weight: 800;
+  letter-spacing: -0.06em;
+  color: #172033;
+}
+
+.website-audit-score-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.website-audit-score-grid .ant-card-body {
+  min-height: 102px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.website-audit-score-row {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.website-audit-score-row > .ant-typography {
+  font-size: 26px;
+}
+
+.website-audit-semantic-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px 18px;
+}
+
+.website-audit-semantic-item {
+  padding: 14px;
+  border: 1px solid #edf1f5;
+  border-radius: 10px;
+  background: #fbfcfe;
+}
+
+.website-audit-semantic-item > span {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.website-audit-report-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(300px, 0.75fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.website-audit-issue-row,
+.website-audit-question-row,
+.website-audit-quote-row {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 14px 0;
+  border-bottom: 1px solid #eef2f7;
+}
+
+.website-audit-issue-row:last-child,
+.website-audit-question-row:last-child,
+.website-audit-quote-row:last-child {
+  border-bottom: 0;
+}
+
+.website-audit-question-row > span {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.website-audit-quote-row p.ant-typography {
+  margin: 0;
+  line-height: 1.75;
+}
+
+.website-audit-coverage-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.website-audit-coverage-grid > span {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  background: #f8fafc;
+  border-radius: 8px;
+}
+
+.website-audit-browser-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+@media (max-width: 1100px) {
+  .website-audit-launch-grid,
+  .website-audit-score-hero,
+  .website-audit-report-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .website-audit-semantic-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .website-audit-current-head,
+  .website-audit-stage-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .website-audit-score-grid,
+  .website-audit-semantic-grid,
+  .website-audit-browser-grid,
+  .website-audit-coverage-grid {
+    grid-template-columns: 1fr;
+  }
+}
