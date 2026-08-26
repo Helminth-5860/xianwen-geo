@@ -10,7 +10,12 @@ from .serializers import (
     WebsiteAuditDetailSerializer,
     WebsiteAuditSummarySerializer,
 )
-from .services import WebsiteAuditBusy, WebsiteAuditNotFound, create_website_audit
+from .services import (
+    WebsiteAuditBusy,
+    WebsiteAuditNotFound,
+    create_website_audit,
+    recover_stale_website_audits,
+)
 from .tasks import execute_website_audit_task
 
 
@@ -47,6 +52,7 @@ class WebsiteAuditDetailView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, audit_id):
+        recover_stale_website_audits(user=request.user)
         audit = (
             WebsiteAudit.objects.filter(pk=audit_id, user=request.user)
             .prefetch_related("pages", "browser_snapshots", "findings")
@@ -61,6 +67,7 @@ class SubjectWebsiteAuditListView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, subject_id):
+        recover_stale_website_audits(user=request.user, subject_id=subject_id)
         audits = WebsiteAudit.objects.filter(user=request.user, subject_id=subject_id).order_by(
             "-created_at"
         )[:20]
