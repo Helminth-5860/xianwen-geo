@@ -44,7 +44,7 @@ def _finding_rule_score(result: str, severity: str) -> int:
 
 
 def _deduplicate_findings(findings: Iterable[object]) -> list[object]:
-    """Keep one worst result per check key so a repeated page finding cannot dominate a score."""
+    """Keep one worst result per check key so repeated page evidence cannot dominate a score."""
     selected: dict[str, object] = {}
     for finding in findings:
         key = str(getattr(finding, "check_key", "")).strip()
@@ -101,7 +101,7 @@ def score_findings(findings: Iterable[object]) -> RuleScore:
             )
 
     score = round(sum(scores) / len(scores))
-    # Safety ceilings prevent many easy passes from hiding a serious blocker.
+    # Many easy passes must not hide a blocker that prevents reliable crawling/indexing.
     if critical_fail:
         score = min(score, 49)
     elif high_fail:
@@ -191,7 +191,7 @@ def _browser_metrics(snapshots: list[object]) -> dict[str, Any]:
         ordered = sorted(values)
         index = min(len(ordered) - 1, max(0, ceil(len(ordered) * pct) - 1))
         value = ordered[index]
-        return round(value, 3) if isinstance(value, float) and not value.is_integer() else round(value)
+        return round(value, 3) if not value.is_integer() else round(value)
 
     output: dict[str, Any] = {}
     for profile, rows in sorted(by_profile.items()):
@@ -255,35 +255,48 @@ def build_website_audit_report(audit: object) -> dict[str, Any]:
         and str(getattr(row, "method", "")) != WebsiteAuditFinding.Method.SEMANTIC
     )
 
-    semantic_scores, ai_readability, content_readiness = _semantic_dimensions(audit)
-    geo_inputs: dict[str, int] = {}
-    if deterministic_geo.score is not None:
-        geo_inputs["deterministic_geo"] = deterministic_geo.score
-    if ai_readability is not None:
-        geo_inputs["ai_readability"] = ai_readability
-    if content_readiness is not None:
-        geo_inputs["content_readiness"] = content_readiness
-    geo_score = _weighted_score(
-        geo_inputs,
-        {"deterministic_geo": 0.35, "ai_readability": 0.35, "content_readiness": 0.30},
-    )
-
-    overall_inputs: dict[str, int] = {}
-    if seo_rules.score is not None:
-        overall_inputs["seo"] = seo_rules.score
-    if geo_score is not None:
-        overall_inputs["geo"] = geo_score
-    if technical_rules.score is not None:
-        overall_inputs["technical"] = technical_rules.score
-    overall_score = _weighted_score(
-        overall_inputs,
-        {"seo": 0.25, "geo": 0.45, "technical": 0.30},
-    )
-
     audit_status = str(getattr(audit, "status", ""))
     browser_status = str(getattr(audit, "browser_status", ""))
     semantic_status = str(getattr(audit, "semantic_status", ""))
-    pending = audit_status in {"queued", "running"} or browser_status in {"queued", "running"} or semantic_status in {"queued", "running"}
+    semantic_scores, ai_readability, content_readiness = _semantic_dimensions(audit)
+
+    # A final GEO score requires both deterministic GEO checks and the semantic layer.
+    geo_score = None
+    if (
+        semantic_status == "succeeded"
+        and deterministic_geo.score is not None
+        and ai_readability is not None
+        and content_readiness is not None
+    ):
+        geo_score = _weighted_score(
+            {
+                "deterministic_geo": deterministic_geo.score,
+                "ai_readability": ai_readability,
+                "content_readiness": content_readiness,
+            },
+            {"deterministic_geo": 0.35, "ai_readability": 0.35, "content_readiness": 0.30},
+        )
+
+    # Do not publish a final overall score when browser evidence is absent or failed.
+    overall_score = None
+    if (
+        audit_status == "succeeded"
+        and browser_status in {"succeeded", "partial"}
+        and semantic_status == "succeeded"
+        and seo_rules.score is not None
+        and technical_rules.score is not None
+        and geo_score is not None
+    ):
+        overall_score = _weighted_score(
+            {"seo": seo_rules.score, "geo": geo_score, "technical": technical_rules.score},
+            {"seo": 0.25, "geo": 0.45, "technical": 0.30},
+        )
+
+    pending = (
+        audit_status in {"queued", "running"}
+        or browser_status in {"queued", "running"}
+        or semantic_status in {"queued", "running"}
+    )
     if pending:
         report_status = "pending"
     elif audit_status != "succeeded":
@@ -294,15 +307,13 @@ def build_website_audit_report(audit: object) -> dict[str, Any]:
         report_status = "partial"
 
     missing_layers: list[str] = []
-    if browser_status != "succeeded":
+    if browser_status not in {"succeeded", "partial"}:
         missing_layers.append("browser")
     if semantic_status != "succeeded":
         missing_layers.append("semantic")
 
     issue_rows = [
-        row
-        for row in findings
-        if str(getattr(row, "result", "")) in {"fail", "warn"}
+        row for row in findings if str(getattr(row, "result", "")) in {"fail", "warn"}
     ]
     issue_rows.sort(
         key=lambda row: (
