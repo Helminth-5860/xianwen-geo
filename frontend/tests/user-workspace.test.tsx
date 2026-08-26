@@ -272,6 +272,22 @@ describe("GEO 产品工作台", () => {
     );
     expect(screen.queryByRole("link", { name: "显问 AI 助手" })).toBeNull();
 
+    await userEvent.click(screen.getByText("知识图谱建设"));
+    expect(screen.getByRole("link", { name: "媒体信号建设" }).getAttribute("href")).toBe(
+      "/geo/knowledge-graph/media-signals",
+    );
+
+    pathname = "/geo/knowledge-graph/media-signals";
+    rerender(shell());
+    await waitFor(() =>
+      expect(
+        screen.getByRole("menuitem", { name: /知识图谱建设/ }).getAttribute("aria-expanded"),
+      ).toBe("true"),
+    );
+    expect(screen.getByRole("menuitem", { name: "媒体信号建设" }).className).toContain(
+      "ant-menu-item-selected",
+    );
+
     pathname = "/admin";
     rerender(shell());
     await waitFor(() =>
