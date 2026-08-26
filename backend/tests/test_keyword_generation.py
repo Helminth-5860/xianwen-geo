@@ -758,13 +758,13 @@ def test_generation_uses_public_subject_allowlist_and_clears_self_base_keyword()
     assert normalized[0].base_keyword_text is None
 
 
-def test_generation_duplicate_conflict_rolls_back_all_candidate_appends():
+def test_generation_duplicate_batch_keeps_novel_candidates_and_commits():
     user, subject, version, _ = _facts(generation_limit=3)
     first, _ = _create(user, subject, version)
     execute_keyword_generation(job_id=first.pk)
     before = KeywordSet.objects.get(subject=subject)
     existing_text = before.draft_items.order_by("sort_order").first().text
-    before_ids = list(before.draft_items.order_by("sort_order").values_list("id", flat=True))
+    before_texts = list(before.draft_items.order_by("sort_order").values_list("text", flat=True))
     second, _ = _create(
         user,
         subject,
@@ -801,6 +801,67 @@ def test_generation_duplicate_conflict_rolls_back_all_candidate_appends():
         ),
     )
     after = KeywordSet.objects.get(subject=subject)
+    assert result == {"status": "succeeded"}
+    assert after.version == before.version + 2
+    assert list(after.draft_items.order_by("sort_order").values_list("text", flat=True)) == [
+        *before_texts,
+        "全新候选关键词",
+    ]
+    generation_result = KeywordGenerationResult.objects.get(job=second)
+    assert generation_result.item_count == 2
+    assert [item["text"] for item in generation_result.output_snapshot] == [
+        existing_text,
+        "全新候选关键词",
+    ]
+    success_event = KeywordGenerationEvent.objects.get(job=second, event_type="succeeded")
+    assert success_event.safe_summary["added_count"] == 1
+    assert success_event.safe_summary["skipped_duplicate_count"] == 1
+
+
+def test_generation_all_duplicates_still_returns_no_changes_without_mutation():
+    user, subject, version, _ = _facts(generation_limit=3)
+    first, _ = _create(user, subject, version)
+    execute_keyword_generation(job_id=first.pk)
+    before = KeywordSet.objects.get(subject=subject)
+    existing = list(before.draft_items.order_by("sort_order").values_list("text", flat=True))
+    second, _ = _create(
+        user,
+        subject,
+        version,
+        expected_version=before.version,
+        regenerate=True,
+        target_count=2,
+    )
+    _, generation = claim_keyword_generation_job(job_id=second.pk)
+
+    def item(text):
+        return GeneratedKeyword(
+            text=text,
+            structure_type="short",
+            is_regional=False,
+            region_level=None,
+            region_text=None,
+            base_keyword=None,
+            business_category="service",
+            search_intent=None,
+            relevance_score=90,
+            priority="high",
+            ai_reason="测试",
+            search_intents=("recommendation",),
+        )
+
+    result = _finalize_success(
+        second.pk,
+        generation,
+        KeywordGenerationResponse(
+            items=(item(existing[0]), item(existing[1])),
+            model_key=second.model_key,
+            provider_metrics={},
+        ),
+    )
+
+    after = KeywordSet.objects.get(subject=subject)
     assert result == {"status": "conflict", "code": "KEYWORD_VERSION_NO_CHANGES"}
     assert after.version == before.version
-    assert list(after.draft_items.order_by("sort_order").values_list("id", flat=True)) == before_ids
+    assert list(after.draft_items.order_by("sort_order").values_list("text", flat=True)) == existing
+    assert not KeywordGenerationResult.objects.filter(job=second).exists()

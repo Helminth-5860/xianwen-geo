@@ -1,4 +1,5 @@
 import json
+from dataclasses import replace
 
 import httpx
 import pytest
@@ -218,6 +219,119 @@ def test_deepseek_keyword_provider_repairs_schema_once_then_succeeds():
     assert response.items[0].business_category == "service"
     assert response.items[0].search_intents == ("recommendation",)
     assert response.provider_metrics["request_count"] == 2
+
+
+def test_deepseek_keyword_provider_replaces_historical_duplicates_once():
+    requests = []
+
+    def handler(request):
+        payload = json.loads(request.content)
+        user_payload = json.loads(payload["messages"][1]["content"])
+        requests.append(user_payload)
+        keyword = "旧关键词" if len(requests) == 1 else "全新关键词"
+        return httpx.Response(
+            200,
+            json={
+                "id": f"provider-request-{len(requests)}",
+                "model": "deepseek-chat",
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "items": [
+                                        {
+                                            "text": keyword,
+                                            "category": "service",
+                                            "intents": ["recommendation"],
+                                            "length_type": "general",
+                                            "regions": [],
+                                            "base_keyword": None,
+                                            "notes": "",
+                                            "relevance_score": 90,
+                                            "priority": "high",
+                                            "ai_reason": "与主营业务相关",
+                                        }
+                                    ]
+                                },
+                                ensure_ascii=False,
+                            )
+                        },
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 10, "total_tokens": 20},
+            },
+        )
+
+    provider = DeepSeekKeywordGenerationProvider(
+        credential_resolver=CredentialResolver(),
+        transport=httpx.MockTransport(handler),
+        runtime_resolver=runtime_snapshot,
+    )
+    response = provider.generate(generation_request())
+
+    assert len(requests) == 2
+    assert requests[0]["task"] == "generate_geo_keywords"
+    assert requests[1]["task"] == "repair_geo_keyword_candidates"
+    assert requests[1]["validation_diagnostic"]["root_cause"] == ("historical_keyword_overlap")
+    assert requests[1]["validation_diagnostic"]["duplicate_keywords"] == ["旧关键词"]
+    assert response.items[0].text == "全新关键词"
+    assert response.provider_metrics["request_count"] == 2
+
+
+def test_deepseek_keyword_provider_coerces_known_general_length_for_requested_modes():
+    def handler(request):
+        return httpx.Response(
+            200,
+            json={
+                "id": "provider-request-1",
+                "model": "deepseek-chat",
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "items": [
+                                        {
+                                            "text": "GEO优化",
+                                            "category": "service",
+                                            "intents": ["recommendation"],
+                                            "length_type": "general",
+                                            "regions": [],
+                                            "base_keyword": None,
+                                            "notes": "",
+                                            "relevance_score": 90,
+                                            "priority": "high",
+                                            "ai_reason": "与主营业务相关",
+                                        }
+                                    ]
+                                },
+                                ensure_ascii=False,
+                            )
+                        },
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 10, "total_tokens": 20},
+            },
+        )
+
+    provider = DeepSeekKeywordGenerationProvider(
+        credential_resolver=CredentialResolver(),
+        transport=httpx.MockTransport(handler),
+        runtime_resolver=runtime_snapshot,
+    )
+    request = replace(
+        generation_request(),
+        include_short=True,
+        include_long_tail=True,
+        historical_exclusions=(),
+    )
+    response = provider.generate(request)
+
+    assert response.items[0].structure_type == "short"
+    assert response.provider_metrics["request_count"] == 1
 
 
 def test_deepseek_keyword_provider_fails_after_exactly_one_repair_request():

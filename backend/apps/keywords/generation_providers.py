@@ -32,6 +32,7 @@ from .generation_exceptions import (
 from .normalization import (
     KeywordNormalizationError,
     normalize_generated_keyword_items,
+    normalize_plain_text,
     normalize_region_entries,
 )
 from .taxonomy import normalize_category, normalize_intents
@@ -67,12 +68,20 @@ _LENGTH_ALIASES = {
     "short_keyword": "short",
     "短关键词": "short",
     "短词": "short",
+    "短": "short",
     "long_tail": "long_tail",
     "long-tail": "long_tail",
+    "long tail": "long_tail",
+    "longtail": "long_tail",
+    "long": "long_tail",
     "long_tail_keyword": "long_tail",
     "长尾关键词": "long_tail",
     "长尾词": "long_tail",
+    "长尾": "long_tail",
     "general": "general",
+    "通用": "general",
+    "通用词": "general",
+    "通用关键词": "general",
 }
 _PRIORITY_ALIASES = {
     "high": "high",
@@ -100,7 +109,7 @@ def _first(row, key, default=None):
 def _structure_diagnostic(content, reason, *, error_fields=()):
     diagnostic = {
         "actual_structure": {"type": type(content).__name__},
-        "expected_structure": "keyword-generation-v2",
+        "expected_structure": "keyword-generation-v3",
         "error_fields": sorted({str(value)[:64] for value in error_fields})[:20],
         "parse_failure_reason": str(reason)[:64],
         "root_cause": "provider_schema_mismatch",
@@ -133,12 +142,59 @@ def _invalid(content, reason, *fields):
     )
 
 
+def _normalized_length_type(raw_value, *, text: str, allowed_lengths: set[str]):
+    if not isinstance(raw_value, str):
+        return None
+    normalized = raw_value.strip().lower()
+    length_type = _LENGTH_ALIASES.get(normalized)
+    if length_type in allowed_lengths:
+        return length_type
+    if length_type is None:
+        return None
+    # DeepSeek occasionally emits the documented legacy value ``general`` or
+    # the opposite requested length. Length is presentation metadata rather
+    # than a security boundary, so coerce only these finite known values.
+    if len(allowed_lengths) == 1:
+        return next(iter(allowed_lengths))
+    if length_type == "general" and {"short", "long_tail"}.issubset(allowed_lengths):
+        compact_text = "".join(text.split())
+        return "short" if len(compact_text) <= 8 else "long_tail"
+    return None
+
+
+def _historical_duplicate_texts(items, request):
+    exclusions = set()
+    for value in request.historical_exclusions:
+        try:
+            exclusions.add(normalize_plain_text(value)[1])
+        except KeywordNormalizationError:
+            continue
+    duplicates = []
+    for item in items:
+        matching = normalize_plain_text(item.text)[1]
+        if matching in exclusions and item.text not in duplicates:
+            duplicates.append(item.text)
+    return duplicates
+
+
+def _novelty_diagnostic(content, duplicates):
+    diagnostic = _structure_diagnostic(
+        content,
+        "historical_duplicate",
+        error_fields=("text",),
+    )
+    diagnostic["root_cause"] = "historical_keyword_overlap"
+    diagnostic["duplicate_keywords"] = list(duplicates)[:20]
+    diagnostic["replacement_count"] = len(duplicates)
+    return diagnostic
+
+
 class DeepSeekKeywordGenerationProvider(DeepSeekStructuredContentAdapter):
     descriptor = AIAdapterDescriptor(
         identity=AIModelIdentity(provider_key="deepseek", model_key="deepseek"),
         capabilities=frozenset({AIModelCapability.KEYWORD_GENERATION}),
-        adapter_version="deepseek-keyword-generation-v2",
-        prompt_version="keyword-generation-v2",
+        adapter_version="deepseek-keyword-generation-v3",
+        prompt_version="keyword-generation-v3",
     )
     key = descriptor.identity.provider_key
     model_key = descriptor.identity.model_key
@@ -208,11 +264,10 @@ class DeepSeekKeywordGenerationProvider(DeepSeekStructuredContentAdapter):
                 _invalid(content, "category_not_requested", "category")
             if request.intents and not set(intents).issubset(request.intents):
                 _invalid(content, "intent_not_requested", "intents")
-            raw_length = _first(row, "length_type")
-            length_type = (
-                _LENGTH_ALIASES.get(raw_length.strip().lower())
-                if isinstance(raw_length, str)
-                else None
+            length_type = _normalized_length_type(
+                _first(row, "length_type"),
+                text=text,
+                allowed_lengths=allowed_lengths,
             )
             if length_type not in allowed_lengths:
                 _invalid(content, "length_type", "length_type")
@@ -309,10 +364,17 @@ class DeepSeekKeywordGenerationProvider(DeepSeekStructuredContentAdapter):
         return tuple(output)
 
     def _adapter_request(self, runtime, request, *, repair_output=None, diagnostic=None):
+        novelty_repair = bool(
+            diagnostic and diagnostic.get("root_cause") == "historical_keyword_overlap"
+        )
         user_payload = {
-            "task": "repair_geo_keyword_json"
-            if repair_output is not None
-            else "generate_geo_keywords",
+            "task": (
+                "repair_geo_keyword_candidates"
+                if novelty_repair
+                else "repair_geo_keyword_json"
+                if repair_output is not None
+                else "generate_geo_keywords"
+            ),
             "subject": request.subject_values,
             "target_count": request.target_count,
             "include_short": request.include_short,
@@ -352,7 +414,12 @@ class DeepSeekKeywordGenerationProvider(DeepSeekStructuredContentAdapter):
         if repair_output is not None:
             user_payload["invalid_output"] = repair_output
             user_payload["validation_diagnostic"] = diagnostic or {}
-            user_payload["repair_instruction"] = "只修正为要求的 JSON 结构，不增加解释。"
+            user_payload["repair_instruction"] = (
+                "保留未重复关键词，替换所有与 exclusions 重复的关键词；"
+                "最终数量必须等于 target_count，且只返回要求的 JSON 结构。"
+                if novelty_repair
+                else "只修正为要求的 JSON 结构，不增加解释。"
+            )
         return AIAdapterRequest(
             request_id=request.job_id,
             correlation_id=request.job_id,
@@ -376,6 +443,8 @@ class DeepSeekKeywordGenerationProvider(DeepSeekStructuredContentAdapter):
         diagnostic = None
         response = None
         items = None
+        fallback_response = None
+        fallback_items = None
         for request_index in range(2):
             normalized = self._adapter_request(
                 runtime,
@@ -386,6 +455,10 @@ class DeepSeekKeywordGenerationProvider(DeepSeekStructuredContentAdapter):
             try:
                 response = self.invoke(normalized)
             except AIAdapterError as exc:
+                if fallback_response is not None and fallback_items is not None:
+                    response = fallback_response
+                    items = fallback_items
+                    break
                 if exc.schema_failure and request_index == 0:
                     repair_output = {}
                     diagnostic = _structure_diagnostic(None, "json_parse")
@@ -402,11 +475,25 @@ class DeepSeekKeywordGenerationProvider(DeepSeekStructuredContentAdapter):
             try:
                 items = self._items(response.output.content, request)
             except KeywordGenerationInvalidResponse as exc:
+                if fallback_response is not None and fallback_items is not None:
+                    response = fallback_response
+                    items = fallback_items
+                    break
                 if request_index == 0:
                     repair_output = response.output.content
                     diagnostic = exc.diagnostic
                     continue
                 raise
+            duplicates = _historical_duplicate_texts(items, request)
+            if duplicates and request_index == 0:
+                # One bounded repair request asks the provider to replace old
+                # words. If that repair is malformed, retain the first valid
+                # response so persistence can still keep its novel subset.
+                fallback_response = response
+                fallback_items = items
+                repair_output = response.output.content
+                diagnostic = _novelty_diagnostic(response.output.content, duplicates)
+                continue
             break
         if response is None or items is None:
             raise KeywordGenerationInvalidResponse(

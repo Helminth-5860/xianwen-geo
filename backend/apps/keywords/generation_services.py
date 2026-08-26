@@ -683,7 +683,37 @@ def _finalize_success(job_id, generation, response):
                 code="KEYWORD_VERSION_CONFLICT",
             )
         normalized = _generated_items(job, response)
-        payload = [item.semantic_payload() for item in normalized]
+        provider_payload = [item.semantic_payload() for item in normalized]
+        existing_keys = (
+            set(
+                keyword_set.draft_items.values_list(
+                    "matching_text",
+                    "region_matching_key",
+                )
+            )
+            if keyword_set is not None
+            else set()
+        )
+        novel_items = []
+        for item in normalized:
+            semantic_key = (item.matching_text, item.region_matching_key)
+            if semantic_key in existing_keys:
+                continue
+            existing_keys.add(semantic_key)
+            novel_items.append(item)
+        if not novel_items:
+            return _terminal_locked(
+                job,
+                status="conflict",
+                code="KEYWORD_VERSION_NO_CHANGES",
+                summary={
+                    "requested_count": job.target_count,
+                    "generated_count": len(normalized),
+                    "added_count": 0,
+                    "skipped_duplicate_count": len(normalized),
+                },
+            )
+        payload = [item.semantic_payload() for item in novel_items]
         try:
             with transaction.atomic():
                 updated, added_count, _ = append_keyword_draft_items(
@@ -693,7 +723,7 @@ def _finalize_success(job_id, generation, response):
                     expected_subject_version_id=job.subject_version_id,
                     items=payload,
                 )
-                if added_count != len(payload):
+                if added_count == 0:
                     raise KeywordVersionNoChanges
         except KeywordVersionNoChanges:
             return _terminal_locked(
@@ -714,12 +744,16 @@ def _finalize_success(job_id, generation, response):
             return _terminal_locked(job, status=status, code=exc.code)
 
         draft_applied_version = updated.version
-        output_digest = canonical_digest(payload)
+        # PostgreSQL's append-only evidence guard intentionally records the
+        # complete provider response (exactly target_count items). The applied
+        # version can contain only the novel subset; counts are recorded on the
+        # immutable success event for operational visibility.
+        output_digest = canonical_digest(provider_payload)
         KeywordGenerationResult.objects.create(
             job=job,
-            output_snapshot=payload,
+            output_snapshot=provider_payload,
             output_digest=output_digest,
-            item_count=len(payload),
+            item_count=len(provider_payload),
             applied_keyword_set_version=draft_applied_version,
             provider_metrics=_safe_provider_metrics(response.provider_metrics),
         )
@@ -749,7 +783,9 @@ def _finalize_success(job_id, generation, response):
             job,
             "succeeded",
             summary={
-                "item_count": len(payload),
+                "item_count": len(provider_payload),
+                "added_count": added_count,
+                "skipped_duplicate_count": len(provider_payload) - added_count,
                 "keyword_set_version": updated.version,
             },
         )
