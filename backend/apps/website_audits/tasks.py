@@ -1,3 +1,4 @@
+from billiard.exceptions import SoftTimeLimitExceeded
 from celery import shared_task  # type: ignore[import-untyped]
 from django.db import InterfaceError, OperationalError
 
@@ -29,7 +30,12 @@ def _dispatch_semantic_if_ready(audit_id) -> bool:
     return True
 
 
-@shared_task(bind=True, name="website_audits.execute")
+@shared_task(
+    bind=True,
+    name="website_audits.execute",
+    soft_time_limit=90,
+    time_limit=105,
+)
 def execute_website_audit_task(self, audit_id):
     try:
         result = execute_website_audit(audit_id)
@@ -44,6 +50,9 @@ def execute_website_audit_task(self, audit_id):
             # deterministic/static evidence instead of being silently skipped.
             _dispatch_semantic_if_ready(audit_id)
         return result
+    except SoftTimeLimitExceeded:
+        fail_website_audit(audit_id, "WEBSITE_AUDIT_TIMEOUT")
+        raise
     except (OperationalError, InterfaceError) as exc:
         if self.request.retries >= 3:
             fail_website_audit(audit_id, "WEBSITE_AUDIT_DATABASE_UNAVAILABLE")
