@@ -1,3 +1,5 @@
+from django.conf import settings
+
 from apps.website_audits.crawler import crawl_website
 from apps.website_audits.transport import AuditFetchResult
 
@@ -72,3 +74,50 @@ def test_crawl_website_discovers_sitemap_and_internal_links(monkeypatch):
     assert missing.status == 404
     assert any(not link.is_internal for link in result.links)
     assert "https://example.com/contact" in result.discovered_urls
+    assert result.timed_out is False
+
+
+def test_crawl_website_uses_one_shared_hard_deadline(monkeypatch):
+    fixtures = {
+        "https://slow.example/": _result(
+            "https://slow.example/",
+            '<html><head><title>Home</title></head><body><a href="/a">A</a></body></html>',
+            content_type="text/html; charset=utf-8",
+        ),
+        "https://slow.example/robots.txt": _result(
+            "https://slow.example/robots.txt",
+            "User-agent: *\nAllow: /\nSitemap: https://slow.example/sitemap.xml",
+            content_type="text/plain; charset=utf-8",
+        ),
+        "https://slow.example/sitemap.xml": _result(
+            "https://slow.example/sitemap.xml",
+            '<?xml version="1.0"?><urlset><url><loc>https://slow.example/a</loc></url></urlset>',
+            content_type="application/xml; charset=utf-8",
+        ),
+        "https://slow.example/a": _result(
+            "https://slow.example/a",
+            '<html><head><title>A</title></head><body>A</body></html>',
+            content_type="text/html; charset=utf-8",
+        ),
+    }
+    clock = [0.0]
+    seen_deadlines: list[float | None] = []
+
+    def fake_monotonic():
+        return clock[0]
+
+    def fake_fetch(url, **kwargs):
+        seen_deadlines.append(kwargs.get("deadline"))
+        clock[0] += 2.0
+        return fixtures[url]
+
+    monkeypatch.setattr(settings, "WEBSITE_AUDIT_TOTAL_TIMEOUT_SECONDS", 5)
+    monkeypatch.setattr("apps.website_audits.crawler.time.monotonic", fake_monotonic)
+    monkeypatch.setattr("apps.website_audits.crawler.fetch_audit_url", fake_fetch)
+
+    result = crawl_website("https://slow.example/", max_pages=10)
+
+    assert result.timed_out is True
+    assert [page.url for page in result.pages] == ["https://slow.example/"]
+    assert seen_deadlines
+    assert all(deadline is not None and deadline <= 5.0 for deadline in seen_deadlines)
