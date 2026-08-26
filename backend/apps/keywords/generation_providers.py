@@ -247,6 +247,44 @@ def _combine_novelty_replacements(original_items, replacement_items, request):
     return tuple([*novel, *historical_fallback][: request.target_count])
 
 
+def _partial_repair_request(request, valid_items):
+    missing_count = max(1, request.target_count - len(valid_items))
+    # Ask for a small bounded surplus so one malformed replacement does not
+    # discard the valid majority from the first response. The final result is
+    # still capped at the original target_count and there is still only one
+    # provider repair request.
+    repair_count = min(request.target_count, missing_count * 2)
+    exclusions = [*request.historical_exclusions, *(item.text for item in valid_items)]
+    return replace(
+        request,
+        target_count=repair_count,
+        historical_exclusions=tuple(dict.fromkeys(exclusions)),
+    )
+
+
+def _combine_partial_replacements(original_items, replacement_items, request):
+    historical = set()
+    for value in request.historical_exclusions:
+        try:
+            historical.add(normalize_plain_text(value)[1])
+        except KeywordNormalizationError:
+            continue
+    combined = []
+    seen = set()
+    for item in (*original_items, *replacement_items):
+        try:
+            matching = normalize_plain_text(item.text)[1]
+        except KeywordNormalizationError:
+            continue
+        if matching in historical or matching in seen:
+            continue
+        seen.add(matching)
+        combined.append(item)
+        if len(combined) == request.target_count:
+            return tuple(combined)
+    return None
+
+
 class DeepSeekKeywordGenerationProvider(DeepSeekStructuredContentAdapter):
     descriptor = AIAdapterDescriptor(
         identity=AIModelIdentity(provider_key="deepseek", model_key="deepseek"),
@@ -423,6 +461,33 @@ class DeepSeekKeywordGenerationProvider(DeepSeekStructuredContentAdapter):
             _invalid(content, "item_count", "items")
         return tuple(output)
 
+    @classmethod
+    def _valid_partial_items(cls, content, request):
+        try:
+            rows = cls._rows(content)
+        except KeywordGenerationInvalidResponse:
+            return ()
+        valid = []
+        seen = set()
+        historical = set()
+        for value in request.historical_exclusions:
+            try:
+                historical.add(normalize_plain_text(value)[1])
+            except KeywordNormalizationError:
+                continue
+        single_request = replace(request, target_count=1)
+        for row in rows:
+            try:
+                item = cls._items({"items": [row]}, single_request)[0]
+                matching = normalize_plain_text(item.text)[1]
+            except (KeywordGenerationInvalidResponse, KeywordNormalizationError):
+                continue
+            if matching in historical or matching in seen:
+                continue
+            seen.add(matching)
+            valid.append(item)
+        return tuple(valid)
+
     def _adapter_request(self, runtime, request, *, repair_output=None, diagnostic=None):
         novelty_repair = bool(
             diagnostic and diagnostic.get("root_cause") == "historical_keyword_overlap"
@@ -516,6 +581,7 @@ class DeepSeekKeywordGenerationProvider(DeepSeekStructuredContentAdapter):
         items = None
         fallback_response = None
         fallback_items = None
+        partial_items = ()
         active_request = request
         for request_index in range(2):
             normalized = self._adapter_request(
@@ -552,10 +618,47 @@ class DeepSeekKeywordGenerationProvider(DeepSeekStructuredContentAdapter):
                     items = fallback_items
                     break
                 if request_index == 0:
+                    partial_items = self._valid_partial_items(
+                        response.output.content,
+                        request,
+                    )
+                    if len(partial_items) >= request.target_count:
+                        items = partial_items[: request.target_count]
+                        break
+                    if partial_items:
+                        active_request = _partial_repair_request(request, partial_items)
                     repair_output = response.output.content
-                    diagnostic = exc.diagnostic
+                    diagnostic = dict(exc.diagnostic)
+                    diagnostic["valid_item_count"] = len(partial_items)
+                    diagnostic["replacement_target_count"] = active_request.target_count
                     continue
+                if partial_items:
+                    replacement_items = self._valid_partial_items(
+                        response.output.content,
+                        active_request,
+                    )
+                    combined = _combine_partial_replacements(
+                        partial_items,
+                        replacement_items,
+                        request,
+                    )
+                    if combined is not None:
+                        items = combined
+                        break
                 raise
+            if partial_items:
+                combined = _combine_partial_replacements(partial_items, items, request)
+                if combined is None:
+                    raise KeywordGenerationInvalidResponse(
+                        "replacement_shortfall",
+                        diagnostic=_structure_diagnostic(
+                            response.output.content,
+                            "replacement_shortfall",
+                            error_fields=("items",),
+                        ),
+                    )
+                items = combined
+                break
             if fallback_items is not None:
                 items = _combine_novelty_replacements(fallback_items, items, request)
                 break

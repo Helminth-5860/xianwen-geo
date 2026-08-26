@@ -470,6 +470,85 @@ def test_deepseek_keyword_provider_removes_only_extra_intents_with_a_valid_inter
     assert response.provider_metrics["request_count"] == 1
 
 
+def test_deepseek_keyword_provider_keeps_valid_rows_and_repairs_only_the_shortfall():
+    captured = []
+
+    def row(text, category):
+        return {
+            "text": text,
+            "category": category,
+            "intents": ["comparison"],
+            "length_type": "long_tail",
+            "regions": [],
+            "base_keyword": None,
+            "notes": "",
+            "relevance_score": 90,
+            "priority": "high",
+            "ai_reason": "符合方案对比意图",
+        }
+
+    def handler(request):
+        payload = json.loads(request.content)
+        captured.append(json.loads(payload["messages"][1]["content"]))
+        items = (
+            [
+                row("企业 GEO 方案对比", "solution"),
+                row("GEO 优化路径比较", "solution"),
+                row("GEO 服务商", "service"),
+            ]
+            if len(captured) == 1
+            else [
+                row("AI 搜索优化方案比较", "solution"),
+                # One replacement is still invalid. The valid replacement is
+                # enough to fill the single missing slot.
+                row("GEO 咨询服务", "service"),
+            ]
+        )
+        return httpx.Response(
+            200,
+            json={
+                "id": f"provider-request-partial-{len(captured)}",
+                "model": "deepseek-chat",
+                "choices": [
+                    {
+                        "message": {"content": json.dumps({"items": items}, ensure_ascii=False)},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 10, "total_tokens": 20},
+            },
+        )
+
+    provider = DeepSeekKeywordGenerationProvider(
+        credential_resolver=CredentialResolver(),
+        transport=httpx.MockTransport(handler),
+        runtime_resolver=runtime_snapshot,
+    )
+    request = replace(
+        generation_request(),
+        target_count=3,
+        include_long_tail=True,
+        categories=("solution",),
+        intents=("comparison",),
+        historical_exclusions=(),
+    )
+
+    response = provider.generate(request)
+
+    assert [payload["target_count"] for payload in captured] == [3, 2]
+    assert set(captured[1]["exclusions"]) == {
+        "企业 GEO 方案对比",
+        "GEO 优化路径比较",
+    }
+    assert [item.text for item in response.items] == [
+        "企业 GEO 方案对比",
+        "GEO 优化路径比较",
+        "AI 搜索优化方案比较",
+    ]
+    assert all(item.business_category == "solution" for item in response.items)
+    assert response.provider_metrics["request_count"] == 2
+
+
 def test_deepseek_keyword_provider_fails_after_exactly_one_repair_request():
     request_count = 0
 
