@@ -81,7 +81,7 @@ function workspaceMenu(subjectId: string | null): MenuItem[] {
       label: "检测中心",
       children: [
         linkedItem("detections-subject", "主体检测", "/geo/detections"),
-        unavailableItem("detections-website", "官网检测"),
+        linkedItem("detections-website", "官网检测", "/geo/website-audits"),
       ],
     },
     {
@@ -139,6 +139,7 @@ function selectedMenuKey(pathname: string) {
   if (pathname.includes("/keywords/custom")) return "keywords-custom";
   if (pathname.includes("/keywords")) return "keywords-smart";
   if (pathname.includes("/questions")) return "questions-generate";
+  if (pathname.startsWith("/geo/website-audits")) return "detections-website";
   if (pathname.startsWith("/geo/detections")) return "detections-subject";
   if (pathname.startsWith("/geo/reports")) return "insights-reports";
   if (pathname.startsWith("/geo/strategy") || pathname.includes("/strategy")) {
