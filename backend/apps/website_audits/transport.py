@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import time
 from dataclasses import dataclass
 
@@ -39,7 +40,14 @@ def fetch_audit_url(
     initial = canonicalize_url(raw_url)
     current = initial
     started = time.monotonic()
-    request_deadline = started + settings.WEBSITE_AUDIT_REQUEST_TIMEOUT_SECONDS
+    request_timeout_seconds = int(
+        getattr(
+            settings,
+            "WEBSITE_AUDIT_REQUEST_TIMEOUT_SECONDS",
+            os.getenv("WEBSITE_AUDIT_REQUEST_TIMEOUT_SECONDS", "8"),
+        )
+    )
+    request_deadline = started + request_timeout_seconds
     effective_deadline = min(deadline, request_deadline) if deadline is not None else request_deadline
     redirect_count = 0
     byte_limit = max_bytes or settings.WEBSITE_AUDIT_MAX_RESPONSE_BYTES
