@@ -1,6 +1,7 @@
 import { get, post } from "./auth-client";
 
 export type WebsiteAuditStageStatus =
+  | "not_started"
   | "disabled"
   | "queued"
   | "running"
@@ -206,6 +207,7 @@ export function getWebsiteAudit(auditId: string) {
 
 export function websiteAuditStatusLabel(status: string) {
   const labels: Readonly<Record<string, string>> = {
+    not_started: "等待检测",
     queued: "等待检测",
     running: "正在检测",
     succeeded: "检测完成",
@@ -213,5 +215,5 @@ export function websiteAuditStatusLabel(status: string) {
     disabled: "未启用",
     partial: "部分完成",
   };
-  return labels[status] ?? status;
+  return labels[status] ?? "状态未知";
 }
