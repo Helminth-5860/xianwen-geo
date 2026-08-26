@@ -9,6 +9,27 @@ const LOCAL_API_BASE_URL = "http://localhost:8000/api/v1";
 const PUBLIC_SECRET_PATTERN = /(API_KEY|SECRET|TOKEN|PASSWORD|PRIVATE_KEY)/i;
 const REMOTE_ENVIRONMENTS = new Set(["staging", "production"]);
 
+function normalizeApiBaseUrl(rawValue: string, *, remote: boolean): string {
+  const raw = rawValue.trim();
+  if (!raw) throw new Error("NEXT_PUBLIC_API_BASE_URL 不能为空");
+
+  if (raw.startsWith("/")) {
+    if (raw.startsWith("//")) {
+      throw new Error("NEXT_PUBLIC_API_BASE_URL 同源路径必须以单个 / 开头");
+    }
+    return raw.replace(/\/$/, "");
+  }
+
+  const apiBaseUrl = new URL(raw);
+  if (!["http:", "https:"].includes(apiBaseUrl.protocol)) {
+    throw new Error("NEXT_PUBLIC_API_BASE_URL 必须使用 HTTP(S) 或同源 / 路径");
+  }
+  if (remote && apiBaseUrl.protocol !== "https:") {
+    throw new Error("staging / production 的绝对 API 地址必须使用 HTTPS；推荐使用同源 /api/v1");
+  }
+  return apiBaseUrl.toString().replace(/\/$/, "");
+}
+
 export function readPublicEnvironment(source: EnvironmentSource): PublicEnvironment {
   const appEnvironment = source.NEXT_PUBLIC_APP_ENV ?? "local";
   if (!["local", "test", "staging", "production"].includes(appEnvironment)) {
@@ -22,22 +43,19 @@ export function readPublicEnvironment(source: EnvironmentSource): PublicEnvironm
   }
 
   const isRemoteEnvironment = REMOTE_ENVIRONMENTS.has(appEnvironment);
-  const rawApiBaseUrl = source.NEXT_PUBLIC_API_BASE_URL || LOCAL_API_BASE_URL;
-  if (isRemoteEnvironment && !source.NEXT_PUBLIC_API_BASE_URL) {
+  const configuredApiBaseUrl = source.NEXT_PUBLIC_API_BASE_URL;
+  if (isRemoteEnvironment && !configuredApiBaseUrl) {
     throw new Error(`${appEnvironment} 必须配置 NEXT_PUBLIC_API_BASE_URL`);
   }
 
-  const apiBaseUrl = new URL(rawApiBaseUrl);
-  if (!["http:", "https:"].includes(apiBaseUrl.protocol)) {
-    throw new Error("NEXT_PUBLIC_API_BASE_URL 必须使用 HTTP(S)");
-  }
-  if (isRemoteEnvironment && apiBaseUrl.protocol !== "https:") {
-    throw new Error(`${appEnvironment} 的 API 地址必须使用 HTTPS`);
-  }
+  const apiBaseUrl = normalizeApiBaseUrl(
+    configuredApiBaseUrl || LOCAL_API_BASE_URL,
+    { remote: isRemoteEnvironment },
+  );
 
   return Object.freeze({
     appEnvironment: appEnvironment as PublicEnvironment["appEnvironment"],
-    apiBaseUrl: apiBaseUrl.toString().replace(/\/$/, ""),
+    apiBaseUrl,
   });
 }
 
