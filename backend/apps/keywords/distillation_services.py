@@ -350,7 +350,7 @@ def _settle_quota(job, action):
     )
 
 
-def _terminal_locked(job, *, status, code):
+def _terminal_locked(job, *, status, code, summary=None):
     if job.status in _TERMINAL:
         return {"status": job.status}
     _settle_quota(job, "release")
@@ -369,7 +369,7 @@ def _terminal_locked(job, *, status, code):
             "updated_at",
         ]
     )
-    _safe_event(job, status, code=code)
+    _safe_event(job, status, code=code, summary=summary)
     return {"status": status, "code": code}
 
 
@@ -550,7 +550,12 @@ def execute_distillation(*, job_id, expected_generation=None):
             locked = DistillationJob.objects.select_for_update().get(pk=job_id)
             if locked.status != "running" or locked.generation != generation:
                 return {"status": locked.status}
-            return _terminal_locked(locked, status="failed", code=exc.code)
+            return _terminal_locked(
+                locked,
+                status="failed",
+                code=exc.code,
+                summary=getattr(exc, "diagnostic", None),
+            )
     except Exception as exc:
         raise DistillationUnexpectedError(job_id=job_id, generation=generation) from exc
 

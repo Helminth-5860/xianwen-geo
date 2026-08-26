@@ -43,8 +43,9 @@ DEEPSEEK_KEYWORD_SYSTEM_PROMPT = """
 "length_type":"short","regions":[],"base_keyword":null,"notes":"",
 "relevance_score":90,"priority":"high","ai_reason":"与主体业务直接相关"}]}。
 items 数量必须严格等于 target_count；text 不得为空或重复。
-category 只能使用请求给出的 14 类 category_catalog key。
-intents 必须是数组，只能使用请求给出的 8 类 intent_catalog key。
+category 只能使用 category_catalog 中的 key；selected_categories 非空时两者内容一致。
+intents 必须是数组、不能为空，且只能使用 intent_catalog 中的 key；
+selected_intents 非空时两者内容一致。不得使用用户未选择的类别或意图。
 length_type 只能是 short 或 long_tail，且必须符合请求的长度类型。
 regions 只能使用请求提供的 code/name/level 对象；不限地域时必须为空数组。
 base_keyword 只能指向同次返回的另一条关键词；无法确认时必须为 null，严禁自引用。
@@ -109,7 +110,7 @@ def _first(row, key, default=None):
 def _structure_diagnostic(content, reason, *, error_fields=()):
     diagnostic = {
         "actual_structure": {"type": type(content).__name__},
-        "expected_structure": "keyword-generation-v3",
+        "expected_structure": "keyword-generation-v4",
         "error_fields": sorted({str(value)[:64] for value in error_fields})[:20],
         "parse_failure_reason": str(reason)[:64],
         "root_cause": "provider_schema_mismatch",
@@ -160,6 +161,26 @@ def _normalized_length_type(raw_value, *, text: str, allowed_lengths: set[str]):
         compact_text = "".join(text.split())
         return "short" if len(compact_text) <= 8 else "long_tail"
     return None
+
+
+def _selected_category(raw_value, *, selected_categories: tuple[str, ...]):
+    category = normalize_category(raw_value)
+    if not selected_categories or category in selected_categories:
+        return category
+    raise ValueError("category_not_requested")
+
+
+def _selected_intents(raw_value, *, selected_intents: tuple[str, ...]):
+    intents = normalize_intents(raw_value)
+    if not selected_intents:
+        return intents
+    filtered = tuple(value for value in intents if value in selected_intents)
+    # Extra valid intents are descriptive metadata and can be removed safely,
+    # but a response with no selected intent must be repaired rather than
+    # assigned a made-up semantic label.
+    if not filtered:
+        raise ValueError("intent_not_requested")
+    return filtered
 
 
 def _historical_duplicate_texts(items, request):
@@ -230,8 +251,8 @@ class DeepSeekKeywordGenerationProvider(DeepSeekStructuredContentAdapter):
     descriptor = AIAdapterDescriptor(
         identity=AIModelIdentity(provider_key="deepseek", model_key="deepseek"),
         capabilities=frozenset({AIModelCapability.KEYWORD_GENERATION}),
-        adapter_version="deepseek-keyword-generation-v3",
-        prompt_version="keyword-generation-v3",
+        adapter_version="deepseek-keyword-generation-v4",
+        prompt_version="keyword-generation-v4",
     )
     key = descriptor.identity.provider_key
     model_key = descriptor.identity.model_key
@@ -293,14 +314,16 @@ class DeepSeekKeywordGenerationProvider(DeepSeekStructuredContentAdapter):
             if not isinstance(text, str) or not text.strip():
                 _invalid(content, "keyword_text", "text")
             try:
-                category = normalize_category(_first(row, "category"))
-                intents = normalize_intents(_first(row, "intents"))
+                category = _selected_category(
+                    _first(row, "category"),
+                    selected_categories=request.categories,
+                )
+                intents = _selected_intents(
+                    _first(row, "intents"),
+                    selected_intents=request.intents,
+                )
             except ValueError as exc:
                 _invalid(content, str(exc), "category", "intents")
-            if request.categories and category not in request.categories:
-                _invalid(content, "category_not_requested", "category")
-            if request.intents and not set(intents).issubset(request.intents):
-                _invalid(content, "intent_not_requested", "intents")
             length_type = _normalized_length_type(
                 _first(row, "length_type"),
                 text=text,
@@ -420,7 +443,8 @@ class DeepSeekKeywordGenerationProvider(DeepSeekStructuredContentAdapter):
             "regions": list(request.regions),
             "selected_categories": list(request.categories),
             "selected_intents": list(request.intents),
-            "category_catalog": [
+            "category_catalog": list(request.categories)
+            or [
                 "entity",
                 "industry",
                 "product_category",
@@ -436,7 +460,8 @@ class DeepSeekKeywordGenerationProvider(DeepSeekStructuredContentAdapter):
                 "trust",
                 "knowledge",
             ],
-            "intent_catalog": [
+            "intent_catalog": list(request.intents)
+            or [
                 "informational",
                 "recommendation",
                 "comparison",
@@ -460,7 +485,11 @@ class DeepSeekKeywordGenerationProvider(DeepSeekStructuredContentAdapter):
                 "只生成用于补足缺口的全新关键词；不得复用 exclusions 或 "
                 "duplicate_keywords，数量必须等于 target_count，且只返回要求的 JSON 结构。"
                 if novelty_repair
-                else "只修正为要求的 JSON 结构，不增加解释。"
+                else (
+                    "只修正为要求的 JSON 结构，不增加解释。category 必须来自 "
+                    "category_catalog；intents 必须是 intent_catalog 的非空子集；"
+                    "不得使用 catalog 之外的值。"
+                )
             )
         return AIAdapterRequest(
             request_id=request.job_id,

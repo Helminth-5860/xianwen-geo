@@ -337,6 +337,139 @@ def test_deepseek_keyword_provider_coerces_known_general_length_for_requested_mo
     assert response.provider_metrics["request_count"] == 1
 
 
+def test_deepseek_keyword_provider_honours_selected_category_and_intent_subsets():
+    captured = []
+
+    def handler(request):
+        payload = json.loads(request.content)
+        captured.append(json.loads(payload["messages"][1]["content"]))
+        ignored_subset = len(captured) == 1
+        return httpx.Response(
+            200,
+            json={
+                "id": f"provider-request-subset-{len(captured)}",
+                "model": "deepseek-chat",
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "items": [
+                                        {
+                                            "text": "企业 GEO 痛点解决方案",
+                                            # Both values are valid globally, but the
+                                            # model ignored the selected subsets.
+                                            "category": (
+                                                "service" if ignored_subset else "pain_point"
+                                            ),
+                                            "intents": (
+                                                ["recommendation"]
+                                                if ignored_subset
+                                                else ["informational"]
+                                            ),
+                                            "length_type": "long_tail",
+                                            "regions": [],
+                                            "base_keyword": None,
+                                            "notes": "",
+                                            "relevance_score": 92,
+                                            "priority": "high",
+                                            "ai_reason": "符合用户需求",
+                                        }
+                                    ]
+                                },
+                                ensure_ascii=False,
+                            )
+                        },
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 10, "total_tokens": 20},
+            },
+        )
+
+    provider = DeepSeekKeywordGenerationProvider(
+        credential_resolver=CredentialResolver(),
+        transport=httpx.MockTransport(handler),
+        runtime_resolver=runtime_snapshot,
+    )
+    request = replace(
+        generation_request(),
+        include_long_tail=True,
+        categories=("pain_point", "solution", "industry", "goal"),
+        intents=("informational", "comparison", "local", "trust"),
+        historical_exclusions=(),
+    )
+
+    response = provider.generate(request)
+
+    assert [payload["task"] for payload in captured] == [
+        "generate_geo_keywords",
+        "repair_geo_keyword_json",
+    ]
+    assert all(payload["category_catalog"] == list(request.categories) for payload in captured)
+    assert all(payload["intent_catalog"] == list(request.intents) for payload in captured)
+    assert response.items[0].business_category == "pain_point"
+    assert response.items[0].search_intents == ("informational",)
+    assert response.provider_metrics["request_count"] == 2
+
+
+def test_deepseek_keyword_provider_removes_only_extra_intents_with_a_valid_intersection():
+    def handler(request):
+        return httpx.Response(
+            200,
+            json={
+                "id": "provider-request-intent-intersection",
+                "model": "deepseek-chat",
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "items": [
+                                        {
+                                            "text": "企业 GEO 方案对比",
+                                            "category": "solution",
+                                            "intents": ["comparison", "recommendation"],
+                                            "length_type": "long_tail",
+                                            "regions": [],
+                                            "base_keyword": None,
+                                            "notes": "",
+                                            "relevance_score": 90,
+                                            "priority": "high",
+                                            "ai_reason": "适合方案对比意图",
+                                        }
+                                    ]
+                                },
+                                ensure_ascii=False,
+                            )
+                        },
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 10, "total_tokens": 20},
+            },
+        )
+
+    provider = DeepSeekKeywordGenerationProvider(
+        credential_resolver=CredentialResolver(),
+        transport=httpx.MockTransport(handler),
+        runtime_resolver=runtime_snapshot,
+    )
+    request = replace(
+        generation_request(),
+        include_long_tail=True,
+        categories=("pain_point", "solution", "industry", "goal"),
+        intents=("informational", "comparison", "local", "trust"),
+        historical_exclusions=(),
+    )
+
+    response = provider.generate(request)
+
+    assert response.items[0].business_category == "solution"
+    assert response.items[0].search_intents == ("comparison",)
+    assert response.provider_metrics["request_count"] == 1
+
+
 def test_deepseek_keyword_provider_fails_after_exactly_one_repair_request():
     request_count = 0
 
