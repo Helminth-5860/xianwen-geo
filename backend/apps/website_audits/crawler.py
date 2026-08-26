@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import re
+import time
 import xml.etree.ElementTree as ET
 from collections import deque
 from dataclasses import dataclass, field
 from urllib.parse import urlsplit, urlunsplit
+
+from django.conf import settings
 
 from apps.web_sources.exceptions import (
     WebSourceContentTooLarge,
@@ -60,6 +63,7 @@ class CrawlResult:
     discovered_urls: set[str] = field(default_factory=set)
     pages: list[CrawledPage] = field(default_factory=list)
     links: list[CrawledLink] = field(default_factory=list)
+    timed_out: bool = False
 
 
 def _clean_url(raw: str, base: str) -> str:
@@ -143,8 +147,15 @@ def _error_code(exc: Exception) -> str:
     return "FETCH_FAILED"
 
 
+def _deadline_expired(deadline: float) -> bool:
+    return time.monotonic() >= deadline
+
+
 def crawl_website(root_url: str, *, max_pages: int = 200, max_sitemaps: int = 20) -> CrawlResult:
-    first = fetch_audit_url(root_url)
+    started = time.monotonic()
+    crawl_deadline = started + settings.WEBSITE_AUDIT_TOTAL_TIMEOUT_SECONDS
+
+    first = fetch_audit_url(root_url, deadline=crawl_deadline)
     final_root = first.final_url
     root_host = (urlsplit(final_root).hostname or "").lower()
     if not root_host:
@@ -152,17 +163,27 @@ def crawl_website(root_url: str, *, max_pages: int = 200, max_sitemaps: int = 20
     root_url = _clean_url(final_root, final_root) or final_root
     result = CrawlResult(root_url=root_url, root_host=root_host)
 
+    # Robots/sitemap discovery is useful, but it must never consume the full scan.
+    # Reserve most of the customer-facing budget for actual HTML evidence pages.
+    discovery_deadline = min(crawl_deadline, time.monotonic() + 15)
+
     robots_url = f"{urlsplit(root_url).scheme}://{urlsplit(root_url).netloc}/robots.txt"
     result.robots_url = robots_url
     sitemap_candidates: list[str] = []
-    try:
-        robots = fetch_audit_url(robots_url, accept="text/plain,*/*;q=0.5", max_bytes=512_000)
-        result.robots_status = robots.status
-        if robots.status == 200:
-            result.robots_text = _decode_text(robots)[:500_000]
-            sitemap_candidates.extend(_robots_sitemaps(result.robots_text, robots.final_url))
-    except Exception:
-        result.robots_status = None
+    if not _deadline_expired(discovery_deadline):
+        try:
+            robots = fetch_audit_url(
+                robots_url,
+                accept="text/plain,*/*;q=0.5",
+                max_bytes=512_000,
+                deadline=discovery_deadline,
+            )
+            result.robots_status = robots.status
+            if robots.status == 200:
+                result.robots_text = _decode_text(robots)[:500_000]
+                sitemap_candidates.extend(_robots_sitemaps(result.robots_text, robots.final_url))
+        except Exception:
+            result.robots_status = None
 
     default_sitemap = f"{urlsplit(root_url).scheme}://{urlsplit(root_url).netloc}/sitemap.xml"
     if default_sitemap not in sitemap_candidates:
@@ -171,7 +192,11 @@ def crawl_website(root_url: str, *, max_pages: int = 200, max_sitemaps: int = 20
     sitemap_pages: list[str] = []
     sitemap_queue = deque(sitemap_candidates)
     seen_sitemaps: set[str] = set()
-    while sitemap_queue and len(seen_sitemaps) < max_sitemaps:
+    while (
+        sitemap_queue
+        and len(seen_sitemaps) < max_sitemaps
+        and not _deadline_expired(discovery_deadline)
+    ):
         sitemap_url = sitemap_queue.popleft()
         if sitemap_url in seen_sitemaps or not _same_host(sitemap_url, root_host):
             continue
@@ -181,6 +206,7 @@ def crawl_website(root_url: str, *, max_pages: int = 200, max_sitemaps: int = 20
                 sitemap_url,
                 accept="application/xml,text/xml,text/plain,*/*;q=0.5",
                 max_bytes=4_000_000,
+                deadline=discovery_deadline,
             )
         except Exception:
             continue
@@ -207,13 +233,25 @@ def crawl_website(root_url: str, *, max_pages: int = 200, max_sitemaps: int = 20
     visited: set[str] = set()
 
     while queue and len(result.pages) < max_pages:
+        # The root response was already fetched above; let it become evidence even
+        # if discovery consumed the remaining milliseconds. All new network calls
+        # obey the hard crawl deadline.
+        if _deadline_expired(crawl_deadline) and result.pages:
+            result.timed_out = True
+            break
         url, source, depth = queue.popleft()
         if url in visited:
             continue
         visited.add(url)
         result.discovered_urls.add(url)
         try:
-            fetched = first if url == root_url and not result.pages else fetch_audit_url(url)
+            if url == root_url and not result.pages:
+                fetched = first
+            else:
+                if _deadline_expired(crawl_deadline):
+                    result.timed_out = True
+                    break
+                fetched = fetch_audit_url(url, deadline=crawl_deadline)
             media_type = fetched.content_type.split(";", 1)[0].strip().lower()
             evidence = None
             if fetched.status == 200 and media_type in {"text/html", "application/xhtml+xml"}:
@@ -263,5 +301,7 @@ def crawl_website(root_url: str, *, max_pages: int = 200, max_sitemaps: int = 20
                     queue.append((cleaned, "internal_link", min(depth + 1, 255)))
                     queued.add(cleaned)
 
+    if queue and _deadline_expired(crawl_deadline):
+        result.timed_out = True
     result.discovered_urls.update(sitemap_pages)
     return result

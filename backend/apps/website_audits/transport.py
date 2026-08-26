@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import time
 from dataclasses import dataclass
 
@@ -27,21 +28,35 @@ def fetch_audit_url(
     *,
     accept: str = "text/html,application/xhtml+xml,text/plain,application/xml,text/xml;q=0.9",
     max_bytes: int | None = None,
+    deadline: float | None = None,
 ) -> AuditFetchResult:
-    """Fetch arbitrary audit evidence while preserving the existing SSRF/TLS protections."""
+    """Fetch arbitrary audit evidence while preserving the existing SSRF/TLS protections.
+
+    ``deadline`` is an absolute monotonic deadline shared by the whole crawl. Every
+    individual request also receives its own shorter budget so a single slow page
+    cannot consume the complete customer-facing scan window.
+    """
 
     initial = canonicalize_url(raw_url)
     current = initial
-    deadline = time.monotonic() + settings.WEBSITE_AUDIT_TOTAL_TIMEOUT_SECONDS
-    redirect_count = 0
     started = time.monotonic()
+    request_timeout_seconds = int(
+        getattr(
+            settings,
+            "WEBSITE_AUDIT_REQUEST_TIMEOUT_SECONDS",
+            os.getenv("WEBSITE_AUDIT_REQUEST_TIMEOUT_SECONDS", "8"),
+        )
+    )
+    request_deadline = started + request_timeout_seconds
+    effective_deadline = min(deadline, request_deadline) if deadline is not None else request_deadline
+    redirect_count = 0
     byte_limit = max_bytes or settings.WEBSITE_AUDIT_MAX_RESPONSE_BYTES
     while True:
-        if deadline - time.monotonic() <= 0:
+        if effective_deadline - time.monotonic() <= 0:
             raise WebSourceTransientError
         status, raw_headers, body, _peer = _request_once(
             current,
-            deadline,
+            effective_deadline,
             accept=accept,
             max_response_bytes=byte_limit,
         )

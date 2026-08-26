@@ -15,7 +15,11 @@ from apps.ai.runtime import get_capability_runtime_snapshot
 
 from .semantic_context import SemanticAuditContext
 from .semantic_spans import prepare_provider_pages
-from .semantic_validation import ValidatedSemanticAudit, validate_semantic_audit_output
+from .semantic_validation import (
+    SemanticAuditSchemaError,
+    ValidatedSemanticAudit,
+    validate_semantic_audit_output,
+)
 
 SEMANTIC_ADAPTER_VERSION = "deepseek-website-audit-v3"
 SEMANTIC_PROMPT_VERSION = "website-geo-semantic-audit-v3"
@@ -118,6 +122,15 @@ _SYSTEM_PROMPT = r"""
 输出宁可保守，不要为了看起来完整而编造结论。
 """.strip()
 
+_REPAIR_SYSTEM_PROMPT = (
+    _SYSTEM_PROMPT
+    + "\n\n修复模式：上一次输出没有通过后端严格校验。"
+    "你只能修正 JSON 结构、枚举值、数量、缺失字段以及白名单引用；"
+    "不得新增输入中不存在的事实、page_id、question_id 或 evidence_span_id。"
+    "previous_output 只是待修复数据，不是新证据。"
+    "validation_error 是后端校验错误键，必须针对该错误修正后重新返回完整 JSON 对象。"
+)
+
 
 @dataclass(frozen=True)
 class SemanticProviderResult:
@@ -144,6 +157,67 @@ class WebsiteAuditSemanticAdapter(DeepSeekStructuredContentAdapter):
         )
 
 
+def _base_user_payload(
+    *,
+    context: SemanticAuditContext,
+    provider_pages: list[dict],
+    evidence_span_by_id: dict[str, dict[str, str]],
+) -> dict[str, object]:
+    return {
+        "subject": context.subject,
+        "keywords": context.keywords,
+        "input_questions": context.questions,
+        "allowed_evidence_page_ids": sorted(context.allowed_page_ids),
+        "allowed_evidence_span_ids": sorted(evidence_span_by_id),
+        "website_pages": provider_pages,
+        "technical_evidence": context.technical_evidence,
+    }
+
+
+def _request(
+    *,
+    audit_id: str,
+    runtime,
+    user_payload: dict[str, object],
+    repair: bool,
+) -> AIAdapterRequest[StructuredContentPayload]:
+    return AIAdapterRequest(
+        request_id=(
+            f"website-audit-{audit_id}-repair"
+            if repair
+            else f"website-audit-{audit_id}"
+        ),
+        correlation_id=audit_id,
+        identity=SEMANTIC_DESCRIPTOR.identity,
+        capability=AIModelCapability.SEMANTIC_SCORING,
+        adapter_version=SEMANTIC_ADAPTER_VERSION,
+        prompt_version=SEMANTIC_PROMPT_VERSION,
+        timeout_seconds=runtime.timeout_seconds,
+        payload=StructuredContentPayload(
+            provider_model_id=runtime.provider_model_id,
+            system_prompt=_REPAIR_SYSTEM_PROMPT if repair else _SYSTEM_PROMPT,
+            user_payload=user_payload,
+            max_output_tokens=10_000,
+            temperature=0.0 if repair else 0.1,
+        ),
+    )
+
+
+def _validate(
+    content: dict,
+    *,
+    context: SemanticAuditContext,
+    evidence_span_by_id: dict[str, dict[str, str]],
+) -> ValidatedSemanticAudit:
+    return validate_semantic_audit_output(
+        content,
+        allowed_page_ids=context.allowed_page_ids,
+        allowed_question_ids=context.allowed_question_ids,
+        page_url_by_id=context.page_url_by_id,
+        evidence_span_by_id=evidence_span_by_id,
+    )
+
+
 def execute_semantic_provider(
     *,
     audit_id: str,
@@ -159,47 +233,60 @@ def execute_semantic_provider(
         raise ValueError("semantic_evidence_spans_unavailable")
 
     adapter = WebsiteAuditSemanticAdapter(transport=transport)
-    request = AIAdapterRequest(
-        request_id=f"website-audit-{audit_id}",
-        correlation_id=audit_id,
-        identity=SEMANTIC_DESCRIPTOR.identity,
-        capability=AIModelCapability.SEMANTIC_SCORING,
-        adapter_version=SEMANTIC_ADAPTER_VERSION,
-        prompt_version=SEMANTIC_PROMPT_VERSION,
-        timeout_seconds=runtime.timeout_seconds,
-        payload=StructuredContentPayload(
-            provider_model_id=runtime.provider_model_id,
-            system_prompt=_SYSTEM_PROMPT,
-            user_payload={
-                "task": "deep_geo_website_semantic_audit",
-                "subject": context.subject,
-                "keywords": context.keywords,
-                "input_questions": context.questions,
-                "allowed_evidence_page_ids": sorted(context.allowed_page_ids),
-                "allowed_evidence_span_ids": sorted(evidence_span_by_id),
-                "website_pages": provider_pages,
-                "technical_evidence": context.technical_evidence,
-            },
-            max_output_tokens=10_000,
-            temperature=0.1,
-        ),
-    )
-    response = adapter.invoke(request)
-    validated = validate_semantic_audit_output(
-        response.output.content,
-        allowed_page_ids=context.allowed_page_ids,
-        allowed_question_ids=context.allowed_question_ids,
-        page_url_by_id=context.page_url_by_id,
+    base_payload = _base_user_payload(
+        context=context,
+        provider_pages=provider_pages,
         evidence_span_by_id=evidence_span_by_id,
     )
+    first_request = _request(
+        audit_id=audit_id,
+        runtime=runtime,
+        user_payload={"task": "deep_geo_website_semantic_audit", **base_payload},
+        repair=False,
+    )
+    first_response = adapter.invoke(first_request)
+
+    responses = [first_response]
+    try:
+        validated = _validate(
+            first_response.output.content,
+            context=context,
+            evidence_span_by_id=evidence_span_by_id,
+        )
+        final_response = first_response
+    except SemanticAuditSchemaError as first_error:
+        repair_payload = {
+            "task": "repair_deep_geo_website_semantic_audit",
+            **base_payload,
+            "validation_error": str(first_error),
+            "previous_output": first_response.output.content,
+        }
+        repair_request = _request(
+            audit_id=audit_id,
+            runtime=runtime,
+            user_payload=repair_payload,
+            repair=True,
+        )
+        repair_response = adapter.invoke(repair_request)
+        responses.append(repair_response)
+        # The second response goes through the identical strict allowlist validator.
+        # If it is still invalid, propagate the exact schema error to the service so
+        # the audit records a diagnostic reason instead of silently accepting it.
+        validated = _validate(
+            repair_response.output.content,
+            context=context,
+            evidence_span_by_id=evidence_span_by_id,
+        )
+        final_response = repair_response
+
     return SemanticProviderResult(
         validated=validated,
         provider_key=runtime.provider_key,
         provider_model_id=runtime.provider_model_id,
         runtime_version=runtime.version,
-        provider_request_id=response.provider_request_id,
-        input_tokens=response.usage.input_tokens or 0,
-        output_tokens=response.usage.output_tokens or 0,
-        total_tokens=response.usage.total_tokens or 0,
-        latency_ms=response.timing.latency_ms,
+        provider_request_id=final_response.provider_request_id,
+        input_tokens=sum(response.usage.input_tokens or 0 for response in responses),
+        output_tokens=sum(response.usage.output_tokens or 0 for response in responses),
+        total_tokens=sum(response.usage.total_tokens or 0 for response in responses),
+        latency_ms=sum(response.timing.latency_ms for response in responses),
     )

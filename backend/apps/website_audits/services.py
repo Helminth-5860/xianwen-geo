@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from collections import Counter
+from datetime import timedelta
 
 from django.conf import settings
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from apps.subjects.models import Subject
@@ -22,10 +24,45 @@ class WebsiteAuditBusy(Exception):
     pass
 
 
+def recover_stale_website_audits(*, user=None, subject_id=None) -> int:
+    """Close static crawl records that outlived the hard execution budget.
+
+    Celery time limits handle a live-but-stuck worker. This database reconciliation
+    covers worker restarts/crashes where no process remains to update the record.
+    """
+
+    now = timezone.now()
+    stale_after_seconds = max(settings.WEBSITE_AUDIT_TOTAL_TIMEOUT_SECONDS + 45, 120)
+    cutoff = now - timedelta(seconds=stale_after_seconds)
+    queryset = WebsiteAudit.objects.filter(
+        status__in=(WebsiteAudit.Status.QUEUED, WebsiteAudit.Status.RUNNING)
+    )
+    if user is not None:
+        queryset = queryset.filter(user=user)
+    if subject_id is not None:
+        queryset = queryset.filter(subject_id=subject_id)
+    stale = queryset.filter(
+        Q(status=WebsiteAudit.Status.QUEUED, created_at__lt=cutoff)
+        | Q(status=WebsiteAudit.Status.RUNNING, started_at__lt=cutoff)
+        | Q(
+            status=WebsiteAudit.Status.RUNNING,
+            started_at__isnull=True,
+            created_at__lt=cutoff,
+        )
+    )
+    return stale.update(
+        status=WebsiteAudit.Status.FAILED,
+        stable_error_code="WEBSITE_AUDIT_TIMEOUT",
+        finished_at=now,
+        updated_at=now,
+    )
+
+
 def create_website_audit(*, user, subject_id, url: str) -> WebsiteAudit:
     subject = Subject.objects.filter(pk=subject_id, user=user).first()
     if subject is None:
         raise WebsiteAuditNotFound
+    recover_stale_website_audits(user=user, subject_id=subject.pk)
     canonical = canonicalize_url(url)
     if WebsiteAudit.objects.filter(
         user=user,
@@ -188,6 +225,30 @@ def execute_website_audit(audit_id) -> dict[str, int | str]:
         ]
         if finding_rows:
             WebsiteAuditFinding.objects.bulk_create(finding_rows, batch_size=500)
+        if result.timed_out:
+            WebsiteAuditFinding.objects.create(
+                audit=locked,
+                category=WebsiteAuditFinding.Category.TECHNICAL,
+                dimension="扫描覆盖",
+                check_key="technical.crawl_time_budget",
+                rule_version="crawler-budget-v1",
+                method=WebsiteAuditFinding.Method.DETERMINISTIC,
+                severity=WebsiteAuditFinding.Severity.MEDIUM,
+                result=WebsiteAuditFinding.Result.WARN,
+                title="整站扫描达到时间预算",
+                summary=(
+                    f"扫描在 {settings.WEBSITE_AUDIT_TOTAL_TIMEOUT_SECONDS} 秒时间预算内完成了 "
+                    f"{fetched_count} 个页面证据，未继续等待剩余慢页面。"
+                ),
+                impact="报告仍基于已获取的真实页面、浏览器与语义证据生成，但未抓取页面不会被假定为正常。",
+                recommendation="如需扩大覆盖，可优化源站响应速度、Sitemap 质量与异常页面访问稳定性后重新检测。",
+                affected_count=max(0, len(result.discovered_urls) - fetched_count),
+                evidence={
+                    "time_budget_seconds": settings.WEBSITE_AUDIT_TOTAL_TIMEOUT_SECONDS,
+                    "fetched_pages": fetched_count,
+                    "discovered_urls": len(result.discovered_urls),
+                },
+            )
 
         locked.root_url = result.root_url
         locked.root_host = result.root_host
@@ -212,5 +273,5 @@ def execute_website_audit(audit_id) -> dict[str, int | str]:
         "discovered": len(result.discovered_urls),
         "pages": len(result.pages),
         "links": len(result.links),
-        "findings": len(finding_drafts),
+        "findings": len(finding_drafts) + (1 if result.timed_out else 0),
     }
