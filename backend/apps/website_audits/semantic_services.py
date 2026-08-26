@@ -119,6 +119,14 @@ def fail_semantic_audit(audit_id, code: str = "SEMANTIC_AUDIT_FAILED") -> None:
     )
 
 
+def _semantic_schema_error_code(exc: SemanticAuditSchemaError) -> str:
+    reason = "".join(
+        character if character.isalnum() else "_"
+        for character in str(exc).strip().upper()
+    ).strip("_")
+    return (f"SEMANTIC_SCHEMA_{reason}" if reason else "SEMANTIC_AUDIT_SCHEMA_INVALID")[:64]
+
+
 def _semantic_findings(result: dict) -> list[WebsiteAuditFinding]:
     rows: list[WebsiteAuditFinding] = []
     # The audit FK is attached by the caller before bulk_create.
@@ -232,8 +240,8 @@ def execute_semantic_audit(audit_id) -> dict[str, object]:
     except AIAdapterError as exc:
         fail_semantic_audit(audit_id, exc.stable_code or "SEMANTIC_PROVIDER_FAILED")
         raise
-    except SemanticAuditSchemaError:
-        fail_semantic_audit(audit_id, "SEMANTIC_AUDIT_SCHEMA_INVALID")
+    except SemanticAuditSchemaError as exc:
+        fail_semantic_audit(audit_id, _semantic_schema_error_code(exc))
         raise
 
     result = provider.validated.result
