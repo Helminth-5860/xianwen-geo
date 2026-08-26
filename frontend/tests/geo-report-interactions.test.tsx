@@ -1,10 +1,13 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
-import GeoReportPage from "../app/geo/reports/report-page";
+import GeoReportPage, {
+  REPORT_READY_MAX_POLL_ATTEMPTS,
+  REPORT_READY_POLL_INTERVAL_MS,
+} from "../app/geo/reports/report-page";
 import { AuthApiError } from "../lib/auth-client";
 import type { GeoReport, ReportQuestionPage } from "../lib/geo-report-client";
 
@@ -211,7 +214,46 @@ describe("GeoReportPage", () => {
     });
   });
 
-  afterEach(() => cleanup());
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
+
+  it("stops waiting when report scoring never becomes available", async () => {
+    vi.useFakeTimers();
+    const pending = new AuthApiError(new Response(null, { status: 409 }), {
+      success: false,
+      error: {
+        code: "GEO_DETECTION_STATE_CONFLICT",
+        message: "报告尚未就绪",
+        details: {},
+      },
+      request_id: "request-pending",
+    });
+    getReportForDetection.mockRejectedValue(pending);
+
+    render(<GeoReportPage detectionId="detection-pending" />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    for (let attempt = 0; attempt < REPORT_READY_MAX_POLL_ATTEMPTS + 2; attempt += 1) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(REPORT_READY_POLL_INTERVAL_MS);
+      });
+    }
+
+    expect(
+      screen.getByText(/系统已停止等待，检测结果不会丢失；后续配置报告模型后可重新检查/),
+    ).toBeTruthy();
+    expect(screen.getByRole("link", { name: "返回检测结果" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "重新检查报告" })).toBeTruthy();
+    expect(getReportForDetection).toHaveBeenCalledTimes(REPORT_READY_MAX_POLL_ATTEMPTS);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(REPORT_READY_POLL_INTERVAL_MS * 5);
+    });
+    expect(getReportForDetection).toHaveBeenCalledTimes(REPORT_READY_MAX_POLL_ATTEMPTS);
+  });
 
   it("renders the frozen report modules and only fetches full text after expansion", async () => {
     getReportAnswer.mockResolvedValue({

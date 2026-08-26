@@ -18,7 +18,7 @@ import {
   Typography,
 } from "antd";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AuthApiError, userMessage } from "@/lib/auth-client";
 import { ReportSharing } from "@/components/report-sharing";
@@ -43,7 +43,11 @@ import {
 import { getCurrentQuestionBank, type QuestionBankVersion } from "@/lib/question-bank-client";
 
 export const REPORT_READY_POLL_INTERVAL_MS = 2000;
+export const REPORT_READY_MAX_POLL_ATTEMPTS = 15;
 export const REPORT_EXPORT_POLL_INTERVAL_MS = 1200;
+
+const REPORT_SCORING_UNAVAILABLE_MESSAGE =
+  "检测已经完成，但报告评分暂未生成。系统已停止等待，检测结果不会丢失；后续配置报告模型后可重新检查。";
 
 const dimensionLabels: Record<string, string> = {
   mention: "提及",
@@ -104,13 +108,18 @@ export default function GeoReportPage(props: Props) {
   >([]);
   const [selectedQuestions, setSelectedQuestions] = useState<string[]>([]);
   const [selectedModels, setSelectedModels] = useState<string[]>([]);
+  const reportReadyPollAttempts = useRef(0);
+  const reportLoadInFlight = useRef(false);
 
   const loadReport = useCallback(async () => {
+    if (reportLoadInFlight.current) return;
+    reportLoadInFlight.current = true;
     try {
       const next = props.detectionId
         ? await getReportForDetection(props.detectionId)
         : await getReport(props.reportId!);
       setReport(next);
+      reportReadyPollAttempts.current = 0;
       setPendingScoring(false);
       setError("");
     } catch (reason) {
@@ -119,11 +128,20 @@ export default function GeoReportPage(props: Props) {
         reason instanceof AuthApiError &&
         reason.code === "GEO_DETECTION_STATE_CONFLICT"
       ) {
-        setPendingScoring(true);
-        setError("");
+        reportReadyPollAttempts.current += 1;
+        if (reportReadyPollAttempts.current >= REPORT_READY_MAX_POLL_ATTEMPTS) {
+          setPendingScoring(false);
+          setError(REPORT_SCORING_UNAVAILABLE_MESSAGE);
+        } else {
+          setPendingScoring(true);
+          setError("");
+        }
       } else {
+        setPendingScoring(false);
         setError(userMessage(reason));
       }
+    } finally {
+      reportLoadInFlight.current = false;
     }
   }, [props.detectionId, props.reportId]);
 
@@ -134,9 +152,16 @@ export default function GeoReportPage(props: Props) {
 
   useEffect(() => {
     if (!pendingScoring) return;
-    const timer = window.setTimeout(() => void loadReport(), REPORT_READY_POLL_INTERVAL_MS);
-    return () => window.clearTimeout(timer);
+    const timer = window.setInterval(() => void loadReport(), REPORT_READY_POLL_INTERVAL_MS);
+    return () => window.clearInterval(timer);
   }, [loadReport, pendingScoring]);
+
+  const retryReport = () => {
+    reportReadyPollAttempts.current = 0;
+    setError("");
+    setPendingScoring(false);
+    void loadReport();
+  };
 
   useEffect(() => {
     if (!report) return;
@@ -302,6 +327,14 @@ export default function GeoReportPage(props: Props) {
           {report && <Tag color="blue">评分规则 {report.provenance.scoring_rule_version}</Tag>}
         </Space>
         {error && <Alert type="error" showIcon title={error} />}
+        {!report && props.detectionId && error && (
+          <Space wrap>
+            <Button href={`/geo/detections/${props.detectionId}`}>返回检测结果</Button>
+            <Button type="primary" onClick={retryReport}>
+              重新检查报告
+            </Button>
+          </Space>
+        )}
         {notice && <Alert type="success" showIcon title={notice} />}
         {pendingScoring && (
           <Alert type="info" showIcon title="检测已终结，语义评分完成后将生成不可修改的正式报告" />
