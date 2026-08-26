@@ -14,16 +14,9 @@ services:
       target: browser
     command:
       [
-        "celery",
-        "-A",
-        "config",
-        "worker",
-        "--loglevel=INFO",
-        "--queues=browser_audit",
-        "--concurrency=1",
-        "--prefetch-multiplier=1",
-        "--time-limit=900",
-        "--soft-time-limit=850",
+        "/bin/sh",
+        "-lc",
+        "mkdir -p \"$XDG_CONFIG_HOME\" \"$XDG_CACHE_HOME\" && exec celery -A config worker --loglevel=INFO --queues=browser_audit --concurrency=1 --prefetch-multiplier=1 --time-limit=900 --soft-time-limit=850",
       ]
     environment:
       WEBSITE_AUDIT_BROWSER_ENABLED: ${WEBSITE_AUDIT_BROWSER_ENABLED:-true}
@@ -33,6 +26,8 @@ services:
       WEBSITE_AUDIT_BROWSER_SETTLE_MS: ${WEBSITE_AUDIT_BROWSER_SETTLE_MS:-1200}
       WEBSITE_AUDIT_BROWSER_MAX_REQUESTS: ${WEBSITE_AUDIT_BROWSER_MAX_REQUESTS:-300}
       WEBSITE_AUDIT_BROWSER_MAX_DOM_CHARACTERS: ${WEBSITE_AUDIT_BROWSER_MAX_DOM_CHARACTERS:-2000000}
+      XDG_CONFIG_HOME: /tmp/xianwen-chromium-config
+      XDG_CACHE_HOME: /tmp/xianwen-chromium-cache
     privileged: false
     read_only: true
     tmpfs:
