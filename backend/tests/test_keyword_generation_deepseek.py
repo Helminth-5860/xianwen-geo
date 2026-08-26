@@ -274,6 +274,9 @@ def test_deepseek_keyword_provider_replaces_historical_duplicates_once():
     assert len(requests) == 2
     assert requests[0]["task"] == "generate_geo_keywords"
     assert requests[1]["task"] == "repair_geo_keyword_candidates"
+    assert requests[1]["target_count"] == 1
+    assert requests[1]["exclusions"] == ["旧关键词"]
+    assert "invalid_output" not in requests[1]
     assert requests[1]["validation_diagnostic"]["root_cause"] == ("historical_keyword_overlap")
     assert requests[1]["validation_diagnostic"]["duplicate_keywords"] == ["旧关键词"]
     assert response.items[0].text == "全新关键词"

@@ -189,6 +189,43 @@ def _novelty_diagnostic(content, duplicates):
     return diagnostic
 
 
+def _novelty_replacement_request(request, items, duplicates):
+    exclusions = list(request.historical_exclusions)
+    exclusions.extend(item.text for item in items)
+    return replace(
+        request,
+        target_count=len(duplicates),
+        historical_exclusions=tuple(dict.fromkeys(exclusions)),
+    )
+
+
+def _combine_novelty_replacements(original_items, replacement_items, request):
+    historical = set()
+    for value in request.historical_exclusions:
+        try:
+            historical.add(normalize_plain_text(value)[1])
+        except KeywordNormalizationError:
+            continue
+
+    novel = []
+    historical_fallback = []
+    seen = set()
+    for item in original_items:
+        matching = normalize_plain_text(item.text)[1]
+        seen.add(matching)
+        if matching in historical:
+            historical_fallback.append(item)
+        else:
+            novel.append(item)
+    for item in replacement_items:
+        matching = normalize_plain_text(item.text)[1]
+        if matching in historical or matching in seen:
+            continue
+        seen.add(matching)
+        novel.append(item)
+    return tuple([*novel, *historical_fallback][: request.target_count])
+
+
 class DeepSeekKeywordGenerationProvider(DeepSeekStructuredContentAdapter):
     descriptor = AIAdapterDescriptor(
         identity=AIModelIdentity(provider_key="deepseek", model_key="deepseek"),
@@ -412,11 +449,16 @@ class DeepSeekKeywordGenerationProvider(DeepSeekStructuredContentAdapter):
             "exclusions": list(request.historical_exclusions),
         }
         if repair_output is not None:
-            user_payload["invalid_output"] = repair_output
             user_payload["validation_diagnostic"] = diagnostic or {}
+            if novelty_repair:
+                user_payload["duplicate_keywords"] = list(
+                    (diagnostic or {}).get("duplicate_keywords", [])
+                )
+            else:
+                user_payload["invalid_output"] = repair_output
             user_payload["repair_instruction"] = (
-                "保留未重复关键词，替换所有与 exclusions 重复的关键词；"
-                "最终数量必须等于 target_count，且只返回要求的 JSON 结构。"
+                "只生成用于补足缺口的全新关键词；不得复用 exclusions 或 "
+                "duplicate_keywords，数量必须等于 target_count，且只返回要求的 JSON 结构。"
                 if novelty_repair
                 else "只修正为要求的 JSON 结构，不增加解释。"
             )
@@ -433,7 +475,7 @@ class DeepSeekKeywordGenerationProvider(DeepSeekStructuredContentAdapter):
                 system_prompt=DEEPSEEK_KEYWORD_SYSTEM_PROMPT,
                 user_payload=user_payload,
                 max_output_tokens=min(16_000, max(1_200, request.target_count * 180)),
-                temperature=0.2,
+                temperature=0.6 if novelty_repair else 0.2,
             ),
         )
 
@@ -445,10 +487,11 @@ class DeepSeekKeywordGenerationProvider(DeepSeekStructuredContentAdapter):
         items = None
         fallback_response = None
         fallback_items = None
+        active_request = request
         for request_index in range(2):
             normalized = self._adapter_request(
                 runtime,
-                request,
+                active_request,
                 repair_output=repair_output,
                 diagnostic=diagnostic,
             )
@@ -473,7 +516,7 @@ class DeepSeekKeywordGenerationProvider(DeepSeekStructuredContentAdapter):
                     permanent=not exc.retryable,
                 ) from None
             try:
-                items = self._items(response.output.content, request)
+                items = self._items(response.output.content, active_request)
             except KeywordGenerationInvalidResponse as exc:
                 if fallback_response is not None and fallback_items is not None:
                     response = fallback_response
@@ -484,6 +527,9 @@ class DeepSeekKeywordGenerationProvider(DeepSeekStructuredContentAdapter):
                     diagnostic = exc.diagnostic
                     continue
                 raise
+            if fallback_items is not None:
+                items = _combine_novelty_replacements(fallback_items, items, request)
+                break
             duplicates = _historical_duplicate_texts(items, request)
             if duplicates and request_index == 0:
                 # One bounded repair request asks the provider to replace old
@@ -491,7 +537,8 @@ class DeepSeekKeywordGenerationProvider(DeepSeekStructuredContentAdapter):
                 # response so persistence can still keep its novel subset.
                 fallback_response = response
                 fallback_items = items
-                repair_output = response.output.content
+                active_request = _novelty_replacement_request(request, items, duplicates)
+                repair_output = {}
                 diagnostic = _novelty_diagnostic(response.output.content, duplicates)
                 continue
             break
