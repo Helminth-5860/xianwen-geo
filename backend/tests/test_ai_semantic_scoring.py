@@ -16,9 +16,11 @@ from apps.ai.contracts import AdapterCredential, AIAdapterRequest, AIModelCapabi
 from apps.ai.errors import AIAdapterError
 from apps.ai.registry import AIModelRegistry
 from apps.ai.semantic_scoring import (
+    ACCURACY_SCORE_SCALE,
     SEMANTIC_SCORING_JSON_SCHEMA,
     SEMANTIC_SCORING_PROMPT_VERSION,
     SEMANTIC_SCORING_SCHEMA_VERSION,
+    SENTIMENT_SCORE_SCALE,
     SemanticScoringPayload,
     SemanticScoringSchemaError,
     build_semantic_scoring_messages,
@@ -125,6 +127,12 @@ def _semantic_response(*, model: str) -> dict[str, object]:
 
 def test_semantic_schema_is_strict() -> None:
     assert SEMANTIC_SCORING_JSON_SCHEMA["additionalProperties"] is False
+    assert SEMANTIC_SCORING_JSON_SCHEMA["properties"]["accuracy_score"]["enum"] == list(
+        ACCURACY_SCORE_SCALE
+    )
+    assert SEMANTIC_SCORING_JSON_SCHEMA["properties"]["sentiment"]["properties"]["score"][
+        "enum"
+    ] == list(SENTIMENT_SCORE_SCALE)
     assert DEEPSEEK_SEMANTIC_DESCRIPTOR.capabilities == frozenset(
         {AIModelCapability.SEMANTIC_SCORING}
     )
@@ -136,11 +144,31 @@ def test_valid_semantic_output_parses() -> None:
         citation_count=1,
     )
     assert parsed.recommendation_score == 95
-    assert parsed.accuracy_score == 90
-    assert parsed.sentiment_score == 92
+    assert parsed.accuracy_score == 100
+    assert parsed.sentiment_score == 100
     assert parsed.auxiliary_rank_position == 1
     assert parsed.source_classifications[0]["category"] == "mainstream_media"
     assert parsed.competitors[0]["competitor_eligible"] is True
+
+
+def test_continuous_scores_normalize_to_nearest_frozen_scale_with_high_tie_break() -> None:
+    output = _valid_output()
+    output["accuracy_score"] = 20
+    output["sentiment"]["score"] = 63
+
+    parsed = parse_semantic_scoring_output(json.dumps(output), citation_count=1)
+
+    assert parsed.accuracy_score == 40
+    assert parsed.sentiment_score == 75
+
+
+@pytest.mark.parametrize("invalid", [True, 90.0, "90", -1, 101])
+def test_frozen_score_normalization_keeps_strict_type_and_range_validation(invalid) -> None:
+    output = _valid_output()
+    output["accuracy_score"] = invalid
+
+    with pytest.raises(SemanticScoringSchemaError):
+        parse_semantic_scoring_output(json.dumps(output), citation_count=1)
 
 
 @pytest.mark.parametrize("entity_type", ["brand", "company", "product"])

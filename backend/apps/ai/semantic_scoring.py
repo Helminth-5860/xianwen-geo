@@ -44,6 +44,8 @@ RECOMMENDATION_LEVELS = frozenset(
     }
 )
 SENTIMENT_LABELS = frozenset({"positive", "neutral", "negative", "mixed"})
+ACCURACY_SCORE_SCALE = (0, 40, 75, 100)
+SENTIMENT_SCORE_SCALE = (0, 25, 50, 75, 100)
 EVIDENCE_KEYS = (
     "recommendation",
     "accuracy",
@@ -80,14 +82,14 @@ SEMANTIC_SCORING_JSON_SCHEMA: dict[str, Any] = {
                 "score": {"type": "integer", "minimum": 0, "maximum": 100},
             },
         },
-        "accuracy_score": {"type": "integer", "minimum": 0, "maximum": 100},
+        "accuracy_score": {"type": "integer", "enum": list(ACCURACY_SCORE_SCALE)},
         "sentiment": {
             "type": "object",
             "additionalProperties": False,
             "required": ["label", "score"],
             "properties": {
                 "label": {"enum": sorted(SENTIMENT_LABELS)},
-                "score": {"type": "integer", "minimum": 0, "maximum": 100},
+                "score": {"type": "integer", "enum": list(SENTIMENT_SCORE_SCALE)},
             },
         },
         "auxiliary_rank_position": {
@@ -256,6 +258,19 @@ def _score(value: object, *, field_name: str) -> int:
     if type(value) is not int or not 0 <= value <= 100:
         raise SemanticScoringSchemaError(f"{field_name} must be an integer from 0 to 100.")
     return value
+
+
+def _nearest_frozen_score(
+    value: object,
+    *,
+    field_name: str,
+    scale: tuple[int, ...],
+) -> int:
+    score = _score(value, field_name=field_name)
+    # Provider output may be any integer in the documented 0..100 range. Normalize
+    # it to the aggregation contract; an exact midpoint deterministically selects
+    # the higher frozen score.
+    return min(scale, key=lambda frozen: (abs(frozen - score), -frozen))
 
 
 def _text_list(value: object, *, field_name: str, maximum_items: int = 20) -> tuple[str, ...]:
@@ -446,9 +461,17 @@ def parse_semantic_scoring_output(
         schema_version=SEMANTIC_SCORING_SCHEMA_VERSION,
         recommendation_level=str(recommendation_level),
         recommendation_score=_score(recommendation["score"], field_name="recommendation.score"),
-        accuracy_score=_score(root["accuracy_score"], field_name="accuracy_score"),
+        accuracy_score=_nearest_frozen_score(
+            root["accuracy_score"],
+            field_name="accuracy_score",
+            scale=ACCURACY_SCORE_SCALE,
+        ),
         sentiment_label=str(sentiment_label),
-        sentiment_score=_score(sentiment["score"], field_name="sentiment.score"),
+        sentiment_score=_nearest_frozen_score(
+            sentiment["score"],
+            field_name="sentiment.score",
+            scale=SENTIMENT_SCORE_SCALE,
+        ),
         auxiliary_rank_position=auxiliary_rank_position,
         source_classifications=tuple(sources),
         competitors=tuple(competitors),

@@ -7,9 +7,12 @@ from celery import shared_task  # type: ignore[import-untyped]
 from django.conf import settings
 from django.db import InterfaceError, OperationalError
 
+from apps.ai.errors import AIAdapterError
+
 from .models import ModelCall
 from .reports import prepare_report
-from .score_orchestration import score_model_response
+from .score_aggregation import ScoreAggregationError
+from .score_orchestration import ScoreOrchestrationError, score_model_response
 from .semaphores import (
     DetectionDispatchLease,
     DetectionDispatchLeaseStore,
@@ -59,19 +62,42 @@ def execute_semantic_score_task(self, model_response_id):
                 args=[str(result.model_response.model_call.job_id)], queue="system_tasks"
             )
         return {"status": "scored" if result is not None else "not_applicable"}
-    except Exception as exc:
-        if self.request.retries >= settings.GEO_DETECTION_INTERNAL_MAX_RETRIES:
+    except AIAdapterError as exc:
+        if not exc.retryable:
             logger.exception(
-                "geo semantic scoring exhausted retries",
-                extra={"context": {"model_response_id": str(model_response_id)}},
+                "geo semantic scoring failed permanently",
+                extra={
+                    "context": {
+                        "model_response_id": str(model_response_id),
+                        "error_code": exc.stable_code,
+                    }
+                },
             )
             return {"status": "failed"}
-        raise self.retry(
-            args=[str(model_response_id)],
-            exc=exc,
-            countdown=min(60, 2 ** (self.request.retries + 1)),
-            max_retries=settings.GEO_DETECTION_INTERNAL_MAX_RETRIES,
-        ) from exc
+        return _retry_semantic_score_task(self, model_response_id=model_response_id, exc=exc)
+    except (ScoreAggregationError, ScoreOrchestrationError):
+        logger.exception(
+            "geo semantic scoring contract failed permanently",
+            extra={"context": {"model_response_id": str(model_response_id)}},
+        )
+        return {"status": "failed"}
+    except Exception as exc:
+        return _retry_semantic_score_task(self, model_response_id=model_response_id, exc=exc)
+
+
+def _retry_semantic_score_task(task, *, model_response_id, exc):
+    if task.request.retries >= settings.GEO_DETECTION_INTERNAL_MAX_RETRIES:
+        logger.exception(
+            "geo semantic scoring exhausted retries",
+            extra={"context": {"model_response_id": str(model_response_id)}},
+        )
+        return {"status": "failed"}
+    raise task.retry(
+        args=[str(model_response_id)],
+        exc=exc,
+        countdown=min(60, 2 ** (task.request.retries + 1)),
+        max_retries=settings.GEO_DETECTION_INTERNAL_MAX_RETRIES,
+    ) from exc
 
 
 def _release_dispatch_lease(*, call_id, dispatch_token) -> None:
