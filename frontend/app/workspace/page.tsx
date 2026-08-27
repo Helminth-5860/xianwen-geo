@@ -159,7 +159,7 @@ export default function WorkspacePage() {
   }, [currentSubject, latestReport, questionBank?.current_question_bank_version_no, questionReady]);
 
   const primaryAction = useMemo(() => {
-    if (!currentSubject) return { label: "创建主体", href: "/subjects/new" };
+    if (!currentSubject) return { label: "创建主体", href: "/subjects" };
     if (currentSubject.current_version_no === null)
       return { label: "完善主体资料", href: `/subjects/${currentSubject.id}` };
     if (!questionReady)
@@ -207,7 +207,7 @@ export default function WorkspacePage() {
                 </Space>
               }
             >
-              <Button type="primary" href="/subjects/new">
+              <Button type="primary" href="/subjects">
                 创建并选择主体
               </Button>
             </Empty>
