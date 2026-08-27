@@ -42,6 +42,9 @@ function workspaceMenu(subjectId: string | null): MenuItem[] {
   const articleHome = subjectId ? `/subjects/${subjectId}/articles/new` : "/subjects";
   const contentLibraryHome = subjectId ? `/subjects/${subjectId}/articles` : "/subjects";
   const imageHome = subjectId ? `/subjects/${subjectId}/images` : "/subjects";
+  const imageLibraryHome = subjectId ? `/subjects/${subjectId}/image-library` : "/subjects";
+  const videoLibraryHome = subjectId ? `/subjects/${subjectId}/video-library` : "/subjects";
+  const customLibraryHome = subjectId ? `/subjects/${subjectId}/custom-library` : "/subjects";
   const publicationCheckHome = subjectId
     ? `/subjects/${subjectId}/publication-checks`
     : "/subjects";
@@ -88,6 +91,7 @@ function workspaceMenu(subjectId: string | null): MenuItem[] {
       children: [
         linkedItem("detections-subject", "主体检测", "/geo/detections"),
         linkedItem("detections-website", "官网检测", "/geo/website-audits"),
+        linkedItem("detections-publication", "发布检测", publicationCheckHome),
       ],
     },
     {
@@ -119,6 +123,9 @@ function workspaceMenu(subjectId: string | null): MenuItem[] {
       children: [
         linkedItem("optimization-strategy", "优化策略", "/geo/strategy"),
         unavailableItem("optimization-execution", "执行计划"),
+        linkedItem("optimization-articles", "文章生成", articleHome),
+        linkedItem("optimization-images", "图片生成", imageHome),
+        unavailableItem("optimization-video", "视频脚本生成"),
       ],
     },
     {
@@ -126,11 +133,10 @@ function workspaceMenu(subjectId: string | null): MenuItem[] {
       icon: <FileTextOutlined />,
       label: "内容资产中心",
       children: [
-        linkedItem("content-articles", "文章生成", articleHome),
-        linkedItem("content-images", "图片生成", imageHome),
-        unavailableItem("content-video", "视频脚本生成"),
         linkedItem("content-library", "内容库", contentLibraryHome),
-        linkedItem("content-publication-checks", "发布检测", publicationCheckHome),
+        linkedItem("content-image-library", "图片库", imageLibraryHome),
+        linkedItem("content-video-library", "视频库", videoLibraryHome),
+        linkedItem("content-custom-library", "自定义库", customLibraryHome),
       ],
     },
   ];
@@ -148,6 +154,7 @@ function selectedMenuKey(pathname: string) {
   if (pathname.includes("/questions")) return "questions-generate";
   if (pathname.startsWith("/geo/website-audits")) return "detections-website";
   if (pathname.startsWith("/geo/detections")) return "detections-subject";
+  if (pathname.includes("/publication-checks")) return "detections-publication";
   if (pathname.startsWith("/geo/reports")) return "insights-reports";
   if (pathname.startsWith("/geo/knowledge-graph/media-signals")) return "knowledge-media";
   if (pathname.startsWith("/geo/knowledge-graph/subjects")) return "knowledge-subject";
@@ -155,10 +162,13 @@ function selectedMenuKey(pathname: string) {
   if (pathname.startsWith("/geo/strategy") || pathname.includes("/strategy")) {
     return "optimization-strategy";
   }
-  if (pathname.includes("/images")) return "content-images";
-  if (pathname.includes("/publication-checks")) return "content-publication-checks";
+  if (pathname.includes("/image-library")) return "content-image-library";
+  if (pathname.includes("/video-library")) return "content-video-library";
+  if (pathname.includes("/custom-library")) return "content-custom-library";
   if (/^\/subjects\/[^/]+\/articles\/?$/.test(pathname)) return "content-library";
-  if (pathname.includes("/articles")) return "content-articles";
+  if (pathname.includes("/images")) return "optimization-images";
+  if (pathname.includes("/video-scripts")) return "optimization-video";
+  if (pathname.includes("/articles")) return "optimization-articles";
   return "";
 }
 
@@ -173,6 +183,7 @@ const menuGroupByChild: Readonly<Record<string, string>> = {
   "questions-manage": "questions",
   "detections-subject": "detections",
   "detections-website": "detections",
+  "detections-publication": "detections",
   "insights-reports": "insights",
   "insights-history": "insights",
   "insights-exposure": "insights",
@@ -183,11 +194,13 @@ const menuGroupByChild: Readonly<Record<string, string>> = {
   "knowledge-media": "knowledge-graph",
   "optimization-strategy": "optimization",
   "optimization-execution": "optimization",
-  "content-articles": "content",
-  "content-images": "content",
-  "content-video": "content",
+  "optimization-articles": "optimization",
+  "optimization-images": "optimization",
+  "optimization-video": "optimization",
   "content-library": "content",
-  "content-publication-checks": "content",
+  "content-image-library": "content",
+  "content-video-library": "content",
+  "content-custom-library": "content",
 };
 
 export function UserWorkspaceNavigation() {

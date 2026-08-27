@@ -17,9 +17,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { AuthApiError, userMessage } from "@/lib/auth-client";
 import {
-  appealImageModeration,
   attachImage,
-  createImageBatchDownload,
   deriveImage,
   deriveImageAI,
   generateImage,
@@ -117,7 +115,6 @@ export function ArticleImagesWorkspace({
   const [styles, setStyles] = useState<ImageStylePreset[]>([]);
   const [recommendations, setRecommendations] = useState<ImageRecommendation[]>([]);
   const [images, setImages] = useState<ImageAsset[]>([]);
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [quota, setQuota] = useState<ImageQuota>({
     available: 0,
     frozen: 0,
@@ -244,17 +241,8 @@ export function ArticleImagesWorkspace({
     if (job?.image?.id === updated.id) setJob({ ...job, image: updated });
   };
 
-  const batchDownload = async () => {
-    try {
-      const result = await createImageBatchDownload(subjectId, selectedIds);
-      window.location.assign(result.url);
-    } catch (reason) {
-      setError(imageUserMessage(reason));
-    }
-  };
-
   return (
-    <Card title={articleId ? "4. GEO 配图生成与主体图库" : "图片生成与主体图库"}>
+    <Card title={articleId ? "4. GEO 配图生成" : "图片生成"}>
       <Space orientation="vertical" size="middle" style={{ width: "100%" }}>
         <Space wrap>
           <Statistic title="可用图片额度" value={quota.unlimited ? "不限" : quota.available} />
@@ -465,56 +453,6 @@ export function ArticleImagesWorkspace({
             </Space>
           </Card>
         )}
-        <Typography.Text strong>主体图片库</Typography.Text>
-        <List
-          grid={{ gutter: 12, xs: 1, sm: 2, md: 3 }}
-          dataSource={approvedImages}
-          locale={{ emptyText: "暂无图片" }}
-          renderItem={(image) => (
-            <List.Item>
-              <Card
-                size="small"
-                cover={
-                  image.url ? (
-                    <Image
-                      src={image.url}
-                      alt="主体图片"
-                      height={140}
-                      style={{ objectFit: "cover" }}
-                    />
-                  ) : undefined
-                }
-              >
-                <Space orientation="vertical">
-                  <Space>
-                    <input
-                      aria-label={`选择图片 ${image.id}`}
-                      type="checkbox"
-                      checked={selectedIds.includes(image.id)}
-                      onChange={(event) =>
-                        setSelectedIds((current) =>
-                          event.target.checked
-                            ? [...current, image.id]
-                            : current.filter((id) => id !== image.id),
-                        )
-                      }
-                    />
-                    <Tag>{IMAGE_ROLE_LABEL[image.role]}</Tag>
-                    <Tag>{image.is_subject_library ? "图库" : "当前文章"}</Tag>
-                  </Space>
-                  {image.moderation_status !== "approved" && (
-                    <Button onClick={() => void appealImageModeration(image.id, "请求复核")}>
-                      申请一次复核
-                    </Button>
-                  )}
-                </Space>
-              </Card>
-            </List.Item>
-          )}
-        />
-        <Button disabled={!selectedIds.length} onClick={batchDownload}>
-          批量下载原图压缩包
-        </Button>
       </Space>
     </Card>
   );

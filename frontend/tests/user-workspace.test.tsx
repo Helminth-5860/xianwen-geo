@@ -272,31 +272,54 @@ describe("GEO 产品工作台", () => {
     );
     expect(screen.queryByRole("link", { name: "显问 AI 助手" })).toBeNull();
 
+    await userEvent.click(screen.getByText("检测中心"));
+    expect(screen.getByRole("link", { name: "主体检测" }).getAttribute("href")).toBe(
+      "/geo/detections",
+    );
+    expect(screen.getByRole("link", { name: "官网检测" }).getAttribute("href")).toBe(
+      "/geo/website-audits",
+    );
+    expect(screen.getByRole("link", { name: "发布检测" }).getAttribute("href")).toBe(
+      "/subjects/subject-1/publication-checks",
+    );
+
     await userEvent.click(screen.getByText("知识图谱建设"));
     expect(screen.getByRole("link", { name: "媒体信号建设" }).getAttribute("href")).toBe(
       "/geo/knowledge-graph/media-signals",
     );
 
-    await userEvent.click(screen.getByText("内容资产中心"));
+    await userEvent.click(screen.getByText("优化中心"));
+    expect(screen.getByRole("link", { name: "优化策略" }).getAttribute("href")).toBe(
+      "/geo/strategy",
+    );
+    expect(screen.getByText("执行计划")).toBeTruthy();
     expect(screen.getByRole("link", { name: "文章生成" }).getAttribute("href")).toBe(
       "/subjects/subject-1/articles/new",
     );
     expect(screen.getByRole("link", { name: "图片生成" }).getAttribute("href")).toBe(
       "/subjects/subject-1/images",
     );
+    expect(screen.getByText("视频脚本生成")).toBeTruthy();
+
+    await userEvent.click(screen.getByText("内容资产中心"));
     expect(screen.getByRole("link", { name: "内容库" }).getAttribute("href")).toBe(
       "/subjects/subject-1/articles",
     );
-    expect(screen.getByRole("link", { name: "发布检测" }).getAttribute("href")).toBe(
-      "/subjects/subject-1/publication-checks",
+    expect(screen.getByRole("link", { name: "图片库" }).getAttribute("href")).toBe(
+      "/subjects/subject-1/image-library",
     );
-
+    expect(screen.getByRole("link", { name: "视频库" }).getAttribute("href")).toBe(
+      "/subjects/subject-1/video-library",
+    );
+    expect(screen.getByRole("link", { name: "自定义库" }).getAttribute("href")).toBe(
+      "/subjects/subject-1/custom-library",
+    );
     pathname = "/subjects/subject-1/images";
     rerender(shell());
     await waitFor(() =>
-      expect(
-        screen.getByRole("menuitem", { name: /内容资产中心/ }).getAttribute("aria-expanded"),
-      ).toBe("true"),
+      expect(screen.getByRole("menuitem", { name: /优化中心/ }).getAttribute("aria-expanded")).toBe(
+        "true",
+      ),
     );
     expect(screen.getByRole("menuitem", { name: "图片生成" }).className).toContain(
       "ant-menu-item-selected",
@@ -310,12 +333,23 @@ describe("GEO 产品工作台", () => {
       ),
     );
 
-    pathname = "/subjects/subject-1/publication-checks";
+    pathname = "/subjects/subject-1/image-library";
     rerender(shell());
     await waitFor(() =>
       expect(
         screen.getByRole("menuitem", { name: /内容资产中心/ }).getAttribute("aria-expanded"),
       ).toBe("true"),
+    );
+    expect(screen.getByRole("menuitem", { name: "图片库" }).className).toContain(
+      "ant-menu-item-selected",
+    );
+
+    pathname = "/subjects/subject-1/publication-checks";
+    rerender(shell());
+    await waitFor(() =>
+      expect(screen.getByRole("menuitem", { name: /检测中心/ }).getAttribute("aria-expanded")).toBe(
+        "true",
+      ),
     );
     expect(screen.getByRole("menuitem", { name: "发布检测" }).className).toContain(
       "ant-menu-item-selected",
@@ -372,6 +406,24 @@ describe("GEO 产品工作台", () => {
     );
     expect(subjectSwitchTargetPath("/subjects/subject-1/images", "subject-2")).toBe(
       "/subjects/subject-2/images",
+    );
+    expect(subjectSwitchTargetPath("/subjects/subject-1/articles/new", "subject-2")).toBe(
+      "/subjects/subject-2/articles/new",
+    );
+    expect(subjectSwitchTargetPath("/subjects/subject-1/articles", "subject-2")).toBe(
+      "/subjects/subject-2/articles",
+    );
+    expect(subjectSwitchTargetPath("/subjects/subject-1/image-library", "subject-2")).toBe(
+      "/subjects/subject-2/image-library",
+    );
+    expect(subjectSwitchTargetPath("/subjects/subject-1/video-library", "subject-2")).toBe(
+      "/subjects/subject-2/video-library",
+    );
+    expect(subjectSwitchTargetPath("/subjects/subject-1/custom-library", "subject-2")).toBe(
+      "/subjects/subject-2/custom-library",
+    );
+    expect(subjectSwitchTargetPath("/subjects/subject-1/publication-checks", "subject-2")).toBe(
+      "/subjects/subject-2/publication-checks",
     );
     expect(subjectSwitchTargetPath("/subjects/subject-1/versions/version-1", "subject-2")).toBe(
       "/subjects/subject-2",

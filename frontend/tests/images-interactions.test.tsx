@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ArticleImagesWorkspace } from "../components/article-images-workspace";
+import { SubjectImageLibraryWorkspace } from "../components/subject-image-library-workspace";
 import { AuthApiError } from "../lib/auth-client";
 
 const imageApi = vi.hoisted(() => ({
@@ -208,7 +209,8 @@ describe("Stage 2 image generation workspace", () => {
 
     render(<ArticleImagesWorkspace subjectId="subject-1" />);
 
-    expect(await screen.findByText("图片生成与主体图库")).toBeTruthy();
+    expect(await screen.findByText("图片生成")).toBeTruthy();
+    expect(screen.queryByText("主体图片库")).toBeNull();
     expect(imageApi.getImageRecommendations).not.toHaveBeenCalled();
     expect(screen.queryByText("AI 推荐配图（需要用户确认）")).toBeNull();
     await userEvent.click(screen.getByRole("button", { name: /生成图片/ }));
@@ -260,7 +262,7 @@ describe("Stage 2 image generation workspace", () => {
         articleTitle="品牌指南"
       />,
     );
-    await screen.findByText("主体图片库");
+    await screen.findByText("自然专业");
     await userEvent.click(screen.getByLabelText("主体图库参考图"));
     await userEvent.click(await screen.findByText("文章封面 · 1200×630"));
     await userEvent.click(screen.getByRole("button", { name: /生成图片/ }));
@@ -280,7 +282,7 @@ describe("Stage 2 image generation workspace", () => {
         referenceDocuments={[{ id: "document-version-1", label: "临时产品图 · PNG" }]}
       />,
     );
-    await screen.findByText("主体图片库");
+    await screen.findByText("自然专业");
     await userEvent.click(screen.getByLabelText("临时上传参考图"));
     await userEvent.click(await screen.findByText("临时产品图 · PNG"));
     await userEvent.click(screen.getByRole("button", { name: /生成图片/ }));
@@ -367,5 +369,24 @@ describe("Stage 2 image generation workspace", () => {
     await userEvent.click(await screen.findByRole("button", { name: /生成图片/ }));
     expect(await screen.findByText("图片生成服务凭据尚未配置，请联系管理员。")).toBeTruthy();
     expect(screen.queryByText("IMAGE_CREDENTIAL_UNAVAILABLE")).toBeNull();
+  });
+
+  it("shows only saved library images on the dedicated page and paginates by 20", async () => {
+    const libraryImages = Array.from({ length: 25 }, (_, index) => ({
+      ...asset,
+      id: `library-image-${index + 1}`,
+      is_subject_library: true,
+      url: `/api/v1/subjects/subject-1/images/library-image-${index + 1}/content`,
+    }));
+    imageApi.getSubjectImages.mockResolvedValue({ results: libraryImages, quota });
+
+    render(<SubjectImageLibraryWorkspace subjectId="subject-1" />);
+
+    expect(await screen.findByText("已保存图片 25 张")).toBeTruthy();
+    expect(imageApi.getSubjectImages).toHaveBeenCalledWith("subject-1", true);
+    expect(screen.getAllByAltText("主体图片")).toHaveLength(20);
+
+    await userEvent.click(within(screen.getByLabelText("主体图片库分页")).getByTitle("2"));
+    await waitFor(() => expect(screen.getAllByAltText("主体图片")).toHaveLength(5));
   });
 });
