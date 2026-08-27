@@ -36,6 +36,7 @@ from apps.articles.services import (
     create_generation_job,
     create_source_pack,
     execute_generation_job,
+    save_outline,
 )
 from apps.core.redaction import redact_request_path
 from apps.geo.models import ReportShare, ReportShareAccessLog
@@ -199,6 +200,65 @@ def test_body_generation_is_grounded_idempotent_and_consumes_exactly_one(stage2_
     request_payload = adapter.requests[0].payload.user_payload
     assert request_payload["frozen_source_pack"] == pack.frozen_snapshot
     assert "credential" not in repr(request_payload).lower()
+
+
+def test_ready_outline_must_be_confirmed_before_body_job(stage2_facts):
+    user, _, subscription, _, _, article = _article_setup(stage2_facts)
+    outline = article.outline
+    outline.text = "一、品牌背景\n二、核心服务\n三、合作流程"
+    outline.status = "ready"
+    outline.generation_count = 1
+    outline.version = 2
+    outline.save(update_fields=("text", "status", "generation_count", "version", "updated_at"))
+    account = QuotaAccount.objects.get(
+        subscription=subscription, subject__isnull=True, quota_type="article_credits"
+    )
+    initial_available = account.available
+
+    with (
+        patch("apps.articles.services._runtime") as runtime,
+        pytest.raises(ContentError, match="ARTICLE_OUTLINE_NOT_CONFIRMED"),
+    ):
+        create_generation_job(
+            user=user,
+            article_id=article.pk,
+            operation="body",
+            idempotency_key="stage2-ready-outline-unconfirmed-0001",
+            request_id=uuid.uuid4(),
+        )
+
+    runtime.assert_not_called()
+    account.refresh_from_db()
+    assert article.generation_jobs.count() == 0
+    assert account.available == initial_available
+    assert account.frozen == 0
+
+    confirmed = save_outline(
+        user=user,
+        article_id=article.pk,
+        text=outline.text,
+        expected_version=2,
+        confirm=True,
+    )
+    assert confirmed.status == "confirmed"
+    assert confirmed.confirmed_at is not None
+    assert confirmed.version == 3
+
+    runtime_snapshot = get_runtime_snapshot(model_key="deepseek", require_available=True)
+    adapter = _ArticleAdapter()
+    with patch("apps.articles.services._runtime", return_value=(runtime_snapshot, adapter)):
+        body_job, created = create_generation_job(
+            user=user,
+            article_id=article.pk,
+            operation="body",
+            idempotency_key="stage2-ready-outline-confirmed-0001",
+            request_id=uuid.uuid4(),
+        )
+
+    assert created is True
+    assert body_job.operation == "body"
+    assert body_job.status == "queued"
+    assert article.generation_jobs.filter(pk=body_job.pk).exists()
 
 
 def test_provider_failure_releases_article_credit_and_persists_no_result(stage2_facts):

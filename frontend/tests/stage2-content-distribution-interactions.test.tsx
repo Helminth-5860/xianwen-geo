@@ -192,6 +192,30 @@ const readyArticle: Article = {
   autosaved_at: null,
 };
 
+const outlineReadyArticle: Article = {
+  ...readyArticle,
+  content: "",
+  status: "draft",
+  outline: {
+    text: "一、品牌背景\n二、核心服务\n三、合作流程",
+    status: "ready",
+    generation_count: 1,
+    version: 2,
+  },
+  version: 1,
+};
+
+const outlineJob: ArticleJob = {
+  id: "outline-job-1",
+  article_id: readyArticle.id,
+  operation: "outline",
+  status: "queued",
+  billing: { quota_type: null, held: false, consumed: false },
+  comparison_id: null,
+  adaptation_id: null,
+  safe_error_code: "",
+};
+
 const failedJob: ArticleJob = {
   id: "job-1",
   article_id: readyArticle.id,
@@ -318,8 +342,78 @@ describe("Stage 2 content production, distribution, and sharing", () => {
     await userEvent.click(screen.getByText("直接生成正文"));
     await userEvent.click(screen.getByRole("button", { name: "生成正文（成功扣 1 文章额度）" }));
     expect(articleApi.generateArticle).toHaveBeenCalledWith("article-1");
-    expect(await screen.findByText(/provider\/网络\/结构失败自动释放/)).toBeTruthy();
+    expect(await screen.findByText(/AI 服务、网络或返回结构异常时自动释放/)).toBeTruthy();
     expect(screen.getByText(/body · failed · article_credits/)).toBeTruthy();
+  });
+
+  it("does not expose body generation until a ready outline is confirmed", async () => {
+    articleApi.createArticle.mockResolvedValueOnce(outlineReadyArticle);
+    articleApi.saveOutline.mockResolvedValueOnce({
+      text: outlineReadyArticle.outline?.text ?? "",
+      status: "confirmed",
+      version: 3,
+    });
+
+    render(<ArticleWorkspace subjectId="subject-1" initialTopic="大纲确认文章" />);
+    await screen.findByText("品牌故事");
+    await userEvent.click(screen.getByRole("button", { name: "核验并冻结资料包" }));
+
+    const confirmButton = await screen.findByRole("button", { name: "保存并确认大纲" });
+    expect(screen.getByText("请先保存并确认大纲")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "生成正文（成功扣 1 文章额度）" })).toBeNull();
+    expect(articleApi.generateArticle).not.toHaveBeenCalled();
+
+    await userEvent.click(confirmButton);
+    expect(articleApi.saveOutline).toHaveBeenCalledWith(
+      outlineReadyArticle,
+      outlineReadyArticle.outline?.text,
+      true,
+    );
+    expect(await screen.findByText("大纲已确认，可以生成正文")).toBeTruthy();
+
+    await userEvent.click(screen.getByRole("button", { name: "生成正文（成功扣 1 文章额度）" }));
+    expect(articleApi.generateArticle).toHaveBeenCalledWith(outlineReadyArticle.id);
+  });
+
+  it("keeps generating and failed outline states from bypassing confirmation", async () => {
+    articleApi.createArticle.mockResolvedValueOnce({
+      ...outlineReadyArticle,
+      outline: { ...outlineReadyArticle.outline!, status: "generating" },
+    });
+
+    const { unmount } = render(
+      <ArticleWorkspace subjectId="subject-1" initialTopic="生成中的大纲" />,
+    );
+    await screen.findByText("品牌故事");
+    await userEvent.click(screen.getByRole("button", { name: "核验并冻结资料包" }));
+    const generatingButton = await screen.findByRole("button", { name: "正在生成大纲…" });
+    expect(generatingButton.hasAttribute("disabled")).toBe(true);
+    expect(articleApi.generateArticle).not.toHaveBeenCalled();
+    unmount();
+
+    articleApi.createArticle.mockResolvedValueOnce({
+      ...outlineReadyArticle,
+      outline: { ...outlineReadyArticle.outline!, status: "failed" },
+    });
+    articleApi.generateOutline.mockResolvedValueOnce(outlineJob);
+    render(<ArticleWorkspace subjectId="subject-1" initialTopic="失败的大纲" />);
+    await screen.findByText("品牌故事");
+    await userEvent.click(screen.getByRole("button", { name: "核验并冻结资料包" }));
+    expect(await screen.findByText("大纲生成未完成")).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "重新生成大纲" }));
+    expect(articleApi.generateOutline).toHaveBeenCalledWith(outlineReadyArticle.id);
+    expect(articleApi.generateArticle).not.toHaveBeenCalled();
+  });
+
+  it("shows article state errors in Chinese instead of exposing internal codes", async () => {
+    articleApi.generateArticle.mockRejectedValueOnce(new Error("ARTICLE_OUTLINE_NOT_CONFIRMED"));
+    render(<ArticleWorkspace subjectId="subject-1" initialTopic="错误提示文章" />);
+    await screen.findByText("品牌故事");
+    await userEvent.click(screen.getByRole("button", { name: "核验并冻结资料包" }));
+    await userEvent.click(screen.getByText("直接生成正文"));
+    await userEvent.click(screen.getByRole("button", { name: "生成正文（成功扣 1 文章额度）" }));
+    expect(await screen.findByText("请先保存并确认大纲，再生成正文。")).toBeTruthy();
+    expect(screen.queryByText("ARTICLE_OUTLINE_NOT_CONFIRMED")).toBeNull();
   });
 
   it("charges channel adaptations independently and never claims third-party publication", async () => {

@@ -50,7 +50,7 @@ import {
   type PublishingChannel,
   type SourcePack,
 } from "@/lib/articles-client";
-import { userMessage } from "@/lib/auth-client";
+import { AuthApiError, userMessage } from "@/lib/auth-client";
 import {
   getDocumentParseResult,
   getSubjectDocuments,
@@ -63,6 +63,34 @@ export const ARTICLE_POLL_INTERVAL_MS = 1200;
 
 type Props = Readonly<{ subjectId: string; initialTopic: string }>;
 type DocumentOption = SubjectDocument & { confirmedSourceId: string };
+
+const ARTICLE_ERROR_MESSAGES: Readonly<Record<string, string>> = {
+  ARTICLE_ALREADY_GENERATED: "正文已经生成，请勿重复提交。",
+  ARTICLE_GENERATION_IN_PROGRESS: "当前文章生成任务正在处理中，请稍候。",
+  ARTICLE_OUTLINE_NOT_CONFIRMED: "请先保存并确认大纲，再生成正文。",
+  ARTICLE_OUTLINE_VERSION_CONFLICT: "大纲已被更新，请刷新页面后重新确认。",
+  ARTICLE_PROVIDER_SCHEMA_INVALID: "AI 返回的文章格式异常，请重新生成。",
+  ARTICLE_PROVIDER_UNAVAILABLE: "AI 文章生成服务暂时不可用，请稍后重试。",
+  ARTICLE_QUEUE_UNAVAILABLE: "文章任务服务暂时繁忙，请稍后重试。",
+  ARTICLE_SOURCE_PACK_NOT_READY: "资料包尚未确认，请先完成资料确认。",
+  ARTICLE_SUBJECT_NOT_READY: "当前主体资料尚未正式可用，请先保存主体资料。",
+};
+
+function articleUserMessage(reason: unknown): string {
+  let contentCode = "";
+  if (typeof reason === "string") {
+    contentCode = reason;
+  } else if (reason instanceof AuthApiError) {
+    const detailCode = reason.details.content_code;
+    contentCode = typeof detailCode === "string" ? detailCode : reason.message;
+  } else if (reason instanceof Error) {
+    contentCode = reason.message;
+  }
+
+  if (ARTICLE_ERROR_MESSAGES[contentCode]) return ARTICLE_ERROR_MESSAGES[contentCode];
+  if (contentCode.startsWith("ARTICLE_")) return "文章操作未完成，请稍后重试。";
+  return userMessage(reason);
+}
 
 export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
   const [types, setTypes] = useState<ArticleType[]>([]);
@@ -148,7 +176,7 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
       );
       setError("");
     } catch (reason) {
-      setError(userMessage(reason));
+      setError(articleUserMessage(reason));
     }
   }, [subjectId]);
 
@@ -173,10 +201,10 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
           const comparisonId = completed.find((job) => job.comparison_id)?.comparison_id;
           if (comparisonId) setComparison(await getComparison(comparisonId));
           const failed = completed.find((job) => job.status === "failed");
-          if (failed) setError(`AI 任务失败：${failed.safe_error_code}`);
+          if (failed) setError(articleUserMessage(failed.safe_error_code));
         }
       } catch (reason) {
-        setError(userMessage(reason));
+        setError(articleUserMessage(reason));
       }
     }, ARTICLE_POLL_INTERVAL_MS);
     return () => window.clearTimeout(timer);
@@ -187,6 +215,24 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
     [selectedType, types],
   );
   const hasActiveJob = jobs.some((job) => ["queued", "running"].includes(job.status));
+  const outlineStatus = article?.outline?.status ?? "empty";
+  const outlineIsGenerating = outlineStatus === "generating";
+  const outlineNeedsConfirmation = outlineStatus === "ready";
+  const outlineFailed = outlineStatus === "failed";
+  const outlineFlowLocked = outlineIsGenerating || outlineNeedsConfirmation || outlineFailed;
+  const outlineHasChanges = outline !== (article?.outline?.text ?? "");
+
+  useEffect(() => {
+    if (!article || !outlineIsGenerating || hasActiveJob) return;
+    const timer = window.setTimeout(async () => {
+      try {
+        applyArticle(await getArticle(article.id));
+      } catch (reason) {
+        setError(articleUserMessage(reason));
+      }
+    }, ARTICLE_POLL_INTERVAL_MS);
+    return () => window.clearTimeout(timer);
+  }, [applyArticle, article, hasActiveJob, outlineIsGenerating]);
 
   const createDraft = async (confirmedPack: SourcePack) => {
     const created = await createArticle(subjectId, {
@@ -223,7 +269,7 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
         setNotice("资料包检测到关键事实冲突，请选择后再确认。AI 不会自行猜测。");
       }
     } catch (reason) {
-      setError(userMessage(reason));
+      setError(articleUserMessage(reason));
     } finally {
       setBusy(false);
     }
@@ -248,7 +294,7 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
       setPack(confirmed);
       await createDraft(confirmed);
     } catch (reason) {
-      setError(userMessage(reason));
+      setError(articleUserMessage(reason));
     } finally {
       setBusy(false);
     }
@@ -257,12 +303,13 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
   const submitJob = async (factory: () => Promise<ArticleJob>, message: string) => {
     setBusy(true);
     setError("");
+    setNotice("");
     try {
       const job = await factory();
       setJobs((current) => [...current.filter((item) => item.id !== job.id), job]);
       setNotice(message);
     } catch (reason) {
-      setError(userMessage(reason));
+      setError(articleUserMessage(reason));
     } finally {
       setBusy(false);
     }
@@ -270,7 +317,23 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
 
   const generate = async () => {
     if (!article) return;
-    if (mode === "outline" && article.outline?.status === "empty") {
+    const currentOutlineStatus = article.outline?.status ?? "empty";
+    if (currentOutlineStatus === "generating") {
+      setError("大纲正在生成，请稍候。");
+      return;
+    }
+    if (currentOutlineStatus === "ready") {
+      setError("请先保存并确认大纲，再生成正文。");
+      return;
+    }
+    if (currentOutlineStatus === "failed") {
+      await submitJob(
+        () => generateOutline(article.id),
+        "大纲重新生成任务已提交，完成后请确认大纲。",
+      );
+      return;
+    }
+    if (mode === "outline" && currentOutlineStatus === "empty") {
       await submitJob(
         () => generateOutline(article.id),
         "首次大纲已提交，不消耗文章额度。确认后再生成正文。",
@@ -279,19 +342,37 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
     }
     await submitJob(
       () => generateArticle(article.id),
-      "正文任务已提交；成功扣 1 个文章额度，provider/网络/结构失败自动释放。",
+      "正文任务已提交；成功扣 1 个文章额度，AI 服务、网络或返回结构异常时自动释放。",
     );
   };
 
   const confirmOutline = async () => {
     if (!article) return;
+    if (!outline.trim()) {
+      setError("大纲内容不能为空。");
+      return;
+    }
     setBusy(true);
+    setError("");
+    setNotice("");
     try {
-      await saveOutline(article, outline, true);
-      applyArticle(await getArticle(article.id));
+      const savedOutline = await saveOutline(article, outline, true);
+      if (savedOutline.status !== "confirmed") {
+        throw new Error("ARTICLE_OUTLINE_NOT_CONFIRMED");
+      }
+      applyArticle({
+        ...article,
+        outline: {
+          text: savedOutline.text,
+          status: savedOutline.status,
+          generation_count: article.outline?.generation_count ?? 0,
+          version: savedOutline.version,
+        },
+      });
+      setError("");
       setNotice("大纲已确认，可以生成正文");
     } catch (reason) {
-      setError(userMessage(reason));
+      setError(articleUserMessage(reason));
     } finally {
       setBusy(false);
     }
@@ -310,7 +391,7 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
       setNotice("当前唯一稿已自动保存；AI 原始生成事实未被修改");
       return true;
     } catch (reason) {
-      setError(userMessage(reason));
+      setError(articleUserMessage(reason));
       return false;
     } finally {
       setBusy(false);
@@ -337,7 +418,7 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
         `已提交 ${result.estimated_article_credits} 个独立渠道稿；每个成功稿扣 1 个文章额度。`,
       );
     } catch (reason) {
-      setError(userMessage(reason));
+      setError(articleUserMessage(reason));
     } finally {
       setBusy(false);
     }
@@ -349,7 +430,7 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
       const result = await createArticleExport(article.id, format);
       window.location.assign(result.download_url);
     } catch (reason) {
-      setError(userMessage(reason));
+      setError(articleUserMessage(reason));
     }
   };
 
@@ -365,7 +446,7 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
       );
       setPublicationResult(`${result.result}：${result.match_summary}`);
     } catch (reason) {
-      setError(userMessage(reason));
+      setError(articleUserMessage(reason));
     } finally {
       setBusy(false);
     }
@@ -496,8 +577,34 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
                     { label: "直接生成正文", value: "direct" },
                   ]}
                   onChange={(event) => setMode(event.target.value)}
+                  disabled={busy || hasActiveJob || outlineFlowLocked}
                 />
-                {mode === "outline" && article.outline?.status !== "empty" && (
+                {outlineIsGenerating && (
+                  <Alert
+                    type="info"
+                    showIcon
+                    message="大纲正在生成"
+                    description="生成完成后即可编辑和确认，请勿重复提交。"
+                  />
+                )}
+                {outlineFailed && (
+                  <Alert
+                    type="error"
+                    showIcon
+                    message="大纲生成未完成"
+                    description="请重新生成大纲；在大纲生成并确认前不会提交正文任务。"
+                  />
+                )}
+                {outlineNeedsConfirmation && (
+                  <Alert
+                    type="warning"
+                    showIcon
+                    message="请先保存并确认大纲"
+                    description="确认成功后才会开放正文生成，不会提前扣除文章额度。"
+                  />
+                )}
+                {(outlineNeedsConfirmation ||
+                  (mode === "outline" && outlineStatus === "confirmed")) && (
                   <>
                     <Input.TextArea
                       aria-label="文章大纲"
@@ -506,8 +613,17 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
                       onChange={(event) => setOutline(event.target.value)}
                     />
                     <Space wrap>
-                      <Button onClick={() => void confirmOutline()} disabled={hasActiveJob}>
-                        保存并确认大纲
+                      <Button
+                        type="primary"
+                        loading={busy}
+                        onClick={() => void confirmOutline()}
+                        disabled={
+                          hasActiveJob ||
+                          outlineIsGenerating ||
+                          (outlineStatus === "confirmed" && !outlineHasChanges)
+                        }
+                      >
+                        {outlineNeedsConfirmation ? "保存并确认大纲" : "保存大纲修改"}
                       </Button>
                       <Button
                         onClick={() =>
@@ -516,18 +632,29 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
                             "重新生成大纲已提交；成功后消耗一次大纲重生成次数。",
                           )
                         }
-                        disabled={hasActiveJob}
+                        disabled={busy || hasActiveJob || outlineIsGenerating}
                       >
                         重新生成大纲
                       </Button>
                     </Space>
                   </>
                 )}
-                <Button type="primary" loading={busy || hasActiveJob} onClick={generate}>
-                  {mode === "outline" && article.outline?.status === "empty"
-                    ? "生成首次免费大纲"
-                    : "生成正文（成功扣 1 文章额度）"}
-                </Button>
+                {!outlineNeedsConfirmation && (
+                  <Button
+                    type="primary"
+                    loading={busy || hasActiveJob}
+                    disabled={outlineIsGenerating}
+                    onClick={generate}
+                  >
+                    {outlineIsGenerating
+                      ? "正在生成大纲…"
+                      : outlineFailed
+                        ? "重新生成大纲"
+                        : mode === "outline" && outlineStatus === "empty"
+                          ? "生成首次免费大纲"
+                          : "生成正文（成功扣 1 文章额度）"}
+                  </Button>
+                )}
                 {jobs.map((job) => (
                   <Tag key={job.id} color={job.status === "failed" ? "red" : "blue"}>
                     {job.operation} · {job.status} · {job.billing.quota_type ?? "首次免费"}

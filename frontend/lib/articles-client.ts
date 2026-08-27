@@ -168,11 +168,15 @@ export const generateOutline = (articleId: string) =>
   );
 
 export const saveOutline = (article: Article, text: string, confirm: boolean) =>
-  write<{ text: string; status: string; version: number }>(
-    "PATCH",
-    `/articles/${article.id}/outline`,
-    { text, confirm, expected_version: article.outline?.version ?? 1 },
-  );
+  write<{
+    text: string;
+    status: NonNullable<Article["outline"]>["status"];
+    version: number;
+  }>("PATCH", `/articles/${article.id}/outline`, {
+    text,
+    confirm,
+    expected_version: article.outline?.version ?? 1,
+  });
 
 export const generateArticle = (articleId: string) =>
   post<ArticleJob>(
