@@ -373,7 +373,7 @@ def _actions(*, user_id, subject_id, keys: list[str]) -> list[dict[str, str]]:
         ),
         "view_strategy": (
             "查看改善策略",
-            f"/geo/reports/{latest.pk}/strategy" if latest else f"/subjects/{subject_id}",
+            f"/geo/strategy/{latest.pk}" if latest else f"/subjects/{subject_id}",
         ),
     }
     return [{"label": routes[key][0], "route": routes[key][1]} for key in keys]

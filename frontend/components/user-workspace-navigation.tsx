@@ -100,8 +100,8 @@ function workspaceMenu(subjectId: string | null): MenuItem[] {
       label: "GEO 洞察",
       children: [
         linkedItem("insights-reports", "检测报告", "/geo/reports"),
-        unavailableItem("insights-history", "历史报告对比"),
-        unavailableItem("insights-exposure", "曝光指数"),
+        linkedItem("insights-history", "历史报告对比", "/geo/reports/history"),
+        linkedItem("insights-exposure", "曝光指数", "/geo/exposure"),
         unavailableItem("insights-competitors", "竞品对比"),
       ],
     },
@@ -155,6 +155,11 @@ function selectedMenuKey(pathname: string) {
   if (pathname.startsWith("/geo/website-audits")) return "detections-website";
   if (pathname.startsWith("/geo/detections")) return "detections-subject";
   if (pathname.includes("/publication-checks")) return "detections-publication";
+  if (/^\/geo\/reports\/[^/]+\/strategy(?:\/|$)/.test(pathname)) {
+    return "optimization-strategy";
+  }
+  if (/^\/geo\/reports\/history(?:\/|$)/.test(pathname)) return "insights-history";
+  if (/^\/geo\/exposure(?:\/|$)/.test(pathname)) return "insights-exposure";
   if (pathname.startsWith("/geo/reports")) return "insights-reports";
   if (pathname.startsWith("/geo/knowledge-graph/media-signals")) return "knowledge-media";
   if (pathname.startsWith("/geo/knowledge-graph/subjects")) return "knowledge-subject";

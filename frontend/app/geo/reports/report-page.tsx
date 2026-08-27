@@ -30,15 +30,12 @@ import {
   getReportAnswer,
   getReportExport,
   getReportForDetection,
-  getReportHistory,
   getReportQuestions,
-  getReportTrends,
   quickRetest,
   type GeoReport,
   type ReportAnswer,
   type ReportExport,
   type ReportQuestionPage,
-  type ReportTrend,
 } from "@/lib/geo-report-client";
 import { getCurrentQuestionBank, type QuestionBankVersion } from "@/lib/question-bank-client";
 
@@ -94,8 +91,6 @@ export default function GeoReportPage(props: Props) {
   const [page, setPage] = useState(1);
   const [answers, setAnswers] = useState<Record<string, ReportAnswer>>({});
   const [answerLoading, setAnswerLoading] = useState<string>();
-  const [history, setHistory] = useState<GeoReport[]>([]);
-  const [trends, setTrends] = useState<ReportTrend[]>([]);
   const [exports, setExports] = useState<Partial<Record<ReportExport["format"], ReportExport>>>({});
   const [pendingScoring, setPendingScoring] = useState(false);
   const [error, setError] = useState("");
@@ -165,16 +160,8 @@ export default function GeoReportPage(props: Props) {
 
   useEffect(() => {
     if (!report) return;
-    void Promise.all([
-      getReportQuestions(report.id, page),
-      getReportHistory(report.subject_id),
-      getReportTrends(report.subject_id),
-    ])
-      .then(([detail, historical, trendData]) => {
-        setQuestions(detail);
-        setHistory(historical.items);
-        setTrends(trendData.items);
-      })
+    void getReportQuestions(report.id, page)
+      .then(setQuestions)
       .catch((reason) => setError(userMessage(reason)));
   }, [page, report]);
 
@@ -341,28 +328,8 @@ export default function GeoReportPage(props: Props) {
         )}
         {report && (
           <>
-            {report.comparison?.subject_version_changed && (
-              <Alert
-                type="warning"
-                showIcon
-                title="主体资料版本已变化；本报告使用复测时的当前版本"
-              />
-            )}
-            {report.comparison?.status === "not_comparable" && (
-              <Alert
-                type="warning"
-                showIcon
-                title="不可正式比较 / 无正式涨跌"
-                description={
-                  report.comparison.scoring_version_changed
-                    ? "评分规则版本已变化；历史报告不会用新规则重算。"
-                    : "实际问题或逻辑模型集合不同，仅可并排查看。"
-                }
-              />
-            )}
-
             <Row gutter={[16, 16]}>
-              <Col xs={24} md={8}>
+              <Col xs={24} md={12}>
                 <Card>
                   <Statistic
                     title="GEO 综合得分"
@@ -371,7 +338,7 @@ export default function GeoReportPage(props: Props) {
                   />
                 </Card>
               </Col>
-              <Col xs={24} md={8}>
+              <Col xs={24} md={12}>
                 <Card>
                   <Statistic
                     title="品牌认知与口碑"
@@ -380,17 +347,7 @@ export default function GeoReportPage(props: Props) {
                   />
                 </Card>
               </Col>
-              <Col xs={24} md={8}>
-                <Card>
-                  <Statistic
-                    title="曝光潜力指数"
-                    value={report.summary.exposure.exposure_index}
-                    suffix={report.summary.exposure.grade}
-                  />
-                </Card>
-              </Col>
             </Row>
-            <Alert type="info" showIcon title={report.summary.exposure.disclaimer} />
 
             <Card title="六维评分">
               <Row gutter={[16, 16]}>
@@ -419,26 +376,6 @@ export default function GeoReportPage(props: Props) {
                   </List.Item>
                 )}
               />
-            </Card>
-
-            <Card title="主要竞品曝光参考">
-              {report.summary.competitors.length ? (
-                <List
-                  dataSource={report.summary.competitors}
-                  renderItem={(item) => (
-                    <List.Item extra={<Tag>提及 {item.mention_count}</Tag>}>
-                      <List.Item.Meta
-                        title={item.canonical_name}
-                        description={item.aliases.join("、") || "无别名"}
-                      />
-                    </List.Item>
-                  )}
-                />
-              ) : (
-                <Typography.Text type="secondary">
-                  本次没有形成可展示的竞品曝光参考。
-                </Typography.Text>
-              )}
             </Card>
 
             <Card title="按问题分组明细">
@@ -513,49 +450,8 @@ export default function GeoReportPage(props: Props) {
               )}
             </Card>
 
-            <Card title="历史与可比趋势">
-              <List
-                dataSource={trends}
-                locale={{ emptyText: "暂无历史趋势" }}
-                renderItem={(item) => (
-                  <List.Item>
-                    <Space wrap>
-                      <Typography.Link
-                        onClick={() => router.push(`/geo/reports/${item.report_id}`)}
-                      >
-                        {new Date(item.generated_at).toLocaleString()}
-                      </Typography.Link>
-                      <Tag>GEO {item.geo_score || "-"}</Tag>
-                      {item.comparison?.subject_version_changed && (
-                        <Tag color="orange">主体版本变化</Tag>
-                      )}
-                      {item.comparison?.geo_score_delta && (
-                        <Tag color="blue">涨跌 {item.comparison.geo_score_delta}</Tag>
-                      )}
-                    </Space>
-                  </List.Item>
-                )}
-              />
-              <Typography.Text type="secondary">
-                共 {history.length}{" "}
-                份不可修改的历史报告；只有问题、逻辑模型和评分规则完全一致时连接正式趋势。
-              </Typography.Text>
-            </Card>
-
             <Card title="导出与复测">
               <Space orientation="vertical" style={{ width: "100%" }}>
-                <Space wrap>
-                  <Button
-                    type="primary"
-                    onClick={() => router.push(`/geo/reports/${report.id}/strategy`)}
-                  >
-                    生成改善策略
-                  </Button>
-                  <Typography.Text type="secondary">
-                    基于本报告不可修改的事实生成，不会重新检测或评分。
-                  </Typography.Text>
-                </Space>
-                <Divider />
                 <Space wrap>
                   {(["pdf", "word", "excel"] as const).map((format) => {
                     const item = exports[format];

@@ -1,10 +1,10 @@
-"use client";
+import { redirect } from "next/navigation";
 
-import { useParams } from "next/navigation";
+type Props = Readonly<{
+  params: Promise<{ reportId: string }>;
+}>;
 
-import ImprovementStrategyPage from "./strategy-page";
-
-export default function StrategyRoutePage() {
-  const { reportId } = useParams<{ reportId: string }>();
-  return <ImprovementStrategyPage reportId={reportId} />;
+export default async function LegacyStrategyRoutePage({ params }: Props) {
+  const { reportId } = await params;
+  redirect(`/geo/strategy/${reportId}`);
 }

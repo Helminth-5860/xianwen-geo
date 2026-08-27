@@ -357,9 +357,13 @@ export function subjectSwitchTargetPath(pathname: string, nextSubjectId: string)
     return `/subjects/${nextSubjectId}${suffix}`;
   }
   if (/^\/geo\/detections\/[^/]+/.test(pathname)) return "/geo/detections";
+  if (/^\/geo\/reports\/history\/?$/.test(pathname) || pathname.startsWith("/geo/exposure")) {
+    return pathname;
+  }
   if (/^\/geo\/reports\/[^/]+/.test(pathname)) {
     return pathname.includes("/strategy") ? "/geo/strategy" : "/geo/reports";
   }
+  if (/^\/geo\/strategy\/[^/]+/.test(pathname)) return "/geo/strategy";
   return pathname;
 }
 

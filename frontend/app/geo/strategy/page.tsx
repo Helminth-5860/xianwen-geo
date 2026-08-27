@@ -14,39 +14,47 @@ import { getReportHistory, type GeoReport } from "@/lib/geo-report-client";
 
 const { Paragraph, Text, Title } = Typography;
 
+type StrategyIndexState = Readonly<{
+  subjectId: string;
+  reports: GeoReport[];
+  error: string;
+}>;
+
 export default function GeoStrategyIndexPage() {
   const { currentSubject: subject, loading: subjectLoading } = useSubjectWorkspace();
-  const [reports, setReports] = useState<GeoReport[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [reportState, setReportState] = useState<StrategyIndexState>();
+  const subjectId = subject?.id ?? "";
 
   useEffect(() => {
     let current = true;
-    if (subjectLoading) return () => undefined;
-    if (!subject) return () => undefined;
-    void getReportHistory(subject.id)
+    if (subjectLoading || !subjectId) return () => undefined;
+    void getReportHistory(subjectId)
       .then((result) => {
         if (!current) return;
-        setReports(
-          [...result.items].sort(
+        setReportState({
+          subjectId,
+          reports: [...result.items].sort(
             (left, right) =>
               new Date(right.generated_at).getTime() - new Date(left.generated_at).getTime(),
           ),
-        );
+          error: "",
+        });
       })
       .catch((reason) => {
-        if (current) setError(userMessage(reason));
-      })
-      .finally(() => {
-        if (current) setLoading(false);
+        if (current) {
+          setReportState({ subjectId, reports: [], error: userMessage(reason) });
+        }
       });
 
     return () => {
       current = false;
     };
-  }, [subject, subjectLoading]);
+  }, [subjectId, subjectLoading]);
 
-  if (subjectLoading || (subject && loading))
+  const state = reportState?.subjectId === subjectId ? reportState : undefined;
+  const reports = state?.reports ?? [];
+
+  if (subjectLoading || (subjectId && !state))
     return <Spin fullscreen description="正在加载优化策略" />;
 
   return (
@@ -62,7 +70,7 @@ export default function GeoStrategyIndexPage() {
         <Button href="/workspace">返回 GEO 总览</Button>
       </section>
 
-      {error && <Alert type="error" showIcon message={error} />}
+      {state?.error && <Alert type="error" showIcon message={state.error} />}
 
       {!subject ? (
         <Card>
@@ -93,11 +101,7 @@ export default function GeoStrategyIndexPage() {
           <Card title="选择 GEO 报告生成或查看策略">
             <div className="geo-report-list">
               {reports.slice(0, 8).map((report, index) => (
-                <a
-                  key={report.id}
-                  href={`/geo/reports/${report.id}/strategy`}
-                  className="geo-report-card"
-                >
+                <a key={report.id} href={`/geo/strategy/${report.id}`} className="geo-report-card">
                   <div>
                     <Space wrap>
                       <FundProjectionScreenOutlined />

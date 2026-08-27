@@ -283,6 +283,19 @@ describe("GEO 产品工作台", () => {
       "/subjects/subject-1/publication-checks",
     );
 
+    await userEvent.click(screen.getByText("GEO 洞察"));
+    expect(screen.getByRole("link", { name: "检测报告" }).getAttribute("href")).toBe(
+      "/geo/reports",
+    );
+    expect(screen.getByRole("link", { name: "历史报告对比" }).getAttribute("href")).toBe(
+      "/geo/reports/history",
+    );
+    expect(screen.getByRole("link", { name: "曝光指数" }).getAttribute("href")).toBe(
+      "/geo/exposure",
+    );
+    expect(screen.getByText("竞品对比")).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "竞品对比" })).toBeNull();
+
     await userEvent.click(screen.getByText("知识图谱建设"));
     expect(screen.getByRole("link", { name: "媒体信号建设" }).getAttribute("href")).toBe(
       "/geo/knowledge-graph/media-signals",
@@ -366,6 +379,60 @@ describe("GEO 产品工作台", () => {
       "ant-menu-item-selected",
     );
 
+    pathname = "/geo/reports/report-1";
+    rerender(shell());
+    await waitFor(() =>
+      expect(screen.getByRole("menuitem", { name: /GEO 洞察/ }).getAttribute("aria-expanded")).toBe(
+        "true",
+      ),
+    );
+    expect(screen.getByRole("menuitem", { name: "检测报告" }).className).toContain(
+      "ant-menu-item-selected",
+    );
+
+    pathname = "/geo/reports/history";
+    rerender(shell());
+    await waitFor(() =>
+      expect(screen.getByRole("menuitem", { name: "历史报告对比" }).className).toContain(
+        "ant-menu-item-selected",
+      ),
+    );
+
+    pathname = "/geo/exposure";
+    rerender(shell());
+    await waitFor(() =>
+      expect(screen.getByRole("menuitem", { name: "曝光指数" }).className).toContain(
+        "ant-menu-item-selected",
+      ),
+    );
+
+    pathname = "/geo/strategy";
+    rerender(shell());
+    await waitFor(() =>
+      expect(screen.getByRole("menuitem", { name: /优化中心/ }).getAttribute("aria-expanded")).toBe(
+        "true",
+      ),
+    );
+    expect(screen.getByRole("menuitem", { name: "优化策略" }).className).toContain(
+      "ant-menu-item-selected",
+    );
+
+    pathname = "/geo/strategy/report-1";
+    rerender(shell());
+    await waitFor(() =>
+      expect(screen.getByRole("menuitem", { name: "优化策略" }).className).toContain(
+        "ant-menu-item-selected",
+      ),
+    );
+
+    pathname = "/geo/reports/report-1/strategy";
+    rerender(shell());
+    await waitFor(() =>
+      expect(screen.getByRole("menuitem", { name: "优化策略" }).className).toContain(
+        "ant-menu-item-selected",
+      ),
+    );
+
     pathname = "/admin";
     rerender(shell());
     await waitFor(() =>
@@ -429,6 +496,15 @@ describe("GEO 产品工作台", () => {
       "/subjects/subject-2",
     );
     expect(subjectSwitchTargetPath("/geo/reports/report-1", "subject-2")).toBe("/geo/reports");
+    expect(subjectSwitchTargetPath("/geo/reports/history", "subject-2")).toBe(
+      "/geo/reports/history",
+    );
+    expect(subjectSwitchTargetPath("/geo/exposure", "subject-2")).toBe("/geo/exposure");
+    expect(subjectSwitchTargetPath("/geo/strategy", "subject-2")).toBe("/geo/strategy");
+    expect(subjectSwitchTargetPath("/geo/reports/report-1/strategy", "subject-2")).toBe(
+      "/geo/strategy",
+    );
+    expect(subjectSwitchTargetPath("/geo/strategy/report-1", "subject-2")).toBe("/geo/strategy");
     expect(subjectSwitchTargetPath("/geo/detections/detection-1", "subject-2")).toBe(
       "/geo/detections",
     );

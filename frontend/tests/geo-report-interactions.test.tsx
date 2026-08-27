@@ -18,8 +18,6 @@ const getReport = vi.fn();
 const getReportForDetection = vi.fn();
 const getReportQuestions = vi.fn();
 const getReportAnswer = vi.fn();
-const getReportHistory = vi.fn();
-const getReportTrends = vi.fn();
 const createReportExport = vi.fn();
 const getReportExport = vi.fn();
 const quickRetest = vi.fn();
@@ -36,8 +34,6 @@ vi.mock("../lib/geo-report-client", async () => {
     getReportForDetection: (...args: unknown[]) => getReportForDetection(...args),
     getReportQuestions: (...args: unknown[]) => getReportQuestions(...args),
     getReportAnswer: (...args: unknown[]) => getReportAnswer(...args),
-    getReportHistory: (...args: unknown[]) => getReportHistory(...args),
-    getReportTrends: (...args: unknown[]) => getReportTrends(...args),
     createReportExport: (...args: unknown[]) => createReportExport(...args),
     getReportExport: (...args: unknown[]) => getReportExport(...args),
     quickRetest: (...args: unknown[]) => quickRetest(...args),
@@ -187,8 +183,6 @@ describe("GeoReportPage", () => {
       getReportForDetection,
       getReportQuestions,
       getReportAnswer,
-      getReportHistory,
-      getReportTrends,
       createReportExport,
       getReportExport,
       quickRetest,
@@ -200,18 +194,6 @@ describe("GeoReportPage", () => {
     }
     getReport.mockResolvedValue(report);
     getReportQuestions.mockResolvedValue(questions);
-    getReportHistory.mockResolvedValue({ items: [report] });
-    getReportTrends.mockResolvedValue({
-      items: [
-        {
-          report_id: report.id,
-          generated_at: report.generated_at,
-          subject_version_id: report.subject_version_id,
-          geo_score: report.summary.geo.score,
-          comparison: report.comparison,
-        },
-      ],
-    });
   });
 
   afterEach(() => {
@@ -255,7 +237,7 @@ describe("GeoReportPage", () => {
     expect(getReportForDetection).toHaveBeenCalledTimes(REPORT_READY_MAX_POLL_ATTEMPTS);
   });
 
-  it("renders the frozen report modules and only fetches full text after expansion", async () => {
+  it("renders only one frozen report and fetches full text only after expansion", async () => {
     getReportAnswer.mockResolvedValue({
       call_id: "call-1",
       model_key: "deepseek",
@@ -265,8 +247,10 @@ describe("GeoReportPage", () => {
     render(<GeoReportPage reportId="report-1" />);
     expect(await screen.findByText("GEO 检测报告")).toBeTruthy();
     expect(await screen.findByText("这是默认展示的关键片段。")).toBeTruthy();
-    expect(screen.getByText("主体资料版本已变化；本报告使用复测时的当前版本")).toBeTruthy();
-    expect(screen.getByText("主要竞品曝光参考")).toBeTruthy();
+    expect(screen.queryByText("曝光潜力指数")).toBeNull();
+    expect(screen.queryByText("主要竞品曝光参考")).toBeNull();
+    expect(screen.queryByText("历史与可比趋势")).toBeNull();
+    expect(screen.queryByRole("button", { name: "生成改善策略" })).toBeNull();
     expect(getReportAnswer).not.toHaveBeenCalled();
 
     await userEvent.click(screen.getByRole("button", { name: "展开完整原始回答" }));

@@ -345,6 +345,56 @@ def test_stage_1e_endpoints_require_authentication_and_enforce_report_ownership(
     assert owner.get(f"/api/v1/geo/reports/{report.pk}/strategies").status_code == 404
 
 
+def test_fixed_period_api_creates_executes_and_lists_persisted_strategy(
+    stage_facts,
+    django_capture_on_commit_callbacks,
+):
+    user, _, _, runtime, _, _, report = stage_facts
+    runtime_snapshot = get_runtime_snapshot(model_key="deepseek", require_available=True)
+    adapter = _ContentAdapter()
+    owner = APIClient()
+    owner.force_authenticate(user)
+
+    with (
+        patch(
+            "apps.geo.strategy.resolve_strategy_runtime",
+            return_value=(runtime_snapshot, adapter),
+        ),
+        patch("apps.geo.views.execute_strategy_report_task.apply_async") as enqueue,
+        django_capture_on_commit_callbacks(execute=True),
+    ):
+        created = owner.post(
+            f"/api/v1/geo/reports/{report.pk}/strategies",
+            {"period": "30d", "regenerate": False},
+            format="json",
+            HTTP_IDEMPOTENCY_KEY="strategy-fixed-period-api-0001",
+        )
+
+    assert created.status_code == 202
+    created_payload = created.json()["data"]
+    assert created_payload["period"] == "30d"
+    assert created_payload["period_days"] == 30
+    assert created_payload["status"] == StrategyReport.Status.QUEUED
+    enqueue.assert_called_once_with(
+        args=[created_payload["id"]],
+        queue="ai_content",
+        headers={
+            "request_id": created["X-Request-ID"],
+            "correlation_id": created["X-Request-ID"],
+        },
+    )
+
+    strategy = StrategyReport.objects.get(pk=created_payload["id"])
+    assert _execute_strategy(strategy, runtime, adapter) == {"status": "succeeded"}
+
+    history = owner.get(f"/api/v1/geo/reports/{report.pk}/strategies")
+    assert history.status_code == 200
+    saved = history.json()["data"]["items"][0]
+    assert saved["id"] == created_payload["id"]
+    assert saved["status"] == StrategyReport.Status.SUCCEEDED
+    assert saved["body"]["overview"] == _strategy_body()["overview"]
+
+
 def test_assistant_success_charges_only_one_message_and_persists_no_body(stage_facts):
     _, _, subscription, *_ = stage_facts
     before = {
@@ -521,6 +571,10 @@ def test_assistant_does_not_execute_tasks_or_create_stage_two_objects(stage_fact
     )
     reply = _assistant(stage_facts, adapter)
     assert {item["route"].split("/")[1] for item in reply.suggested_actions} == {"geo"}
+    strategy_action = next(
+        item for item in reply.suggested_actions if item["label"] == "查看改善策略"
+    )
+    assert strategy_action["route"].startswith("/geo/strategy/")
     assert GeoDetectionJob.objects.count() == detection_count
     assert StrategyReport.objects.count() == strategy_count
     assert not hasattr(AssistantUsageEvent, "messages")

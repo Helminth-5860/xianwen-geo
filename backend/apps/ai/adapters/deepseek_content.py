@@ -34,7 +34,7 @@ from .deepseek import (
 )
 
 DEEPSEEK_STRATEGY_ADAPTER_VERSION = "deepseek-strategy-v1"
-DEEPSEEK_STRATEGY_PROMPT_VERSION = "geo-improvement-strategy-v1"
+DEEPSEEK_STRATEGY_PROMPT_VERSION = "geo-improvement-strategy-v2"
 DEEPSEEK_ASSISTANT_ADAPTER_VERSION = "deepseek-assistant-v1"
 DEEPSEEK_ASSISTANT_PROMPT_VERSION = "subject-assistant-v1"
 DEEPSEEK_ARTICLE_ADAPTER_VERSION = "deepseek-article-v1"

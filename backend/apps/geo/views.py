@@ -584,9 +584,11 @@ class GeoReportStrategiesView(APIView):
                 strategy, created = create_strategy_report(
                     user_id=request.user.pk,
                     report_id=report_id,
+                    period=serializer.validated_data["period"],
+                    custom_days=serializer.validated_data.get("custom_days"),
+                    regenerate=serializer.validated_data["regenerate"],
                     idempotency_key=request.headers.get("Idempotency-Key", ""),
                     request_id=request.request_id,
-                    **serializer.validated_data,
                 )
                 if created:
                     transaction.on_commit(

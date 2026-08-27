@@ -31,6 +31,14 @@ import {
 
 export const STRATEGY_POLL_INTERVAL_MS = 1200;
 
+const strategyStatusLabel = (status: Strategy["status"]) =>
+  ({
+    queued: "排队中",
+    running: "生成中",
+    succeeded: "已完成",
+    failed: "失败",
+  })[status];
+
 export default function ImprovementStrategyPage({ reportId }: Readonly<{ reportId: string }>) {
   const [data, setData] = useState<StrategyList>();
   const [selected, setSelected] = useState<Strategy>();
@@ -133,8 +141,8 @@ export default function ImprovementStrategyPage({ reportId }: Readonly<{ reportI
     <main className="page-shell">
       <Space orientation="vertical" size="large" style={{ width: "100%" }}>
         <Space wrap align="baseline">
-          <Typography.Title level={2}>GEO 改善策略</Typography.Title>
-          <Button href={`/geo/reports/${reportId}`}>返回报告</Button>
+          <Typography.Title level={2}>优化策略</Typography.Title>
+          <Button href="/geo/strategy">返回优化策略</Button>
         </Space>
         <Alert
           type="info"
@@ -185,9 +193,9 @@ export default function ImprovementStrategyPage({ reportId }: Readonly<{ reportI
           </Space>
         </Card>
 
-        {generating && <Spin description="DeepSeek 正在生成策略" />}
+        {generating && <Spin description="AI 正在生成优化策略" />}
         {selected?.status === "failed" && (
-          <Alert type="error" showIcon title={`策略生成失败：${selected.safe_error_code}`} />
+          <Alert type="error" showIcon title="策略生成失败，请稍后重试；本次失败不会扣除次数。" />
         )}
         {selected?.status === "succeeded" && selected.body && (
           <>
@@ -284,7 +292,7 @@ export default function ImprovementStrategyPage({ reportId }: Readonly<{ reportI
                 actions={[<Button key={item.id}>查看</Button>]}
               >
                 <List.Item.Meta
-                  title={`${item.period_days} 天策略 · ${item.status}`}
+                  title={`${item.period_days} 天策略 · ${strategyStatusLabel(item.status)}`}
                   description={`${item.billing.first_free ? "首次免费" : "重新生成"} · ${item.created_at}`}
                 />
               </List.Item>

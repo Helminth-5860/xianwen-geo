@@ -82,6 +82,12 @@ export type GeoReport = Readonly<{
   generated_at: string;
 }>;
 
+export type GeoReportPairComparison = Readonly<{
+  current: GeoReport;
+  baseline: GeoReport;
+  comparison: GeoReportComparison;
+}>;
+
 export type ReportQuestionPage = Readonly<{
   results: Array<{
     question_id: string;
@@ -167,6 +173,9 @@ export const getReportForDetection = (detectionId: string) =>
   get<GeoReport>(`/geo/detections/${detectionId}/report`);
 
 export const getReport = (reportId: string) => get<GeoReport>(`/geo/reports/${reportId}`);
+
+export const getReportComparison = (reportId: string, otherId: string) =>
+  get<GeoReportPairComparison>(`/geo/reports/${reportId}/comparison/${otherId}`);
 
 export const getReportQuestions = (reportId: string, page: number) =>
   get<ReportQuestionPage>(`/geo/reports/${reportId}/questions?page=${page}`);
