@@ -13,7 +13,6 @@ from apps.ai.content import StructuredContentPayload
 from apps.ai.contracts import AIAdapterRequest, AIModelCapability
 from apps.ai.errors import AIAdapterError
 from apps.documents.parse_models import DocumentParsedVersion
-from apps.quotas.exceptions import QuotaError
 from apps.quotas.services import freeze_quota
 from apps.subjects.models import Subject
 from apps.subjects.subject_services import subject_for_user_or_404
@@ -136,9 +135,9 @@ def _build_source_snapshot(
         source_type="subject",
         source_id=str(subject_version.pk),
         title="已确认主体资料",
-        excerpt=subject_text,
-        remaining_chars=min(remaining, 12_000),
-    ) + max(0, remaining - min(remaining, 12_000))
+        excerpt=subject_text[:12_000],
+        remaining_chars=remaining,
+    )
 
     document_ids = list(dict.fromkeys(document_source_ids))
     documents = list(
@@ -154,13 +153,12 @@ def _build_source_snapshot(
     for row in documents:
         if remaining <= 0:
             break
-        excerpt = row.extracted_text[: min(8_000, remaining)]
         remaining = _append_source(
             items,
             source_type="document",
             source_id=str(row.pk),
             title=row.document.display_name,
-            excerpt=excerpt,
+            excerpt=row.extracted_text[:8_000],
             remaining_chars=remaining,
         )
 
@@ -178,19 +176,20 @@ def _build_source_snapshot(
     for row in web_rows:
         if remaining <= 0:
             break
-        excerpt = row.canonical_text[: min(8_000, remaining)]
         remaining = _append_source(
             items,
             source_type="web",
             source_id=str(row.pk),
             title=row.snapshot.title or row.snapshot.final_url,
             url=row.snapshot.final_url,
-            excerpt=excerpt,
+            excerpt=row.canonical_text[:8_000],
             remaining_chars=remaining,
         )
 
     source_article = None
-    if source_article_id is not None:
+    if source_mode == "article":
+        if source_article_id is None:
+            raise ContentError("VIDEO_SCRIPT_SOURCE_ARTICLE_REQUIRED", status=422)
         source_article = (
             Article.objects.filter(pk=source_article_id, user=user, subject=subject)
             .exclude(custom_type=VIDEO_SCRIPT_CUSTOM_TYPE)
@@ -199,16 +198,14 @@ def _build_source_snapshot(
         if source_article is None or not source_article.content.strip():
             raise ContentError("VIDEO_SCRIPT_SOURCE_ARTICLE_INVALID", status=422)
         if remaining > 0:
-            remaining = _append_source(
+            _append_source(
                 items,
                 source_type="article",
                 source_id=str(source_article.pk),
                 title=source_article.title or "已有文章",
-                excerpt=source_article.content[: min(30_000, remaining)],
+                excerpt=source_article.content[:30_000],
                 remaining_chars=remaining,
             )
-    elif source_mode == "article":
-        raise ContentError("VIDEO_SCRIPT_SOURCE_ARTICLE_REQUIRED", status=422)
 
     snapshot = {
         "subject_id": str(subject.pk),
@@ -244,16 +241,18 @@ def create_video_script(
     if not 10 <= duration_seconds <= 180:
         raise ContentError("VIDEO_SCRIPT_DURATION_INVALID", status=422)
 
-    normalized_topic = " ".join(topic.split())
+    effective_source_article_id = source_article_id if source_mode == "article" else None
     source_article = None
-    if source_article_id is not None:
+    if effective_source_article_id is not None:
         source_article = (
-            Article.objects.filter(pk=source_article_id, user=user, subject=subject)
+            Article.objects.filter(pk=effective_source_article_id, user=user, subject=subject)
             .exclude(custom_type=VIDEO_SCRIPT_CUSTOM_TYPE)
             .first()
         )
-        if source_article is None:
+        if source_article is None or not source_article.content.strip():
             raise ContentError("VIDEO_SCRIPT_SOURCE_ARTICLE_INVALID", status=422)
+
+    normalized_topic = " ".join(topic.split())
     if not normalized_topic and source_article is not None:
         normalized_topic = source_article.title.strip()
     if not normalized_topic:
@@ -265,7 +264,7 @@ def create_video_script(
         source_mode=source_mode,
         document_source_ids=document_source_ids,
         web_source_ids=web_source_ids,
-        source_article_id=source_article_id,
+        source_article_id=effective_source_article_id,
     )
     config = {
         "platform": platform,
@@ -274,7 +273,9 @@ def create_video_script(
         "style": style,
         "source_mode": source_mode,
         "topic": normalized_topic,
-        "source_article_id": str(source_article_id) if source_article_id else None,
+        "source_article_id": (
+            str(effective_source_article_id) if effective_source_article_id else None
+        ),
     }
     workspace = {
         "schema_version": VIDEO_SCRIPT_WORKSPACE_VERSION,
@@ -282,7 +283,7 @@ def create_video_script(
         "source_snapshot": source_snapshot,
         "script": None,
     }
-    article = Article.objects.create(
+    return Article.objects.create(
         user=user,
         subject=subject,
         subject_version=subject.current_version,
@@ -292,7 +293,6 @@ def create_video_script(
         status=Article.Status.DRAFT,
         content_depth=Article.Depth.STANDARD,
     )
-    return article
 
 
 def video_script_payload(article: Article) -> dict[str, Any]:
@@ -489,6 +489,8 @@ def _normalize_video_output(job: ArticleGenerationJob, value: object) -> dict[st
     if not isinstance(hooks, list) or len(hooks) < 3 or len(hooks) > 8:
         raise ContentError("VIDEO_SCRIPT_PROVIDER_SCHEMA_INVALID", status=503)
     clean_hooks = [_clean_text(item, 400) for item in hooks[:3]]
+    if len(set(clean_hooks)) != 3:
+        raise ContentError("VIDEO_SCRIPT_PROVIDER_SCHEMA_INVALID", status=503)
 
     raw_scenes = value["scenes"]
     target_duration = int(job.input_snapshot.get("config", {}).get("duration_seconds", 30))
@@ -559,7 +561,11 @@ def video_failure(job_id, code: str):
         job.finished_at = timezone.now()
         job.save(update_fields=("status", "safe_error_code", "finished_at", "updated_at"))
         article = job.article
-        article.status = Article.Status.DRAFT
+        try:
+            has_previous_script = isinstance(_workspace(article).get("script"), dict)
+        except ContentError:
+            has_previous_script = False
+        article.status = Article.Status.READY if has_previous_script else Article.Status.DRAFT
         article.save(update_fields=("status", "updated_at"))
         return {"status": "failed"}
 

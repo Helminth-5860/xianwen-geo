@@ -204,15 +204,15 @@ export default function VideoScriptWorkspace({
         ),
       );
       setArticles(articleData.items);
-      if (initialSourceArticleId && !topic) {
+      if (initialSourceArticleId) {
         const selected = articleData.items.find((item) => item.id === initialSourceArticleId);
-        if (selected) setTopic(selected.title);
+        if (selected) setTopic((current) => current || selected.title);
       }
       setError("");
     } catch (reason) {
       setError(userMessage(reason));
     }
-  }, [initialSourceArticleId, subjectId, topic]);
+  }, [initialSourceArticleId, subjectId]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void loadCatalogs(), 0);
@@ -227,7 +227,7 @@ export default function VideoScriptWorkspace({
         setJob(refreshed);
         if (refreshed.status === "succeeded") {
           applyVideo(await getVideoScript(refreshed.article_id));
-          setNotice("视频脚本已生成，可直接编辑、复制或重新生成。 ");
+          setNotice("视频脚本已生成，可直接编辑、复制或重新生成。");
         } else if (refreshed.status === "failed") {
           setError("视频脚本生成失败，请重新生成。");
         }
@@ -257,7 +257,7 @@ export default function VideoScriptWorkspace({
         cta: draftScript.cta,
       });
       applyVideo(saved);
-      setNotice("脚本修改已保存。 ");
+      setNotice("脚本修改已保存。");
       return true;
     } catch (reason) {
       setError(userMessage(reason));
@@ -271,11 +271,11 @@ export default function VideoScriptWorkspace({
 
   const submitInitialGeneration = async () => {
     if (sourceMode === "article" && !sourceArticleId) {
-      setError("请选择一篇已有文章。 ");
+      setError("请选择一篇已有文章。");
       return;
     }
     if (sourceMode !== "article" && !topic.trim()) {
-      setError("请输入视频主题。 ");
+      setError("请输入视频主题。");
       return;
     }
     setBusy(true);
@@ -291,12 +291,12 @@ export default function VideoScriptWorkspace({
         topic,
         document_source_ids: selectedDocuments,
         web_source_ids: selectedWebSources,
-        source_article_id: sourceArticleId || null,
+        source_article_id: sourceMode === "article" ? sourceArticleId || null : null,
       });
       applyVideo(created);
       const nextJob = await generateVideoScript(created.id);
       setJob(nextJob);
-      setNotice("生成任务已提交；成功后计入 1 次内容生成额度，生成失败不会扣减。 ");
+      setNotice("生成任务已提交；成功后计入 1 次内容生成额度，生成失败不会扣减。");
     } catch (reason) {
       setError(userMessage(reason));
     } finally {
@@ -311,7 +311,7 @@ export default function VideoScriptWorkspace({
     try {
       const nextJob = await generateVideoScript(video.id);
       setJob(nextJob);
-      setNotice("正在按当前设置重新生成视频脚本。 ");
+      setNotice("正在按当前设置重新生成视频脚本。");
     } catch (reason) {
       setError(userMessage(reason));
     } finally {
@@ -323,9 +323,9 @@ export default function VideoScriptWorkspace({
     if (!draftScript) return;
     try {
       await navigator.clipboard.writeText(copyText(draftTitle, draftScript));
-      setNotice("脚本已复制到剪贴板。 ");
+      setNotice("脚本已复制到剪贴板。");
     } catch {
-      setError("复制失败，请手动复制。 ");
+      setError("复制失败，请手动复制。");
     }
   };
 
