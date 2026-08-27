@@ -1,3 +1,5 @@
+"use client";
+
 import { Alert, Card, Empty, Space, Typography } from "antd";
 
 type Props = Readonly<{ subjectId: string }>;

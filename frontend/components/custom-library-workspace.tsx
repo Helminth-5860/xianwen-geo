@@ -1,3 +1,5 @@
+"use client";
+
 import { Alert, Space, Typography } from "antd";
 
 import { SubjectDocuments } from "@/components/subject-documents";
