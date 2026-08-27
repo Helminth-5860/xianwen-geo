@@ -1,8 +1,9 @@
 "use client";
 
 /* eslint-disable @next/next/no-img-element -- favicon hosts are dynamic and cannot use a fixed Next Image allowlist. */
-import { ExportOutlined, SearchOutlined } from "@ant-design/icons";
+import { ArrowLeftOutlined, ExportOutlined, SearchOutlined } from "@ant-design/icons";
 import { Empty, Input, Pagination, Tag, Typography } from "antd";
+import Link from "next/link";
 import { useMemo, useState } from "react";
 
 import { mediaSignalItems, type MediaSignalItem } from "./data";
@@ -65,6 +66,11 @@ export default function MediaSignalsDirectoryPage() {
 
   return (
     <main className={styles.page}>
+      <Link className={styles.backLink} href="/workspace">
+        <ArrowLeftOutlined aria-hidden="true" />
+        返回 GEO 工作台
+      </Link>
+
       <section className={styles.header}>
         <div>
           <Text type="secondary">KNOWLEDGE GRAPH</Text>

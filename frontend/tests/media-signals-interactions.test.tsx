@@ -48,6 +48,9 @@ describe("媒体信号建设目录", () => {
 
   it("每页只显示 20 条，并可翻页查看下一组", async () => {
     render(<MediaSignalsDirectoryPage />);
+    expect(screen.getByRole("link", { name: "返回 GEO 工作台" }).getAttribute("href")).toBe(
+      "/workspace",
+    );
     expect(screen.getAllByRole("link", { name: /打开 .+ 官网/ })).toHaveLength(20);
     expect(screen.getByRole("link", { name: "打开 人民网 官网" })).toBeTruthy();
     expect(screen.queryByRole("link", { name: "打开 界面新闻 官网" })).toBeNull();
