@@ -74,6 +74,15 @@ def test_file_processing_worker_is_dedicated_hardened_and_unpublished():
     } <= set(worker["environment"])
 
 
+def test_geo_detection_worker_uses_bounded_parallelism():
+    _, services = _compose_worker_queues()
+    worker = services["geo-detection-worker"]
+
+    assert "--queues=geo_detection" in worker["command"]
+    assert "--concurrency=4" in worker["command"]
+    assert worker["restart"] == "unless-stopped"
+
+
 def test_file_saga_overlay_does_not_duplicate_worker_security_options():
     base = yaml.safe_load((REPO_ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
     overlay = yaml.safe_load((REPO_ROOT / "docker-compose.files.yml").read_text(encoding="utf-8"))

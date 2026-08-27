@@ -14,6 +14,7 @@ from django.db import connection
 
 from apps.ai.contracts import AIAdapterRequest, AIModelCapability
 from apps.ai.registry import model_registry
+from apps.ai.runtime import get_capability_runtime_snapshot
 from apps.ai.semantic_scoring import SemanticScoringOutput, SemanticScoringPayload
 
 from .models import (
@@ -33,7 +34,6 @@ from .score_persistence import persist_model_score, persist_question_score
 
 SEMANTIC_SCORING_PROVIDER_KEY = "deepseek"
 SEMANTIC_SCORING_MODEL_KEY = "deepseek"
-SEMANTIC_SCORING_TIMEOUT_SECONDS = 60
 TERMINAL_CALL_STATUSES = (
     ModelCall.Status.SUCCEEDED,
     ModelCall.Status.FAILED,
@@ -245,6 +245,10 @@ def score_model_response(
             model_key=SEMANTIC_SCORING_MODEL_KEY,
             capability=AIModelCapability.SEMANTIC_SCORING,
         )
+        semantic_runtime = get_capability_runtime_snapshot(
+            provider_key=SEMANTIC_SCORING_PROVIDER_KEY,
+            capability=AIModelCapability.SEMANTIC_SCORING,
+        )
         payload = _semantic_payload(
             model_response=model_response,
             programmatic=programmatic,
@@ -256,12 +260,14 @@ def score_model_response(
             capability=AIModelCapability.SEMANTIC_SCORING,
             adapter_version=semantic_adapter.descriptor.adapter_version,
             prompt_version=semantic_adapter.descriptor.prompt_version,
-            timeout_seconds=SEMANTIC_SCORING_TIMEOUT_SECONDS,
+            timeout_seconds=semantic_runtime.timeout_seconds,
             payload=payload,
             metadata={
                 "model_response_id": str(model_response.pk),
                 "model_call_id": str(call.pk),
                 "scoring_rule_version": programmatic.scoring_rule_version,
+                "provider_model_id": semantic_runtime.provider_model_id,
+                "runtime_version": semantic_runtime.version,
             },
         )
         semantic_response = semantic_adapter.invoke(request)

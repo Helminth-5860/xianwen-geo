@@ -74,10 +74,19 @@ export const terminalDetectionStatuses = new Set<DetectionStatus>([
   "cancelled",
 ]);
 
-export async function getDetectionProgress(detectionId: string) {
+export const getDetectionJob = (detectionId: string, signal?: AbortSignal) =>
+  get<GeoDetectionJob>(`/geo/detections/${detectionId}`, { signal, cache: "no-store" });
+
+export const getDetectionModelProgress = (detectionId: string, signal?: AbortSignal) =>
+  get<{ items: GeoModelProgress[] }>(`/geo/detections/${detectionId}/model-progress`, {
+    signal,
+    cache: "no-store",
+  });
+
+export async function getDetectionProgress(detectionId: string, signal?: AbortSignal) {
   const [job, models] = await Promise.all([
-    get<GeoDetectionJob>(`/geo/detections/${detectionId}`),
-    get<{ items: GeoModelProgress[] }>(`/geo/detections/${detectionId}/model-progress`),
+    getDetectionJob(detectionId, signal),
+    getDetectionModelProgress(detectionId, signal),
   ]);
   return { job, models: models.items } as const;
 }

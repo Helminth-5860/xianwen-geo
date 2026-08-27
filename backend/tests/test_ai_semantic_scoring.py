@@ -1,17 +1,19 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 
+import httpx
 import pytest
 
 from apps.ai.adapters.deepseek import (
     DEEPSEEK_SEMANTIC_ADAPTER_VERSION,
     DEEPSEEK_SEMANTIC_DESCRIPTOR,
-    DEEPSEEK_SEMANTIC_PROVIDER_MODEL_ID,
     DeepSeekSemanticScoringAdapter,
     register_deepseek_adapter,
 )
-from apps.ai.contracts import AIModelCapability
+from apps.ai.contracts import AdapterCredential, AIAdapterRequest, AIModelCapability
+from apps.ai.errors import AIAdapterError
 from apps.ai.registry import AIModelRegistry
 from apps.ai.semantic_scoring import (
     SEMANTIC_SCORING_JSON_SCHEMA,
@@ -22,6 +24,15 @@ from apps.ai.semantic_scoring import (
     build_semantic_scoring_messages,
     parse_semantic_scoring_output,
 )
+
+
+@dataclass
+class StaticCredentialResolver:
+    value: str = "test-deepseek-secret"
+
+    def resolve(self, provider_key: str) -> AdapterCredential:
+        assert provider_key == "deepseek"
+        return AdapterCredential(self.value)
 
 
 def _payload(*, raw_response: str = "1. Acme is recommended.") -> SemanticScoringPayload:
@@ -73,6 +84,42 @@ def _valid_output() -> dict[str, object]:
             "competitors": ["Beta is an alternative."],
         },
         "reason": "The response strongly recommends the subject with positive evidence.",
+    }
+
+
+def _semantic_request(*, provider_model_id: str) -> AIAdapterRequest[SemanticScoringPayload]:
+    return AIAdapterRequest(
+        request_id="semantic-score-test-request",
+        correlation_id="semantic-score-test-correlation",
+        identity=DEEPSEEK_SEMANTIC_DESCRIPTOR.identity,
+        capability=AIModelCapability.SEMANTIC_SCORING,
+        adapter_version=DEEPSEEK_SEMANTIC_DESCRIPTOR.adapter_version,
+        prompt_version=DEEPSEEK_SEMANTIC_DESCRIPTOR.prompt_version,
+        timeout_seconds=17,
+        payload=_payload(),
+        metadata={"provider_model_id": provider_model_id},
+    )
+
+
+def _semantic_response(*, model: str) -> dict[str, object]:
+    return {
+        "id": "deepseek-semantic-safe-id",
+        "choices": [
+            {
+                "finish_reason": "stop",
+                "index": 0,
+                "message": {
+                    "content": json.dumps(_valid_output(), ensure_ascii=False),
+                    "role": "assistant",
+                },
+            }
+        ],
+        "model": model,
+        "usage": {
+            "completion_tokens": 120,
+            "prompt_tokens": 300,
+            "total_tokens": 420,
+        },
     }
 
 
@@ -190,15 +237,63 @@ def test_prompt_treats_response_as_untrusted_data() -> None:
     assert "UNTRUSTED_ANALYSIS_INPUT_END_" in user_message["content"]
 
 
-def test_deepseek_semantic_request_uses_json_mode_and_fixed_model() -> None:
+def test_deepseek_semantic_request_uses_json_mode_and_configured_model() -> None:
     adapter = DeepSeekSemanticScoringAdapter()
-    body = adapter._request_body(_payload())
+    body = adapter._request_body(_payload(), provider_model_id="deepseek-v4-flash")
 
-    assert body["model"] == DEEPSEEK_SEMANTIC_PROVIDER_MODEL_ID
+    assert body["model"] == "deepseek-v4-flash"
     assert body["response_format"] == {"type": "json_object"}
     assert body["stream"] is False
     assert body["thinking"] == {"type": "disabled"}
     assert body["temperature"] == 0.1
+
+
+def test_deepseek_semantic_accepts_configured_versioned_model() -> None:
+    captured = {}
+
+    def handler(request: httpx.Request):
+        captured.update(json.loads(request.content))
+        return httpx.Response(200, json=_semantic_response(model="deepseek-v4-flash"))
+
+    adapter = DeepSeekSemanticScoringAdapter(
+        credential_resolver=StaticCredentialResolver(),
+        transport=httpx.MockTransport(handler),
+    )
+    response = adapter.invoke(_semantic_request(provider_model_id="deepseek-v4-flash"))
+
+    assert captured["model"] == "deepseek-v4-flash"
+    assert response.sanitized_provider_metadata["provider_model_id"] == "deepseek-v4-flash"
+    assert "requested_provider_model_id" not in response.sanitized_provider_metadata
+
+
+def test_deepseek_semantic_accepts_explicit_compatibility_alias() -> None:
+    adapter = DeepSeekSemanticScoringAdapter(
+        credential_resolver=StaticCredentialResolver(),
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, json=_semantic_response(model="deepseek-v4-flash"))
+        ),
+    )
+    response = adapter.invoke(_semantic_request(provider_model_id="deepseek-chat"))
+
+    assert response.sanitized_provider_metadata == {
+        "provider_model_id": "deepseek-v4-flash",
+        "semantic_attempt_count": 1,
+        "requested_provider_model_id": "deepseek-chat",
+    }
+
+
+def test_deepseek_semantic_rejects_unconfigured_response_model() -> None:
+    adapter = DeepSeekSemanticScoringAdapter(
+        credential_resolver=StaticCredentialResolver(),
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, json=_semantic_response(model="deepseek-v4-pro"))
+        ),
+    )
+
+    with pytest.raises(AIAdapterError) as captured:
+        adapter.invoke(_semantic_request(provider_model_id="deepseek-v4-flash"))
+
+    assert captured.value.stable_code == "AI_DEEPSEEK_SEMANTIC_MODEL_VERSION_MISMATCH"
 
 
 def test_registry_resolves_deepseek_semantic_capability() -> None:

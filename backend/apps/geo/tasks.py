@@ -10,6 +10,11 @@ from django.db import InterfaceError, OperationalError
 from .models import ModelCall
 from .reports import prepare_report
 from .score_orchestration import score_model_response
+from .semaphores import (
+    DetectionDispatchLease,
+    DetectionDispatchLeaseStore,
+    DetectionSemaphoreUnavailable,
+)
 from .services import (
     due_model_call_ids,
     execute_model_call,
@@ -69,28 +74,52 @@ def execute_semantic_score_task(self, model_response_id):
         ) from exc
 
 
+def _release_dispatch_lease(*, call_id, dispatch_token) -> None:
+    if not dispatch_token:
+        return
+    try:
+        DetectionDispatchLeaseStore().release(
+            DetectionDispatchLease(
+                token=str(dispatch_token),
+                key=f"geo:dispatch:model-call:v1:{call_id}",
+            )
+        )
+    except DetectionSemaphoreUnavailable:
+        logger.warning(
+            "geo detection dispatch lease release failed",
+            extra={"context": {"model_call_id": str(call_id)}},
+        )
+
+
+def _enqueue_terminal_followups(*, call_id, result) -> None:
+    if result.get("terminal_transition") is not True:
+        return
+    call = ModelCall.objects.select_related("response").filter(pk=call_id).first()
+    if (
+        call is not None
+        and result["status"] == "succeeded"
+        and call.question_snapshot.participates_in_scoring
+    ):
+        execute_semantic_score_task.apply_async(args=[str(call.response.pk)], queue="system_tasks")
+    elif call is not None:
+        prepare_report_task.apply_async(args=[str(call.job_id)], queue="system_tasks")
+
+
 @shared_task(bind=True, name="geo.execute_model_call")
-def execute_model_call_task(self, call_id):
+def execute_model_call_task(self, call_id, dispatch_token=None):
+    release_dispatch_lease = True
     try:
         result = execute_model_call(call_id=call_id)
-        if result.get("status") in {"succeeded", "failed", "cancelled"}:
-            call = ModelCall.objects.select_related("response").filter(pk=call_id).first()
-            if (
-                call is not None
-                and result["status"] == "succeeded"
-                and call.question_snapshot.participates_in_scoring
-            ):
-                execute_semantic_score_task.apply_async(
-                    args=[str(call.response.pk)], queue="system_tasks"
-                )
-            elif call is not None:
-                prepare_report_task.apply_async(args=[str(call.job_id)], queue="system_tasks")
+        _enqueue_terminal_followups(call_id=call_id, result=result)
         return result
     except (OperationalError, InterfaceError) as exc:
         if self.request.retries >= settings.GEO_DETECTION_INTERNAL_MAX_RETRIES:
-            return fail_internal_model_call(call_id=call_id)
+            result = fail_internal_model_call(call_id=call_id)
+            _enqueue_terminal_followups(call_id=call_id, result=result)
+            return result
+        release_dispatch_lease = not bool(dispatch_token)
         raise self.retry(
-            args=[str(call_id)],
+            args=[str(call_id), dispatch_token],
             exc=exc,
             countdown=min(60, 2 ** (self.request.retries + 1)),
             max_retries=settings.GEO_DETECTION_INTERNAL_MAX_RETRIES,
@@ -100,7 +129,12 @@ def execute_model_call_task(self, call_id):
             "geo detection worker failed internally",
             extra={"context": {"model_call_id": str(call_id)}},
         )
-        return fail_internal_model_call(call_id=call_id)
+        result = fail_internal_model_call(call_id=call_id)
+        _enqueue_terminal_followups(call_id=call_id, result=result)
+        return result
+    finally:
+        if release_dispatch_lease:
+            _release_dispatch_lease(call_id=call_id, dispatch_token=dispatch_token)
 
 
 @shared_task(name="geo.dispatch_model_calls")
@@ -109,10 +143,45 @@ def dispatch_model_calls_task():
     stale = expire_stale_running_calls()
     ids = due_model_call_ids(limit=settings.GEO_DETECTION_DISPATCH_BATCH)
     correlation_id = str(uuid.uuid4())
+    store = DetectionDispatchLeaseStore()
+    lease_seconds = settings.GEO_DETECTION_QUEUE_TIMEOUT_SECONDS + 60
+    queued = 0
+    deduplicated = 0
+    enqueue_failures = 0
     for call_id in ids:
-        execute_model_call_task.apply_async(
-            args=[str(call_id)],
-            queue="geo_detection",
-            headers={"request_id": str(uuid.uuid4()), "correlation_id": correlation_id},
-        )
-    return {"queued": len(ids), "queue_timeouts": timed_out, "stale_failed": stale}
+        try:
+            lease = store.acquire(call_id=str(call_id), lease_seconds=lease_seconds)
+        except DetectionSemaphoreUnavailable:
+            logger.exception("geo detection dispatch lease store unavailable")
+            break
+        if lease is None:
+            deduplicated += 1
+            continue
+        try:
+            execute_model_call_task.apply_async(
+                args=[str(call_id), lease.token],
+                queue="geo_detection",
+                headers={"request_id": str(uuid.uuid4()), "correlation_id": correlation_id},
+            )
+            queued += 1
+        except Exception:
+            enqueue_failures += 1
+            logger.exception(
+                "geo detection model call enqueue failed",
+                extra={"context": {"model_call_id": str(call_id)}},
+            )
+            try:
+                store.release(lease)
+            except DetectionSemaphoreUnavailable:
+                logger.warning(
+                    "geo detection dispatch lease rollback failed",
+                    extra={"context": {"model_call_id": str(call_id)}},
+                )
+            break
+    return {
+        "queued": queued,
+        "deduplicated": deduplicated,
+        "enqueue_failures": enqueue_failures,
+        "queue_timeouts": timed_out,
+        "stale_failed": stale,
+    }

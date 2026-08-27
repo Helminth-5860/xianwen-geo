@@ -760,9 +760,9 @@ def _terminal_call_locked(
     status: str,
     stable_error_code: str = "",
     safe_error_summary: dict | None = None,
-) -> None:
+) -> bool:
     if call.status in TERMINAL_CALL_STATUSES:
-        return
+        return False
     if status == ModelCall.Status.SUCCEEDED:
         _settle_point(call, action="consume")
     else:
@@ -789,6 +789,7 @@ def _terminal_call_locked(
     job = GeoDetectionJob.objects.select_for_update().get(pk=call.job_id)
     _refresh_model_run_locked(model_run)
     _refresh_job_locked(job)
+    return True
 
 
 @transaction.atomic
@@ -882,42 +883,42 @@ def execute_model_call(*, call_id, semaphore_store: DetectionSemaphoreStore | No
             "job__snapshot", "question_snapshot", "model_run", "model"
         ).get(pk=call_id)
     except ModelCall.DoesNotExist:
-        return {"status": "missing"}
+        return {"status": "missing", "terminal_transition": False}
     now = timezone.now()
     if call.status not in (ModelCall.Status.QUEUED, ModelCall.Status.RETRY_WAIT):
-        return {"status": call.status}
+        return {"status": call.status, "terminal_transition": False}
     if call.next_attempt_at is not None and call.next_attempt_at > now:
-        return {"status": call.status}
+        return {"status": call.status, "terminal_transition": False}
     if call.job.cancel_requested_at is not None:
         with transaction.atomic():
             locked = ModelCall.objects.select_for_update().get(pk=call.pk)
-            _terminal_call_locked(
+            transitioned = _terminal_call_locked(
                 locked,
                 status=ModelCall.Status.CANCELLED,
                 stable_error_code="GEO_DETECTION_USER_CANCELLED_BEFORE_START",
             )
-        return {"status": "cancelled"}
+        return {"status": locked.status, "terminal_transition": transitioned}
     queue_deadline = call.queued_at + timedelta(
         seconds=settings.GEO_DETECTION_QUEUE_TIMEOUT_SECONDS
     )
     if call.attempt_count == 0 and now >= queue_deadline:
         with transaction.atomic():
             locked = ModelCall.objects.select_for_update().get(pk=call.pk)
-            _terminal_call_locked(
+            transitioned = _terminal_call_locked(
                 locked,
                 status=ModelCall.Status.FAILED,
                 stable_error_code="GEO_DETECTION_QUEUE_TIMEOUT",
             )
-        return {"status": "failed"}
+        return {"status": locked.status, "terminal_transition": transitioned}
     if not _live_model_available(call):
         with transaction.atomic():
             locked = ModelCall.objects.select_for_update().get(pk=call.pk)
-            _terminal_call_locked(
+            transitioned = _terminal_call_locked(
                 locked,
                 status=ModelCall.Status.FAILED,
                 stable_error_code="GEO_DETECTION_MODEL_PAUSED_OR_DISABLED",
             )
-        return {"status": "failed"}
+        return {"status": locked.status, "terminal_transition": transitioned}
 
     runtime = call.model_run.runtime_snapshot
     store = semaphore_store or DetectionSemaphoreStore()
@@ -929,9 +930,17 @@ def execute_model_call(*, call_id, semaphore_store: DetectionSemaphoreStore | No
             lease_seconds=int(runtime["timeout_seconds"]) + 60,
         )
     except DetectionSemaphoreUnavailable:
-        return {"status": "queued", "reason": "semaphore_unavailable"}
+        return {
+            "status": "queued",
+            "reason": "semaphore_unavailable",
+            "terminal_transition": False,
+        }
     if lease is None:
-        return {"status": "queued", "reason": "concurrency_limit"}
+        return {
+            "status": "queued",
+            "reason": "concurrency_limit",
+            "terminal_transition": False,
+        }
 
     generation = uuid.uuid4()
     attempt_no = 0
@@ -943,21 +952,21 @@ def execute_model_call(*, call_id, semaphore_store: DetectionSemaphoreStore | No
                 .get(pk=call.pk)
             )
             if locked.status not in (ModelCall.Status.QUEUED, ModelCall.Status.RETRY_WAIT):
-                return {"status": locked.status}
+                return {"status": locked.status, "terminal_transition": False}
             if locked.job.cancel_requested_at is not None:
-                _terminal_call_locked(
+                transitioned = _terminal_call_locked(
                     locked,
                     status=ModelCall.Status.CANCELLED,
                     stable_error_code="GEO_DETECTION_CANCELLED_BEFORE_PROVIDER_START",
                 )
-                return {"status": "cancelled"}
+                return {"status": locked.status, "terminal_transition": transitioned}
             if not _live_model_available(locked):
-                _terminal_call_locked(
+                transitioned = _terminal_call_locked(
                     locked,
                     status=ModelCall.Status.FAILED,
                     stable_error_code="GEO_DETECTION_MODEL_PAUSED_OR_DISABLED",
                 )
-                return {"status": "failed"}
+                return {"status": locked.status, "terminal_transition": transitioned}
             locked.attempt_count += 1
             attempt_no = locked.attempt_count
             locked.status = ModelCall.Status.RUNNING
@@ -1003,7 +1012,7 @@ def execute_model_call(*, call_id, semaphore_store: DetectionSemaphoreStore | No
                     .get(pk=call.pk)
                 )
                 if locked.status != ModelCall.Status.RUNNING or locked.generation != generation:
-                    return {"status": locked.status}
+                    return {"status": locked.status, "terminal_transition": False}
                 attempt = ModelCallAttempt.objects.select_for_update().get(
                     model_call=locked, attempt_no=attempt_no
                 )
@@ -1048,19 +1057,19 @@ def execute_model_call(*, call_id, semaphore_store: DetectionSemaphoreStore | No
                             "updated_at",
                         )
                     )
-                    return {"status": "retry_wait"}
-                _terminal_call_locked(
+                    return {"status": "retry_wait", "terminal_transition": False}
+                transitioned = _terminal_call_locked(
                     locked,
                     status=ModelCall.Status.FAILED,
                     stable_error_code=exc.stable_code,
                     safe_error_summary={"category": exc.category.value},
                 )
-                return {"status": "failed"}
+                return {"status": locked.status, "terminal_transition": transitioned}
         except Exception:
             with transaction.atomic():
                 locked = ModelCall.objects.select_for_update().get(pk=call.pk)
                 if locked.status != ModelCall.Status.RUNNING or locked.generation != generation:
-                    return {"status": locked.status}
+                    return {"status": locked.status, "terminal_transition": False}
                 attempt = ModelCallAttempt.objects.select_for_update().get(
                     model_call=locked, attempt_no=attempt_no
                 )
@@ -1078,13 +1087,13 @@ def execute_model_call(*, call_id, semaphore_store: DetectionSemaphoreStore | No
                         "finished_at",
                     )
                 )
-                _terminal_call_locked(
+                transitioned = _terminal_call_locked(
                     locked,
                     status=ModelCall.Status.FAILED,
                     stable_error_code="GEO_DETECTION_ADAPTER_INTERNAL",
                     safe_error_summary={"category": AIAdapterErrorCategory.INTERNAL_ADAPTER.value},
                 )
-                return {"status": "failed"}
+                return {"status": locked.status, "terminal_transition": transitioned}
 
         normalized_citations = normalize_detection_citations(response.output)
 
@@ -1093,7 +1102,7 @@ def execute_model_call(*, call_id, semaphore_store: DetectionSemaphoreStore | No
                 ModelCall.objects.select_for_update().select_related("model_run").get(pk=call.pk)
             )
             if locked.status != ModelCall.Status.RUNNING or locked.generation != generation:
-                return {"status": locked.status}
+                return {"status": locked.status, "terminal_transition": False}
             attempt = ModelCallAttempt.objects.select_for_update().get(
                 model_call=locked, attempt_no=attempt_no
             )
@@ -1149,8 +1158,8 @@ def execute_model_call(*, call_id, semaphore_store: DetectionSemaphoreStore | No
                     "updated_at",
                 )
             )
-            _terminal_call_locked(locked, status=ModelCall.Status.SUCCEEDED)
-            return {"status": "succeeded"}
+            transitioned = _terminal_call_locked(locked, status=ModelCall.Status.SUCCEEDED)
+            return {"status": locked.status, "terminal_transition": transitioned}
     finally:
         try:
             store.release(lease)
@@ -1238,9 +1247,9 @@ def fail_internal_model_call(*, call_id) -> dict:
     try:
         call = ModelCall.objects.select_for_update().get(pk=call_id)
     except ModelCall.DoesNotExist:
-        return {"status": "missing"}
+        return {"status": "missing", "terminal_transition": False}
     if call.status in TERMINAL_CALL_STATUSES:
-        return {"status": call.status}
+        return {"status": call.status, "terminal_transition": False}
     if call.status == ModelCall.Status.RUNNING:
         attempt = ModelCallAttempt.objects.filter(
             model_call=call,
@@ -1262,9 +1271,9 @@ def fail_internal_model_call(*, call_id) -> dict:
                     "finished_at",
                 )
             )
-    _terminal_call_locked(
+    transitioned = _terminal_call_locked(
         call,
         status=ModelCall.Status.FAILED,
         stable_error_code="GEO_DETECTION_WORKER_INTERNAL",
     )
-    return {"status": "failed"}
+    return {"status": call.status, "terminal_transition": transitioned}

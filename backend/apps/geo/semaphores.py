@@ -30,6 +30,13 @@ redis.call('ZREM', KEYS[2], ARGV[1])
 return 1
 """
 
+DISPATCH_RELEASE_SCRIPT = """
+if redis.call('GET', KEYS[1]) == ARGV[1] then
+    return redis.call('DEL', KEYS[1])
+end
+return 0
+"""
+
 
 class DetectionSemaphoreUnavailable(Exception):
     pass
@@ -88,5 +95,37 @@ class DetectionSemaphoreStore:
                 lease.model_key,
                 lease.token,
             )
+        except RedisError as exc:
+            raise DetectionSemaphoreUnavailable from exc
+
+
+@dataclass(frozen=True)
+class DetectionDispatchLease:
+    token: str
+    key: str
+
+
+class DetectionDispatchLeaseStore:
+    """Prevent the periodic dispatcher from publishing the same call repeatedly."""
+
+    def __init__(self, client=None):
+        self.client = client or get_redis_connection("default")
+
+    def acquire(self, *, call_id: str, lease_seconds: int) -> DetectionDispatchLease | None:
+        if not call_id or lease_seconds < 1:
+            raise ValueError("Invalid detection dispatch lease.")
+        token = str(uuid.uuid4())
+        key = f"geo:dispatch:model-call:v1:{call_id}"
+        try:
+            acquired = self.client.set(key, token, nx=True, ex=lease_seconds)
+        except RedisError as exc:
+            raise DetectionSemaphoreUnavailable from exc
+        if not acquired:
+            return None
+        return DetectionDispatchLease(token=token, key=key)
+
+    def release(self, lease: DetectionDispatchLease) -> None:
+        try:
+            self.client.eval(DISPATCH_RELEASE_SCRIPT, 1, lease.key, lease.token)
         except RedisError as exc:
             raise DetectionSemaphoreUnavailable from exc

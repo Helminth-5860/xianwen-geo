@@ -120,12 +120,17 @@ export async function getCsrfToken(): Promise<string> {
   return data.csrf_token;
 }
 
-export async function get<T>(path: string): Promise<T> {
+export async function get<T>(
+  path: string,
+  options: Readonly<{ signal?: AbortSignal; cache?: RequestCache }> = {},
+): Promise<T> {
   return withAdminStepUpRetry(async () => {
     const response = await fetch(`${publicEnvironment.apiBaseUrl}${path}`, {
       method: "GET",
       credentials: "include",
       headers: { Accept: "application/json" },
+      signal: options.signal,
+      cache: options.cache,
     });
     return readEnvelope<T>(response);
   });

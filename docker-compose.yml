@@ -196,7 +196,7 @@ services:
         "worker",
         "--loglevel=INFO",
         "--queues=geo_detection",
-        "--concurrency=2",
+        "--concurrency=4",
       ]
     environment:
       DJANGO_SETTINGS_MODULE: config.settings

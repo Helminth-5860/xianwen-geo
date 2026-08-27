@@ -294,7 +294,7 @@ def test_successful_call_consumes_exactly_one_point_and_persists_safe_response(g
     assert call is not None
     with patch("apps.geo.services.model_registry.resolve", return_value=_SuccessAdapter()):
         result = execute_model_call(call_id=call.pk, semaphore_store=_FakeSemaphoreStore())
-    assert result == {"status": "succeeded"}
+    assert result == {"status": "succeeded", "terminal_transition": True}
     call.refresh_from_db()
     job.quota_hold.refresh_from_db()
     assert call.status == ModelCall.Status.SUCCEEDED
@@ -302,6 +302,8 @@ def test_successful_call_consumes_exactly_one_point_and_persists_safe_response(g
     assert call.provider_request_id == "provider-safe-123"
     assert job.quota_hold.consumed_amount == 1
     assert ModelResponse.objects.get(model_call=call).raw_text.startswith("这是一个")
+    duplicate = execute_model_call(call_id=call.pk, semaphore_store=_FakeSemaphoreStore())
+    assert duplicate == {"status": "succeeded", "terminal_transition": False}
     assert (
         QuotaLedgerEntry.objects.filter(
             hold__group=job.quota_hold,
@@ -317,7 +319,7 @@ def test_retryable_failure_reuses_same_logical_point_and_worker_retry_boundary(g
     assert call is not None
     with patch("apps.geo.services.model_registry.resolve", return_value=_RetryAdapter()):
         result = execute_model_call(call_id=call.pk, semaphore_store=_FakeSemaphoreStore())
-    assert result == {"status": "retry_wait"}
+    assert result == {"status": "retry_wait", "terminal_transition": False}
     call.refresh_from_db()
     job.quota_hold.refresh_from_db()
     assert call.status == ModelCall.Status.RETRY_WAIT
@@ -329,7 +331,8 @@ def test_retryable_failure_reuses_same_logical_point_and_worker_retry_boundary(g
     ModelCall.objects.filter(pk=call.pk).update(next_attempt_at=timezone.now())
     with patch("apps.geo.services.model_registry.resolve", return_value=_SuccessAdapter()):
         assert execute_model_call(call_id=call.pk, semaphore_store=_FakeSemaphoreStore()) == {
-            "status": "succeeded"
+            "status": "succeeded",
+            "terminal_transition": True,
         }
     call.refresh_from_db()
     job.quota_hold.refresh_from_db()
@@ -347,7 +350,7 @@ def test_pause_before_attempt_fails_closed_and_releases_point(geo_facts):
     runtime.version += 1
     runtime.save(update_fields=("paused", "pause_reason", "version", "updated_at"))
     result = execute_model_call(call_id=call.pk, semaphore_store=_FakeSemaphoreStore())
-    assert result == {"status": "failed"}
+    assert result == {"status": "failed", "terminal_transition": True}
     call.refresh_from_db()
     job.quota_hold.refresh_from_db()
     assert call.stable_error_code == "GEO_DETECTION_MODEL_PAUSED_OR_DISABLED"
@@ -404,7 +407,7 @@ def test_successful_call_persists_prevalidated_citation_facts(geo_facts):
             semaphore_store=_FakeSemaphoreStore(),
         )
 
-    assert result == {"status": "succeeded"}
+    assert result == {"status": "succeeded", "terminal_transition": True}
     citation = ModelResponseCitation.objects.get(model_response__model_call=call)
     assert citation.canonical_url == "https://example.com/article"
     assert citation.source_host == "example.com"
@@ -424,7 +427,7 @@ def test_successful_natural_call_persists_programmatic_zero_for_no_mention(geo_f
             semaphore_store=_FakeSemaphoreStore(),
         )
 
-    assert result == {"status": "succeeded"}
+    assert result == {"status": "succeeded", "terminal_transition": True}
     score = ProgrammaticScoreResult.objects.get(model_response__model_call=call)
     assert score.mention_score == 0
     assert score.rank_score == 0

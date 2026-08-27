@@ -36,7 +36,12 @@ DEEPSEEK_ADAPTER_VERSION = "deepseek-chat-completions-v1"
 DEEPSEEK_PROMPT_VERSION = "geo-detection-v1"
 DEEPSEEK_SEMANTIC_ADAPTER_VERSION = "deepseek-semantic-scoring-v2"
 DEEPSEEK_SEMANTIC_PROMPT_VERSION = "geo-semantic-scoring-v2"
-DEEPSEEK_SEMANTIC_PROVIDER_MODEL_ID = "deepseek-chat"
+DEEPSEEK_SEMANTIC_RESPONSE_MODEL_ALIASES: dict[str, frozenset[str]] = {
+    # DeepSeek keeps the compatibility alias in the request while returning the
+    # canonical version that actually served it. Keep this allow-list explicit so
+    # an unrelated or silently changed model still fails closed.
+    "deepseek-chat": frozenset({"deepseek-v4-flash"}),
+}
 DEEPSEEK_SEMANTIC_TEMPERATURE = 0.1
 DEEPSEEK_SEMANTIC_MAX_OUTPUT_TOKENS = 2400
 MAX_PROVIDER_RESPONSE_BYTES = 2_000_000
@@ -123,6 +128,12 @@ def _map_finish_reason(value: object) -> AIFinishReason:
             stable_code="AI_DEEPSEEK_SYSTEM_RESOURCE",
         )
     return AIFinishReason.UNKNOWN
+
+
+def _semantic_response_model_matches(*, requested: str, returned: str) -> bool:
+    if returned == requested:
+        return True
+    return returned in DEEPSEEK_SEMANTIC_RESPONSE_MODEL_ALIASES.get(requested, frozenset())
 
 
 class DeepSeekDetectionAdapter:
@@ -365,10 +376,15 @@ class DeepSeekSemanticScoringAdapter:
                 retryable=False,
             ) from None
 
-    def _request_body(self, payload: SemanticScoringPayload) -> dict[str, object]:
+    def _request_body(
+        self,
+        payload: SemanticScoringPayload,
+        *,
+        provider_model_id: str,
+    ) -> dict[str, object]:
         system_message, user_message = build_semantic_scoring_messages(payload)
         return {
-            "model": DEEPSEEK_SEMANTIC_PROVIDER_MODEL_ID,
+            "model": provider_model_id,
             "messages": [system_message, user_message],
             "stream": False,
             "thinking": {"type": "disabled"},
@@ -390,6 +406,16 @@ class DeepSeekSemanticScoringAdapter:
             raise AIAdapterError(
                 AIAdapterErrorCategory.INVALID_REQUEST,
                 stable_code="AI_DEEPSEEK_SEMANTIC_REQUEST_INVALID",
+                retryable=False,
+            )
+
+        requested_provider_model_id = _safe_optional_text(
+            request.metadata.get("provider_model_id"), maximum=255
+        )
+        if requested_provider_model_id is None:
+            raise AIAdapterError(
+                AIAdapterErrorCategory.INVALID_REQUEST,
+                stable_code="AI_DEEPSEEK_SEMANTIC_MODEL_CONFIG_INVALID",
                 retryable=False,
             )
 
@@ -415,7 +441,10 @@ class DeepSeekSemanticScoringAdapter:
                             "Authorization": f"Bearer {credential.value}",
                             "Content-Type": "application/json",
                         },
-                        json=self._request_body(request.payload),
+                        json=self._request_body(
+                            request.payload,
+                            provider_model_id=requested_provider_model_id,
+                        ),
                     )
                 except httpx.TimeoutException:
                     raise AIAdapterError(
@@ -534,7 +563,10 @@ class DeepSeekSemanticScoringAdapter:
                         stable_code="AI_DEEPSEEK_MODEL_ID_INVALID",
                         retryable=False,
                     )
-                if provider_model_id != DEEPSEEK_SEMANTIC_PROVIDER_MODEL_ID:
+                if not _semantic_response_model_matches(
+                    requested=requested_provider_model_id,
+                    returned=provider_model_id,
+                ):
                     raise AIAdapterError(
                         AIAdapterErrorCategory.RESPONSE_PARSE,
                         stable_code="AI_DEEPSEEK_SEMANTIC_MODEL_VERSION_MISMATCH",
@@ -547,6 +579,8 @@ class DeepSeekSemanticScoringAdapter:
                     "provider_model_id": provider_model_id,
                     "semantic_attempt_count": attempt,
                 }
+                if provider_model_id != requested_provider_model_id:
+                    metadata["requested_provider_model_id"] = requested_provider_model_id
                 system_fingerprint = _safe_optional_text(data.get("system_fingerprint"))
                 if system_fingerprint is not None:
                     metadata["system_fingerprint"] = system_fingerprint
