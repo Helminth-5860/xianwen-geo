@@ -7,7 +7,7 @@ from .openai_chat import OpenAIChatProviderSpec, OpenAICompatibleDetectionAdapte
 HUNYUAN_SPEC = OpenAIChatProviderSpec(
     provider_key="hunyuan",
     model_key="hunyuan",
-    base_url="https://api.hunyuan.cloud.tencent.com/v1",
+    base_url="https://tokenhub.tencentmaas.com/v1",
     adapter_version="hunyuan-openai-chat-v1",
 )
 HUNYUAN_DESCRIPTOR = HUNYUAN_SPEC.descriptor()
