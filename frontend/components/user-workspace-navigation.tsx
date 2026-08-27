@@ -40,6 +40,7 @@ function workspaceMenu(subjectId: string | null): MenuItem[] {
   const questionHome = subjectId ? `/subjects/${subjectId}/questions` : "/subjects";
   const questionManageHome = subjectId ? `/subjects/${subjectId}/questions/manage` : "/subjects";
   const articleHome = subjectId ? `/subjects/${subjectId}/articles/new` : "/subjects";
+  const videoScriptHome = subjectId ? `/subjects/${subjectId}/video-scripts/new` : "/subjects";
   const contentLibraryHome = subjectId ? `/subjects/${subjectId}/articles` : "/subjects";
   const imageHome = subjectId ? `/subjects/${subjectId}/images` : "/subjects";
   const imageLibraryHome = subjectId ? `/subjects/${subjectId}/image-library` : "/subjects";
@@ -125,7 +126,7 @@ function workspaceMenu(subjectId: string | null): MenuItem[] {
         unavailableItem("optimization-execution", "执行计划"),
         linkedItem("optimization-articles", "文章生成", articleHome),
         linkedItem("optimization-images", "图片生成", imageHome),
-        unavailableItem("optimization-video", "视频脚本生成"),
+        linkedItem("optimization-video", "视频脚本生成", videoScriptHome),
       ],
     },
     {
