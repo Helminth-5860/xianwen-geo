@@ -32,6 +32,21 @@ DOUBAO_IMAGE_API_VERSION = "2024-01-01"
 DOUBAO_IMAGE_ADAPTER_VERSION = "doubao-image-generations-v1"
 DOUBAO_IMAGE_PROMPT_VERSION = "geo-image-generation-v1"
 MAX_PROVIDER_RESPONSE_BYTES = 2_000_000
+RESPONSE_MODEL_ALIASES: dict[str, frozenset[str]] = {
+    "doubao-seedream-5-0-lite-260128": frozenset(
+        {
+            "doubao-seedream-5-0-lite-260128",
+            "doubao-seedream-5-0-260128",
+        }
+    ),
+}
+
+
+def _response_model_matches(requested: str, returned: str) -> bool:
+    if returned == requested:
+        return True
+    return returned in RESPONSE_MODEL_ALIASES.get(requested, frozenset())
+
 
 DOUBAO_IMAGE_DESCRIPTOR = AIAdapterDescriptor(
     identity=AIModelIdentity(provider_key="doubao", model_key="doubao"),
@@ -204,7 +219,7 @@ class DoubaoImageGenerationAdapter:
             if (
                 not isinstance(model, str)
                 or not model
-                or model != payload.provider_model_id
+                or not _response_model_matches(payload.provider_model_id, model)
                 or (created is not None and type(created) is not int)
                 or not isinstance(rows, list)
                 or len(rows) != 1

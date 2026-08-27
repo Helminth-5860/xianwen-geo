@@ -9,6 +9,7 @@ from unittest.mock import patch
 import pytest
 from django.http import Http404
 from django.test import override_settings
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from apps.ai.adapters.deepseek_content import DEEPSEEK_ARTICLE_DESCRIPTOR
@@ -470,6 +471,52 @@ def test_article_ownership_and_unsafe_publication_url_are_enforced(stage2_facts)
     assert check.result == "failed"
     assert check.safe_failure_code in {"WEB_SOURCE_URL_INVALID", "WEB_SOURCE_URL_NOT_ALLOWED"}
     assert PublicationLinkCheck.objects.filter(pk=check.pk).exists()
+
+
+def test_content_library_lists_only_explicitly_saved_articles_for_the_owner(stage2_facts):
+    user, subject, _, pack, _, saved = _article_setup(stage2_facts)
+    saved.content = "已明确保存到内容库的正文"
+    saved.autosaved_at = timezone.now()
+    saved.save(update_fields=("content", "autosaved_at", "updated_at"))
+
+    unsaved = create_article(
+        user=user,
+        subject_id=subject.pk,
+        article_type_id=saved.article_type_id,
+        custom_type="",
+        content_depth="standard",
+        title="尚未加入内容库",
+        source_pack_id=pack.pk,
+    )
+    unsaved.content = "生成结果会持久化，但未经过用户明确保存"
+    unsaved.save(update_fields=("content", "updated_at"))
+
+    owner = APIClient()
+    owner.force_authenticate(user=user)
+    response = owner.get(
+        f"/api/v1/subjects/{subject.pk}/articles?library=1&page=1&page_size=20"
+    )
+
+    assert response.status_code == 200, response.data
+    assert response.data["pagination"] == {
+        "page": 1,
+        "page_size": 20,
+        "count": 1,
+        "total_pages": 1,
+    }
+    assert [row["id"] for row in response.data["items"]] == [str(saved.pk)]
+
+    other = User.objects.create_user(
+        phone=f"136{uuid.uuid4().int % 100000000:08d}",
+        nickname="Other content library user",
+        password="Correct-Horse-Battery-2026!",
+        account_status=User.AccountStatus.ACTIVE,
+    )
+    outsider = APIClient()
+    outsider.force_authenticate(user=other)
+    assert outsider.get(
+        f"/api/v1/subjects/{subject.pk}/articles?library=1"
+    ).status_code == 404
 
 
 def test_report_share_hash_password_snapshot_access_and_revocation(stage2_facts):

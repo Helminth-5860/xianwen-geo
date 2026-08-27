@@ -284,6 +284,12 @@ describe("GEO 产品工作台", () => {
     expect(screen.getByRole("link", { name: "图片生成" }).getAttribute("href")).toBe(
       "/subjects/subject-1/images",
     );
+    expect(screen.getByRole("link", { name: "内容库" }).getAttribute("href")).toBe(
+      "/subjects/subject-1/articles",
+    );
+    expect(screen.getByRole("link", { name: "发布检测" }).getAttribute("href")).toBe(
+      "/subjects/subject-1/publication-checks",
+    );
 
     pathname = "/subjects/subject-1/images";
     rerender(shell());
@@ -293,6 +299,25 @@ describe("GEO 产品工作台", () => {
       ).toBe("true"),
     );
     expect(screen.getByRole("menuitem", { name: "图片生成" }).className).toContain(
+      "ant-menu-item-selected",
+    );
+
+    pathname = "/subjects/subject-1/articles";
+    rerender(shell());
+    await waitFor(() =>
+      expect(screen.getByRole("menuitem", { name: "内容库" }).className).toContain(
+        "ant-menu-item-selected",
+      ),
+    );
+
+    pathname = "/subjects/subject-1/publication-checks";
+    rerender(shell());
+    await waitFor(() =>
+      expect(
+        screen.getByRole("menuitem", { name: /内容资产中心/ }).getAttribute("aria-expanded"),
+      ).toBe("true"),
+    );
+    expect(screen.getByRole("menuitem", { name: "发布检测" }).className).toContain(
       "ant-menu-item-selected",
     );
 

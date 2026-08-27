@@ -8,6 +8,7 @@ from .views import (
     ImageAppealView,
     ImageAttachView,
     ImageBatchDownloadView,
+    ImageContentView,
     ImageDerivativeView,
     ImageDetailView,
     ImageGenerateView,
@@ -38,6 +39,11 @@ urlpatterns = [
         "subjects/<uuid:subject_id>/images",
         SubjectImagesView.as_view(),
         name="subject-images",
+    ),
+    path(
+        "subjects/<uuid:subject_id>/images/<uuid:image_id>/content",
+        ImageContentView.as_view(),
+        name="image-content",
     ),
     path(
         "images/<uuid:image_id>/save-to-library",

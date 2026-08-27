@@ -15,7 +15,7 @@ import {
 } from "antd";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { userMessage } from "@/lib/auth-client";
+import { AuthApiError, userMessage } from "@/lib/auth-client";
 import {
   appealImageModeration,
   attachImage,
@@ -46,11 +46,66 @@ type Props = Readonly<{
   referenceDocuments?: ReadonlyArray<{ id: string; label: string }>;
 }>;
 
-const MODERATION_MESSAGES: Record<string, string> = {
+const IMAGE_ERROR_MESSAGES: Readonly<Record<string, string>> = {
   IMAGE_INPUT_TEXT_SENSITIVE: "提示词未通过内容安全检查，额度已释放。",
   IMAGE_INPUT_REFERENCE_SENSITIVE: "参考图未通过内容安全检查，额度已释放。",
   IMAGE_OUTPUT_SENSITIVE: "生成结果未通过内容安全检查，额度已释放。",
+  IMAGE_CREDENTIAL_UNAVAILABLE: "图片生成服务凭据尚未配置，请联系管理员。",
+  IMAGE_CREDENTIAL_BINDING_UNAVAILABLE: "图片生成服务凭据尚未启用，请联系管理员。",
+  IMAGE_CREDENTIAL_DECRYPTION_FAILED: "图片生成服务凭据读取失败，请联系管理员。",
+  IMAGE_CREDENTIAL_PROVENANCE_CHANGED: "图片生成服务配置已变更，请重新提交。",
+  IMAGE_RUNTIME_UNAVAILABLE: "图片生成服务尚未启用，请联系管理员。",
+  IMAGE_STORAGE_UNAVAILABLE: "图片存储服务尚未配置，请联系管理员。",
+  IMAGE_STORAGE_VERIFICATION_FAILED: "图片保存校验失败，本次额度已释放，请重试。",
+  IMAGE_PROVIDER_AUTHENTICATION_FAILED: "豆包图片服务鉴权失败，请联系管理员。",
+  IMAGE_PROVIDER_QUOTA_EXCEEDED: "豆包图片服务额度不足，请联系管理员。",
+  IMAGE_PROVIDER_RATE_LIMIT: "图片生成请求较多，请稍后重试。",
+  IMAGE_PROVIDER_TIMEOUT: "图片生成响应超时，本次额度已释放，请重试。",
+  IMAGE_PROVIDER_NETWORK_FAILURE: "图片生成网络暂时不可用，请稍后重试。",
+  IMAGE_PROVIDER_TEMPORARY_FAILURE: "豆包图片服务暂时不可用，请稍后重试。",
+  IMAGE_PROVIDER_REQUEST_REJECTED: "豆包图片服务拒绝了本次请求，请调整内容后重试。",
+  IMAGE_PROVIDER_REQUEST_INVALID: "图片生成参数不正确，请调整后重试。",
+  IMAGE_PROVIDER_RESPONSE_INVALID: "豆包图片服务返回格式异常，请稍后重试。",
+  IMAGE_QUEUE_UNAVAILABLE: "图片任务队列暂时不可用，请稍后重试。",
+  IMAGE_INTERNAL_FAILURE: "图片生成处理失败，本次额度已释放，请稍后重试。",
+  IMAGE_PLAN_REQUIRED: "当前账号尚未开通图片生成权限。",
+  IMAGE_QUOTA_ACCOUNT_UNAVAILABLE: "图片额度账户不可用，请联系管理员。",
 };
+
+const IMAGE_JOB_STATUS: Readonly<Record<ImageJob["status"], string>> = {
+  queued: "等待处理",
+  running: "生成中",
+  retry_wait: "等待重试",
+  succeeded: "生成成功",
+  failed: "生成失败",
+};
+
+const IMAGE_ROLE_LABEL: Readonly<Record<ImageAsset["role"], string>> = {
+  cover: "文章封面",
+  illustration: "正文插图",
+  channel: "渠道图片",
+};
+
+const IMAGE_REVIEW_LABEL: Readonly<Record<ImageAsset["moderation_status"], string>> = {
+  approved: "审核通过",
+  suspected: "待复核",
+  rejected: "未通过",
+  service_error: "审核服务异常",
+};
+
+function imageErrorMessage(code: string): string {
+  if (!code) return "";
+  return IMAGE_ERROR_MESSAGES[code] ?? "图片生成失败，请稍后重试。";
+}
+
+function imageUserMessage(error: unknown): string {
+  if (error instanceof AuthApiError) {
+    const detailCode = error.details.image_code;
+    const code = typeof detailCode === "string" ? detailCode : error.message;
+    if (code.startsWith("IMAGE_")) return imageErrorMessage(code);
+  }
+  return userMessage(error);
+}
 
 export function ArticleImagesWorkspace({
   subjectId,
@@ -63,7 +118,12 @@ export function ArticleImagesWorkspace({
   const [recommendations, setRecommendations] = useState<ImageRecommendation[]>([]);
   const [images, setImages] = useState<ImageAsset[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [quota, setQuota] = useState<ImageQuota>({ available: 0, frozen: 0, consumed: 0 });
+  const [quota, setQuota] = useState<ImageQuota>({
+    available: 0,
+    frozen: 0,
+    consumed: 0,
+    unlimited: false,
+  });
   const [role, setRole] = useState<ImageAsset["role"]>("cover");
   const [prompt, setPrompt] = useState(
     articleTitle
@@ -103,7 +163,7 @@ export function ArticleImagesWorkspace({
         setRecommendations(recommendationRows.recommendations);
         await reloadLibrary();
       } catch (reason) {
-        setError(userMessage(reason));
+        setError(imageUserMessage(reason));
       }
     }, 0);
     return () => window.clearTimeout(timer);
@@ -123,23 +183,24 @@ export function ArticleImagesWorkspace({
               : current.frozen,
         }));
         if (next.status === "succeeded") {
+          setError("");
           setNotice("图片已转存到私有存储并通过审核；图片额度已扣除。 ");
           await reloadLibrary();
         } else if (next.status === "failed") {
-          setError(
-            MODERATION_MESSAGES[next.safe_error_code] ?? `图片任务失败：${next.safe_error_code}`,
-          );
+          setError("");
           await reloadLibrary();
         }
       } catch (reason) {
-        setError(userMessage(reason));
+        setError(imageUserMessage(reason));
       }
     }, IMAGE_POLL_INTERVAL_MS);
     return () => window.clearTimeout(timer);
   }, [job, reloadLibrary]);
 
   const activeImage = job?.image;
-  const canGenerate = Boolean(prompt.trim() && sizeId && styleId && quota.available > 0);
+  const canGenerate = Boolean(
+    prompt.trim() && sizeId && styleId && (quota.unlimited || quota.available > 0),
+  );
   const approvedImages = useMemo(
     () => images.filter((image) => image.moderation_status === "approved"),
     [images],
@@ -172,7 +233,7 @@ export function ArticleImagesWorkspace({
       setQuota(result.quota);
       setNotice("图片任务已提交并冻结 1 个图片额度；失败会自动释放。 ");
     } catch (reason) {
-      setError(userMessage(reason));
+      setError(imageUserMessage(reason));
     } finally {
       setBusy(false);
     }
@@ -188,7 +249,7 @@ export function ArticleImagesWorkspace({
       const result = await createImageBatchDownload(subjectId, selectedIds);
       window.location.assign(result.url);
     } catch (reason) {
-      setError(userMessage(reason));
+      setError(imageUserMessage(reason));
     }
   };
 
@@ -196,15 +257,15 @@ export function ArticleImagesWorkspace({
     <Card title={articleId ? "4. GEO 配图生成与主体图库" : "图片生成与主体图库"}>
       <Space orientation="vertical" size="middle" style={{ width: "100%" }}>
         <Space wrap>
-          <Statistic title="可用图片额度" value={quota.available} />
+          <Statistic title="可用图片额度" value={quota.unlimited ? "不限" : quota.available} />
           <Statistic title="已冻结" value={quota.frozen} />
           <Statistic title="已消耗" value={quota.consumed} />
         </Space>
         <Alert
           type="info"
           showIcon
-          title="图片由豆包 ImageGenerations 生成，成功后立即校验并转存私有存储"
-          description="前端只接收系统签名资产地址；不展示供应商临时 URL、原始响应或凭据。"
+          title="图片由豆包图片模型生成，成功后立即校验并转存私有存储"
+          description="页面只接收系统内的私有图片地址，不展示供应商临时链接、原始响应或凭据。"
         />
         {error && <Alert type="error" showIcon title={error} />}
         {notice && <Alert type="success" showIcon title={notice} />}
@@ -275,7 +336,7 @@ export function ArticleImagesWorkspace({
           style={{ width: "100%" }}
           options={approvedImages.map((image) => ({
             value: image.id,
-            label: `${image.role} · ${image.width}×${image.height}`,
+            label: `${IMAGE_ROLE_LABEL[image.role]} · ${image.width}×${image.height}`,
           }))}
           onChange={(value) => {
             setReferenceAssetId(value ?? null);
@@ -307,7 +368,7 @@ export function ArticleImagesWorkspace({
           aria-label="HTTPS 参考图地址"
           value={referenceUrl}
           disabled={Boolean(referenceAssetId || referenceDocumentVersionId)}
-          placeholder="可选：https://...（服务端执行 SSRF 与媒体校验）"
+          placeholder="可选：粘贴安全的图片链接（系统会校验链接与文件）"
           onChange={(event) => {
             setReferenceUrl(event.target.value);
             if (event.target.value) {
@@ -330,8 +391,12 @@ export function ArticleImagesWorkspace({
               job.status === "failed" ? "error" : job.status === "succeeded" ? "success" : "info"
             }
             showIcon
-            title={`图片任务：${job.status}`}
-            description={`尝试 ${job.attempt_count}/${job.max_retries + 1} · ${job.safe_error_code || "处理中"}`}
+            title={`图片任务：${IMAGE_JOB_STATUS[job.status]}`}
+            description={
+              job.status === "failed"
+                ? imageErrorMessage(job.safe_error_code)
+                : `尝试 ${job.attempt_count}/${job.max_retries + 1} · ${IMAGE_JOB_STATUS[job.status]}`
+            }
             action={
               job.status === "failed" ? <Button onClick={submit}>修改后重试</Button> : undefined
             }
@@ -345,7 +410,7 @@ export function ArticleImagesWorkspace({
                 <Tag>
                   {activeImage.width}×{activeImage.height}
                 </Tag>
-                <Tag>{activeImage.moderation_status}</Tag>
+                <Tag>{IMAGE_REVIEW_LABEL[activeImage.moderation_status]}</Tag>
                 {articleId && (
                   <Button
                     onClick={async () =>
@@ -390,7 +455,7 @@ export function ArticleImagesWorkspace({
                       setQuota(result.quota);
                       setNotice("AI 智能处理已提交并冻结 1 个图片额度；交付成功后扣除。");
                     } catch (reason) {
-                      setError(userMessage(reason));
+                      setError(imageUserMessage(reason));
                     }
                   }}
                 >
@@ -404,6 +469,7 @@ export function ArticleImagesWorkspace({
         <List
           grid={{ gutter: 12, xs: 1, sm: 2, md: 3 }}
           dataSource={approvedImages}
+          locale={{ emptyText: "暂无图片" }}
           renderItem={(image) => (
             <List.Item>
               <Card
@@ -433,7 +499,7 @@ export function ArticleImagesWorkspace({
                         )
                       }
                     />
-                    <Tag>{image.role}</Tag>
+                    <Tag>{IMAGE_ROLE_LABEL[image.role]}</Tag>
                     <Tag>{image.is_subject_library ? "图库" : "当前文章"}</Tag>
                   </Space>
                   {image.moderation_status !== "approved" && (
@@ -447,7 +513,7 @@ export function ArticleImagesWorkspace({
           )}
         />
         <Button disabled={!selectedIds.length} onClick={batchDownload}>
-          批量下载原图 ZIP
+          批量下载原图压缩包
         </Button>
       </Space>
     </Card>

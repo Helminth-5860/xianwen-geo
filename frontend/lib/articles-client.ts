@@ -77,6 +77,16 @@ export type Article = Readonly<{
   autosaved_at: string | null;
 }>;
 
+export type SubjectArticlePage = Readonly<{
+  items: Article[];
+  pagination: {
+    page: number;
+    page_size: number;
+    count: number;
+    total_pages: number;
+  };
+}>;
+
 export type ArticleJob = Readonly<{
   id: string;
   article_id: string;
@@ -117,6 +127,20 @@ export type ChannelAdaptation = Readonly<{
   version: number;
 }>;
 
+export type PublicationCheck = Readonly<{
+  id: string;
+  subject_id: string;
+  article_id: string | null;
+  adaptation_id: string | null;
+  channel_id: string;
+  url: string;
+  result: "success" | "failed" | "unknown";
+  detected_title: string;
+  match_summary: string;
+  safe_failure_code: string;
+  checked_at: string;
+}>;
+
 export const getArticleTypes = () => get<{ items: ArticleType[] }>("/article-types");
 
 export const createSourcePack = (
@@ -153,6 +177,15 @@ export const createArticle = (
 ) => post<Article>(`/subjects/${subjectId}/articles`, input);
 
 export const getArticle = (articleId: string) => get<Article>(`/articles/${articleId}`);
+
+export const getContentLibrary = (subjectId: string, page = 1) =>
+  get<SubjectArticlePage>(`/subjects/${subjectId}/articles?library=1&page=${page}&page_size=20`);
+
+export const getSubjectArticles = (subjectId: string, page = 1, pageSize = 20) =>
+  get<{
+    items: Article[];
+    pagination: { page: number; page_size: number; count: number; total_pages: number };
+  }>(`/subjects/${subjectId}/articles?page=${page}&page_size=${pageSize}`);
 
 export const saveArticleDraft = (article: Article, title: string, content: string) =>
   write<Article>("PATCH", `/articles/${article.id}/draft`, {
@@ -238,14 +271,15 @@ export const checkPublication = (
   channelId: string,
   url: string,
 ) =>
-  post<{
-    result: "success" | "failed" | "unknown";
-    detected_title: string;
-    match_summary: string;
-    safe_failure_code: string;
-  }>("/publication-checks", {
+  post<PublicationCheck>("/publication-checks", {
     subject_id: subjectId,
     article_id: articleId,
     channel_id: channelId,
     url,
   });
+
+export const getPublicationChecks = (subjectId: string, page = 1, pageSize = 20) =>
+  get<{
+    items: PublicationCheck[];
+    pagination: { page: number; page_size: number; count: number; total_pages: number };
+  }>(`/subjects/${subjectId}/publication-checks?page=${page}&page_size=${pageSize}`);

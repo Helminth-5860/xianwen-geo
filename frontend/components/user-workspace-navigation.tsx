@@ -40,7 +40,11 @@ function workspaceMenu(subjectId: string | null): MenuItem[] {
   const questionHome = subjectId ? `/subjects/${subjectId}/questions` : "/subjects";
   const questionManageHome = subjectId ? `/subjects/${subjectId}/questions/manage` : "/subjects";
   const articleHome = subjectId ? `/subjects/${subjectId}/articles/new` : "/subjects";
+  const contentLibraryHome = subjectId ? `/subjects/${subjectId}/articles` : "/subjects";
   const imageHome = subjectId ? `/subjects/${subjectId}/images` : "/subjects";
+  const publicationCheckHome = subjectId
+    ? `/subjects/${subjectId}/publication-checks`
+    : "/subjects";
 
   return [
     {
@@ -125,8 +129,8 @@ function workspaceMenu(subjectId: string | null): MenuItem[] {
         linkedItem("content-articles", "文章生成", articleHome),
         linkedItem("content-images", "图片生成", imageHome),
         unavailableItem("content-video", "视频脚本生成"),
-        unavailableItem("content-library", "内容库"),
-        unavailableItem("content-publishing", "发布管理"),
+        linkedItem("content-library", "内容库", contentLibraryHome),
+        linkedItem("content-publication-checks", "发布检测", publicationCheckHome),
       ],
     },
   ];
@@ -152,6 +156,8 @@ function selectedMenuKey(pathname: string) {
     return "optimization-strategy";
   }
   if (pathname.includes("/images")) return "content-images";
+  if (pathname.includes("/publication-checks")) return "content-publication-checks";
+  if (/^\/subjects\/[^/]+\/articles\/?$/.test(pathname)) return "content-library";
   if (pathname.includes("/articles")) return "content-articles";
   return "";
 }
@@ -181,7 +187,7 @@ const menuGroupByChild: Readonly<Record<string, string>> = {
   "content-images": "content",
   "content-video": "content",
   "content-library": "content",
-  "content-publishing": "content",
+  "content-publication-checks": "content",
 };
 
 export function UserWorkspaceNavigation() {

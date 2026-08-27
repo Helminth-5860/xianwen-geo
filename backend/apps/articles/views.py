@@ -206,6 +206,8 @@ class SubjectArticleListCreateView(APIView):
         query = Article.objects.filter(subject=subject, user=request.user).select_related(
             "article_type", "template_version", "source_pack"
         )
+        if request.query_params.get("library") == "1":
+            query = query.filter(autosaved_at__isnull=False).exclude(content="")
         count = query.count()
         rows = query[(page - 1) * page_size : page * page_size]
         return _no_store(

@@ -24,7 +24,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useSubjectSwitchGuard } from "@/components/subject-workspace-context";
 import {
-  checkPublication,
   chooseComparison,
   confirmSourcePack,
   createArticle,
@@ -129,13 +128,11 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
   const [adaptations, setAdaptations] = useState<ChannelAdaptation[]>([]);
   const [optimizationInstruction, setOptimizationInstruction] =
     useState("按质量建议提升表达与结构");
-  const [publicationUrl, setPublicationUrl] = useState("");
-  const [publicationChannel, setPublicationChannel] = useState("");
-  const [publicationResult, setPublicationResult] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [jobError, setJobError] = useState<JobError>();
   const [notice, setNotice] = useState("");
+  const [saveToLibrary, setSaveToLibrary] = useState(true);
 
   const applyArticle = useCallback((next: Article) => {
     setArticle(next);
@@ -197,7 +194,18 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
         );
         const completed = refreshed.filter((job) => ["succeeded", "failed"].includes(job.status));
         if (completed.length && article) {
-          applyArticle(await getArticle(article.id));
+          let refreshedArticle = await getArticle(article.id);
+          const bodySucceeded = completed.some(
+            (job) => job.operation === "body" && job.status === "succeeded",
+          );
+          if (bodySucceeded && saveToLibrary && refreshedArticle.content.trim()) {
+            refreshedArticle = await saveArticleDraft(
+              refreshedArticle,
+              refreshedArticle.title,
+              refreshedArticle.content,
+            );
+          }
+          applyArticle(refreshedArticle);
           setAdaptations((await getChannelAdaptations(article.id)).items);
           const comparisonId = completed.find((job) => job.comparison_id)?.comparison_id;
           if (comparisonId) setComparison(await getComparison(comparisonId));
@@ -221,8 +229,12 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
               }
               return succeededOperations.has(current.operation) ? undefined : current;
             });
-            if (completed.some((job) => job.operation === "body")) {
-              setNotice("正文生成完成。正文与质量结果已更新。");
+            if (bodySucceeded) {
+              setNotice(
+                saveToLibrary
+                  ? "正文生成完成，已保存到内容库。"
+                  : "正文生成完成。你可以编辑后点击“保存当前稿”加入内容库。",
+              );
             }
           }
         }
@@ -231,7 +243,7 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
       }
     }, ARTICLE_POLL_INTERVAL_MS);
     return () => window.clearTimeout(timer);
-  }, [applyArticle, article, jobs]);
+  }, [applyArticle, article, jobs, saveToLibrary]);
 
   const activeType = useMemo(
     () => types.find((item) => item.id === selectedType),
@@ -419,7 +431,7 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
         currentArticle = await getArticle(article.id);
       }
       applyArticle(await saveArticleDraft(currentArticle, title, content));
-      setNotice("当前唯一稿已自动保存；AI 原始生成事实未被修改");
+      setNotice("当前稿已保存到内容库；AI 原始生成事实未被修改");
       return true;
     } catch (reason) {
       setError(articleUserMessage(reason));
@@ -464,24 +476,6 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
       window.location.assign(result.download_url);
     } catch (reason) {
       setError(articleUserMessage(reason));
-    }
-  };
-
-  const runPublicationCheck = async () => {
-    if (!article || !publicationChannel || !publicationUrl) return;
-    setBusy(true);
-    try {
-      const result = await checkPublication(
-        subjectId,
-        article.id,
-        publicationChannel,
-        publicationUrl,
-      );
-      setPublicationResult(`${result.result}：${result.match_summary}`);
-    } catch (reason) {
-      setError(articleUserMessage(reason));
-    } finally {
-      setBusy(false);
     }
   };
 
@@ -674,20 +668,29 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
                   </>
                 )}
                 {!outlineNeedsConfirmation && (
-                  <Button
-                    type="primary"
-                    loading={busy || hasActiveJob}
-                    disabled={outlineIsGenerating}
-                    onClick={generate}
-                  >
-                    {outlineIsGenerating
-                      ? "正在生成大纲…"
-                      : outlineFailed
-                        ? "重新生成大纲"
-                        : mode === "outline" && outlineStatus === "empty"
-                          ? "生成首次免费大纲"
-                          : "生成正文（成功扣 1 文章额度）"}
-                  </Button>
+                  <Space orientation="vertical" size="small">
+                    <Checkbox
+                      checked={saveToLibrary}
+                      disabled={busy || hasActiveJob}
+                      onChange={(event) => setSaveToLibrary(event.target.checked)}
+                    >
+                      正文生成成功后保存到内容库
+                    </Checkbox>
+                    <Button
+                      type="primary"
+                      loading={busy || hasActiveJob}
+                      disabled={outlineIsGenerating}
+                      onClick={generate}
+                    >
+                      {outlineIsGenerating
+                        ? "正在生成大纲…"
+                        : outlineFailed
+                          ? "重新生成大纲"
+                          : mode === "outline" && outlineStatus === "empty"
+                            ? "生成首次免费大纲"
+                            : "生成正文（成功扣 1 文章额度）"}
+                    </Button>
+                  </Space>
                 )}
                 {jobs.map((job) => (
                   <Tag key={job.id} color={job.status === "failed" ? "red" : "blue"}>
@@ -810,7 +813,7 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
               </Space>
             </Card>
 
-            <Card title="5. 导出、渠道适配与发布链接即时检测">
+            <Card title="5. 导出与渠道适配">
               <Space orientation="vertical" size="middle" style={{ width: "100%" }}>
                 <Space wrap>
                   {(["word", "pdf", "txt", "markdown", "html"] as const).map((format) => (
@@ -859,24 +862,6 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
                   )}
                 />
                 <Alert type="info" title="系统不代替登录或发布，也不会把适配稿标记为已发布。" />
-                <Select
-                  value={publicationChannel || undefined}
-                  placeholder="选择已发布渠道"
-                  options={channels.map((channel) => ({
-                    value: channel.id,
-                    label: channel.name,
-                  }))}
-                  onChange={setPublicationChannel}
-                />
-                <Input
-                  value={publicationUrl}
-                  placeholder="粘贴公开发布链接"
-                  onChange={(event) => setPublicationUrl(event.target.value)}
-                />
-                <Button loading={busy} onClick={() => void runPublicationCheck()}>
-                  立即检测一次
-                </Button>
-                {publicationResult && <Alert type="info" title={publicationResult} />}
               </Space>
             </Card>
           </>

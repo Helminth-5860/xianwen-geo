@@ -5,7 +5,7 @@ import uuid
 from typing import Any
 
 from django.db import transaction
-from django.http import Http404
+from django.http import FileResponse, Http404
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_protect
 from rest_framework.response import Response
@@ -15,10 +15,12 @@ from rest_framework.views import APIView
 from apps.admin_rbac.permissions import HasAdminPermission
 from apps.core.error_codes import ErrorCode
 from apps.core.responses import error_response
+from apps.documents.exceptions import FileStorageUnavailable
+from apps.documents.storage import storage_provider
 from apps.quotas.exceptions import QuotaError
 from apps.subjects.permissions import IsAvailableAuthenticatedUser
 
-from .exceptions import ImageBusinessError
+from .exceptions import ImageBusinessError, ImageStorageUnavailable
 from .models import ImageAsset, ImageSizePreset, ImageStylePreset
 from .serializers import (
     AttachImageSerializer,
@@ -39,6 +41,7 @@ from .services import (
     create_derivative,
     create_image_job,
     derivative_payload,
+    image_for_user,
     image_job_for_user,
     image_payload,
     job_payload,
@@ -245,6 +248,30 @@ class SubjectImagesView(APIView):
                 }
             )
         )
+
+
+class ImageContentView(APIView):
+    permission_classes = [IsAvailableAuthenticatedUser]
+
+    def get(self, request, subject_id, image_id):
+        subject = _subject(request.user, subject_id)
+        image = image_for_user(user=request.user, image_id=image_id)
+        if image.subject_id != subject.pk:
+            raise Http404
+        try:
+            source = storage_provider().open_object(image.object_key)
+        except FileStorageUnavailable:
+            return _image_error(ImageStorageUnavailable(), request)
+        response = FileResponse(
+            source,
+            as_attachment=False,
+            filename=f"image-{image.pk}.{image.mime_type.removeprefix('image/')}",
+            content_type=image.mime_type,
+        )
+        response["Content-Length"] = str(image.size_bytes)
+        response["Cache-Control"] = "private, no-store"
+        response["X-Content-Type-Options"] = "nosniff"
+        return response
 
 
 class ImageSaveLibraryView(APIView):

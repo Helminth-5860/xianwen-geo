@@ -5,6 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ArticleImagesWorkspace } from "../components/article-images-workspace";
+import { AuthApiError } from "../lib/auth-client";
 
 const imageApi = vi.hoisted(() => ({
   appealImageModeration: vi.fn(),
@@ -27,7 +28,7 @@ vi.mock("../lib/images-client", () =>
   ),
 );
 
-const quota = { available: 3, frozen: 0, consumed: 1 };
+const quota = { available: 3, frozen: 0, consumed: 1, unlimited: false };
 const asset = {
   id: "image-1",
   subject_id: "subject-1",
@@ -47,8 +48,8 @@ const asset = {
   moderation_status: "approved",
   is_subject_library: false,
   lifecycle_status: "active",
-  url: "https://assets.example/private-signed.png",
-  url_expires_in: 300,
+  url: "/api/v1/subjects/subject-1/images/image-1/content",
+  url_expires_in: null,
   generated_at: "2026-08-21T00:00:00Z",
   available_at: "2026-08-21T00:00:00Z",
   created_at: "2026-08-21T00:00:00Z",
@@ -158,9 +159,10 @@ describe("Stage 2 image generation workspace", () => {
       image: asset,
       finished_at: "2026-08-21T00:00:01Z",
     });
-    imageApi.getSubjectImages
-      .mockResolvedValueOnce({ results: [], quota })
-      .mockResolvedValue({ results: [asset], quota: { available: 2, frozen: 0, consumed: 2 } });
+    imageApi.getSubjectImages.mockResolvedValueOnce({ results: [], quota }).mockResolvedValue({
+      results: [asset],
+      quota: { available: 2, frozen: 0, consumed: 2, unlimited: false },
+    });
     imageApi.attachImage.mockResolvedValue({ ...asset, article_id: "article-1", version: 2 });
     render(
       <ArticleImagesWorkspace
@@ -178,7 +180,7 @@ describe("Stage 2 image generation workspace", () => {
       "subject-1",
       expect.objectContaining({ article_id: "article-1", prompt: "推荐封面提示词" }),
     );
-    expect(await screen.findByText("图片任务：succeeded", {}, { timeout: 3000 })).toBeTruthy();
+    expect(await screen.findByText("图片任务：生成成功", {}, { timeout: 3000 })).toBeTruthy();
     expect(screen.getByAltText("生成图片预览")).toBeTruthy();
     await userEvent.click(screen.getByRole("button", { name: "选入当前文章" }));
     expect(imageApi.attachImage).toHaveBeenCalledWith("image-1", "article-1", 1);
@@ -201,7 +203,7 @@ describe("Stage 2 image generation workspace", () => {
     });
     imageApi.getSubjectImages.mockResolvedValueOnce({ results: [], quota }).mockResolvedValue({
       results: [{ ...asset, article_id: null }],
-      quota: { available: 2, frozen: 0, consumed: 2 },
+      quota: { available: 2, frozen: 0, consumed: 2, unlimited: false },
     });
 
     render(<ArticleImagesWorkspace subjectId="subject-1" />);
@@ -260,7 +262,7 @@ describe("Stage 2 image generation workspace", () => {
     );
     await screen.findByText("主体图片库");
     await userEvent.click(screen.getByLabelText("主体图库参考图"));
-    await userEvent.click(await screen.findByText("cover · 1200×630"));
+    await userEvent.click(await screen.findByText("文章封面 · 1200×630"));
     await userEvent.click(screen.getByRole("button", { name: /生成图片/ }));
     expect(imageApi.generateImage).toHaveBeenCalledWith(
       "subject-1",
@@ -333,5 +335,37 @@ describe("Stage 2 image generation workspace", () => {
     );
     expect(await screen.findByText("没有图片生成权限")).toBeTruthy();
     expect(screen.queryByAltText("生成图片预览")).toBeNull();
+  });
+
+  it("shows unlimited test-account quota without serializing a huge unsafe integer", async () => {
+    imageApi.getSubjectImages.mockResolvedValue({
+      results: [],
+      quota: { available: 0, frozen: 0, consumed: 0, unlimited: true },
+    });
+    render(<ArticleImagesWorkspace subjectId="subject-1" />);
+
+    expect(await screen.findByText("不限")).toBeTruthy();
+    expect((screen.getByRole("button", { name: /生成图片/ }) as HTMLButtonElement).disabled).toBe(
+      false,
+    );
+  });
+
+  it("translates image configuration errors and never exposes the English code", async () => {
+    imageApi.generateImage.mockRejectedValue(
+      new AuthApiError(new Response(null, { status: 503 }), {
+        success: false,
+        error: {
+          code: "SERVICE_TEMPORARILY_UNAVAILABLE",
+          message: "IMAGE_CREDENTIAL_UNAVAILABLE",
+          details: { image_code: "IMAGE_CREDENTIAL_UNAVAILABLE" },
+        },
+        request_id: "request-image-credential",
+      }),
+    );
+    render(<ArticleImagesWorkspace subjectId="subject-1" />);
+
+    await userEvent.click(await screen.findByRole("button", { name: /生成图片/ }));
+    expect(await screen.findByText("图片生成服务凭据尚未配置，请联系管理员。")).toBeTruthy();
+    expect(screen.queryByText("IMAGE_CREDENTIAL_UNAVAILABLE")).toBeNull();
   });
 });

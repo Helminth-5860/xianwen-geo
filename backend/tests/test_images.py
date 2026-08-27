@@ -217,6 +217,63 @@ def test_text_to_image_persists_private_asset_then_consumes_once(image_facts):
     assert "stage-image-api-key" not in repr(job.__dict__)
 
 
+def test_image_content_is_same_origin_and_subject_owner_scoped(image_facts):
+    user, subject, _, _, _, _ = image_facts
+    with patch("apps.images.services.model_registry.resolve", return_value=StubImageAdapter()):
+        job, _ = _create_job(user, subject)
+        assert execute_image_job(job_id=job.pk)["status"] == "succeeded"
+    asset = ImageAsset.objects.get(generation_job=job)
+
+    client = APIClient()
+    client.force_authenticate(user=user)
+    listing = client.get(f"/api/v1/subjects/{subject.pk}/images")
+    assert listing.status_code == 200
+    payload = listing.json()["data"]
+    assert payload["quota"]["unlimited"] is False
+    assert payload["results"][0]["url"] == (
+        f"/api/v1/subjects/{subject.pk}/images/{asset.pk}/content"
+    )
+    assert payload["results"][0]["url_expires_in"] is None
+
+    content = client.get(payload["results"][0]["url"])
+    assert content.status_code == 200
+    assert content["Content-Type"] == "image/png"
+    assert content["Cache-Control"] == "private, no-store"
+    assert content["X-Content-Type-Options"] == "nosniff"
+    assert b"".join(content.streaming_content) == _png_bytes()
+
+    assert (
+        client.get(f"/api/v1/subjects/{uuid.uuid4()}/images/{asset.pk}/content").status_code == 404
+    )
+    other = User.objects.create_user(
+        phone=f"136{uuid.uuid4().int % 100000000:08d}",
+        nickname="other image content user",
+        password="Correct-Horse-Battery-2026!",
+        account_status=User.AccountStatus.ACTIVE,
+    )
+    denied = APIClient()
+    denied.force_authenticate(user=other)
+    assert denied.get(f"/api/v1/subjects/{subject.pk}/images/{asset.pk}/content").status_code == 404
+
+
+def test_test_account_image_quota_is_serialized_as_unlimited(image_facts):
+    user, subject, _, _, _, _ = image_facts
+    user.is_test_account = True
+    user.save(update_fields=("is_test_account", "updated_at"))
+
+    client = APIClient()
+    client.force_authenticate(user=user)
+    response = client.get(f"/api/v1/subjects/{subject.pk}/images")
+
+    assert response.status_code == 200
+    assert response.json()["data"]["quota"] == {
+        "available": 0,
+        "frozen": 0,
+        "consumed": 0,
+        "unlimited": True,
+    }
+
+
 def test_reference_image_uses_private_bytes_as_data_uri(image_facts):
     user, subject, _, _, _, _ = image_facts
     first_adapter = StubImageAdapter()
@@ -397,7 +454,7 @@ class StaticCredentialResolver:
         return AdapterCredential(self.value)
 
 
-def _adapter_request():
+def _adapter_request(provider_model_id="doubao-seedream-5-0-260128"):
     return AIAdapterRequest(
         request_id=str(uuid.uuid4()),
         correlation_id=None,
@@ -406,9 +463,7 @@ def _adapter_request():
         adapter_version=DOUBAO_IMAGE_ADAPTER_VERSION,
         prompt_version=DOUBAO_IMAGE_PROMPT_VERSION,
         timeout_seconds=5,
-        payload=ImageGenerationPayload(
-            provider_model_id="doubao-seedream-5-0-260128", prompt="专业文章封面"
-        ),
+        payload=ImageGenerationPayload(provider_model_id=provider_model_id, prompt="专业文章封面"),
     )
 
 
@@ -443,6 +498,52 @@ def test_doubao_adapter_normalizes_success_without_raw_provider_json():
     }
     assert result.output.provider_usage == (("generated_images", 1),)
     assert 'usage": {' not in repr(result)
+
+
+def test_doubao_adapter_accepts_documented_lite_response_model_alias():
+    def handler(request: httpx.Request):
+        assert '"model":"doubao-seedream-5-0-lite-260128"' in request.content.decode()
+        return httpx.Response(
+            200,
+            json={
+                "model": "doubao-seedream-5-0-260128",
+                "created": 1_750_000_000,
+                "data": [{"url": "https://provider.example/image.png", "size": "2048x2048"}],
+                "usage": {"generated_images": 1},
+            },
+        )
+
+    adapter = DoubaoImageGenerationAdapter(
+        credential_resolver=StaticCredentialResolver(), transport=httpx.MockTransport(handler)
+    )
+    result = adapter.invoke(_adapter_request("doubao-seedream-5-0-lite-260128"))
+
+    assert result.output.provider_model_id == "doubao-seedream-5-0-260128"
+
+
+def test_doubao_adapter_rejects_unknown_response_model_alias():
+    adapter = DoubaoImageGenerationAdapter(
+        credential_resolver=StaticCredentialResolver(),
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(
+                200,
+                json={
+                    "model": "doubao-seedream-unknown",
+                    "created": 1_750_000_000,
+                    "data": [
+                        {
+                            "url": "https://provider.example/image.png",
+                            "size": "2048x2048",
+                        }
+                    ],
+                },
+            )
+        ),
+    )
+
+    with pytest.raises(AIAdapterError) as invalid:
+        adapter.invoke(_adapter_request("doubao-seedream-5-0-lite-260128"))
+    assert invalid.value.stable_code == "IMAGE_PROVIDER_RESPONSE_INVALID"
 
 
 @pytest.mark.parametrize(

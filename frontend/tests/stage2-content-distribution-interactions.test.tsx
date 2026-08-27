@@ -297,7 +297,7 @@ describe("Stage 2 content production, distribution, and sharing", () => {
     imageApi.getImageRecommendations.mockResolvedValue({ recommendations: [] });
     imageApi.getSubjectImages.mockResolvedValue({
       results: [],
-      quota: { available: 3, frozen: 0, consumed: 0 },
+      quota: { available: 3, frozen: 0, consumed: 0, unlimited: false },
     });
     articleApi.createSourcePack.mockResolvedValue(basePack);
     articleApi.confirmSourcePack.mockResolvedValue({
@@ -307,6 +307,11 @@ describe("Stage 2 content production, distribution, and sharing", () => {
     });
     articleApi.createArticle.mockResolvedValue(readyArticle);
     articleApi.generateArticle.mockResolvedValue(failedJob);
+    articleApi.saveArticleDraft.mockImplementation(async (article: Article) => ({
+      ...article,
+      autosaved_at: "2026-08-27T01:02:03Z",
+      version: article.version + 1,
+    }));
   });
 
   afterEach(() => cleanup());
@@ -467,6 +472,11 @@ describe("Stage 2 content production, distribution, and sharing", () => {
     await userEvent.click(screen.getByRole("button", { name: "核验并冻结资料包" }));
     await userEvent.click(screen.getByText("直接生成正文"));
 
+    const saveCheckbox = screen.getByRole("checkbox", {
+      name: "正文生成成功后保存到内容库",
+    }) as HTMLInputElement;
+    expect(saveCheckbox.checked).toBe(true);
+
     const generateButton = screen.getByRole("button", {
       name: "生成正文（成功扣 1 文章额度）",
     });
@@ -478,9 +488,14 @@ describe("Stage 2 content production, distribution, and sharing", () => {
       () => {
         expect(screen.getByText(/body · succeeded/)).toBeTruthy();
         expect(screen.queryByText(/body · failed/)).toBeNull();
-        expect(screen.getByText("正文生成完成。正文与质量结果已更新。")).toBeTruthy();
+        expect(screen.getByText("正文生成完成，已保存到内容库。")).toBeTruthy();
       },
       { timeout: 4000 },
+    );
+    expect(articleApi.saveArticleDraft).toHaveBeenCalledWith(
+      readyArticle,
+      readyArticle.title,
+      readyArticle.content,
     );
   });
 
@@ -507,7 +522,7 @@ describe("Stage 2 content production, distribution, and sharing", () => {
     render(<ArticleWorkspace subjectId="subject-1" initialTopic="渠道文章" />);
     await screen.findByText("品牌故事");
     await userEvent.click(screen.getByRole("button", { name: "核验并冻结资料包" }));
-    const checkbox = await screen.findByRole("checkbox");
+    const checkbox = await screen.findByRole("checkbox", { name: /企业官网/ });
     await userEvent.click(checkbox);
     await userEvent.click(screen.getByRole("button", { name: "批量生成 1 个独立渠道稿" }));
     expect(articleApi.createChannelAdaptations).toHaveBeenCalledWith("article-1", ["channel-1"]);

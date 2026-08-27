@@ -776,15 +776,10 @@ def image_for_user(*, user, image_id, include_trashed=False, lock=False) -> Imag
         raise Http404 from exc
 
 
-def _download_url(image: ImageAsset) -> str | None:
-    try:
-        return storage_provider().create_download_url(
-            key=image.object_key,
-            filename=f"image-{image.pk}.{EXTENSION_BY_MIME[image.mime_type]}",
-            content_type=image.mime_type,
-        )
-    except FileStorageUnavailable:
-        return None
+def _content_url(image: ImageAsset) -> str:
+    """Return an authenticated same-origin URL, never an internal S3 endpoint."""
+
+    return f"/api/v1/subjects/{image.subject_id}/images/{image.pk}/content"
 
 
 def image_payload(image: ImageAsset, *, include_url=True) -> dict[str, Any]:
@@ -808,8 +803,8 @@ def image_payload(image: ImageAsset, *, include_url=True) -> dict[str, Any]:
         "moderation_status": image.moderation_status,
         "is_subject_library": image.is_subject_library,
         "lifecycle_status": image.lifecycle_status,
-        "url": _download_url(image) if include_url and image.lifecycle_status == "active" else None,
-        "url_expires_in": settings.FILE_DOWNLOAD_URL_TTL if include_url else None,
+        "url": _content_url(image) if include_url and image.lifecycle_status == "active" else None,
+        "url_expires_in": None,
         "generated_at": image.generated_at,
         "available_at": image.available_at,
         "created_at": image.created_at,
@@ -1125,10 +1120,12 @@ def recommendations(*, user, article_id):
     }
 
 
-def quota_summary(user) -> dict[str, int]:
+def quota_summary(user) -> dict[str, int | bool]:
+    if user.is_test_account:
+        return {"available": 0, "frozen": 0, "consumed": 0, "unlimited": True}
     subscription = current_subscription(user)
     if subscription is None:
-        return {"available": 0, "frozen": 0, "consumed": 0}
+        return {"available": 0, "frozen": 0, "consumed": 0, "unlimited": False}
     account = QuotaAccount.objects.filter(
         subscription=subscription,
         quota_type="image_credits",
@@ -1136,9 +1133,10 @@ def quota_summary(user) -> dict[str, int]:
         cycle_started_at__isnull=True,
     ).first()
     if account is None:
-        return {"available": 0, "frozen": 0, "consumed": 0}
+        return {"available": 0, "frozen": 0, "consumed": 0, "unlimited": False}
     return {
         "available": account.available,
         "frozen": account.frozen,
         "consumed": max(0, account.entitlement_amount - account.available - account.frozen),
+        "unlimited": False,
     }

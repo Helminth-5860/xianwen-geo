@@ -21,7 +21,12 @@ export type ImageStylePreset = Readonly<{
   version: number;
 }>;
 
-export type ImageQuota = Readonly<{ available: number; frozen: number; consumed: number }>;
+export type ImageQuota = Readonly<{
+  available: number;
+  frozen: number;
+  consumed: number;
+  unlimited: boolean;
+}>;
 
 export type ImageAsset = Readonly<{
   id: string;
