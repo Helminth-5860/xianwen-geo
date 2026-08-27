@@ -1,5 +1,11 @@
 from django.urls import path
 
+from .video_views import (
+    SubjectVideoScriptListCreateView,
+    VideoArticleOptionsView,
+    VideoScriptDetailView,
+    VideoScriptGenerateView,
+)
 from .views import (
     ArticleChannelAdaptationsView,
     ArticleDetailView,
@@ -54,6 +60,26 @@ urlpatterns = [
         "subjects/<uuid:subject_id>/articles",
         SubjectArticleListCreateView.as_view(),
         name="subject-articles",
+    ),
+    path(
+        "subjects/<uuid:subject_id>/video-scripts",
+        SubjectVideoScriptListCreateView.as_view(),
+        name="subject-video-scripts",
+    ),
+    path(
+        "subjects/<uuid:subject_id>/video-script-article-options",
+        VideoArticleOptionsView.as_view(),
+        name="video-script-article-options",
+    ),
+    path(
+        "video-scripts/<uuid:video_script_id>",
+        VideoScriptDetailView.as_view(),
+        name="video-script-detail",
+    ),
+    path(
+        "video-scripts/<uuid:video_script_id>/generate",
+        VideoScriptGenerateView.as_view(),
+        name="video-script-generate",
     ),
     path("articles/<uuid:article_id>", ArticleDetailView.as_view(), name="article-detail"),
     path("articles/<uuid:article_id>/draft", ArticleDraftView.as_view(), name="article-draft"),
