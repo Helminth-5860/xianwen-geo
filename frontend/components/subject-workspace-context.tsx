@@ -292,7 +292,7 @@ export function SubjectWorkspaceTopbar() {
           <Typography.Text strong>尚未创建可用主体</Typography.Text>
         )}
       </Space>
-      <Button href={currentSubject ? `/subjects/${currentSubject.id}` : "/subjects"}>
+      <Button href={currentSubject ? `/subjects/${currentSubject.id}` : "/subjects/new"}>
         {currentSubject ? "查看主体资料" : "创建主体"}
       </Button>
     </header>
