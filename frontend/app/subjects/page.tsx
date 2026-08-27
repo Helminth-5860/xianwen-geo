@@ -89,6 +89,12 @@ export default function SubjectsPage() {
     };
   }, []);
 
+  useEffect(() => {
+    if (subjects?.length === 0) {
+      window.location.replace("/subjects/new");
+    }
+  }, [subjects]);
+
   const execute = async (operation: () => Promise<unknown>, message: string) => {
     setBusy(true);
     try {
@@ -107,6 +113,10 @@ export default function SubjectsPage() {
 
   if (subjects === undefined && !error) {
     return <Spin fullscreen description="正在加载主体档案" />;
+  }
+
+  if (subjects?.length === 0 && !error) {
+    return <Spin fullscreen description="正在进入主体创建" />;
   }
 
   return (
