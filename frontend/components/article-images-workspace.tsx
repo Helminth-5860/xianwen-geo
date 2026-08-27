@@ -41,8 +41,8 @@ export const IMAGE_POLL_INTERVAL_MS = 1200;
 
 type Props = Readonly<{
   subjectId: string;
-  articleId: string;
-  articleTitle: string;
+  articleId?: string | null;
+  articleTitle?: string;
   referenceDocuments?: ReadonlyArray<{ id: string; label: string }>;
 }>;
 
@@ -54,8 +54,8 @@ const MODERATION_MESSAGES: Record<string, string> = {
 
 export function ArticleImagesWorkspace({
   subjectId,
-  articleId,
-  articleTitle,
+  articleId = null,
+  articleTitle = "",
   referenceDocuments = [],
 }: Props) {
   const [sizes, setSizes] = useState<ImageSizePreset[]>([]);
@@ -65,7 +65,11 @@ export function ArticleImagesWorkspace({
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [quota, setQuota] = useState<ImageQuota>({ available: 0, frozen: 0, consumed: 0 });
   const [role, setRole] = useState<ImageAsset["role"]>("cover");
-  const [prompt, setPrompt] = useState(`为《${articleTitle}》生成专业、清晰的文章封面`);
+  const [prompt, setPrompt] = useState(
+    articleTitle
+      ? `为《${articleTitle}》生成专业、清晰的文章封面`
+      : "为当前主体生成专业、清晰的品牌配图",
+  );
   const [sizeId, setSizeId] = useState("");
   const [styleId, setStyleId] = useState("");
   const [referenceAssetId, setReferenceAssetId] = useState<string | null>(null);
@@ -88,7 +92,9 @@ export function ArticleImagesWorkspace({
         const [sizeRows, styleRows, recommendationRows] = await Promise.all([
           getImageSizes(),
           getImageStyles(),
-          getImageRecommendations(articleId),
+          articleId
+            ? getImageRecommendations(articleId)
+            : Promise.resolve({ recommendations: [] as ImageRecommendation[] }),
         ]);
         setSizes(sizeRows);
         setStyles(styleRows);
@@ -187,7 +193,7 @@ export function ArticleImagesWorkspace({
   };
 
   return (
-    <Card title="4. GEO 配图生成与主体图库">
+    <Card title={articleId ? "4. GEO 配图生成与主体图库" : "图片生成与主体图库"}>
       <Space orientation="vertical" size="middle" style={{ width: "100%" }}>
         <Space wrap>
           <Statistic title="可用图片额度" value={quota.available} />
@@ -202,25 +208,29 @@ export function ArticleImagesWorkspace({
         />
         {error && <Alert type="error" showIcon title={error} />}
         {notice && <Alert type="success" showIcon title={notice} />}
-        <Typography.Text strong>AI 推荐配图（需要用户确认）</Typography.Text>
-        <List
-          size="small"
-          dataSource={recommendations}
-          renderItem={(item) => (
-            <List.Item
-              actions={[
-                <Button key="use" onClick={() => applyRecommendation(item)}>
-                  采用并编辑
-                </Button>,
-              ]}
-            >
-              <List.Item.Meta
-                title={`${item.purpose} · ${item.position}`}
-                description={item.prompt}
-              />
-            </List.Item>
-          )}
-        />
+        {articleId && (
+          <>
+            <Typography.Text strong>AI 推荐配图（需要用户确认）</Typography.Text>
+            <List
+              size="small"
+              dataSource={recommendations}
+              renderItem={(item) => (
+                <List.Item
+                  actions={[
+                    <Button key="use" onClick={() => applyRecommendation(item)}>
+                      采用并编辑
+                    </Button>,
+                  ]}
+                >
+                  <List.Item.Meta
+                    title={`${item.purpose} · ${item.position}`}
+                    description={item.prompt}
+                  />
+                </List.Item>
+              )}
+            />
+          </>
+        )}
         <Space wrap style={{ width: "100%" }}>
           <Select
             aria-label="图片用途"
@@ -336,15 +346,17 @@ export function ArticleImagesWorkspace({
                   {activeImage.width}×{activeImage.height}
                 </Tag>
                 <Tag>{activeImage.moderation_status}</Tag>
-                <Button
-                  onClick={async () =>
-                    updateAsset(
-                      await attachImage(activeImage.id, articleId, activeImage.version ?? 1),
-                    )
-                  }
-                >
-                  选入当前文章
-                </Button>
+                {articleId && (
+                  <Button
+                    onClick={async () =>
+                      updateAsset(
+                        await attachImage(activeImage.id, articleId, activeImage.version ?? 1),
+                      )
+                    }
+                  >
+                    选入当前文章
+                  </Button>
+                )}
                 <Button
                   onClick={async () =>
                     updateAsset(await saveImageToLibrary(activeImage.id, activeImage.version ?? 1))

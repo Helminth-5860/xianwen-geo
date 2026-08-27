@@ -7,7 +7,7 @@ from rest_framework.test import APIClient
 from apps.admin_rbac.models import AuditEvent
 from apps.ai.catalog import BUILTIN_AI_MODELS
 from apps.ai.errors import AIAdapterError
-from apps.ai.models import AIModel, AIModelRuntimeConfig, AIProvider
+from apps.ai.models import AICapabilityRuntimeConfig, AIModel, AIModelRuntimeConfig, AIProvider
 from apps.ai.registry import AIModelRegistry
 from apps.ai.runtime import (
     get_runtime_snapshot,
@@ -53,6 +53,13 @@ def test_seed_contains_exactly_eight_disabled_builtin_models_and_is_idempotent()
     assert AIModelRuntimeConfig.objects.count() == 8
     assert not AIModelRuntimeConfig.objects.filter(enabled=True).exists()
     assert not AIModelRuntimeConfig.objects.filter(paused=True).exists()
+
+    article_runtime = AICapabilityRuntimeConfig.objects.get(
+        model__model_key="deepseek",
+        capability="text_generation",
+    )
+    assert article_runtime.timeout_seconds == 120
+    assert article_runtime.enabled is False
 
     call_command("sync_ai_model_catalog", "--apply", verbosity=0)
     assert AIProvider.objects.count() == 8

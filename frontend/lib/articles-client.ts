@@ -86,6 +86,8 @@ export type ArticleJob = Readonly<{
   comparison_id: string | null;
   adaptation_id: string | null;
   safe_error_code: string;
+  created_at: string;
+  finished_at: string | null;
 }>;
 
 export type PublishingChannel = Readonly<{

@@ -5,6 +5,7 @@ import hmac
 import html
 import io
 import json
+import logging
 import re
 import uuid
 from datetime import timedelta
@@ -18,9 +19,9 @@ from django.utils import timezone
 
 from apps.ai.content import StructuredContentPayload
 from apps.ai.contracts import AIAdapterRequest, AIModelCapability
-from apps.ai.errors import AIAdapterError
+from apps.ai.errors import AIAdapterError, domain_provider_error_code
 from apps.ai.registry import model_registry
-from apps.ai.runtime import get_runtime_snapshot
+from apps.ai.runtime import get_capability_runtime_snapshot
 from apps.documents.parse_models import DocumentParsedVersion
 from apps.documents.storage import storage_provider
 from apps.plans.subscription_services import current_subscription
@@ -59,6 +60,7 @@ from .models import (
 
 ARTICLE_SCHEMA_VERSION = "geo-article-generation-v1"
 QUALITY_RULE_VERSION = "article-quality-v1"
+logger = logging.getLogger(__name__)
 _FACT_LINE = re.compile(
     r"^(?:fact|事实)\s*[:：]\s*([^=＝:：]{1,100})\s*[=＝:：]\s*(.{1,500})$", re.I
 )
@@ -138,7 +140,10 @@ def _article_account(subscription):
 
 def _runtime():
     try:
-        runtime = get_runtime_snapshot(model_key="deepseek", require_available=True)
+        runtime = get_capability_runtime_snapshot(
+            provider_key="deepseek",
+            capability=AIModelCapability.TEXT_GENERATION,
+        )
         adapter = model_registry.resolve(
             provider_key="deepseek",
             model_key="deepseek",
@@ -951,8 +956,28 @@ def execute_generation_job(*, job_id):
         output = _normalize_output(job, response.output.content)
     except ContentError as exc:
         return _failure(job_id, exc.code)
-    except AIAdapterError:
-        return _failure(job_id, "ARTICLE_PROVIDER_UNAVAILABLE")
+    except AIAdapterError as exc:
+        logger.warning(
+            "article provider call failed",
+            extra={
+                "context": {
+                    "job_id": str(job.pk),
+                    "article_id": str(job.article_id),
+                    "operation": job.operation,
+                    "provider_key": job.provider_key,
+                    "provider_model_id": job.provider_model_id,
+                    "category": exc.category.value,
+                    "stable_code": exc.stable_code,
+                    "retryable": exc.retryable,
+                }
+            },
+        )
+        code = (
+            "ARTICLE_PROVIDER_SCHEMA_INVALID"
+            if exc.schema_failure
+            else domain_provider_error_code(exc, "ARTICLE_PROVIDER")
+        )
+        return _failure(job_id, code)
     with transaction.atomic():
         job = (
             ArticleGenerationJob.objects.select_for_update()

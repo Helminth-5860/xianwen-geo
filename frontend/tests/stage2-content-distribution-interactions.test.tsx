@@ -4,7 +4,9 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
-import ArticleWorkspace from "../app/subjects/[id]/articles/new/article-workspace";
+import ArticleWorkspace, {
+  replaceLatestJob,
+} from "../app/subjects/[id]/articles/new/article-workspace";
 import { ReportSharing } from "../components/report-sharing";
 import type {
   Article,
@@ -214,6 +216,8 @@ const outlineJob: ArticleJob = {
   comparison_id: null,
   adaptation_id: null,
   safe_error_code: "",
+  created_at: "2026-08-27T01:00:00Z",
+  finished_at: null,
 };
 
 const failedJob: ArticleJob = {
@@ -225,9 +229,30 @@ const failedJob: ArticleJob = {
   comparison_id: null,
   adaptation_id: null,
   safe_error_code: "ARTICLE_PROVIDER_UNAVAILABLE",
+  created_at: "2026-08-27T01:01:00Z",
+  finished_at: "2026-08-27T01:01:02Z",
 };
 
 describe("Stage 2 content production, distribution, and sharing", () => {
+  it("keeps terminal sibling channel jobs while another channel job refreshes", () => {
+    const first = { ...failedJob, id: "channel-job-1", operation: "channel_adapt" };
+    const second = {
+      ...failedJob,
+      id: "channel-job-2",
+      operation: "channel_adapt",
+      status: "running" as const,
+      safe_error_code: "",
+      finished_at: null,
+    };
+    const refreshedSecond = { ...second, status: "succeeded" as const };
+
+    const jobs = replaceLatestJob([first, second], refreshedSecond);
+
+    expect(jobs).toContainEqual(first);
+    expect(jobs).toContainEqual(refreshedSecond);
+    expect(jobs).toHaveLength(2);
+  });
+
   beforeAll(() => {
     globalThis.ResizeObserver = class {
       observe() {}
@@ -286,7 +311,7 @@ describe("Stage 2 content production, distribution, and sharing", () => {
 
   afterEach(() => cleanup());
 
-  it("freezes approved sources, preserves topic intent, and states provider/image boundaries", async () => {
+  it("freezes approved sources and keeps the article workflow on the article page", async () => {
     render(<ArticleWorkspace subjectId="subject-1" initialTopic="品牌事实指南" />);
     expect(await screen.findByDisplayValue("品牌事实指南")).toBeTruthy();
     expect(screen.getByText(/不会把未核验互联网内容伪装成引用/)).toBeTruthy();
@@ -301,7 +326,8 @@ describe("Stage 2 content production, distribution, and sharing", () => {
       source_pack_id: "pack-1",
     });
     expect(await screen.findByText("3. 当前唯一稿与质量建议")).toBeTruthy();
-    expect(screen.getByText("4. GEO 配图生成与主体图库")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "文章生成" })).toBeTruthy();
+    expect(screen.queryByText("4. GEO 配图生成与主体图库")).toBeNull();
     expect(screen.getByText(/当前唯一稿与质量建议/)).toBeTruthy();
   });
 
@@ -359,6 +385,7 @@ describe("Stage 2 content production, distribution, and sharing", () => {
     await userEvent.click(screen.getByRole("button", { name: "核验并冻结资料包" }));
 
     const confirmButton = await screen.findByRole("button", { name: "保存并确认大纲" });
+    expect(screen.queryByRole("button", { name: /生成图片/ })).toBeNull();
     expect(screen.getByText("请先保存并确认大纲")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "生成正文（成功扣 1 文章额度）" })).toBeNull();
     expect(articleApi.generateArticle).not.toHaveBeenCalled();
@@ -414,6 +441,47 @@ describe("Stage 2 content production, distribution, and sharing", () => {
     await userEvent.click(screen.getByRole("button", { name: "生成正文（成功扣 1 文章额度）" }));
     expect(await screen.findByText("请先保存并确认大纲，再生成正文。")).toBeTruthy();
     expect(screen.queryByText("ARTICLE_OUTLINE_NOT_CONFIRMED")).toBeNull();
+  });
+
+  it("replaces an old body failure when a retry succeeds", async () => {
+    const queuedRetry: ArticleJob = {
+      ...failedJob,
+      id: "job-2",
+      status: "queued",
+      safe_error_code: "",
+      created_at: "2026-08-27T01:02:00Z",
+      finished_at: null,
+    };
+    const succeededRetry: ArticleJob = {
+      ...queuedRetry,
+      status: "succeeded",
+      finished_at: "2026-08-27T01:02:02Z",
+    };
+    articleApi.generateArticle.mockResolvedValueOnce(failedJob).mockResolvedValueOnce(queuedRetry);
+    articleApi.getArticleJob.mockResolvedValueOnce(succeededRetry);
+    articleApi.getArticle.mockResolvedValue(readyArticle);
+    articleApi.getChannelAdaptations.mockResolvedValue({ items: [] });
+
+    render(<ArticleWorkspace subjectId="subject-1" initialTopic="正文重试文章" />);
+    await screen.findByText("品牌故事");
+    await userEvent.click(screen.getByRole("button", { name: "核验并冻结资料包" }));
+    await userEvent.click(screen.getByText("直接生成正文"));
+
+    const generateButton = screen.getByRole("button", {
+      name: "生成正文（成功扣 1 文章额度）",
+    });
+    await userEvent.click(generateButton);
+    expect(await screen.findByText(/body · failed/)).toBeTruthy();
+
+    await userEvent.click(generateButton);
+    await waitFor(
+      () => {
+        expect(screen.getByText(/body · succeeded/)).toBeTruthy();
+        expect(screen.queryByText(/body · failed/)).toBeNull();
+        expect(screen.getByText("正文生成完成。正文与质量结果已更新。")).toBeTruthy();
+      },
+      { timeout: 4000 },
+    );
   });
 
   it("charges channel adaptations independently and never claims third-party publication", async () => {

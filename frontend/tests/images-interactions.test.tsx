@@ -184,6 +184,42 @@ describe("Stage 2 image generation workspace", () => {
     expect(imageApi.attachImage).toHaveBeenCalledWith("image-1", "article-1", 1);
   });
 
+  it("generates a subject image without requiring or inventing an article context", async () => {
+    imageApi.generateImage.mockResolvedValue({
+      job: queued,
+      jobs: [queued],
+      quota: { ...quota, available: 2, frozen: 1 },
+    });
+    imageApi.getImageJob.mockResolvedValue({
+      ...queued,
+      article_id: null,
+      status: "succeeded",
+      attempt_count: 1,
+      quota_status: "settled",
+      image: { ...asset, article_id: null },
+      finished_at: "2026-08-21T00:00:01Z",
+    });
+    imageApi.getSubjectImages.mockResolvedValueOnce({ results: [], quota }).mockResolvedValue({
+      results: [{ ...asset, article_id: null }],
+      quota: { available: 2, frozen: 0, consumed: 2 },
+    });
+
+    render(<ArticleImagesWorkspace subjectId="subject-1" />);
+
+    expect(await screen.findByText("图片生成与主体图库")).toBeTruthy();
+    expect(imageApi.getImageRecommendations).not.toHaveBeenCalled();
+    expect(screen.queryByText("AI 推荐配图（需要用户确认）")).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: /生成图片/ }));
+    expect(imageApi.generateImage).toHaveBeenCalledWith(
+      "subject-1",
+      expect.objectContaining({ article_id: null }),
+    );
+    expect(await screen.findByAltText("生成图片预览", {}, { timeout: 3000 })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "选入当前文章" })).toBeNull();
+    expect(screen.getByRole("button", { name: "保存到主体图库" })).toBeTruthy();
+    expect(imageApi.attachImage).not.toHaveBeenCalled();
+  });
+
   it("shows moderation failure, releases quota feedback, and offers retry", async () => {
     imageApi.generateImage.mockResolvedValue({
       job: queued,

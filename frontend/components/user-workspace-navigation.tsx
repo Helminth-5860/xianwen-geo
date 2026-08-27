@@ -40,6 +40,7 @@ function workspaceMenu(subjectId: string | null): MenuItem[] {
   const questionHome = subjectId ? `/subjects/${subjectId}/questions` : "/subjects";
   const questionManageHome = subjectId ? `/subjects/${subjectId}/questions/manage` : "/subjects";
   const articleHome = subjectId ? `/subjects/${subjectId}/articles/new` : "/subjects";
+  const imageHome = subjectId ? `/subjects/${subjectId}/images` : "/subjects";
 
   return [
     {
@@ -122,7 +123,7 @@ function workspaceMenu(subjectId: string | null): MenuItem[] {
       label: "内容资产中心",
       children: [
         linkedItem("content-articles", "文章生成", articleHome),
-        unavailableItem("content-images", "图片生成"),
+        linkedItem("content-images", "图片生成", imageHome),
         unavailableItem("content-video", "视频脚本生成"),
         unavailableItem("content-library", "内容库"),
         unavailableItem("content-publishing", "发布管理"),
@@ -150,6 +151,7 @@ function selectedMenuKey(pathname: string) {
   if (pathname.startsWith("/geo/strategy") || pathname.includes("/strategy")) {
     return "optimization-strategy";
   }
+  if (pathname.includes("/images")) return "content-images";
   if (pathname.includes("/articles")) return "content-articles";
   return "";
 }

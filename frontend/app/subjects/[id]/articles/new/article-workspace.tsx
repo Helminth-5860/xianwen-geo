@@ -57,12 +57,12 @@ import {
   type SubjectDocument,
 } from "@/lib/documents-client";
 import { listWebSources } from "@/lib/web-sources-client";
-import { ArticleImagesWorkspace } from "@/components/article-images-workspace";
 
 export const ARTICLE_POLL_INTERVAL_MS = 1200;
 
 type Props = Readonly<{ subjectId: string; initialTopic: string }>;
 type DocumentOption = SubjectDocument & { confirmedSourceId: string };
+type JobError = Readonly<{ jobId: string; operation: string; message: string }>;
 
 const ARTICLE_ERROR_MESSAGES: Readonly<Record<string, string>> = {
   ARTICLE_ALREADY_GENERATED: "正文已经生成，请勿重复提交。",
@@ -70,6 +70,10 @@ const ARTICLE_ERROR_MESSAGES: Readonly<Record<string, string>> = {
   ARTICLE_OUTLINE_NOT_CONFIRMED: "请先保存并确认大纲，再生成正文。",
   ARTICLE_OUTLINE_VERSION_CONFLICT: "大纲已被更新，请刷新页面后重新确认。",
   ARTICLE_PROVIDER_SCHEMA_INVALID: "AI 返回的文章格式异常，请重新生成。",
+  ARTICLE_PROVIDER_TIMEOUT: "AI 生成响应超时，本次额度已释放，请重新生成。",
+  ARTICLE_PROVIDER_RATE_LIMITED: "AI 服务当前请求较多，本次额度已释放，请稍后重试。",
+  ARTICLE_PROVIDER_TEMPORARY: "AI 服务连接暂时不稳定，本次额度已释放，请重新生成。",
+  ARTICLE_PROVIDER_REJECTED: "AI 服务未接受本次生成请求，本次额度已释放。",
   ARTICLE_PROVIDER_UNAVAILABLE: "AI 文章生成服务暂时不可用，请稍后重试。",
   ARTICLE_QUEUE_UNAVAILABLE: "文章任务服务暂时繁忙，请稍后重试。",
   ARTICLE_SOURCE_PACK_NOT_READY: "资料包尚未确认，请先完成资料确认。",
@@ -92,12 +96,16 @@ function articleUserMessage(reason: unknown): string {
   return userMessage(reason);
 }
 
+export function replaceLatestJob(current: ArticleJob[], next: ArticleJob): ArticleJob[] {
+  if (next.operation === "channel_adapt") {
+    return [...current.filter((item) => item.id !== next.id), next];
+  }
+  return [...current.filter((item) => item.operation !== next.operation), next];
+}
+
 export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
   const [types, setTypes] = useState<ArticleType[]>([]);
   const [documents, setDocuments] = useState<DocumentOption[]>([]);
-  const [imageReferenceDocuments, setImageReferenceDocuments] = useState<
-    Array<{ id: string; label: string }>
-  >([]);
   const [webSources, setWebSources] = useState<Array<{ id: string; label: string }>>([]);
   const [channels, setChannels] = useState<PublishingChannel[]>([]);
   const [selectedType, setSelectedType] = useState("");
@@ -126,6 +134,7 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
   const [publicationResult, setPublicationResult] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [jobError, setJobError] = useState<JobError>();
   const [notice, setNotice] = useState("");
 
   const applyArticle = useCallback((next: Article) => {
@@ -159,14 +168,6 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
             : [],
         ),
       );
-      setImageReferenceDocuments(
-        documentData.documents
-          .filter((document) => ["jpeg", "png", "webp"].includes(document.detected_file_kind))
-          .map((document) => ({
-            id: document.document_version_id,
-            label: `${document.display_name} · ${document.detected_file_kind.toUpperCase()}`,
-          })),
-      );
       setWebSources(
         webData.results.flatMap((source) =>
           source.current_confirmed_version
@@ -192,7 +193,7 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
       try {
         const refreshed = await Promise.all(active.map((job) => getArticleJob(job.id)));
         setJobs((current) =>
-          current.map((job) => refreshed.find((item) => item.id === job.id) ?? job),
+          refreshed.reduce((latest, job) => replaceLatestJob(latest, job), current),
         );
         const completed = refreshed.filter((job) => ["succeeded", "failed"].includes(job.status));
         if (completed.length && article) {
@@ -201,7 +202,29 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
           const comparisonId = completed.find((job) => job.comparison_id)?.comparison_id;
           if (comparisonId) setComparison(await getComparison(comparisonId));
           const failed = completed.find((job) => job.status === "failed");
-          if (failed) setError(articleUserMessage(failed.safe_error_code));
+          if (failed) {
+            setJobError({
+              jobId: failed.id,
+              operation: failed.operation,
+              message: articleUserMessage(failed.safe_error_code),
+            });
+          } else {
+            const succeededOperations = new Set(completed.map((job) => job.operation));
+            setJobError((current) => {
+              if (!current) return current;
+              if (current.operation === "channel_adapt") {
+                return completed.some(
+                  (job) => job.id === current.jobId && job.status === "succeeded",
+                )
+                  ? undefined
+                  : current;
+              }
+              return succeededOperations.has(current.operation) ? undefined : current;
+            });
+            if (completed.some((job) => job.operation === "body")) {
+              setNotice("正文生成完成。正文与质量结果已更新。");
+            }
+          }
         }
       } catch (reason) {
         setError(articleUserMessage(reason));
@@ -300,13 +323,18 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
     }
   };
 
-  const submitJob = async (factory: () => Promise<ArticleJob>, message: string) => {
+  const submitJob = async (
+    operation: string,
+    factory: () => Promise<ArticleJob>,
+    message: string,
+  ) => {
     setBusy(true);
     setError("");
+    setJobError((current) => (current?.operation === operation ? undefined : current));
     setNotice("");
     try {
       const job = await factory();
-      setJobs((current) => [...current.filter((item) => item.id !== job.id), job]);
+      setJobs((current) => replaceLatestJob(current, job));
       setNotice(message);
     } catch (reason) {
       setError(articleUserMessage(reason));
@@ -328,6 +356,7 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
     }
     if (currentOutlineStatus === "failed") {
       await submitJob(
+        "outline",
         () => generateOutline(article.id),
         "大纲重新生成任务已提交，完成后请确认大纲。",
       );
@@ -335,12 +364,14 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
     }
     if (mode === "outline" && currentOutlineStatus === "empty") {
       await submitJob(
+        "outline",
         () => generateOutline(article.id),
         "首次大纲已提交，不消耗文章额度。确认后再生成正文。",
       );
       return;
     }
     await submitJob(
+      "body",
       () => generateArticle(article.id),
       "正文任务已提交；成功扣 1 个文章额度，AI 服务、网络或返回结构异常时自动释放。",
     );
@@ -410,6 +441,8 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
   const adapt = async () => {
     if (!article || !selectedChannels.length) return;
     setBusy(true);
+    setError("");
+    setJobError((current) => (current?.operation === "channel_adapt" ? undefined : current));
     try {
       const result = await createChannelAdaptations(article.id, selectedChannels);
       setJobs((current) => [...current, ...result.items.map((item) => item.job)]);
@@ -456,7 +489,7 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
     <main className="page-shell">
       <Space orientation="vertical" size="large" style={{ width: "100%" }}>
         <Space wrap align="baseline">
-          <Typography.Title level={2}>GEO 内容生成与分发</Typography.Title>
+          <Typography.Title level={2}>文章生成</Typography.Title>
           <Link href={`/subjects/${subjectId}`}>返回主体</Link>
         </Space>
         <Alert
@@ -464,7 +497,7 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
           showIcon
           title="文章只使用已确认并冻结的主体、文件和网页资料；不会把未核验互联网内容伪装成引用。"
         />
-        {error && <Alert type="error" showIcon title={error} />}
+        {(error || jobError) && <Alert type="error" showIcon title={error || jobError?.message} />}
         {notice && <Alert type="success" showIcon title={notice} />}
 
         <Steps
@@ -628,6 +661,7 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
                       <Button
                         onClick={() =>
                           void submitJob(
+                            "outline",
                             () => generateOutline(article.id),
                             "重新生成大纲已提交；成功后消耗一次大纲重生成次数。",
                           )
@@ -679,6 +713,7 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
                   <Button
                     onClick={() =>
                       void submitJob(
+                        "quality",
                         () => recheckQuality(article.id),
                         "质量复检已提交；成功消耗一次质量复检次数。",
                       )
@@ -727,6 +762,7 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
                   <Button
                     onClick={() =>
                       void submitJob(
+                        "local_optimize",
                         () => optimizeArticle(article.id, "local", optimizationInstruction),
                         "局部优化已提交；成功消耗一次局部 AI 修改次数。",
                       )
@@ -738,6 +774,7 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
                   <Button
                     onClick={() =>
                       void submitJob(
+                        "full_optimize",
                         () => optimizeArticle(article.id, "full", optimizationInstruction),
                         "整篇优化已提交；成功扣 1 个文章额度。",
                       )
@@ -844,15 +881,6 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
             </Card>
           </>
         )}
-        {article && (
-          <ArticleImagesWorkspace
-            subjectId={subjectId}
-            articleId={article.id}
-            articleTitle={article.title || title}
-            referenceDocuments={imageReferenceDocuments}
-          />
-        )}
-
         {!types.length && !error && <Spin description="正在加载文章类型与已确认资料" />}
       </Space>
     </main>

@@ -13,7 +13,7 @@ from rest_framework.test import APIClient
 
 from apps.ai.adapters.deepseek_content import DEEPSEEK_ARTICLE_DESCRIPTOR
 from apps.ai.content import StructuredContentOutput
-from apps.ai.contracts import AIAdapterResponse, AIFinishReason, AIUsage
+from apps.ai.contracts import AIAdapterResponse, AIFinishReason, AIModelCapability, AIUsage
 from apps.ai.errors import AIAdapterError, AIAdapterErrorCategory
 from apps.ai.runtime import get_runtime_snapshot
 from apps.articles.models import (
@@ -29,6 +29,7 @@ from apps.articles.services import (
     ContentError,
     _detect_conflicts,
     _normalize_output,
+    _runtime,
     _system_prompt,
     article_for_user,
     check_publication_link,
@@ -206,6 +207,30 @@ def test_body_schema_rejects_generic_quality_fields_instead_of_guessing_meaning(
         _normalize_output(job, provider_output)
 
 
+def test_article_runtime_uses_the_text_generation_capability_configuration():
+    runtime = SimpleNamespace(
+        provider_key="deepseek",
+        model_key="deepseek",
+        provider_model_id="deepseek-v4-flash",
+        timeout_seconds=120,
+    )
+    adapter = object()
+
+    with (
+        patch(
+            "apps.articles.services.get_capability_runtime_snapshot",
+            return_value=runtime,
+        ) as resolver,
+        patch("apps.articles.services.model_registry.resolve", return_value=adapter),
+    ):
+        assert _runtime() == (runtime, adapter)
+
+    resolver.assert_called_once_with(
+        provider_key="deepseek",
+        capability=AIModelCapability.TEXT_GENERATION,
+    )
+
+
 def test_body_generation_is_grounded_idempotent_and_consumes_exactly_one(stage2_facts):
     user, _, subscription, pack, item, article = _article_setup(stage2_facts)
     runtime = get_runtime_snapshot(model_key="deepseek", require_available=True)
@@ -335,7 +360,7 @@ def test_provider_failure_releases_article_credit_and_persists_no_result(stage2_
 
     job.refresh_from_db()
     account.refresh_from_db()
-    assert job.safe_error_code == "ARTICLE_PROVIDER_UNAVAILABLE"
+    assert job.safe_error_code == "ARTICLE_PROVIDER_TIMEOUT"
     assert not ArticleGenerationResult.objects.filter(job=job).exists()
     assert account.available == initial_available
     assert account.frozen == 0

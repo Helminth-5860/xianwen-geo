@@ -277,6 +277,25 @@ describe("GEO 产品工作台", () => {
       "/geo/knowledge-graph/media-signals",
     );
 
+    await userEvent.click(screen.getByText("内容资产中心"));
+    expect(screen.getByRole("link", { name: "文章生成" }).getAttribute("href")).toBe(
+      "/subjects/subject-1/articles/new",
+    );
+    expect(screen.getByRole("link", { name: "图片生成" }).getAttribute("href")).toBe(
+      "/subjects/subject-1/images",
+    );
+
+    pathname = "/subjects/subject-1/images";
+    rerender(shell());
+    await waitFor(() =>
+      expect(
+        screen.getByRole("menuitem", { name: /内容资产中心/ }).getAttribute("aria-expanded"),
+      ).toBe("true"),
+    );
+    expect(screen.getByRole("menuitem", { name: "图片生成" }).className).toContain(
+      "ant-menu-item-selected",
+    );
+
     pathname = "/geo/knowledge-graph/media-signals";
     rerender(shell());
     await waitFor(() =>
@@ -325,6 +344,9 @@ describe("GEO 产品工作台", () => {
     );
     expect(subjectSwitchTargetPath("/subjects/subject-1/keywords/assets", "subject-2")).toBe(
       "/subjects/subject-2/keywords/assets",
+    );
+    expect(subjectSwitchTargetPath("/subjects/subject-1/images", "subject-2")).toBe(
+      "/subjects/subject-2/images",
     );
     expect(subjectSwitchTargetPath("/subjects/subject-1/versions/version-1", "subject-2")).toBe(
       "/subjects/subject-2",
