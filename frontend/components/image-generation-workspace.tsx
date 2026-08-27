@@ -1,6 +1,6 @@
 "use client";
 
-import { Alert, Space } from "antd";
+import { Alert, Space, Typography } from "antd";
 import { useEffect, useState } from "react";
 
 import { ArticleImagesWorkspace } from "@/components/article-images-workspace";
@@ -41,11 +41,14 @@ export function ImageGenerationWorkspace({ subjectId }: Props) {
   }, [subjectId]);
 
   return (
-    <Space orientation="vertical" size="middle" style={{ width: "100%" }}>
-      {documentError && (
-        <Alert type="warning" showIcon title={`参考图片资料加载失败：${documentError}`} />
-      )}
-      <ArticleImagesWorkspace subjectId={subjectId} referenceDocuments={referenceDocuments} />
-    </Space>
+    <main className="page-shell">
+      <Space orientation="vertical" size="large" style={{ width: "100%" }}>
+        <Typography.Title level={2}>图片生成</Typography.Title>
+        {documentError && (
+          <Alert type="warning" showIcon title={`参考图片资料加载失败：${documentError}`} />
+        )}
+        <ArticleImagesWorkspace subjectId={subjectId} referenceDocuments={referenceDocuments} />
+      </Space>
+    </main>
   );
 }
