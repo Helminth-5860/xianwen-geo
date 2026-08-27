@@ -32,7 +32,7 @@ const linkedItem = (key: string, label: string, href: string): MenuItem => ({
 });
 
 function workspaceMenu(subjectId: string | null): MenuItem[] {
-  const subjectHome = subjectId ? `/subjects/${subjectId}` : "/subjects";
+  const subjectHome = subjectId ? `/subjects/${subjectId}` : "/subjects/new";
   const keywordHome = subjectId ? `/subjects/${subjectId}/keywords` : "/subjects";
   const customKeywordHome = subjectId ? `/subjects/${subjectId}/keywords/custom` : "/subjects";
   const distillHome = subjectId ? `/subjects/${subjectId}/keywords/distill` : "/subjects";
@@ -61,7 +61,7 @@ function workspaceMenu(subjectId: string | null): MenuItem[] {
       icon: <ProfileOutlined />,
       label: "主体档案",
       children: [
-        linkedItem("subject-edit", "编辑主体", subjectHome),
+        linkedItem("subject-edit", subjectId ? "编辑主体" : "创建主体", subjectHome),
         linkedItem("subject-manage", "主体管理", "/subjects"),
       ],
     },
