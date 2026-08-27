@@ -38,7 +38,7 @@ DEEPSEEK_STRATEGY_PROMPT_VERSION = "geo-improvement-strategy-v1"
 DEEPSEEK_ASSISTANT_ADAPTER_VERSION = "deepseek-assistant-v1"
 DEEPSEEK_ASSISTANT_PROMPT_VERSION = "subject-assistant-v1"
 DEEPSEEK_ARTICLE_ADAPTER_VERSION = "deepseek-article-v1"
-DEEPSEEK_ARTICLE_PROMPT_VERSION = "geo-article-content-v1"
+DEEPSEEK_ARTICLE_PROMPT_VERSION = "geo-article-content-v2"
 
 _JSON_CODE_FENCE = re.compile(
     r"^\s*```(?:json)?\s*(?P<body>.*?)\s*```\s*$",

@@ -704,9 +704,18 @@ def _system_prompt(operation: str) -> str:
     contracts = {
         "outline": 'Return exactly {"outline": string}.',
         "body": (
-            "Return exactly title, content, citations, moderation and quality. citations is a "
-            "list of {source_item_id, paragraph_index}; moderation is passed or manual_review. "
-            "quality contains six 0-100 integer dimensions and suggestions."
+            "Return one JSON object with exactly five top-level keys and no others: "
+            '{"title": string, "content": string, "citations": '
+            '[{"source_item_id": string, "paragraph_index": integer}], '
+            '"moderation": "passed" or "manual_review", "quality": {'
+            '"subject_consistency": integer, "factual_reliability": integer, '
+            '"topic_relevance": integer, "structural_completeness": integer, '
+            '"readability": integer, "keyword_naturalness": integer, '
+            '"suggestions": [string]}}. '
+            "Every quality score must be a 0-100 integer. citations may only use "
+            "source_item_id values present in frozen_source_pack.items[].id; return [] when no "
+            "supported citation applies. Do not return accuracy, relevance, completeness, clarity, "
+            "engagement or formatting as quality keys."
         ),
         "quality": (
             'Return exactly {"quality": {six dimensions and suggestions}} using the fixed '

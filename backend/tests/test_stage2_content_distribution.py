@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import uuid
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -27,6 +28,8 @@ from apps.articles.models import (
 from apps.articles.services import (
     ContentError,
     _detect_conflicts,
+    _normalize_output,
+    _system_prompt,
     article_for_user,
     check_publication_link,
     confirm_source_pack,
@@ -151,6 +154,56 @@ def _body(item_id):
         "moderation": "passed",
         "quality": _quality(84),
     }
+
+
+def test_body_prompt_declares_the_complete_provider_schema_and_grounded_citation_rules():
+    prompt = _system_prompt("body")
+
+    for top_level_key in ("title", "content", "citations", "moderation", "quality"):
+        assert f'"{top_level_key}"' in prompt
+    for quality_key in (
+        "subject_consistency",
+        "factual_reliability",
+        "topic_relevance",
+        "structural_completeness",
+        "readability",
+        "keyword_naturalness",
+        "suggestions",
+    ):
+        assert f'"{quality_key}"' in prompt
+
+    normalized_prompt = " ".join(prompt.casefold().split())
+    assert "exactly five top-level keys" in normalized_prompt
+    assert "integer" in normalized_prompt
+    assert "0-100" in normalized_prompt or "0 to 100" in normalized_prompt
+    assert "frozen_source_pack.items[].id" in prompt
+    assert "no supported citation" in normalized_prompt
+    assert "[]" in prompt
+
+
+def test_body_schema_rejects_generic_quality_fields_instead_of_guessing_meaning():
+    job = SimpleNamespace(
+        operation="body",
+        source_pack_snapshot={"items": [{"id": "source-item-1"}]},
+    )
+    provider_output = {
+        "title": "品牌事实指南",
+        "content": "只使用冻结资料包中的事实。",
+        "citations": [],
+        "moderation": "passed",
+        "quality": {
+            "accuracy": 90,
+            "relevance": 88,
+            "structure": 86,
+            "readability": 84,
+            "naturalness": 82,
+            "trust": 80,
+            "suggestions": [],
+        },
+    }
+
+    with pytest.raises(ContentError, match="ARTICLE_PROVIDER_SCHEMA_INVALID"):
+        _normalize_output(job, provider_output)
 
 
 def test_body_generation_is_grounded_idempotent_and_consumes_exactly_one(stage2_facts):
