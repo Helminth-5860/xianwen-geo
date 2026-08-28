@@ -155,4 +155,8 @@ CELERY_BEAT_SCHEDULE = {
         "task": "publications.dispatch_due_targets",
         "schedule": 30.0,
     },
+    "scan-managed-publication-articles": {
+        "task": "publications.scan_managed_articles",
+        "schedule": 60.0,
+    },
 }
