@@ -7,7 +7,7 @@ from django.test import SimpleTestCase, TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from apps.source_index.models import SourceIndexItem, SourceIndexScan
+from apps.source_index.models import SourceIndexHit, SourceIndexItem, SourceIndexScan
 from apps.source_index.provider import (
     BaiduSearchProvider,
     baidu_query_units,
@@ -142,6 +142,26 @@ class BaiduProviderTests(SimpleTestCase):
         )
         self.assertNotIn("url", request_kwargs["json"])
 
+    def test_search_uses_provider_date_range_filter(self):
+        provider = BaiduSearchProvider()
+        response = Mock()
+        response.status_code = 200
+        response.json.return_value = {"references": []}
+        provider.client.post = Mock(return_value=response)
+        try:
+            provider.search(
+                "显问 GEO",
+                start_date=date(2026, 7, 1),
+                end_date=date(2026, 7, 31),
+            )
+            request_kwargs = provider.client.post.call_args.kwargs
+        finally:
+            provider.close()
+        self.assertEqual(
+            request_kwargs["json"]["search_filter"],
+            {"range": {"page_time": {"gte": "2026-07-01", "lte": "2026-07-31"}}},
+        )
+
 
 class SourceScannerTests(SimpleTestCase):
     def test_queries_remain_subject_anchored(self):
@@ -215,6 +235,44 @@ class SourceIndexApiIsolationTests(TestCase):
         self.client.force_authenticate(self.user_b)
         response = self.client.get(f"/api/v1/subjects/{self.subject.id}/source-index/")
         self.assertEqual(response.status_code, 404)
+
+    def test_time_slice_rank_is_not_exposed_as_global_query_rank(self):
+        self.scan.status = SourceIndexScan.Status.SUCCEEDED
+        self.scan.stage = SourceIndexScan.Stage.COMPLETED
+        self.scan.index_score = Decimal("60.00")
+        self.scan.finished_at = timezone.now()
+        self.scan.save()
+        item = SourceIndexItem.objects.create(
+            scan=self.scan,
+            original_url="https://example.com/report",
+            normalized_url="https://example.com/report",
+            domain="example.com",
+            root_domain="example.com",
+            website="示例媒体",
+            title="显问 GEO 报道",
+            snippet="显问 GEO 公开信源",
+            source_type=SourceIndexItem.SourceType.NEWS_MEDIA,
+            authority_score=80,
+            relevance_score=90,
+            visibility_score=40,
+            freshness_score=70,
+            source_weight=Decimal("72.50"),
+            best_rank=51,
+        )
+        SourceIndexHit.objects.create(
+            scan=self.scan,
+            item=item,
+            query="显问 GEO",
+            rank=1,
+            range_start=date(2026, 7, 1),
+            range_end=date(2026, 7, 31),
+        )
+        self.client.force_authenticate(self.user_a)
+        response = self.client.get(f"/api/v1/subjects/{self.subject.id}/source-index/")
+        self.assertEqual(response.status_code, 200)
+        coverage = response.json()["latest_result"]["query_coverage"]
+        self.assertEqual(len(coverage), 1)
+        self.assertIsNone(coverage[0]["best_rank"])
 
     @patch("apps.source_index.views.execute_source_index_scan_task.apply_async")
     def test_duplicate_running_scan_is_rejected(self, apply_async):
