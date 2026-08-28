@@ -8,6 +8,7 @@ from .views import (
     SubjectPublishingPreferenceView,
     SubjectPublishingStateView,
 )
+from .wechat_component import WechatComponentCallbackView, WechatComponentEventView
 
 urlpatterns = [
     path(
@@ -39,5 +40,15 @@ urlpatterns = [
         "subjects/<uuid:subject_id>/publishing/publications",
         SubjectPublicationCreateView.as_view(),
         name="subject-publication-create",
+    ),
+    path(
+        "publishing/wechat/component/events",
+        WechatComponentEventView.as_view(),
+        name="wechat-component-events",
+    ),
+    path(
+        "publishing/wechat/component/callback",
+        WechatComponentCallbackView.as_view(),
+        name="wechat-component-callback",
     ),
 ]
