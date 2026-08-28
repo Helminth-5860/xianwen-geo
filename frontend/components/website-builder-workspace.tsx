@@ -20,10 +20,8 @@ import {
 } from "antd";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { useSubjectWorkspace } from "@/components/subject-workspace-context";
 import { WebsiteDesignSelector } from "@/components/website-design-selector";
-import {
-  useSubjectWorkspace,
-} from "@/components/subject-workspace-context";
 import {
   WebsiteDraftPreview,
   type WebsitePreviewImage,
@@ -57,6 +55,7 @@ import styles from "./website-builder-workspace.module.css";
 
 const MAX_MATERIALS = 12;
 const IMAGE_KINDS = new Set(["jpeg", "jpg", "png", "webp"]);
+const RUNNING_JOB_STATUSES = new Set<WebsiteJob["status"]>(["queued", "running"]);
 
 type DocumentMaterial = Readonly<{
   document: SubjectDocument;
@@ -130,6 +129,7 @@ export function WebsiteBuilderWorkspace() {
         setDocuments(documentMaterials);
         setProject(website.project);
         setActiveJob(website.latest_job);
+        setGenerating(Boolean(website.latest_job && RUNNING_JOB_STATUSES.has(website.latest_job.status)));
         if (website.project) {
           setStyleKey(website.project.style_key);
           setThemeKey(website.project.theme_key);
@@ -160,30 +160,38 @@ export function WebsiteBuilderWorkspace() {
   );
 
   useEffect(() => {
-    if (!currentSubject?.id) {
-      setState(null);
-      setProject(null);
-      setActiveJob(null);
-      setImages([]);
-      setDocuments([]);
-      return;
-    }
-    void loadWorkspace(currentSubject.id);
+    const subjectId = currentSubject?.id ?? null;
+    const timer = window.setTimeout(() => {
+      if (!subjectId) {
+        setState(null);
+        setProject(null);
+        setActiveJob(null);
+        setImages([]);
+        setDocuments([]);
+        setGenerating(false);
+        return;
+      }
+      void loadWorkspace(subjectId);
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [currentSubject?.id, loadWorkspace]);
 
+  const activeJobId = activeJob?.id ?? null;
+  const activeJobStatus = activeJob?.status ?? null;
+
   useEffect(() => {
-    if (!activeJob || !["queued", "running"].includes(activeJob.status)) return;
+    if (!activeJobId || !activeJobStatus || !RUNNING_JOB_STATUSES.has(activeJobStatus)) return;
     let active = true;
     let timer: number | null = null;
 
     const poll = async () => {
       try {
-        const response = await getWebsiteJob(activeJob.id);
+        const response = await getWebsiteJob(activeJobId);
         if (!active) return;
         setActiveJob(response.job);
         setProject(response.project);
-        setGenerating(["queued", "running"].includes(response.job.status));
-        if (["queued", "running"].includes(response.job.status)) {
+        setGenerating(RUNNING_JOB_STATUSES.has(response.job.status));
+        if (RUNNING_JOB_STATUSES.has(response.job.status)) {
           timer = window.setTimeout(() => void poll(), 1800);
         }
       } catch (reason: unknown) {
@@ -193,13 +201,12 @@ export function WebsiteBuilderWorkspace() {
       }
     };
 
-    setGenerating(true);
     timer = window.setTimeout(() => void poll(), 900);
     return () => {
       active = false;
       if (timer !== null) window.clearTimeout(timer);
     };
-  }, [activeJob?.id, activeJob?.status]);
+  }, [activeJobId, activeJobStatus]);
 
   const selectedCount = selectedAssetIds.length + selectedDocumentIds.length;
   const designDirty = Boolean(
@@ -212,8 +219,9 @@ export function WebsiteBuilderWorkspace() {
   const selectStyle = (value: WebsiteStyleKey) => {
     setStyleKey(value);
     const recommendedThemes = state?.design_options.recommended_themes[value] ?? [];
-    if (recommendedThemes.length && !recommendedThemes.includes(themeKey)) {
-      setThemeKey(recommendedThemes[0]);
+    const firstRecommendedTheme = recommendedThemes[0];
+    if (firstRecommendedTheme && !recommendedThemes.includes(themeKey)) {
+      setThemeKey(firstRecommendedTheme);
     }
   };
 
@@ -325,7 +333,7 @@ export function WebsiteBuilderWorkspace() {
       setDensityKey(response.project.density_key);
       setSelectedAssetIds(response.project.selected_asset_ids);
       setSelectedDocumentIds(response.project.selected_document_ids);
-      if (response.job.status === "failed") setGenerating(false);
+      setGenerating(RUNNING_JOB_STATUSES.has(response.job.status));
     } catch (reason: unknown) {
       setGenerating(false);
       setError(userMessage(reason));
@@ -384,6 +392,11 @@ export function WebsiteBuilderWorkspace() {
   const readiness = state?.readiness;
   const hasMaterials = documents.length > 0 || images.length > 0;
   const jobFailed = activeJob?.status === "failed";
+  const subjectName =
+    state?.subject.official_name ||
+    currentSubject.official_name ||
+    currentSubject.subject_type.name ||
+    "当前主体";
 
   return (
     <main className="page-shell">
@@ -407,9 +420,7 @@ export function WebsiteBuilderWorkspace() {
           <div className={styles.heroContent}>
             <div className={styles.heroCopy}>
               <Typography.Text type="secondary">当前主体</Typography.Text>
-              <h2 className={styles.subjectName}>
-                {state?.subject.official_name || currentSubject.official_name}
-              </h2>
+              <h2 className={styles.subjectName}>{subjectName}</h2>
               <p className={styles.subtitle}>
                 系统会自动读取已确认的企业资料、产品与服务、关键词和检测问题。你可以补充真实图片素材，也可以直接使用显问推荐的网站设计。
               </p>
@@ -427,7 +438,9 @@ export function WebsiteBuilderWorkspace() {
             <div className={styles.sourceGrid}>
               <div className={styles.sourceItem}>
                 <span className={styles.sourceLabel}>主体资料</span>
-                <strong className={styles.sourceValue}>{readiness.subject_ready ? "已准备" : "待完善"}</strong>
+                <strong className={styles.sourceValue}>
+                  {readiness.subject_ready ? "已准备" : "待完善"}
+                </strong>
               </div>
               <div className={styles.sourceItem}>
                 <span className={styles.sourceLabel}>产品与服务</span>
@@ -581,7 +594,8 @@ export function WebsiteBuilderWorkspace() {
               {project?.site ? "重新生成官网内容" : "生成当前主体官网"}
             </Typography.Title>
             <Typography.Text type="secondary">
-              自动规划首页、关于我们、产品服务、解决方案、常见问题和联系我们，并生成 GEO 友好的中文内容。
+              自动规划首页、关于我们、产品服务、解决方案、常见问题和联系我们，并生成 GEO
+              友好的中文内容。
             </Typography.Text>
           </div>
           <Button
@@ -616,7 +630,7 @@ export function WebsiteBuilderWorkspace() {
         {project?.site && (
           <WebsiteDraftPreview
             project={project}
-            subjectName={state?.subject.official_name || currentSubject.official_name}
+            subjectName={subjectName}
             materials={previewMaterials}
             design={{ styleKey, themeKey, densityKey }}
           />
