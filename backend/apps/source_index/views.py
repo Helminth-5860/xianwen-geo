@@ -100,9 +100,7 @@ class SourceIndexSourceListView(APIView):
         scan = SourceIndexScan.objects.filter(pk=scan_id, user=request.user).first()
         if scan is None:
             return Response({"detail": "信源扫描记录不存在。"}, status=HTTP_404_NOT_FOUND)
-        queryset = SourceIndexItem.objects.filter(scan=scan).prefetch_related(  # type: ignore[attr-defined]
-            "hits"
-        )
+        queryset = SourceIndexItem.objects.filter(scan=scan).prefetch_related("hits")
         source_type = request.query_params.get("source_type", "").strip()
         if source_type:
             valid_types = {choice for choice, _label in SourceIndexItem.SourceType.choices}
