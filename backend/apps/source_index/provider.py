@@ -34,8 +34,7 @@ class SearchProvider(Protocol):
         *,
         start_date: date | None = None,
         end_date: date | None = None,
-    ) -> list[SearchResult]:
-        ...
+    ) -> list[SearchResult]: ...
 
 
 class BaiduSearchProvider:
