@@ -40,6 +40,7 @@ function workspaceMenu(subjectId: string | null): MenuItem[] {
   const questionHome = subjectId ? `/subjects/${subjectId}/questions` : "/subjects";
   const questionManageHome = subjectId ? `/subjects/${subjectId}/questions/manage` : "/subjects";
   const articleHome = subjectId ? `/subjects/${subjectId}/articles/new` : "/subjects";
+  const videoScriptHome = subjectId ? `/subjects/${subjectId}/video-scripts/new` : "/subjects";
   const contentLibraryHome = subjectId ? `/subjects/${subjectId}/articles` : "/subjects";
   const imageHome = subjectId ? `/subjects/${subjectId}/images` : "/subjects";
   const imageLibraryHome = subjectId ? `/subjects/${subjectId}/image-library` : "/subjects";
@@ -100,8 +101,8 @@ function workspaceMenu(subjectId: string | null): MenuItem[] {
       label: "GEO 洞察",
       children: [
         linkedItem("insights-reports", "检测报告", "/geo/reports"),
-        unavailableItem("insights-history", "历史报告对比"),
-        unavailableItem("insights-exposure", "曝光指数"),
+        linkedItem("insights-history", "历史报告对比", "/geo/reports/history"),
+        linkedItem("insights-exposure", "曝光指数", "/geo/exposure"),
         unavailableItem("insights-competitors", "竞品对比"),
       ],
     },
@@ -125,7 +126,7 @@ function workspaceMenu(subjectId: string | null): MenuItem[] {
         unavailableItem("optimization-execution", "执行计划"),
         linkedItem("optimization-articles", "文章生成", articleHome),
         linkedItem("optimization-images", "图片生成", imageHome),
-        unavailableItem("optimization-video", "视频脚本生成"),
+        linkedItem("optimization-video", "视频脚本生成", videoScriptHome),
       ],
     },
     {
@@ -155,6 +156,11 @@ function selectedMenuKey(pathname: string) {
   if (pathname.startsWith("/geo/website-audits")) return "detections-website";
   if (pathname.startsWith("/geo/detections")) return "detections-subject";
   if (pathname.includes("/publication-checks")) return "detections-publication";
+  if (/^\/geo\/reports\/[^/]+\/strategy(?:\/|$)/.test(pathname)) {
+    return "optimization-strategy";
+  }
+  if (/^\/geo\/reports\/history(?:\/|$)/.test(pathname)) return "insights-history";
+  if (/^\/geo\/exposure(?:\/|$)/.test(pathname)) return "insights-exposure";
   if (pathname.startsWith("/geo/reports")) return "insights-reports";
   if (pathname.startsWith("/geo/knowledge-graph/media-signals")) return "knowledge-media";
   if (pathname.startsWith("/geo/knowledge-graph/websites")) return "knowledge-website";
