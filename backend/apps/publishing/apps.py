@@ -7,4 +7,7 @@ class PublishingConfig(AppConfig):
     verbose_name = "自动发文"
 
     def ready(self):
-        from . import signals  # noqa: F401
+        from .runtime_config import validate_runtime_configuration
+
+        validate_runtime_configuration()
+        from . import signals  # noqa: F401,E402
