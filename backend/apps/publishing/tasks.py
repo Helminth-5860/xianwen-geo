@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from datetime import timedelta
 
 from celery import shared_task  # type: ignore[import-untyped]
@@ -11,6 +12,15 @@ from .review import hold_publication_for_review, should_hold_for_review
 from .scheduling import assign_publication_schedule
 from .status_tracking import check_submitted_target
 from .target_execution import execute_target
+
+
+def _running_stale_seconds() -> int:
+    try:
+        value = int(os.getenv("PUBLISHING_RUNNING_STALE_SECONDS", "420"))
+    except ValueError:
+        value = 420
+    # Must remain above the dedicated publishing.execute_target hard time limit.
+    return max(390, min(3600, value))
 
 
 @shared_task(name="publishing.prepare_publication", bind=True, ignore_result=True)
@@ -79,8 +89,10 @@ def check_submitted_target_task(self, target_id: str):
 @shared_task(name="publishing.recover_interrupted", ignore_result=True)
 def recover_interrupted_publishing_task():
     from .models import Publication, PublicationTarget
+    from .publication_state import aggregate_publication
 
-    stale = timezone.now() - timedelta(minutes=2)
+    now = timezone.now()
+    stale = now - timedelta(minutes=2)
     publication_ids = list(
         Publication.objects.filter(
             status__in=(Publication.Status.PREPARING, Publication.Status.QUEUED),
@@ -95,11 +107,32 @@ def recover_interrupted_publishing_task():
     for publication_id in publication_ids:
         prepare_publication_task.delay(str(publication_id))
 
+    # A stale RUNNING target may have already reached the external platform before
+    # the Celery process died. Replaying it can duplicate a public article, so fail
+    # closed: pause it for result verification instead of automatically publishing again.
+    stale_running = now - timedelta(seconds=_running_stale_seconds())
+    stale_targets = list(
+        PublicationTarget.objects.filter(
+            status=PublicationTarget.Status.RUNNING,
+            updated_at__lte=stale_running,
+        ).values_list("id", "publication_id")[:100]
+    )
+    for target_id, publication_id in stale_targets:
+        updated = PublicationTarget.objects.filter(
+            pk=target_id,
+            status=PublicationTarget.Status.RUNNING,
+        ).update(
+            status=PublicationTarget.Status.PAUSED,
+            safe_error_code="publish_result_unconfirmed",
+        )
+        if updated:
+            aggregate_publication(publication_id)
+
     due_target_ids = list(
         PublicationTarget.objects.filter(
             status=PublicationTarget.Status.SUBMITTED,
             next_status_check_at__isnull=False,
-            next_status_check_at__lte=timezone.now(),
+            next_status_check_at__lte=now,
         )
         .values_list("id", flat=True)[:100]
     )
