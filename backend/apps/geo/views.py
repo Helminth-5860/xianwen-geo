@@ -66,6 +66,7 @@ from .services import (
     job_payload,
     model_progress_payload,
     models_for_user,
+    remove_detection_from_history,
 )
 from .sharing import (
     ShareError,
@@ -213,8 +214,28 @@ class GeoDetectionCreateView(APIView):
     permission_classes = [IsAvailableAuthenticatedUser]
 
     def get(self, request, subject_id):
-        rows = detection_history(user=request.user, subject_id=subject_id)
-        return _no_store(Response({"items": [job_payload(row) for row in rows]}))
+        try:
+            page = max(1, int(request.query_params.get("page", "1")))
+        except (TypeError, ValueError):
+            page = 1
+        try:
+            page_size = min(20, max(1, int(request.query_params.get("page_size", "20"))))
+        except (TypeError, ValueError):
+            page_size = 20
+        rows, pagination = detection_history(
+            user=request.user,
+            subject_id=subject_id,
+            page=page,
+            page_size=page_size,
+        )
+        return _no_store(
+            Response(
+                {
+                    "items": [job_payload(row) for row in rows],
+                    "pagination": pagination,
+                }
+            )
+        )
 
     @method_decorator(csrf_protect)
     def post(self, request, subject_id):
@@ -244,6 +265,22 @@ class GeoDetectionCreateView(APIView):
             "replayed": not created,
         }
         return _no_store(Response(payload, status=HTTP_202_ACCEPTED))
+
+
+class GeoDetectionRemoveView(APIView):
+    permission_classes = [IsAvailableAuthenticatedUser]
+
+    @method_decorator(csrf_protect)
+    def delete(self, request, subject_id, detection_id):
+        try:
+            remove_detection_from_history(
+                user=request.user,
+                subject_id=subject_id,
+                detection_id=detection_id,
+            )
+        except GeoDetectionError as exc:
+            return _error(exc, request)
+        return _no_store(Response({"removed": True}))
 
 
 class GeoDetectionDetailView(APIView):

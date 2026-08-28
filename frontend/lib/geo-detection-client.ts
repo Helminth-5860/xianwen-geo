@@ -1,4 +1,4 @@
-import { get, post } from "./auth-client";
+import { get, post, remove } from "./auth-client";
 
 export type DetectionStatus =
   "queued" | "running" | "partial" | "succeeded" | "failed" | "cancelled";
@@ -67,6 +67,16 @@ export type GeoDetectionCreated = Readonly<{
   replayed: boolean;
 }>;
 
+export type GeoDetectionHistoryPage = Readonly<{
+  items: GeoDetectionJob[];
+  pagination?: Readonly<{
+    page: number;
+    page_size: number;
+    count: number;
+    total_pages: number;
+  }>;
+}>;
+
 export const terminalDetectionStatuses = new Set<DetectionStatus>([
   "partial",
   "succeeded",
@@ -91,8 +101,11 @@ export async function getDetectionProgress(detectionId: string, signal?: AbortSi
   return { job, models: models.items } as const;
 }
 
-export const getDetectionHistory = (subjectId: string) =>
-  get<{ items: GeoDetectionJob[] }>(`/subjects/${subjectId}/geo/detections`);
+export const getDetectionHistory = (subjectId: string, page = 1) =>
+  get<GeoDetectionHistoryPage>(`/subjects/${subjectId}/geo/detections?page=${page}&page_size=20`);
+
+export const removeDetectionResult = (subjectId: string, detectionId: string) =>
+  remove<{ removed: true }>(`/subjects/${subjectId}/geo/detections/${detectionId}`);
 
 export const estimateDetection = (subjectId: string, questionIds: string[], modelIds: string[]) =>
   post<GeoDetectionEstimate>(`/subjects/${subjectId}/geo/estimate`, {
