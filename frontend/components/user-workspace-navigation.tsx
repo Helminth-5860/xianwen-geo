@@ -1,293 +1,428 @@
 "use client";
 
-import {
-  ApartmentOutlined,
-  AreaChartOutlined,
-  BarChartOutlined,
-  DatabaseOutlined,
-  FileTextOutlined,
-  FundProjectionScreenOutlined,
-  ProfileOutlined,
-  QuestionCircleOutlined,
-  RadarChartOutlined,
-  TagsOutlined,
-} from "@ant-design/icons";
-import { Button, Divider, Menu, Typography, type MenuProps } from "antd";
+import { CloseOutlined, LeftOutlined, RightOutlined } from "@ant-design/icons";
+import { Button, Drawer, Menu, Tooltip, Typography, type MenuProps } from "antd";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent,
+  type ReactNode,
+} from "react";
 
-import { useSubjectWorkspace } from "@/components/subject-workspace-context";
+import {
+  SubjectWorkspaceSwitcher,
+  useSubjectWorkspace,
+} from "@/components/subject-workspace-context";
+import {
+  getActiveWorkspaceNavigation,
+  resolveWorkspaceNavigation,
+  type ResolvedWorkspaceNavigationItem,
+} from "@/components/workspace-navigation-config";
+import type { WorkspaceNavigationMode } from "@/components/workspace-navigation-state";
 
 type MenuItem = Required<MenuProps>["items"][number];
 
-const unavailableItem = (key: string, label: string): MenuItem => ({
-  key,
-  label,
-  disabled: true,
-});
+type UserWorkspaceNavigationProps = Readonly<{
+  mode?: WorkspaceNavigationMode;
+  drawerOpen?: boolean;
+  onCollapse?: () => void;
+  onExpand?: () => void;
+  onDrawerOpen?: () => void;
+  onDrawerClose?: () => void;
+}>;
 
-const linkedItem = (key: string, label: string, href: string): MenuItem => ({
-  key,
-  label: <Link href={href}>{label}</Link>,
-});
-
-function workspaceMenu(subjectId: string | null): MenuItem[] {
-  const subjectHome = subjectId ? `/subjects/${subjectId}` : "/subjects";
-  const keywordHome = subjectId ? `/subjects/${subjectId}/keywords` : "/subjects";
-  const customKeywordHome = subjectId ? `/subjects/${subjectId}/keywords/custom` : "/subjects";
-  const distillHome = subjectId ? `/subjects/${subjectId}/keywords/distill` : "/subjects";
-  const assetHome = subjectId ? `/subjects/${subjectId}/keywords/assets` : "/subjects";
-  const questionHome = subjectId ? `/subjects/${subjectId}/questions` : "/subjects";
-  const questionManageHome = subjectId ? `/subjects/${subjectId}/questions/manage` : "/subjects";
-  const articleHome = subjectId ? `/subjects/${subjectId}/articles/new` : "/subjects";
-  const videoScriptHome = subjectId ? `/subjects/${subjectId}/video-scripts/new` : "/subjects";
-  const videoGenerationHome = subjectId ? `/subjects/${subjectId}/videos/new` : "/subjects";
-  const contentLibraryHome = subjectId ? `/subjects/${subjectId}/articles` : "/subjects";
-  const imageHome = subjectId ? `/subjects/${subjectId}/images` : "/subjects";
-  const imageLibraryHome = subjectId ? `/subjects/${subjectId}/image-library` : "/subjects";
-  const videoLibraryHome = subjectId ? `/subjects/${subjectId}/video-library` : "/subjects";
-  const customLibraryHome = subjectId ? `/subjects/${subjectId}/custom-library` : "/subjects";
-  const publicationCheckHome = subjectId
-    ? `/subjects/${subjectId}/publication-checks`
-    : "/subjects";
-
-  return [
-    {
-      key: "overview",
-      icon: <AreaChartOutlined />,
-      label: <Link href="/workspace">GEO 总览</Link>,
-    },
-    {
-      key: "subject",
-      icon: <ProfileOutlined />,
-      label: "主体档案",
-      children: [
-        linkedItem("subject-edit", "编辑主体", subjectHome),
-        linkedItem("subject-manage", "主体管理", "/subjects"),
-      ],
-    },
-    {
-      key: "keywords",
-      icon: <TagsOutlined />,
-      label: "关键词中心",
-      children: [
-        linkedItem("keywords-smart", "智能关键词", keywordHome),
-        linkedItem("keywords-custom", "自定义关键词", customKeywordHome),
-        linkedItem("keywords-distill", "关键词蒸馏", distillHome),
-        linkedItem("keywords-assets", "关键词资产", assetHome),
-      ],
-    },
-    {
-      key: "questions",
-      icon: <QuestionCircleOutlined />,
-      label: "问题库",
-      children: [
-        linkedItem("questions-generate", "问题生成", questionHome),
-        linkedItem("questions-manage", "问题管理", questionManageHome),
-      ],
-    },
-    {
-      key: "detections",
-      icon: <RadarChartOutlined />,
-      label: "检测中心",
-      children: [
-        linkedItem("detections-subject", "主体检测", "/geo/detections"),
-        linkedItem("detections-website", "官网检测", "/geo/website-audits"),
-        linkedItem("detections-publication", "发布检测", publicationCheckHome),
-      ],
-    },
-    {
-      key: "insights",
-      icon: <BarChartOutlined />,
-      label: "GEO 洞察",
-      children: [
-        linkedItem("insights-reports", "检测报告", "/geo/reports"),
-        linkedItem("insights-history", "历史报告对比", "/geo/reports/history"),
-      ],
-    },
-    {
-      key: "data-center",
-      icon: <DatabaseOutlined />,
-      label: "数据中心",
-      children: [
-        linkedItem("data-exposure", "曝光指数", "/geo/exposure"),
-        linkedItem("data-competitors", "竞品对比", "/geo/data-center/competitors"),
-        linkedItem("data-source", "信源指数", "/geo/data-center/source-index"),
-        linkedItem("data-negative", "负面信息指数", "/geo/data-center/negative-index"),
-      ],
-    },
-    {
-      key: "knowledge-graph",
-      icon: <ApartmentOutlined />,
-      label: "知识图谱建设",
-      children: [
-        linkedItem("knowledge-subject", "主体实体建设", "/geo/knowledge-graph/subjects"),
-        linkedItem("knowledge-map", "地图实体建设", "/geo/knowledge-graph/maps"),
-        linkedItem("knowledge-website", "官网实体建设", "/geo/knowledge-graph/websites"),
-        linkedItem("knowledge-media", "媒体信号建设", "/geo/knowledge-graph/media-signals"),
-      ],
-    },
-    {
-      key: "optimization",
-      icon: <FundProjectionScreenOutlined />,
-      label: "优化中心",
-      children: [
-        linkedItem("optimization-strategy", "优化方案", "/geo/strategy"),
-        unavailableItem("optimization-execution", "执行计划"),
-        linkedItem("optimization-articles", "文章生成", articleHome),
-        linkedItem("optimization-images", "图片生成", imageHome),
-        linkedItem("optimization-video", "视频脚本生成", videoScriptHome),
-        linkedItem("optimization-video-generation", "视频生成", videoGenerationHome),
-      ],
-    },
-    {
-      key: "content",
-      icon: <FileTextOutlined />,
-      label: "内容资产中心",
-      children: [
-        linkedItem("content-library", "内容库", contentLibraryHome),
-        linkedItem("content-image-library", "图片库", imageLibraryHome),
-        linkedItem("content-video-library", "视频库", videoLibraryHome),
-        linkedItem("content-custom-library", "自定义库", customLibraryHome),
-      ],
-    },
-  ];
+function menuItems(
+  items: readonly ResolvedWorkspaceNavigationItem[],
+  onNavigate?: () => void,
+): MenuItem[] {
+  return items.map((item) => ({
+    key: item.key,
+    icon: item.icon,
+    disabled: item.disabled,
+    label: item.href ? (
+      <Link href={item.href} onClick={onNavigate}>
+        {item.label}
+      </Link>
+    ) : (
+      item.label
+    ),
+    children: item.children ? menuItems(item.children, onNavigate) : undefined,
+  }));
 }
 
-function selectedMenuKey(pathname: string) {
-  if (pathname === "/workspace") return "overview";
-  if (pathname === "/subjects") return "subject-manage";
-  if (/^\/subjects\/[^/]+$/.test(pathname)) return "subject-edit";
-  if (pathname.includes("/keywords/distill")) return "keywords-distill";
-  if (pathname.includes("/keywords/assets")) return "keywords-assets";
-  if (pathname.includes("/keywords/custom")) return "keywords-custom";
-  if (pathname.includes("/keywords")) return "keywords-smart";
-  if (pathname.includes("/questions/manage")) return "questions-manage";
-  if (pathname.includes("/questions")) return "questions-generate";
-  if (pathname.startsWith("/geo/website-audits")) return "detections-website";
-  if (pathname.startsWith("/geo/detections")) return "detections-subject";
-  if (pathname.includes("/publication-checks")) return "detections-publication";
-  if (/^\/geo\/reports\/[^/]+\/strategy(?:\/|$)/.test(pathname)) {
-    return "optimization-strategy";
-  }
-  if (/^\/geo\/reports\/history(?:\/|$)/.test(pathname)) return "insights-history";
-  if (/^\/geo\/exposure(?:\/|$)/.test(pathname)) return "data-exposure";
-  if (/^\/geo\/data-center\/competitors(?:\/|$)/.test(pathname)) {
-    return "data-competitors";
-  }
-  if (/^\/geo\/data-center\/source-index(?:\/|$)/.test(pathname)) return "data-source";
-  if (/^\/geo\/data-center\/negative-index(?:\/|$)/.test(pathname)) {
-    return "data-negative";
-  }
-  if (pathname.startsWith("/geo/reports")) return "insights-reports";
-  if (pathname.startsWith("/geo/knowledge-graph/media-signals")) return "knowledge-media";
-  if (pathname.startsWith("/geo/knowledge-graph/websites")) return "knowledge-website";
-  if (pathname.startsWith("/geo/knowledge-graph/subjects")) return "knowledge-subject";
-  if (pathname.startsWith("/geo/knowledge-graph/maps")) return "knowledge-map";
-  if (pathname.startsWith("/geo/strategy") || pathname.includes("/strategy")) {
-    return "optimization-strategy";
-  }
-  if (pathname.includes("/image-library")) return "content-image-library";
-  if (pathname.includes("/video-library")) return "content-video-library";
-  if (pathname.includes("/custom-library")) return "content-custom-library";
-  if (/^\/subjects\/[^/]+\/articles\/?$/.test(pathname)) return "content-library";
-  if (pathname.includes("/images")) return "optimization-images";
-  if (pathname.includes("/video-scripts")) return "optimization-video";
-  if (/^\/subjects\/[^/]+\/videos(?:\/|$)/.test(pathname)) {
-    return "optimization-video-generation";
-  }
-  if (pathname.includes("/articles")) return "optimization-articles";
-  return "";
-}
-
-const menuGroupByChild: Readonly<Record<string, string>> = {
-  "subject-edit": "subject",
-  "subject-manage": "subject",
-  "keywords-smart": "keywords",
-  "keywords-custom": "keywords",
-  "keywords-distill": "keywords",
-  "keywords-assets": "keywords",
-  "questions-generate": "questions",
-  "questions-manage": "questions",
-  "detections-subject": "detections",
-  "detections-website": "detections",
-  "detections-publication": "detections",
-  "insights-reports": "insights",
-  "insights-history": "insights",
-  "data-exposure": "data-center",
-  "data-competitors": "data-center",
-  "data-source": "data-center",
-  "data-negative": "data-center",
-  "knowledge-subject": "knowledge-graph",
-  "knowledge-map": "knowledge-graph",
-  "knowledge-website": "knowledge-graph",
-  "knowledge-media": "knowledge-graph",
-  "optimization-strategy": "optimization",
-  "optimization-execution": "optimization",
-  "optimization-articles": "optimization",
-  "optimization-images": "optimization",
-  "optimization-video": "optimization",
-  "optimization-video-generation": "optimization",
-  "content-library": "content",
-  "content-image-library": "content",
-  "content-video-library": "content",
-  "content-custom-library": "content",
-};
-
-export function UserWorkspaceNavigation() {
-  const pathname = usePathname();
-  const { active, currentSubject, user } = useSubjectWorkspace();
-  const selectedKey = selectedMenuKey(pathname);
-  const activeGroup = menuGroupByChild[selectedKey] ?? null;
-  const [openState, setOpenState] = useState<{
-    pathname: string;
-    key: string | null;
-  }>({ pathname, key: activeGroup });
-  if (!active || !user) return null;
-  const currentSubjectId = currentSubject?.id ?? null;
-  const currentSubjectName =
-    currentSubject?.official_name || currentSubject?.subject_type.name || "尚未选择主体";
-  const effectiveOpenKey = openState.pathname === pathname ? openState.key : activeGroup;
+function FullNavigationMenu({
+  items,
+  pathname,
+  onNavigate,
+}: Readonly<{
+  items: readonly ResolvedWorkspaceNavigationItem[];
+  pathname: string;
+  onNavigate?: () => void;
+}>) {
+  const { selectedKey, activeGroupKey } = getActiveWorkspaceNavigation(pathname);
+  const [openState, setOpenState] = useState<{ pathname: string; key: string | null }>({
+    pathname,
+    key: activeGroupKey,
+  });
+  const effectiveOpenKey = openState.pathname === pathname ? openState.key : activeGroupKey;
 
   return (
-    <aside className="geo-sidebar">
-      <div className="geo-sidebar__brand">
-        <span className="geo-sidebar__brand-mark">显问</span>
-        <Typography.Text type="secondary">GEO</Typography.Text>
-      </div>
+    <Menu
+      className="geo-sidebar__menu"
+      mode="inline"
+      inlineIndent={18}
+      items={menuItems(items, onNavigate)}
+      selectedKeys={selectedKey ? [selectedKey] : []}
+      openKeys={effectiveOpenKey ? [effectiveOpenKey] : []}
+      onOpenChange={(keys) => {
+        const next = keys.find((key) => key !== effectiveOpenKey) ?? null;
+        setOpenState({ pathname, key: next });
+      }}
+    />
+  );
+}
 
-      <div className="geo-sidebar__subject">
-        <Typography.Text type="secondary">当前主体</Typography.Text>
-        <Typography.Text strong ellipsis={{ tooltip: currentSubjectName }}>
-          {currentSubjectName}
-        </Typography.Text>
-      </div>
+function FullNavigationContent({
+  items,
+  pathname,
+  currentSubjectName,
+  showBrand = true,
+  showSubjectSwitcher = false,
+  headerAction,
+  onNavigate,
+}: Readonly<{
+  items: readonly ResolvedWorkspaceNavigationItem[];
+  pathname: string;
+  currentSubjectName: string;
+  showBrand?: boolean;
+  showSubjectSwitcher?: boolean;
+  headerAction?: ReactNode;
+  onNavigate?: () => void;
+}>) {
+  const mainItems = items.filter((item) => item.placement !== "footer");
+  const footerItems = items.filter((item) => item.placement === "footer");
+  const { selectedKey } = getActiveWorkspaceNavigation(pathname);
+
+  return (
+    <div className="geo-navigation-panel">
+      {showBrand ? (
+        <div className="geo-sidebar__brand">
+          <span>
+            <span className="geo-sidebar__brand-mark">显问</span>
+            <Typography.Text type="secondary">GEO</Typography.Text>
+          </span>
+          {headerAction}
+        </div>
+      ) : null}
+
+      {showSubjectSwitcher ? (
+        <SubjectWorkspaceSwitcher className="geo-navigation-panel__subject-switcher" stacked />
+      ) : (
+        <div className="geo-sidebar__subject">
+          <Typography.Text type="secondary">当前主体</Typography.Text>
+          <Typography.Text strong ellipsis={{ tooltip: currentSubjectName }}>
+            {currentSubjectName}
+          </Typography.Text>
+        </div>
+      )}
 
       <nav aria-label="GEO 工作台导航">
-        <Menu
-          className="geo-sidebar__menu"
-          mode="inline"
-          inlineIndent={18}
-          items={workspaceMenu(currentSubjectId)}
-          selectedKeys={selectedKey ? [selectedKey] : []}
-          openKeys={effectiveOpenKey ? [effectiveOpenKey] : []}
-          onOpenChange={(keys) => {
-            const next = keys.find((key) => key !== effectiveOpenKey) ?? null;
-            setOpenState({ pathname, key: next });
-          }}
-        />
+        <FullNavigationMenu items={mainItems} pathname={pathname} onNavigate={onNavigate} />
       </nav>
 
       <div className="geo-sidebar__footer">
-        <Divider />
-        <Button type="text" href="/subscription" block>
-          套餐与额度
-        </Button>
-        <Typography.Text type="secondary" className="geo-sidebar__tenant">
-          {user.tenant?.brand_name || "显问 GEO"}
-        </Typography.Text>
+        {footerItems.map((item) =>
+          item.href ? (
+            <Link
+              key={item.key}
+              href={item.href}
+              className={[
+                "geo-navigation-footer-link",
+                selectedKey === item.key && "geo-navigation-footer-link--active",
+              ]
+                .filter(Boolean)
+                .join(" ")}
+              aria-label={item.label}
+              aria-current={selectedKey === item.key ? "page" : undefined}
+              onClick={onNavigate}
+            >
+              {item.icon}
+              <span>{item.label}</span>
+            </Link>
+          ) : null,
+        )}
       </div>
+    </div>
+  );
+}
+
+function CompactNavigation({
+  items,
+  pathname,
+  onExpand,
+}: Readonly<{
+  items: readonly ResolvedWorkspaceNavigationItem[];
+  pathname: string;
+  onExpand: () => void;
+}>) {
+  const { selectedKey, activeGroupKey } = getActiveWorkspaceNavigation(pathname);
+  const [flyoutState, setFlyoutState] = useState<{ pathname: string; key: string | null }>({
+    pathname,
+    key: null,
+  });
+  const [flyoutTop, setFlyoutTop] = useState(12);
+  const flyoutRef = useRef<HTMLDivElement>(null);
+  const flyoutTriggerRef = useRef<HTMLElement | null>(null);
+  const mainItems = items.filter((item) => item.placement !== "footer");
+  const footerItems = items.filter((item) => item.placement === "footer");
+  const flyoutKey = flyoutState.pathname === pathname ? flyoutState.key : null;
+  const flyoutItem = mainItems.find((item) => item.key === flyoutKey) ?? null;
+  const closeFlyout = useCallback(() => setFlyoutState({ pathname, key: null }), [pathname]);
+  const closeFlyoutAndRestoreFocus = useCallback(() => {
+    flyoutTriggerRef.current?.focus();
+    closeFlyout();
+  }, [closeFlyout]);
+
+  useEffect(() => {
+    if (!flyoutKey) return;
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closeFlyoutAndRestoreFocus();
+    };
+    window.addEventListener("keydown", handleEscape);
+    const timer = window.setTimeout(() => {
+      flyoutRef.current?.querySelector<HTMLElement>('a:not([aria-disabled="true"])')?.focus();
+    }, 0);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("keydown", handleEscape);
+    };
+  }, [closeFlyoutAndRestoreFocus, flyoutKey]);
+
+  const openFlyout = (item: ResolvedWorkspaceNavigationItem, event: MouseEvent<HTMLElement>) => {
+    if (!item.children?.length) return;
+    flyoutTriggerRef.current = event.currentTarget;
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const availableTop = Math.max(12, window.innerHeight - 430);
+    setFlyoutTop(Math.min(Math.max(12, bounds.top), availableTop));
+    setFlyoutState((current) => ({
+      pathname,
+      key: current.pathname === pathname && current.key === item.key ? null : item.key,
+    }));
+  };
+
+  const railItem = (item: ResolvedWorkspaceNavigationItem) => {
+    const active = selectedKey === item.key || activeGroupKey === item.key;
+    const className = [
+      "geo-compact-navigation__item",
+      active && "geo-compact-navigation__item--active",
+    ]
+      .filter(Boolean)
+      .join(" ");
+
+    const control = item.children?.length ? (
+      <Button
+        type="text"
+        className={className}
+        icon={item.icon}
+        aria-label={item.label}
+        aria-expanded={flyoutKey === item.key}
+        aria-controls={`geo-navigation-flyout-${item.key}`}
+        onClick={(event) => openFlyout(item, event)}
+      />
+    ) : item.href ? (
+      <Link
+        href={item.href}
+        className={className}
+        aria-label={item.label}
+        aria-current={active ? "page" : undefined}
+        onClick={closeFlyout}
+      >
+        {item.icon}
+      </Link>
+    ) : (
+      <span className={`${className} geo-compact-navigation__item--disabled`} aria-disabled="true">
+        {item.icon}
+      </span>
+    );
+
+    return (
+      <Tooltip key={item.key} title={item.label} placement="right" mouseEnterDelay={0.35}>
+        {control}
+      </Tooltip>
+    );
+  };
+
+  return (
+    <aside className="geo-sidebar geo-sidebar--compact" aria-label="精简工作台导航">
+      <div className="geo-compact-navigation__brand">
+        <span className="geo-compact-navigation__brand-mark" aria-hidden="true">
+          显
+        </span>
+        <Tooltip title="展开导航" placement="right">
+          <Button
+            type="text"
+            icon={<RightOutlined />}
+            aria-label="展开完整导航"
+            onClick={onExpand}
+          />
+        </Tooltip>
+      </div>
+
+      <nav className="geo-compact-navigation" aria-label="GEO 工作台导航">
+        {mainItems.map(railItem)}
+      </nav>
+
+      <div className="geo-compact-navigation__footer">{footerItems.map(railItem)}</div>
+
+      {flyoutItem?.children?.length ? (
+        <>
+          <div
+            className="geo-navigation-flyout-backdrop"
+            aria-hidden="true"
+            onMouseDown={closeFlyout}
+          />
+          <div
+            ref={flyoutRef}
+            id={`geo-navigation-flyout-${flyoutItem.key}`}
+            className="geo-navigation-flyout"
+            role="dialog"
+            aria-label={`${flyoutItem.label}二级导航`}
+            style={{ top: flyoutTop }}
+          >
+            <strong className="geo-navigation-flyout__title">{flyoutItem.label}</strong>
+            <div className="geo-navigation-flyout__items">
+              {flyoutItem.children.map((child) =>
+                child.href && !child.disabled ? (
+                  <Link
+                    key={child.key}
+                    href={child.href}
+                    className={[
+                      "geo-navigation-flyout__link",
+                      selectedKey === child.key && "geo-navigation-flyout__link--active",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                    aria-current={selectedKey === child.key ? "page" : undefined}
+                    onClick={closeFlyout}
+                  >
+                    {child.label}
+                  </Link>
+                ) : (
+                  <span
+                    key={child.key}
+                    className="geo-navigation-flyout__link geo-navigation-flyout__link--disabled"
+                    aria-disabled="true"
+                  >
+                    {child.label}
+                  </span>
+                ),
+              )}
+            </div>
+          </div>
+        </>
+      ) : null}
     </aside>
+  );
+}
+
+export function UserWorkspaceNavigation({
+  mode = "expanded",
+  drawerOpen = false,
+  onCollapse = () => undefined,
+  onExpand = () => undefined,
+  onDrawerOpen = () => undefined,
+  onDrawerClose = () => undefined,
+}: UserWorkspaceNavigationProps = {}) {
+  const pathname = usePathname();
+  const { active, currentSubject, user } = useSubjectWorkspace();
+  const currentSubjectId = currentSubject?.id ?? null;
+  const items = useMemo(() => resolveWorkspaceNavigation(currentSubjectId), [currentSubjectId]);
+
+  if (!active || !user) return null;
+
+  const currentSubjectName =
+    currentSubject?.official_name || currentSubject?.subject_type.name || "尚未选择主体";
+  const drawerMode = mode === "focus" || mode === "mobile_drawer";
+
+  return (
+    <>
+      {mode === "expanded" ? (
+        <aside className="geo-sidebar geo-sidebar--expanded">
+          <FullNavigationContent
+            items={items}
+            pathname={pathname}
+            currentSubjectName={currentSubjectName}
+            headerAction={
+              <Tooltip title="收起导航" placement="right">
+                <Button
+                  type="text"
+                  icon={<LeftOutlined />}
+                  aria-label="收起为精简导航"
+                  onClick={onCollapse}
+                />
+              </Tooltip>
+            }
+          />
+        </aside>
+      ) : null}
+
+      {mode === "compact" ? (
+        <CompactNavigation items={items} pathname={pathname} onExpand={onExpand} />
+      ) : null}
+
+      {mode === "focus" && !drawerOpen ? (
+        <Tooltip title="打开导航" placement="right">
+          <Button
+            className="geo-focus-edge-handle"
+            type="primary"
+            icon={<RightOutlined />}
+            aria-label="打开专注模式导航"
+            onClick={onDrawerOpen}
+          />
+        </Tooltip>
+      ) : null}
+
+      {drawerMode ? (
+        <Drawer
+          rootClassName="geo-navigation-drawer"
+          placement="left"
+          width={mode === "mobile_drawer" ? "min(280px, 85vw)" : 280}
+          zIndex={1300}
+          open={drawerOpen}
+          closable={false}
+          keyboard={false}
+          push={false}
+          title={
+            <span className="geo-navigation-drawer__title">
+              <strong>显问</strong>
+              <span>GEO</span>
+            </span>
+          }
+          extra={
+            <Button
+              type="text"
+              icon={<CloseOutlined />}
+              aria-label="关闭导航"
+              onClick={onDrawerClose}
+            />
+          }
+          onClose={onDrawerClose}
+        >
+          <FullNavigationContent
+            items={items}
+            pathname={pathname}
+            currentSubjectName={currentSubjectName}
+            showBrand={false}
+            showSubjectSwitcher
+            onNavigate={onDrawerClose}
+          />
+        </Drawer>
+      ) : null}
+    </>
   );
 }
