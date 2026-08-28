@@ -13,10 +13,11 @@ class PublishingCatalogTests(SimpleTestCase):
         self.assertNotIn("devto", PLATFORM_BY_KEY)
         self.assertNotIn("hashnode", PLATFORM_BY_KEY)
 
-    def test_only_explicitly_enabled_platforms_are_open_for_authorization(self):
+    def test_only_explicitly_enabled_and_runtime_ready_platforms_are_open(self):
         payload = platform_payload({"wechat", "zhihu"})
         by_key = {item["key"]: item for item in payload}
-        self.assertTrue(by_key["wechat"]["authorization_enabled"])
+        # 微信还要求第三方平台 component_verify_ticket 有效；测试环境没有票据，所以保持关闭。
+        self.assertFalse(by_key["wechat"]["authorization_enabled"])
         self.assertTrue(by_key["zhihu"]["authorization_enabled"])
         self.assertFalse(by_key["xiaohongshu"]["authorization_enabled"])
         self.assertEqual(by_key["xiaohongshu"]["verification_state"], "validation")
