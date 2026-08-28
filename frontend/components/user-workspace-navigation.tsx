@@ -41,6 +41,7 @@ function workspaceMenu(subjectId: string | null): MenuItem[] {
   const questionManageHome = subjectId ? `/subjects/${subjectId}/questions/manage` : "/subjects";
   const articleHome = subjectId ? `/subjects/${subjectId}/articles/new` : "/subjects";
   const videoScriptHome = subjectId ? `/subjects/${subjectId}/video-scripts/new` : "/subjects";
+  const videoGenerationHome = subjectId ? `/subjects/${subjectId}/videos/new` : "/subjects";
   const contentLibraryHome = subjectId ? `/subjects/${subjectId}/articles` : "/subjects";
   const imageHome = subjectId ? `/subjects/${subjectId}/images` : "/subjects";
   const imageLibraryHome = subjectId ? `/subjects/${subjectId}/image-library` : "/subjects";
@@ -122,11 +123,12 @@ function workspaceMenu(subjectId: string | null): MenuItem[] {
       icon: <FundProjectionScreenOutlined />,
       label: "优化中心",
       children: [
-        linkedItem("optimization-strategy", "优化策略", "/geo/strategy"),
+        linkedItem("optimization-strategy", "优化方案", "/geo/strategy"),
         unavailableItem("optimization-execution", "执行计划"),
         linkedItem("optimization-articles", "文章生成", articleHome),
         linkedItem("optimization-images", "图片生成", imageHome),
         linkedItem("optimization-video", "视频脚本生成", videoScriptHome),
+        linkedItem("optimization-video-generation", "视频生成", videoGenerationHome),
       ],
     },
     {
@@ -174,6 +176,9 @@ function selectedMenuKey(pathname: string) {
   if (/^\/subjects\/[^/]+\/articles\/?$/.test(pathname)) return "content-library";
   if (pathname.includes("/images")) return "optimization-images";
   if (pathname.includes("/video-scripts")) return "optimization-video";
+  if (/^\/subjects\/[^/]+\/videos(?:\/|$)/.test(pathname)) {
+    return "optimization-video-generation";
+  }
   if (pathname.includes("/articles")) return "optimization-articles";
   return "";
 }
@@ -203,6 +208,7 @@ const menuGroupByChild: Readonly<Record<string, string>> = {
   "optimization-articles": "optimization",
   "optimization-images": "optimization",
   "optimization-video": "optimization",
+  "optimization-video-generation": "optimization",
   "content-library": "content",
   "content-image-library": "content",
   "content-video-library": "content",

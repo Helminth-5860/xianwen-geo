@@ -389,8 +389,9 @@ describe("关键词中心四页", () => {
     );
 
     await userEvent.click(screen.getByRole("button", { name: /编\s*辑/ }));
-    await userEvent.clear(screen.getByLabelText("编辑关键词-asset-1"));
-    await userEvent.type(screen.getByLabelText("编辑关键词-asset-1"), "更新后的关键词");
+    const keywordInput = screen.getByLabelText("编辑关键词：GEO 品牌咨询");
+    await userEvent.clear(keywordInput);
+    await userEvent.type(keywordInput, "更新后的关键词");
     await userEvent.click(screen.getByRole("button", { name: /保\s*存/ }));
     await waitFor(() =>
       expect(api.updateKeywordAsset).toHaveBeenCalledWith(
@@ -447,11 +448,11 @@ describe("关键词中心四页", () => {
     expect(
       (
         screen.getByRole("checkbox", {
-          name: "选择关键词资产-asset-1",
+          name: "选择关键词：资产关键词 1",
         }) as HTMLInputElement
       ).checked,
     ).toBe(true);
-    expect(screen.queryByRole("checkbox", { name: "选择关键词资产-asset-21" })).toBeNull();
+    expect(screen.queryByRole("checkbox", { name: "选择关键词：资产关键词 21" })).toBeNull();
 
     await userEvent.click(screen.getByRole("button", { name: "批量删除（20）" }));
     await userEvent.click(await screen.findByRole("button", { name: "确认批量删除" }));
@@ -484,7 +485,7 @@ describe("关键词中心四页", () => {
     await userEvent.click(screen.getByRole("button", { name: "AI 生成关键词" }));
 
     expect(
-      await screen.findByText("AI 返回格式异常，请重新生成。", {}, { timeout: 2500 }),
+      await screen.findByText("AI 返回内容暂时无法识别，请重新生成。", {}, { timeout: 2500 }),
     ).toBeTruthy();
     expect(screen.queryByText("KEYWORD_GENERATION_INVALID_RESPONSE")).toBeNull();
   });

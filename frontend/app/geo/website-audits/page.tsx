@@ -142,7 +142,7 @@ export default function WebsiteAuditsPage() {
     <main className="geo-dashboard website-audit-page">
       <section className="geo-dashboard__header">
         <div>
-          <Text type="secondary">WEBSITE AUDIT</Text>
+          <Text type="secondary">官网检测</Text>
           <Title level={2}>官网检测</Title>
           <Paragraph type="secondary">
             深度扫描官网的 SEO、GEO、浏览器渲染与 AI 内容准备度，定位影响搜索与生成式搜索理解的问题。
@@ -168,7 +168,7 @@ export default function WebsiteAuditsPage() {
               <Text type="secondary">当前主体</Text>
               <Title level={3}>{subject.official_name || subject.subject_type.name}</Title>
             </div>
-            <Tag color="blue">深度官网审计</Tag>
+            <Tag color="blue">官网深度检测</Tag>
           </section>
 
           <section className="website-audit-launch-grid">
@@ -178,7 +178,7 @@ export default function WebsiteAuditsPage() {
                 <Input
                   size="large"
                   prefix={<GlobalOutlined />}
-                  placeholder="https://www.example.com"
+                  placeholder="输入当前主体的官网地址"
                   value={url}
                   onChange={(event) => setUrl(event.target.value)}
                   onPressEnter={() => void start()}
@@ -203,7 +203,10 @@ export default function WebsiteAuditsPage() {
 
             <Card title="当前检测">
               {!current ? (
-                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无官网检测记录" />
+                <Empty
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                  description="还没有官网检测记录，请输入官网地址开始检测"
+                />
               ) : (
                 <Space direction="vertical" size="middle" style={{ width: "100%" }}>
                   <div className="website-audit-current-head">
@@ -230,7 +233,7 @@ export default function WebsiteAuditsPage() {
                     {stageTag("AI 语义", current.semantic_status)}
                   </Space>
                   <Text type="secondary">
-                    已抓取 {current.fetched_count} 页 · 发现 {current.discovered_count} 个 URL
+                    已抓取 {current.fetched_count} 页 · 发现 {current.discovered_count} 个网页地址
                   </Text>
                   <Button onClick={() => router.push(`/geo/website-audits/${current.id}`)}>
                     查看检测详情
@@ -242,7 +245,7 @@ export default function WebsiteAuditsPage() {
 
           <Card title="最近检测">
             {history.length === 0 ? (
-              <Text type="secondary">暂无检测记录。</Text>
+              <Text type="secondary">完成一次官网检测后，历史记录会显示在这里。</Text>
             ) : (
               <div className="website-audit-history">
                 {history.slice(0, 10).map((audit) => (

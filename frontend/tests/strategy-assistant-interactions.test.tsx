@@ -137,7 +137,7 @@ describe("Stage 1E strategy interactions", () => {
       updated_at: "2026-08-20T11:00:00Z",
     });
     render(<ImprovementStrategyPage reportId="report-1" />);
-    expect(await screen.findByText("AI 原始策略（不可编辑）")).toBeTruthy();
+    expect(await screen.findByText("AI 生成的优化方案")).toBeTruthy();
     expect(screen.queryByDisplayValue("优先完善权威事实页。")).toBeNull();
     const topicLink = screen.getByRole("link", { name: "带主题进入文章页" });
     expect(topicLink.getAttribute("href")).toContain("/subjects/subject-1/articles/new?topic=");

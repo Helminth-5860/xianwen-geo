@@ -288,7 +288,9 @@ export function KeywordCenterPage({
             setError("");
             await reload();
           } else if (["failed", "conflict", "superseded"].includes(next.status)) {
-            setError(keywordJobErrorMessage(next.stable_error_code, "关键词生成失败，请重试"));
+            setError(
+              keywordJobErrorMessage(next.stable_error_code, "关键词生成未完成，请重新尝试。"),
+            );
             setNotice("");
           }
         })
@@ -345,8 +347,8 @@ export function KeywordCenterPage({
       } else {
         setNotice(
           job.billing.billing_mode === "free_initial"
-            ? "首次免费生成任务已提交"
-            : "再生成任务已提交，额度已冻结",
+            ? "已开始首次免费生成关键词"
+            : "已开始重新生成关键词，并暂时预留额度",
         );
       }
     } catch (reason) {
@@ -509,7 +511,7 @@ export function KeywordCenterPage({
       setAssets((current) => current.filter((asset) => !deletedIds.has(asset.id)));
       setSelectedAssetIds(failedIds);
       setNotice(deletedIds.size ? `已批量删除 ${deletedIds.size} 个关键词资产` : "");
-      setError(failedIds.length ? `${failedIds.length} 个关键词资产删除失败，请重试` : "");
+      setError(failedIds.length ? `${failedIds.length} 个关键词未能删除，请重新尝试。` : "");
     } finally {
       setBusy(false);
     }
@@ -585,11 +587,11 @@ export function KeywordCenterPage({
 
   return (
     <main className="page-shell">
-      <Link href={`/subjects/${params.id}`}>返回主体详情</Link>
+      <Link href={`/subjects/${params.id}`}>返回主体档案</Link>
       <Typography.Title style={{ marginTop: 16 }}>{pageTitle}</Typography.Title>
       <Typography.Paragraph type="secondary">{pageSubtitle}</Typography.Paragraph>
       <Typography.Paragraph type="secondary">
-        当前企业：{routeSubject?.official_name || routeSubject?.subject_type.name || "当前主体"}
+        当前主体：{routeSubject?.official_name || routeSubject?.subject_type.name || "当前主体"}
       </Typography.Paragraph>
       <Card className="keyword-center-summary" style={{ marginBottom: 20 }}>
         <Space wrap className="keyword-center-stats">
@@ -737,13 +739,15 @@ export function KeywordCenterPage({
             </Button>
             {generation ? (
               <Tag color={generation.status === "succeeded" ? "green" : "blue"}>
-                {keywordJobStatusLabel[generation.status]}
+                {generation.status === "superseded"
+                  ? "已有更新结果"
+                  : keywordJobStatusLabel[generation.status]}
               </Tag>
             ) : null}
             {regenerationConfirmation ? (
               <Popconfirm
                 title="确认消耗一次关键词再生成额度？"
-                description="任务成功后才会扣除，失败会释放额度。"
+                description="生成成功后才会扣除，未完成则不会扣除。"
                 okText="确认再生成"
                 cancelText="取消"
                 onConfirm={() => void startGeneration(true)}
@@ -968,14 +972,14 @@ export function KeywordCenterPage({
                       {editing ? (
                         <>
                           <Input
-                            aria-label={`编辑关键词-${asset.id}`}
+                            aria-label={`编辑关键词：${asset.text}`}
                             value={assetText}
                             disabled={busy}
                             onChange={(event) => setAssetText(event.target.value)}
                           />
                           <Space wrap>
                             <Select
-                              aria-label={`编辑分类-${asset.id}`}
+                              aria-label={`编辑“${asset.text}”的分类`}
                               value={assetCategory}
                               disabled={busy}
                               options={keywordBusinessCategoryOptions}
@@ -984,7 +988,7 @@ export function KeywordCenterPage({
                               onChange={setAssetCategory}
                             />
                             <Select
-                              aria-label={`编辑意图-${asset.id}`}
+                              aria-label={`编辑“${asset.text}”的用户意图`}
                               mode="multiple"
                               value={assetIntents}
                               disabled={busy}
@@ -1017,7 +1021,7 @@ export function KeywordCenterPage({
                         <>
                           <Space wrap>
                             <Checkbox
-                              aria-label={`选择关键词资产-${asset.id}`}
+                              aria-label={`选择关键词：${asset.text}`}
                               checked={selectedAssetIdSet.has(asset.id)}
                               disabled={busy}
                               onChange={(event) =>
@@ -1051,13 +1055,13 @@ export function KeywordCenterPage({
                                 ))}
                               </Space>
                               <Typography.Text>
-                                相关关键词：{asset.related_keywords.join("、") || "暂无"}
+                                相关关键词：{asset.related_keywords.join("、") || "未填写"}
                               </Typography.Text>
                               <Typography.Text>
-                                目标人群：{asset.audiences.join("、") || "暂无"}
+                                目标人群：{asset.audiences.join("、") || "未填写"}
                               </Typography.Text>
                               <Typography.Text>
-                                使用场景：{asset.scenarios.join("、") || "暂无"}
+                                使用场景：{asset.scenarios.join("、") || "未填写"}
                               </Typography.Text>
                               <Typography.Text type="secondary">
                                 来源：{sourceLabels[asset.source] ?? "蒸馏确认"} · 更新时间：
@@ -1132,9 +1136,15 @@ export function KeywordCenterPage({
               ) : null}
             </Space>
           ) : (
-            <Typography.Text type="secondary">
-              暂无关键词资产，请先添加关键词并确认蒸馏结果。
-            </Typography.Text>
+            <Space wrap>
+              <Typography.Text type="secondary">
+                暂无关键词资产，请先添加关键词并确认蒸馏结果。
+              </Typography.Text>
+              <Button href={`/subjects/${params.id}/keywords/custom`}>去添加关键词</Button>
+              <Button type="primary" href={`/subjects/${params.id}/keywords/distill`}>
+                去关键词蒸馏
+              </Button>
+            </Space>
           )}
         </Card>
       ) : null}

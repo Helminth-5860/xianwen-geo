@@ -8,6 +8,7 @@ export SMS_VERIFICATION_HMAC_KEY="$(openssl rand -hex 32)" QUOTA_IDEMPOTENCY_HMA
 export GEO_DETECTION_IDEMPOTENCY_HMAC_KEY="$(openssl rand -hex 32)" PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY="$(openssl rand -hex 32)"
 export WEB_IMPORT_IDEMPOTENCY_HMAC_KEY="$(openssl rand -hex 32)" QUESTION_GENERATION_IDEMPOTENCY_HMAC_KEY="$(openssl rand -hex 32)"
 export ARTICLE_IDEMPOTENCY_HMAC_KEY="$(openssl rand -hex 32)" IMAGE_IDEMPOTENCY_HMAC_KEY="$(openssl rand -hex 32)"
+export VIDEO_IDEMPOTENCY_HMAC_KEY="$(openssl rand -hex 32)"
 export REPORT_SHARE_HMAC_KEY="$(openssl rand -hex 32)"
 export DATABASE_URL="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
 export REDIS_URL=redis://redis:6379/12 CELERY_BROKER_URL=redis://redis:6379/13

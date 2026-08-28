@@ -65,19 +65,76 @@ type JobError = Readonly<{ jobId: string; operation: string; message: string }>;
 
 const ARTICLE_ERROR_MESSAGES: Readonly<Record<string, string>> = {
   ARTICLE_ALREADY_GENERATED: "正文已经生成，请勿重复提交。",
-  ARTICLE_GENERATION_IN_PROGRESS: "当前文章生成任务正在处理中，请稍候。",
+  ARTICLE_GENERATION_IN_PROGRESS: "当前文章正在生成，请稍候。",
   ARTICLE_OUTLINE_NOT_CONFIRMED: "请先保存并确认大纲，再生成正文。",
   ARTICLE_OUTLINE_VERSION_CONFLICT: "大纲已被更新，请刷新页面后重新确认。",
-  ARTICLE_PROVIDER_SCHEMA_INVALID: "AI 返回的文章格式异常，请重新生成。",
-  ARTICLE_PROVIDER_TIMEOUT: "AI 生成响应超时，本次额度已释放，请重新生成。",
-  ARTICLE_PROVIDER_RATE_LIMITED: "AI 服务当前请求较多，本次额度已释放，请稍后重试。",
+  ARTICLE_PROVIDER_SCHEMA_INVALID: "AI 生成的文章内容不完整，请重新生成。",
+  ARTICLE_PROVIDER_TIMEOUT: "AI 生成时间较长，本次额度已释放，请重新生成。",
+  ARTICLE_PROVIDER_RATE_LIMITED: "当前使用人数较多，本次额度已释放，请稍后重新生成。",
   ARTICLE_PROVIDER_TEMPORARY: "AI 服务连接暂时不稳定，本次额度已释放，请重新生成。",
-  ARTICLE_PROVIDER_REJECTED: "AI 服务未接受本次生成请求，本次额度已释放。",
-  ARTICLE_PROVIDER_UNAVAILABLE: "AI 文章生成服务暂时不可用，请稍后重试。",
-  ARTICLE_QUEUE_UNAVAILABLE: "文章任务服务暂时繁忙，请稍后重试。",
+  ARTICLE_PROVIDER_REJECTED: "本次文章未能生成，额度已释放，请调整内容后重新生成。",
+  ARTICLE_PROVIDER_UNAVAILABLE: "AI 文章生成服务暂时不可用，请稍后重新生成。",
+  ARTICLE_QUEUE_UNAVAILABLE: "文章生成服务暂时繁忙，请稍后重新生成。",
   ARTICLE_SOURCE_PACK_NOT_READY: "资料包尚未确认，请先完成资料确认。",
   ARTICLE_SUBJECT_NOT_READY: "当前主体资料尚未正式可用，请先保存主体资料。",
 };
+
+const ARTICLE_SOURCE_LABELS: Readonly<Record<string, string>> = {
+  subject: "主体资料",
+  document: "文件资料",
+  web: "网页资料",
+};
+
+const ARTICLE_DEPTH_LABELS: Readonly<Record<Article["content_depth"], string>> = {
+  concise: "简洁",
+  standard: "标准",
+  deep: "深度",
+};
+
+const ARTICLE_REVIEW_LABELS: Readonly<Record<Article["moderation_status"], string>> = {
+  not_checked: "尚未审核",
+  passed: "审核通过",
+  manual_review: "待人工复核",
+  rejected: "审核未通过",
+};
+
+const ARTICLE_JOB_STATUS_LABELS: Readonly<Record<ArticleJob["status"], string>> = {
+  queued: "等待处理",
+  running: "处理中",
+  succeeded: "已完成",
+  failed: "未完成",
+};
+
+const ARTICLE_OPERATION_LABELS: Readonly<Record<string, string>> = {
+  outline: "大纲生成",
+  body: "正文生成",
+  quality: "质量复检",
+  local_optimize: "局部优化",
+  full_optimize: "全文优化",
+  channel_adapt: "渠道稿生成",
+};
+
+const ARTICLE_QUOTA_LABELS: Readonly<Record<string, string>> = {
+  article_credits: "文章额度",
+  outline_regenerations: "大纲重生成额度",
+  local_ai_edits: "局部优化额度",
+  quality_rechecks: "质量复检额度",
+};
+
+const CHANNEL_ADAPTATION_STATUS_LABELS: Readonly<Record<ChannelAdaptation["status"], string>> = {
+  queued: "等待生成",
+  running: "生成中",
+  ready: "已生成",
+  failed: "生成未完成",
+};
+
+function articleJobQuotaLabel(job: ArticleJob): string {
+  if (!job.billing.quota_type) return "首次免费";
+  const quota = ARTICLE_QUOTA_LABELS[job.billing.quota_type] ?? "相关额度";
+  if (job.billing.consumed) return `${quota}已扣除`;
+  if (job.billing.held) return `${quota}已预留`;
+  return job.status === "failed" ? `${quota}未扣除` : `${quota}成功后扣除`;
+}
 
 function articleUserMessage(reason: unknown): string {
   let contentCode = "";
@@ -91,7 +148,7 @@ function articleUserMessage(reason: unknown): string {
   }
 
   if (ARTICLE_ERROR_MESSAGES[contentCode]) return ARTICLE_ERROR_MESSAGES[contentCode];
-  if (contentCode.startsWith("ARTICLE_")) return "文章操作未完成，请稍后重试。";
+  if (contentCode.startsWith("ARTICLE_")) return "文章操作未完成，请稍后重新尝试。";
   return userMessage(reason);
 }
 
@@ -277,7 +334,7 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
       source_pack_id: confirmedPack.id,
     });
     applyArticle(created);
-    setNotice("资料包已冻结并绑定文章草稿。仅主动生成正文时才进入文章额度。");
+    setNotice("参考资料已确认，文章草稿已创建。只有主动生成正文才会使用文章额度。");
   };
 
   const preparePack = async () => {
@@ -301,7 +358,7 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
         setPack(confirmed);
         await createDraft(confirmed);
       } else {
-        setNotice("资料包检测到关键事实冲突，请选择后再确认。AI 不会自行猜测。");
+        setNotice("参考资料中存在关键信息冲突，请选择正确内容后再确认。AI 不会自行猜测。");
       }
     } catch (reason) {
       setError(articleUserMessage(reason));
@@ -347,7 +404,15 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
     try {
       const job = await factory();
       setJobs((current) => replaceLatestJob(current, job));
-      setNotice(message);
+      if (job.status === "failed") {
+        setJobError({
+          jobId: job.id,
+          operation: job.operation,
+          message: articleUserMessage(job.safe_error_code),
+        });
+      } else {
+        setNotice(message);
+      }
     } catch (reason) {
       setError(articleUserMessage(reason));
     } finally {
@@ -370,7 +435,7 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
       await submitJob(
         "outline",
         () => generateOutline(article.id),
-        "大纲重新生成任务已提交，完成后请确认大纲。",
+        "正在重新生成大纲，完成后请确认内容。",
       );
       return;
     }
@@ -385,7 +450,7 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
     await submitJob(
       "body",
       () => generateArticle(article.id),
-      "正文任务已提交；成功扣 1 个文章额度，AI 服务、网络或返回结构异常时自动释放。",
+      "正文已开始生成；成功后扣 1 个文章额度，未完成则不会扣除。",
     );
   };
 
@@ -431,7 +496,7 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
         currentArticle = await getArticle(article.id);
       }
       applyArticle(await saveArticleDraft(currentArticle, title, content));
-      setNotice("当前稿已保存到内容库；AI 原始生成事实未被修改");
+      setNotice("当前修改已保存到内容库。");
       return true;
     } catch (reason) {
       setError(articleUserMessage(reason));
@@ -489,7 +554,7 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
         <Alert
           type="info"
           showIcon
-          title="文章只使用已确认并冻结的主体、文件和网页资料；不会把未核验互联网内容伪装成引用。"
+          title="文章只使用已确认的主体、文件和网页资料；不会把未核验内容作为可靠引用。"
         />
         {(error || jobError) && <Alert type="error" showIcon title={error || jobError?.message} />}
         {notice && <Alert type="success" showIcon title={notice} />}
@@ -498,14 +563,14 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
           current={!pack ? 0 : !article ? 1 : article.status === "draft" ? 2 : 3}
           items={[
             { title: "选择资料" },
-            { title: "冻结资料包" },
+            { title: "确认参考资料" },
             { title: "生成与编辑" },
             { title: "分发与检测" },
           ]}
         />
 
         {!article && (
-          <Card title="1. 类型、模板与资料包">
+          <Card title="1. 文章类型与参考资料">
             <Space orientation="vertical" size="middle" style={{ width: "100%" }}>
               <Select
                 aria-label="文章类型"
@@ -517,8 +582,12 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
               {activeType && (
                 <Alert
                   type="info"
-                  title={`${activeType.description} · 模板 v${activeType.template_version.version_no}`}
-                  description={`来源范围：${activeType.template_version.allowed_source_types.join("、")}；引用${activeType.template_version.citation_required ? "必需" : "可选"}`}
+                  title={activeType.description}
+                  description={`可使用：${activeType.template_version.allowed_source_types
+                    .map((source) => ARTICLE_SOURCE_LABELS[source] ?? "其他已确认资料")
+                    .join(
+                      "、",
+                    )}；${activeType.template_version.citation_required ? "需要引用来源" : "可按需引用来源"}`}
                 />
               )}
               <Input
@@ -557,10 +626,10 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
                 onChange={setSelectedWebSources}
               />
               <Button type="primary" loading={busy} disabled={!selectedType} onClick={preparePack}>
-                核验并冻结资料包
+                核验并确认参考资料
               </Button>
-              {pack?.conflicts.map((conflict) => (
-                <Card key={conflict.key} size="small" title={`冲突事实：${conflict.key}`}>
+              {pack?.conflicts.map((conflict, conflictIndex) => (
+                <Card key={conflict.key} size="small" title={`待确认信息 ${conflictIndex + 1}`}>
                   <Radio.Group
                     value={conflictValues[conflict.key]}
                     options={conflict.options.map((option) => ({
@@ -591,11 +660,11 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
               <Space orientation="vertical" size="middle" style={{ width: "100%" }}>
                 <Space wrap>
                   <Tag color="blue">{article.article_type?.name ?? article.custom_type}</Tag>
-                  <Tag>{article.content_depth}</Tag>
+                  <Tag>{ARTICLE_DEPTH_LABELS[article.content_depth]}</Tag>
                   <Tag color={article.moderation_status === "passed" ? "green" : "orange"}>
-                    审核 {article.moderation_status}
+                    {ARTICLE_REVIEW_LABELS[article.moderation_status]}
                   </Tag>
-                  <Tag>当前稿 v{article.version}</Tag>
+                  <Tag>当前编辑稿</Tag>
                 </Space>
                 <Radio.Group
                   value={mode}
@@ -619,7 +688,7 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
                     type="error"
                     showIcon
                     message="大纲生成未完成"
-                    description="请重新生成大纲；在大纲生成并确认前不会提交正文任务。"
+                    description="请重新生成大纲；在大纲生成并确认前不会开始生成正文。"
                   />
                 )}
                 {outlineNeedsConfirmation && (
@@ -694,7 +763,8 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
                 )}
                 {jobs.map((job) => (
                   <Tag key={job.id} color={job.status === "failed" ? "red" : "blue"}>
-                    {job.operation} · {job.status} · {job.billing.quota_type ?? "首次免费"}
+                    {ARTICLE_OPERATION_LABELS[job.operation] ?? "文章处理"} ·{" "}
+                    {ARTICLE_JOB_STATUS_LABELS[job.status]} · {articleJobQuotaLabel(job)}
                   </Tag>
                 ))}
               </Space>
@@ -855,7 +925,7 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
                       ]}
                     >
                       <List.Item.Meta
-                        title={`${item.channel.name} · ${item.status}`}
+                        title={`${item.channel.name} · ${CHANNEL_ADAPTATION_STATUS_LABELS[item.status]}`}
                         description={`${item.title || "生成中"} · 质量 ${item.quality_score ?? "-"}`}
                       />
                     </List.Item>

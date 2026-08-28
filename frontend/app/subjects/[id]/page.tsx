@@ -756,7 +756,7 @@ function SubjectDetailContent() {
                     </Button>
                   </Space>
                   <Typography.Text type="secondary" className="subject-profile-save-note">
-                    保存后资料立即生效并停留在当前页面，不会自动创建关键词任务或进入后续流程。
+                    保存后资料立即生效并停留在当前页面，不会自动进入关键词或其他功能。
                   </Typography.Text>
                 </>
               )}

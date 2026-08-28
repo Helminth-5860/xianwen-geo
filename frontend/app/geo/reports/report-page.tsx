@@ -38,13 +38,14 @@ import {
   type ReportQuestionPage,
 } from "@/lib/geo-report-client";
 import { getCurrentQuestionBank, type QuestionBankVersion } from "@/lib/question-bank-client";
+import { aiModelDisplayName } from "@/lib/product-copy";
 
 export const REPORT_READY_POLL_INTERVAL_MS = 2000;
 export const REPORT_READY_MAX_POLL_ATTEMPTS = 15;
 export const REPORT_EXPORT_POLL_INTERVAL_MS = 1200;
 
 const REPORT_SCORING_UNAVAILABLE_MESSAGE =
-  "检测已经完成，但报告评分暂未生成。系统已停止等待，检测结果不会丢失；后续配置报告模型后可重新检查。";
+  "检测已经完成，但报告暂未生成。检测结果不会丢失，请稍后点击“重新检查报告”。";
 
 const dimensionLabels: Record<string, string> = {
   mention: "提及",
@@ -57,25 +58,41 @@ const dimensionLabels: Record<string, string> = {
 
 const exportLabels: Record<ReportExport["format"], string> = {
   pdf: "PDF",
-  word: "Word",
-  excel: "Excel",
+  word: "Word 文档",
+  excel: "Excel 表格",
 };
 
 const quickBlockReasons: Record<string, string> = {
-  model_not_entitled: "原报告模型已不在当前套餐权限内",
-  model_disabled: "原报告模型当前已停用",
-  model_paused: "原报告模型正在维护暂停",
-  runtime_missing: "原报告模型缺少运行配置",
-  runtime_unavailable: "原报告模型运行环境暂不可用",
-  credential_unavailable: "原报告模型凭据暂不可用",
-  adapter_unavailable: "原报告模型适配器暂不可用",
+  model_not_entitled: "该模型不在当前套餐范围内",
+  model_disabled: "该模型暂不可用",
+  model_paused: "该模型正在维护",
+  runtime_missing: "该模型服务暂不可用",
+  runtime_unavailable: "该模型服务暂不可用",
+  credential_unavailable: "该模型服务暂不可用",
+  adapter_unavailable: "该模型服务暂不可用",
 };
+
+const reportStatusLabels: Readonly<Record<string, string>> = {
+  queued: "等待中",
+  running: "处理中",
+  partial: "部分完成",
+  succeeded: "已完成",
+  failed: "未完成",
+  cancelled: "已取消",
+  formal: "正式结果",
+  reference: "参考结果",
+  not_generated: "未生成",
+};
+
+function reportStatusLabel(status: string) {
+  return reportStatusLabels[status] ?? "状态待确认";
+}
 
 export function quickRetestBlockedMessage(reason: unknown): string {
   if (reason instanceof AuthApiError && reason.code === "GEO_DETECTION_PROVIDER_UNAVAILABLE") {
     const reasonCode = String(reason.details.reason || "runtime_unavailable");
-    const modelKey = String(reason.details.model_key || "原模型");
-    return `${modelKey}：${quickBlockReasons[reasonCode] || "原模型当前不可执行"}。可稍后重试、恢复套餐或运行权限，或使用调整后复测重新选择；系统不会静默替换模型。`;
+    const modelName = aiModelDisplayName(String(reason.details.model_key || ""));
+    return `${modelName}：${quickBlockReasons[reasonCode] || "该模型当前不可用"}。可稍后重试、调整套餐，或使用调整后复测重新选择；系统不会自动改用其他模型。`;
   }
   return userMessage(reason);
 }
@@ -218,7 +235,7 @@ export default function GeoReportPage(props: Props) {
           expired: false,
         },
       }));
-      setNotice(`${exportLabels[format]} 导出任务已创建`);
+      setNotice(`正在生成 ${exportLabels[format]}`);
     } catch (reason) {
       setError(userMessage(reason));
     } finally {
@@ -301,7 +318,7 @@ export default function GeoReportPage(props: Props) {
     return (
       <Spin
         fullscreen
-        description={pendingScoring ? "检测已结束，正在完成评分与报告固化" : "正在加载报告"}
+        description={pendingScoring ? "检测已结束，正在完成评分并生成报告" : "正在加载报告"}
       />
     );
   }
@@ -309,10 +326,7 @@ export default function GeoReportPage(props: Props) {
   return (
     <main className="page-shell">
       <Space orientation="vertical" size="large" style={{ width: "100%" }}>
-        <Space wrap align="baseline">
-          <Typography.Title level={2}>GEO 检测报告</Typography.Title>
-          {report && <Tag color="blue">评分规则 {report.provenance.scoring_rule_version}</Tag>}
-        </Space>
+        <Typography.Title level={2}>GEO 检测报告</Typography.Title>
         {error && <Alert type="error" showIcon title={error} />}
         {!report && props.detectionId && error && (
           <Space wrap>
@@ -324,7 +338,7 @@ export default function GeoReportPage(props: Props) {
         )}
         {notice && <Alert type="success" showIcon title={notice} />}
         {pendingScoring && (
-          <Alert type="info" showIcon title="检测已终结，语义评分完成后将生成不可修改的正式报告" />
+          <Alert type="info" showIcon title="检测已结束，报告评分完成后即可查看正式报告" />
         )}
         {report && (
           <>
@@ -353,7 +367,7 @@ export default function GeoReportPage(props: Props) {
               <Row gutter={[16, 16]}>
                 {Object.entries(report.summary.dimensions).map(([key, value]) => (
                   <Col xs={12} md={8} lg={4} key={key}>
-                    <Statistic title={dimensionLabels[key] || key} value={value || "-"} />
+                    <Statistic title={dimensionLabels[key] || "其他指标"} value={value || "-"} />
                   </Col>
                 ))}
               </Row>
@@ -365,13 +379,13 @@ export default function GeoReportPage(props: Props) {
                 renderItem={(model) => (
                   <List.Item>
                     <List.Item.Meta
-                      title={model.model_key}
+                      title={aiModelDisplayName(model.model_key)}
                       description={`成功 ${model.successful_calls}/${model.planned_calls}`}
                     />
                     <Space wrap>
                       <Tag color="blue">GEO {model.geo?.score || "-"}</Tag>
                       <Tag>口碑 {model.brand_reputation?.score || "-"}</Tag>
-                      <Tag>{model.geo?.status || model.status}</Tag>
+                      <Tag>{reportStatusLabel(model.geo?.status || model.status)}</Tag>
                     </Space>
                   </List.Item>
                 )}
@@ -398,14 +412,16 @@ export default function GeoReportPage(props: Props) {
                           <List.Item>
                             <Space orientation="vertical" style={{ width: "100%" }}>
                               <Space wrap>
-                                <Typography.Text strong>{result.model_key}</Typography.Text>
-                                <Tag>{result.status}</Tag>
+                                <Typography.Text strong>
+                                  {aiModelDisplayName(result.model_key)}
+                                </Typography.Text>
+                                <Tag>{reportStatusLabel(result.status)}</Tag>
                                 {result.score?.total && (
                                   <Tag color="blue">单题 {result.score.total}</Tag>
                                 )}
                               </Space>
                               <Typography.Paragraph>
-                                {result.snippet || "暂无成功回答"}
+                                {result.snippet || "本次未获得有效回答"}
                               </Typography.Paragraph>
                               {result.answer_available && !answers[result.call_id] && (
                                 <Button
@@ -473,8 +489,8 @@ export default function GeoReportPage(props: Props) {
                 </Space>
                 <Divider />
                 <Typography.Text>
-                  快速复测沿用原报告的冻结问题和精确逻辑模型集合（{baselineModels}
-                  ），使用当前主体版本和当前评分规则；不会替换不可用模型。
+                  快速复测沿用原报告的问题和检测模型（{baselineModels}
+                  ），并采用当前主体资料与评分口径；若原模型不可用，将明确提示且不会自动替换。
                 </Typography.Text>
                 <Space wrap>
                   <Button type="primary" loading={busy} onClick={() => void startQuickRetest()}>
@@ -504,7 +520,7 @@ export default function GeoReportPage(props: Props) {
           <Alert
             type="info"
             showIcon
-            title="按当前合法问题和模型创建新的独立检测；是否可比将由最终冻结事实决定。"
+            title="使用当前可选的问题和模型创建一次独立复测；完成后系统会判断能否与原报告正式对比。"
           />
           <Typography.Text strong>当前问题</Typography.Text>
           <Checkbox.Group

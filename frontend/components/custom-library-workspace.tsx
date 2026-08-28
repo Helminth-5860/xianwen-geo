@@ -19,8 +19,8 @@ export function CustomLibraryWorkspace({ subjectId }: Props) {
         <Alert
           type="info"
           showIcon
-          title="资料仅属于当前主体"
-          description="上传文件会先经过私有存储、安全扫描和格式验证；解析内容经您确认后，才能用于后续业务。"
+          title="资料仅用于当前主体"
+          description="上传并确认的资料可用于补充主体信息和后续内容创作，其他主体不会看到这些资料。"
         />
         <SubjectDocuments subjectId={subjectId} />
       </Space>

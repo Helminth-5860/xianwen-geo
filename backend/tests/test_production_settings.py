@@ -22,6 +22,7 @@ REQUIRED_ENVIRONMENT = {
     "PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY": "p" * 64,
     "FILE_IDEMPOTENCY_HMAC_KEY": "f" * 64,
     "IMAGE_IDEMPOTENCY_HMAC_KEY": "i" * 64,
+    "VIDEO_IDEMPOTENCY_HMAC_KEY": "v" * 64,
     "WEB_IMPORT_IDEMPOTENCY_HMAC_KEY": "w" * 64,
     "SUBJECT_ENRICHMENT_IDEMPOTENCY_HMAC_KEY": "e" * 64,
     "KEYWORD_GENERATION_IDEMPOTENCY_HMAC_KEY": "k" * 64,
@@ -60,6 +61,7 @@ def import_settings(overrides: dict[str, str] | None = None, missing: str | None
             "PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY",
             "FILE_IDEMPOTENCY_HMAC_KEY",
             "IMAGE_IDEMPOTENCY_HMAC_KEY",
+            "VIDEO_IDEMPOTENCY_HMAC_KEY",
             "WEB_IMPORT_IDEMPOTENCY_HMAC_KEY",
             "SUBJECT_ENRICHMENT_IDEMPOTENCY_HMAC_KEY",
             "SUBJECT_ENRICHMENT_PROVIDER",
@@ -128,6 +130,7 @@ def import_settings(overrides: dict[str, str] | None = None, missing: str | None
         "PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY",
         "FILE_IDEMPOTENCY_HMAC_KEY",
         "IMAGE_IDEMPOTENCY_HMAC_KEY",
+        "VIDEO_IDEMPOTENCY_HMAC_KEY",
         "WEB_IMPORT_IDEMPOTENCY_HMAC_KEY",
         "SUBJECT_ENRICHMENT_IDEMPOTENCY_HMAC_KEY",
         "KEYWORD_GENERATION_IDEMPOTENCY_HMAC_KEY",
@@ -191,6 +194,22 @@ def test_production_missing_required_environment_fails_fast(missing):
         (
             {"IMAGE_IDEMPOTENCY_HMAC_KEY": "f" * 64},
             "IMAGE_IDEMPOTENCY_HMAC_KEY must not reuse another secret",
+        ),
+        (
+            {"VIDEO_IDEMPOTENCY_HMAC_KEY": "weak"},
+            "VIDEO_IDEMPOTENCY_HMAC_KEY is too weak",
+        ),
+        (
+            {"VIDEO_IDEMPOTENCY_HMAC_KEY": ("local-test-video-idempotency-key-not-for-production")},
+            "VIDEO_IDEMPOTENCY_HMAC_KEY is too weak",
+        ),
+        (
+            {"VIDEO_IDEMPOTENCY_HMAC_KEY": "i" * 64},
+            "VIDEO_IDEMPOTENCY_HMAC_KEY must be independent",
+        ),
+        (
+            {"VIDEO_IDEMPOTENCY_HMAC_KEY": "r" * 64},
+            "VIDEO_IDEMPOTENCY_HMAC_KEY must be independent",
         ),
         (
             {"WEB_IMPORT_IDEMPOTENCY_HMAC_KEY": "i" * 64},

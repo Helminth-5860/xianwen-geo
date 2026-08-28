@@ -21,6 +21,11 @@ import {
   type SubjectDocument,
 } from "@/lib/documents-client";
 
+function formatDocumentSize(size: number): string {
+  if (size < 1024 * 1024) return `${Math.max(1, Math.round(size / 1024))} KB`;
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 export function SubjectDocuments({
   subjectId,
   disabled = false,
@@ -67,7 +72,7 @@ export function SubjectDocuments({
     setProgress(0);
     try {
       const created = await createUploadIntent(subjectId, file, newUploadIdempotencyKey());
-      if (!created.upload) throw new Error("上传凭证不可用，请稍后重试");
+      if (!created.upload) throw new Error("暂时无法上传文件，请稍后重新尝试。");
       await uploadDirect(created.upload, file, setProgress);
       let intent = await completeUploadIntent(created.intent);
       setMessage("文件正在进行安全验证");
@@ -159,7 +164,7 @@ export function SubjectDocuments({
       </Upload>
       <List
         dataSource={documents}
-        locale={{ emptyText: "暂无已验证文件" }}
+        locale={{ emptyText: "还没有已确认的文件，上传并确认内容后会显示在这里。" }}
         renderItem={(document) => (
           <List.Item
             actions={[
@@ -188,7 +193,8 @@ export function SubjectDocuments({
             <Space direction="vertical" size={0}>
               <Typography.Text>{document.display_name}</Typography.Text>
               <Typography.Text type="secondary">
-                {document.detected_file_kind.toUpperCase()} · {document.size_bytes} bytes
+                {document.detected_file_kind.toUpperCase()} ·{" "}
+                {formatDocumentSize(document.size_bytes)}
               </Typography.Text>
             </Space>
           </List.Item>

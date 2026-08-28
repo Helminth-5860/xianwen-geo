@@ -11,7 +11,7 @@ from apps.admin_rbac.models import AuditEvent, RiskAction, RiskPolicy
 from apps.admin_rbac.risk_catalog import RISK_ACTION_BY_KEY
 from apps.admin_rbac.risk_handlers import HANDLER_REGISTRY, HANDLER_SPECS
 from apps.plans.catalog import MODEL_KEYS, load_limit_catalog
-from apps.plans.models import PlanLimitDefinition
+from apps.plans.models import PlanLimit, PlanLimitDefinition
 from apps.plans.services import (
     PlanDraftAlreadyExists,
     PlanImmutable,
@@ -106,6 +106,7 @@ def test_catalog_compatibility_storage_and_sync_idempotence():
         "concurrent_detection_jobs",
         "article_credits",
         "image_credits",
+        "video_credits",
         "allow_user_model_selection",
     } <= definitions.keys()
     assert "subject_count" not in definitions
@@ -226,6 +227,30 @@ def test_copy_deep_and_informal_composite_confirmation():
         ]
         is False
     )
+
+
+@pytest.mark.django_db
+def test_new_draft_from_pre_video_published_version_adds_only_fail_closed_video_default():
+    user = actor()
+    plan = make_plan(user, code="pre-video-plan")
+    published = publish(user, make_draft(user, plan))
+    PlanLimit.objects.filter(
+        plan_version=published,
+        limit_key="video_credits",
+    ).delete()
+    source_count = published.limits.count()
+    plan.refresh_from_db()
+
+    draft = create_plan_version(
+        plan_id=plan.pk,
+        actor=user,
+        expected_plan_version=plan.version,
+        source_version_id=published.pk,
+    )
+
+    video_limit = draft.limits.get(limit_key="video_credits")
+    assert video_limit.integer_value == 0
+    assert draft.limits.count() == source_count + 1
 
 
 @pytest.mark.django_db

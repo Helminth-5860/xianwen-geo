@@ -110,14 +110,14 @@ describe("套餐真实交互", () => {
     expect(screen.getByText("联系开通")).toBeTruthy();
     expect(screen.getByText("支持正式综合分")).toBeTruthy();
     expect(screen.getByText("不支持正式综合分")).toBeTruthy();
-    expect(screen.getAllByRole("button", { name: "申请套餐 / 联系开通" })).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: "申请开通" })).toHaveLength(2);
     expect(screen.queryByText("立即购买")).toBeNull();
   });
 
   it("用户套餐为空时显示安全空状态", async () => {
     getPublicPlans.mockResolvedValue([]);
     render(<PlanCatalog />);
-    expect(await screen.findByText("当前暂无可用套餐")).toBeTruthy();
+    expect(await screen.findByText("当前没有可申请的套餐，请稍后查看或联系管理员。")).toBeTruthy();
   });
 
   it("创建 contact 套餐不会提交展示价格", async () => {

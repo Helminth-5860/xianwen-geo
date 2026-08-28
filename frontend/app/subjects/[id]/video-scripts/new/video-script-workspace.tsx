@@ -1,11 +1,6 @@
 "use client";
 
-import {
-  CopyOutlined,
-  ReloadOutlined,
-  SaveOutlined,
-  VideoCameraOutlined,
-} from "@ant-design/icons";
+import { CopyOutlined, ReloadOutlined, SaveOutlined, VideoCameraOutlined } from "@ant-design/icons";
 import {
   Alert,
   Button,
@@ -139,7 +134,7 @@ function copyText(title: string, script: EditableScript) {
     "完整口播稿：",
     script.full_voiceover,
     "",
-    `结尾 CTA：${script.cta}`,
+    `结尾行动引导：${script.cta}`,
   ].join("\n");
 }
 
@@ -241,7 +236,9 @@ export default function VideoScriptWorkspace({
   const isGenerating = Boolean(job && ["queued", "running"].includes(job.status));
   const hasUnsavedChanges = useMemo(() => {
     if (!video?.script || !draftScript) return false;
-    return draftTitle !== video.title || JSON.stringify(draftScript) !== JSON.stringify(video.script);
+    return (
+      draftTitle !== video.title || JSON.stringify(draftScript) !== JSON.stringify(video.script)
+    );
   }, [draftScript, draftTitle, video]);
 
   const saveDraft = useCallback(async () => {
@@ -296,7 +293,7 @@ export default function VideoScriptWorkspace({
       applyVideo(created);
       const nextJob = await generateVideoScript(created.id);
       setJob(nextJob);
-      setNotice("生成任务已提交；成功后计入 1 次内容生成额度，生成失败不会扣减。");
+      setNotice("已开始生成视频脚本；成功后计入 1 次内容生成额度，未完成则不会扣除。");
     } catch (reason) {
       setError(userMessage(reason));
     } finally {
@@ -514,9 +511,7 @@ export default function VideoScriptWorkspace({
                 >
                   生成视频脚本
                 </Button>
-                <Text type="secondary">
-                  建议时长 15-90 秒；首次先生成完整分镜，再按需要编辑。
-                </Text>
+                <Text type="secondary">建议时长 15-90 秒；首次先生成完整分镜，再按需要编辑。</Text>
               </Space>
             </Space>
           </Card>
@@ -548,7 +543,7 @@ export default function VideoScriptWorkspace({
                   description={
                     <Space>
                       <Spin size="small" />
-                      <span>正在生成标题、3 个开场钩子、分镜、完整口播稿和 CTA。</span>
+                      <span>正在生成标题、3 个开场钩子、分镜、完整口播稿和结尾行动引导。</span>
                     </Space>
                   }
                 />
@@ -569,7 +564,11 @@ export default function VideoScriptWorkspace({
                   <div>
                     <Title level={4}>开场钩子</Title>
                     <Text type="secondary">AI 一次给出 3 个前 3 秒开场，可直接挑选或修改。</Text>
-                    <Space orientation="vertical" size="small" style={{ width: "100%", marginTop: 12 }}>
+                    <Space
+                      orientation="vertical"
+                      size="small"
+                      style={{ width: "100%", marginTop: 12 }}
+                    >
                       {draftScript.hooks.map((hook, index) => (
                         <Input
                           key={`hook-${index}`}
@@ -651,9 +650,9 @@ export default function VideoScriptWorkspace({
                   </div>
 
                   <div>
-                    <Title level={4}>结尾 CTA</Title>
+                    <Title level={4}>结尾行动引导</Title>
                     <Input
-                      aria-label="结尾 CTA"
+                      aria-label="结尾行动引导"
                       value={draftScript.cta}
                       onChange={(event) =>
                         setDraftScript((current) =>

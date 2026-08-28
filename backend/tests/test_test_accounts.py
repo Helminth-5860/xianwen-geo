@@ -100,6 +100,7 @@ def test_test_account_has_full_entitlements_and_quota_settlement_does_not_deduct
     assert limits["detection_points"] > 1_000_000
     assert limits["article_credits"] > 1_000_000
     assert limits["image_credits"] > 1_000_000
+    assert limits["video_credits"] > 1_000_000
     assert limits["report_export_enabled"] is True
     assert snapshot["model_permissions"]
 
@@ -136,3 +137,27 @@ def test_test_account_has_full_entitlements_and_quota_settlement_does_not_deduct
     )
     assert ledger.available_delta == 0
     assert ledger.frozen_delta == 0
+
+    video_account = QuotaAccount.objects.get(
+        subscription=subscription,
+        quota_type="video_credits",
+        subject__isnull=True,
+    )
+    video_before = (video_account.available, video_account.frozen)
+    video_hold = freeze_quota(
+        account_id=video_account.pk,
+        amount=10,
+        business_type="test_video_generation",
+        business_id=uuid.uuid4(),
+        idempotency_key="test-video-account-no-deduction",
+        request_id=uuid.uuid4(),
+    )
+    consume_hold(
+        hold_id=video_hold.pk,
+        amount=10,
+        idempotency_key="test-video-consume-no-deduction",
+        request_id=uuid.uuid4(),
+    )
+    video_account.refresh_from_db()
+    assert video_hold.is_test_account_bypass is True
+    assert (video_account.available, video_account.frozen) == video_before

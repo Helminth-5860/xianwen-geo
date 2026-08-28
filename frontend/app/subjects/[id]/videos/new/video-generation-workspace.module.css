@@ -1,0 +1,123 @@
+.heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.heading h2 {
+  margin-bottom: 6px !important;
+}
+
+.formGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 0.42fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.field {
+  display: grid;
+  gap: 10px;
+}
+
+.field + .field {
+  margin-top: 22px;
+}
+
+.choiceGroup {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.choiceGroup :global(.ant-radio-button-wrapper) {
+  min-width: 112px;
+  text-align: center;
+}
+
+.uploadPanel {
+  padding: 16px;
+  border: 1px dashed #b9c7da;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.quotaPanel {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid #e6ebf2;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.quotaValue {
+  color: #1668dc;
+  font-size: 28px;
+  font-weight: 750;
+  line-height: 1;
+}
+
+.record {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 360px);
+  gap: 20px;
+  align-items: start;
+}
+
+.recordMeta {
+  min-width: 0;
+}
+
+.prompt {
+  margin: 8px 0 0 !important;
+  white-space: pre-wrap;
+}
+
+.video {
+  display: block;
+  width: 100%;
+  max-height: 320px;
+  border-radius: 10px;
+  background: #111827;
+}
+
+.recordActions {
+  margin-top: 14px;
+}
+
+.pagination {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 18px;
+}
+
+@media (max-width: 820px) {
+  .heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .formGrid,
+  .record {
+    grid-template-columns: 1fr;
+  }
+
+  .quotaPanel {
+    order: -1;
+  }
+}
+
+@media (max-width: 520px) {
+  .choiceGroup :global(.ant-radio-button-wrapper) {
+    min-width: 0;
+    flex: 1 1 42%;
+    padding-inline: 10px;
+  }
+
+  .pagination {
+    justify-content: center;
+  }
+}

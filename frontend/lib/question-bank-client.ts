@@ -6,21 +6,21 @@ export type QuestionGenerationStatus =
   "queued" | "running" | "retry_wait" | "succeeded" | "failed" | "conflict" | "superseded";
 
 const questionGenerationErrorMessages: Readonly<Record<string, string>> = {
-  QUESTION_GENERATION_PROVIDER_UNAVAILABLE: "问题生成服务暂未启用，请联系管理员配置后再试",
-  QUESTION_GENERATION_INVALID_RESPONSE: "AI 返回格式异常，请重新生成。",
-  QUESTION_GENERATION_PROVIDER_ERROR: "问题生成服务暂时不可用，请稍后重试",
-  QUESTION_GENERATION_INTERNAL_ERROR: "问题生成服务暂时不可用，请稍后重试",
-  QUESTION_GENERATION_IN_PROGRESS: "已有问题生成任务正在处理中，请稍候",
-  QUESTION_GENERATION_PROVIDER_TIMEOUT: "问题生成服务响应超时，请稍后重试",
-  QUESTION_GENERATION_PROVIDER_RATE_LIMITED: "问题生成请求较多，请稍后重试",
-  QUESTION_GENERATION_PROVIDER_TEMPORARY: "问题生成服务暂时不可用，请稍后重试",
-  QUESTION_GENERATION_PROVIDER_REJECTED: "问题生成服务未接受本次请求，请稍后重试",
-  QUESTION_GENERATION_IDEMPOTENCY_CONFLICT: "请求信息已经变化，请刷新页面后重试",
+  QUESTION_GENERATION_PROVIDER_UNAVAILABLE: "问题生成服务暂时不可用，请稍后重新尝试或联系管理员。",
+  QUESTION_GENERATION_INVALID_RESPONSE: "AI 返回内容暂时无法识别，请重新生成。",
+  QUESTION_GENERATION_PROVIDER_ERROR: "问题生成服务暂时不可用，请稍后重新尝试。",
+  QUESTION_GENERATION_INTERNAL_ERROR: "问题生成服务暂时不可用，请稍后重新尝试。",
+  QUESTION_GENERATION_IN_PROGRESS: "问题正在生成，请稍候。",
+  QUESTION_GENERATION_PROVIDER_TIMEOUT: "问题生成时间较长，本次未完成，请重新生成。",
+  QUESTION_GENERATION_PROVIDER_RATE_LIMITED: "当前使用人数较多，请稍后重新生成问题。",
+  QUESTION_GENERATION_PROVIDER_TEMPORARY: "问题生成服务暂时不可用，请稍后重新尝试。",
+  QUESTION_GENERATION_PROVIDER_REJECTED: "本次问题未能生成，请稍后重新尝试。",
+  QUESTION_GENERATION_IDEMPOTENCY_CONFLICT: "页面内容已经变化，请刷新后重新尝试。",
 };
 
 export function questionGenerationErrorMessage(
   code: string | null | undefined,
-  fallback = "问题库生成失败，请稍后重试",
+  fallback = "问题库未能生成，请稍后重新尝试。",
 ) {
   return (code && questionGenerationErrorMessages[code]) || fallback;
 }

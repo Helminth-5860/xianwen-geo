@@ -121,23 +121,23 @@ export type KeywordGenerationStatus =
   "queued" | "running" | "retry_wait" | "succeeded" | "failed" | "conflict" | "superseded";
 
 const keywordErrorMessages: Readonly<Record<string, string>> = {
-  KEYWORD_GENERATION_PROVIDER_TIMEOUT: "AI 关键词服务响应超时，请稍后重试",
-  KEYWORD_GENERATION_PROVIDER_RATE_LIMITED: "AI 关键词服务当前请求较多，请稍后重试",
-  KEYWORD_GENERATION_PROVIDER_TEMPORARY: "AI 关键词服务暂时不可用，请稍后重试",
-  KEYWORD_GENERATION_PROVIDER_REJECTED: "AI 关键词服务拒绝了本次请求，请调整条件后重试",
-  KEYWORD_GENERATION_INVALID_RESPONSE: "AI 返回格式异常，请重新生成。",
-  KEYWORD_GENERATION_INTERNAL_ERROR: "关键词生成任务处理失败，请稍后重试",
-  KEYWORD_VALUES_INVALID: "已有关键词数据不完整，请刷新后重新生成",
-  KEYWORD_VERSION_NO_CHANGES: "本次没有生成新的关键词，请调整条件后重试",
-  KEYWORD_VERSION_CONFLICT: "关键词内容已经更新，请刷新后重试",
-  KEYWORD_SUBJECT_VERSION_CONFLICT: "主体资料已经更新，请刷新后重新生成",
-  DISTILLATION_PROVIDER_TIMEOUT: "关键词蒸馏服务响应超时，请稍后重试",
-  DISTILLATION_PROVIDER_RATE_LIMITED: "关键词蒸馏服务当前请求较多，请稍后重试",
-  DISTILLATION_PROVIDER_TEMPORARY: "关键词蒸馏服务暂时不可用，请稍后重试",
-  DISTILLATION_PROVIDER_REJECTED: "关键词蒸馏服务拒绝了本次请求，请稍后重试",
-  DISTILLATION_INVALID_RESPONSE: "AI 返回格式异常，请重新生成。",
-  DISTILLATION_INTERNAL_ERROR: "关键词蒸馏任务处理失败，请稍后重试",
-  DISTILLATION_VERSION_CONFLICT: "蒸馏内容已经更新，请刷新后重试",
+  KEYWORD_GENERATION_PROVIDER_TIMEOUT: "AI 关键词生成时间较长，本次未完成，请重新生成。",
+  KEYWORD_GENERATION_PROVIDER_RATE_LIMITED: "当前使用人数较多，请稍后重新生成关键词。",
+  KEYWORD_GENERATION_PROVIDER_TEMPORARY: "AI 关键词服务暂时不可用，请稍后重新生成。",
+  KEYWORD_GENERATION_PROVIDER_REJECTED: "本次关键词未能生成，请调整条件后重新尝试。",
+  KEYWORD_GENERATION_INVALID_RESPONSE: "AI 返回内容暂时无法识别，请重新生成。",
+  KEYWORD_GENERATION_INTERNAL_ERROR: "关键词生成未完成，请稍后重新尝试。",
+  KEYWORD_VALUES_INVALID: "已有关键词数据不完整，请刷新后重新生成。",
+  KEYWORD_VERSION_NO_CHANGES: "本次没有生成新的关键词，请调整条件后重新尝试。",
+  KEYWORD_VERSION_CONFLICT: "关键词内容已经更新，请刷新后重新尝试。",
+  KEYWORD_SUBJECT_VERSION_CONFLICT: "主体资料已经更新，请刷新后重新生成。",
+  DISTILLATION_PROVIDER_TIMEOUT: "关键词蒸馏时间较长，本次未完成，请重新尝试。",
+  DISTILLATION_PROVIDER_RATE_LIMITED: "当前使用人数较多，请稍后重新蒸馏。",
+  DISTILLATION_PROVIDER_TEMPORARY: "关键词蒸馏服务暂时不可用，请稍后重新尝试。",
+  DISTILLATION_PROVIDER_REJECTED: "本次关键词蒸馏未能完成，请稍后重新尝试。",
+  DISTILLATION_INVALID_RESPONSE: "AI 返回内容暂时无法识别，请重新蒸馏。",
+  DISTILLATION_INTERNAL_ERROR: "关键词蒸馏未完成，请稍后重新尝试。",
+  DISTILLATION_VERSION_CONFLICT: "蒸馏内容已经更新，请刷新后重新尝试。",
   DISTILLATION_KEYWORD_VERSION_CONFLICT: "关键词已经更新，请重新蒸馏",
 };
 
@@ -148,11 +148,11 @@ export function keywordJobErrorMessage(code: string, fallback: string) {
 export const keywordJobStatusLabel: Readonly<Record<KeywordGenerationStatus, string>> = {
   queued: "等待生成",
   running: "正在生成",
-  retry_wait: "等待重试",
+  retry_wait: "等待再次处理",
   succeeded: "生成完成",
-  failed: "生成失败",
+  failed: "生成未完成",
   conflict: "内容已更新",
-  superseded: "任务已被替代",
+  superseded: "已由新的生成覆盖",
 };
 
 export type KeywordGenerationJob = Readonly<{
@@ -374,11 +374,11 @@ export type DistillationStatus =
 export const distillationJobStatusLabel: Readonly<Record<DistillationStatus, string>> = {
   queued: "等待蒸馏",
   running: "正在蒸馏",
-  retry_wait: "等待重试",
+  retry_wait: "等待再次处理",
   succeeded: "蒸馏完成",
-  failed: "蒸馏失败",
+  failed: "蒸馏未完成",
   conflict: "内容已更新",
-  superseded: "任务已被替代",
+  superseded: "已由新的蒸馏覆盖",
 };
 
 export type DistillationSourceKeyword = Readonly<{

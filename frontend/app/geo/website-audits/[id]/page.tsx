@@ -75,7 +75,7 @@ function severityLabel(severity: string) {
     low: "低风险",
     info: "提示",
   };
-  return labels[severity] ?? severity;
+  return labels[severity] ?? "提示";
 }
 
 function categoryLabel(category: string) {
@@ -84,15 +84,24 @@ function categoryLabel(category: string) {
     geo: "GEO",
     technical: "技术",
   };
-  return labels[category] ?? category;
+  return labels[category] ?? "其他";
+}
+
+function missingLayerLabel(layer: string) {
+  const labels: Readonly<Record<string, string>> = {
+    crawl: "整站扫描",
+    browser: "浏览器检测",
+    semantic: "AI 语义分析",
+  };
+  return labels[layer] ?? "其他检测项目";
 }
 
 function stageDescription(audit: WebsiteAuditDetail) {
-  if (["queued", "running"].includes(audit.status)) return "正在扫描官网与建立页面证据";
+  if (["queued", "running"].includes(audit.status)) return "正在扫描官网页面";
   if (["queued", "running"].includes(audit.browser_status)) return "正在执行移动端与桌面端浏览器检测";
   if (["queued", "running"].includes(audit.semantic_status)) return "正在进行 AI GEO 语义深度分析";
-  if (audit.report.status === "complete") return "检测证据已完整，可以查看正式评分与问题明细";
-  if (audit.report.status === "partial") return "部分检测层未完成，当前结果仅展示已有证据";
+  if (audit.report.status === "complete") return "检测已完成，可以查看评分与问题明细";
+  if (audit.report.status === "partial") return "部分检测项目未完成，当前仅展示已有结果";
   return "检测已结束";
 }
 
@@ -136,7 +145,7 @@ export default function WebsiteAuditDetailPage() {
       audit
         ? Object.entries(audit.report.scores).map(([key, score]) => ({
             key,
-            label: scoreLabels[key] ?? key,
+            label: scoreLabels[key] ?? "其他评分",
             score,
           }))
         : [],
@@ -167,7 +176,7 @@ export default function WebsiteAuditDetailPage() {
     <main className="geo-dashboard website-audit-page">
       <section className="geo-dashboard__header">
         <div>
-          <Text type="secondary">WEBSITE AUDIT REPORT</Text>
+          <Text type="secondary">官网检测报告</Text>
           <Title level={2}>官网深度检测报告</Title>
           <Paragraph type="secondary">{audit.root_url}</Paragraph>
         </div>
@@ -217,8 +226,8 @@ export default function WebsiteAuditDetailPage() {
             <Alert
               type="warning"
               showIcon
-              message="检测证据未完整"
-              description={`缺少：${report.missing_layers.join("、")}。当前页面不会把缺失层按 0 分计入最终评分。`}
+              message="部分检测项目未完成"
+              description={`未完成：${report.missing_layers.map(missingLayerLabel).join("、")}。这些项目不会按 0 分计算，你可以稍后刷新查看。`}
             />
           )}
         </Card>
@@ -231,7 +240,7 @@ export default function WebsiteAuditDetailPage() {
             {report.overall_score === null ? "—" : report.overall_score}
           </div>
           <Text type="secondary">
-            {report.overall_score === null ? "等待完整检测证据" : `评分版本 ${report.score_version}`}
+            {report.overall_score === null ? "等待检测完成" : "综合评分基于本次检测结果"}
           </Text>
         </Card>
 
@@ -259,7 +268,7 @@ export default function WebsiteAuditDetailPage() {
             {Object.entries(report.semantic_dimensions).map(([key, score]) => (
               <div key={key} className="website-audit-semantic-item">
                 <span>
-                  <Text>{semanticLabels[key] ?? key}</Text>
+                  <Text>{semanticLabels[key] ?? "其他语义指标"}</Text>
                   <Text strong>{score}</Text>
                 </span>
                 <Progress percent={score} showInfo={false} size="small" status={scoreStatus(score)} />
@@ -291,14 +300,14 @@ export default function WebsiteAuditDetailPage() {
         </Card>
 
         <Space direction="vertical" size="middle" style={{ width: "100%" }}>
-          <Card title="检测证据">
+          <Card title="检测数据">
             <Descriptions column={1} size="small">
               <Descriptions.Item label="抓取页面">{report.evidence.fetched_pages}</Descriptions.Item>
               <Descriptions.Item label="抓取失败">{report.evidence.failed_pages}</Descriptions.Item>
               <Descriptions.Item label="浏览器完成">{report.evidence.browser_completed}</Descriptions.Item>
               <Descriptions.Item label="浏览器失败">{report.evidence.browser_failed}</Descriptions.Item>
-              <Descriptions.Item label="AI 语义页面">{report.evidence.semantic_pages}</Descriptions.Item>
-              <Descriptions.Item label="AI 评估问题">{report.evidence.semantic_questions}</Descriptions.Item>
+              <Descriptions.Item label="已完成语义分析的页面">{report.evidence.semantic_pages}</Descriptions.Item>
+              <Descriptions.Item label="已评估的问题">{report.evidence.semantic_questions}</Descriptions.Item>
             </Descriptions>
           </Card>
 
@@ -329,14 +338,14 @@ export default function WebsiteAuditDetailPage() {
         <Card title="浏览器性能">
           <div className="website-audit-browser-grid">
             {Object.entries(report.browser_metrics).map(([profile, metrics]) => (
-              <Card key={profile} size="small" title={profile === "mobile" ? "移动端" : profile === "desktop" ? "桌面端" : profile}>
+              <Card key={profile} size="small" title={profile === "mobile" ? "移动端" : profile === "desktop" ? "桌面端" : "其他设备"}>
                 <Descriptions column={1} size="small">
                   <Descriptions.Item label="样本页面">{metrics.sample_count}</Descriptions.Item>
-                  <Descriptions.Item label="TTFB P75">{metrics.ttfb_p75_ms ?? "—"} ms</Descriptions.Item>
-                  <Descriptions.Item label="LCP P75">{metrics.lcp_p75_ms ?? "—"} ms</Descriptions.Item>
-                  <Descriptions.Item label="CLS P75">{metrics.cls_p75 ?? "—"}</Descriptions.Item>
-                  <Descriptions.Item label="TBT P75">{metrics.tbt_p75_ms ?? "—"} ms</Descriptions.Item>
-                  <Descriptions.Item label="失败请求">{metrics.failed_requests}</Descriptions.Item>
+                  <Descriptions.Item label="首字节时间（75 分位）">{metrics.ttfb_p75_ms ?? "—"} 毫秒</Descriptions.Item>
+                  <Descriptions.Item label="最大内容绘制（75 分位）">{metrics.lcp_p75_ms ?? "—"} 毫秒</Descriptions.Item>
+                  <Descriptions.Item label="布局偏移（75 分位）">{metrics.cls_p75 ?? "—"}</Descriptions.Item>
+                  <Descriptions.Item label="页面阻塞时间（75 分位）">{metrics.tbt_p75_ms ?? "—"} 毫秒</Descriptions.Item>
+                  <Descriptions.Item label="未成功访问">{metrics.failed_requests}</Descriptions.Item>
                 </Descriptions>
               </Card>
             ))}
@@ -352,7 +361,7 @@ export default function WebsiteAuditDetailPage() {
               label: `主题缺口（${topicGaps.length}）`,
               children:
                 topicGaps.length === 0 ? (
-                  <Text type="secondary">暂无主题缺口。</Text>
+                  <Text type="secondary">暂未发现需要补充的主题。</Text>
                 ) : (
                   <Space direction="vertical" style={{ width: "100%" }}>
                     {topicGaps.map((gap, index) => (
@@ -432,11 +441,11 @@ export default function WebsiteAuditDetailPage() {
                 </span>
               ),
             },
-            { title: "状态", dataIndex: "http_status", width: 90 },
-            { title: "响应", dataIndex: "response_ms", width: 100, render: (value) => (value === null ? "—" : `${value} ms`) },
+            { title: "访问状态", dataIndex: "http_status", width: 90 },
+            { title: "页面打开耗时", dataIndex: "response_ms", width: 110, render: (value) => (value === null ? "—" : `${value} 毫秒`) },
             { title: "内链", dataIndex: "internal_links_count", width: 80 },
             { title: "外链", dataIndex: "external_links_count", width: 80 },
-            { title: "正文字符", dataIndex: "text_characters", width: 100 },
+            { title: "正文长度", dataIndex: "text_characters", width: 100 },
           ]}
         />
       </Card>

@@ -81,7 +81,12 @@ export function KeywordRegionSelector({
             ))}
           </Space>
         ) : (
-          <Alert type="warning" showIcon message="当前主体还没有可用的服务区域" />
+          <Alert
+            type="warning"
+            showIcon
+            message="当前主体还没有可用的服务区域"
+            description="请先到主体档案设置服务区域，再继续生成地域关键词。"
+          />
         )}
         {parsed.legacyText ? (
           <Alert

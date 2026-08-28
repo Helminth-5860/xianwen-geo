@@ -220,7 +220,13 @@ def _validate_json_value(definition: PlanLimitDefinition, value: Any) -> Any:
         if value is not None and (type(value) is not int or not 0 <= value <= maximum):
             raise PlanLimitInvalid(f"{definition.key} 必须为非负整数或 null。")
     elif kind == "quota_expiry_policy":
-        allowed_keys = {"detection_points", "article_credits", "image_credits", "storage_bytes"}
+        allowed_keys = {
+            "detection_points",
+            "article_credits",
+            "image_credits",
+            "video_credits",
+            "storage_bytes",
+        }
         allowed_values = set(definition.json_schema.get("allowed_values", []))
         if not isinstance(value, dict) or not set(value).issubset(allowed_keys):
             raise PlanLimitInvalid(f"{definition.key} 包含未知额度类型。")
@@ -369,22 +375,28 @@ def _create_models(version: PlanVersion, items: list[dict[str, Any]]) -> None:
 
 
 def _clone_entitlements(source: PlanVersion, target: PlanVersion) -> None:
-    source_limits = source.limits.select_related("limit_definition").order_by("limit_key")
-    PlanLimit.objects.bulk_create(
-        [
-            PlanLimit(
-                plan_version=target,
-                limit_definition=item.limit_definition,
-                limit_key=item.limit_key,
-                value_type=item.value_type,
-                integer_value=item.integer_value,
-                boolean_value=item.boolean_value,
-                text_value=item.text_value,
-                json_value=item.json_value,
-            )
-            for item in source_limits
-        ]
-    )
+    source_limits = list(source.limits.select_related("limit_definition").order_by("limit_key"))
+    rows = [
+        PlanLimit(
+            plan_version=target,
+            limit_definition=item.limit_definition,
+            limit_key=item.limit_key,
+            value_type=item.value_type,
+            integer_value=item.integer_value,
+            boolean_value=item.boolean_value,
+            text_value=item.text_value,
+            json_value=item.json_value,
+        )
+        for item in source_limits
+    ]
+    present = {item.limit_key for item in source_limits}
+    # Published snapshots created before video generation are immutable and
+    # legitimately lack only this newly introduced limit. Add its fail-closed
+    # default to the new draft without silently repairing unrelated corruption.
+    video_definition = _definition_rows().get("video_credits")
+    if video_definition is not None and "video_credits" not in present:
+        rows.append(_limit_row(target, video_definition, video_definition.default_value))
+    PlanLimit.objects.bulk_create(rows)
     source_models = source.model_permissions.order_by("sort_order", "model_key")
     PlanModelPermission.objects.bulk_create(
         [
@@ -863,6 +875,7 @@ def public_plan_summary(plan: Plan) -> dict[str, Any]:
         "detection_points",
         "article_credits",
         "image_credits",
+        "video_credits",
         "storage_bytes",
         "white_label_enabled",
         "report_export_enabled",

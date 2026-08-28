@@ -144,4 +144,18 @@ describe("发布检测页面", () => {
     expect(await screen.findAllByText("发布成功")).toHaveLength(2);
     expect(screen.getByText("检测到对应标题或正文。")).toBeTruthy();
   });
+
+  it("没有可检测文章时给出生成文章入口", async () => {
+    articleApi.getSubjectArticles.mockResolvedValue({
+      items: [],
+      pagination: { page: 1, page_size: 100, count: 0, total_pages: 0 },
+    });
+
+    render(<PublicationCheckWorkspace subjectId="subject-1" />);
+
+    expect(await screen.findByText("当前主体还没有可用于比对的已生成文章")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "去生成文章" }).getAttribute("href")).toBe(
+      "/subjects/subject-1/articles/new",
+    );
+  });
 });

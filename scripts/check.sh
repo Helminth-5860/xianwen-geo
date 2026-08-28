@@ -146,6 +146,7 @@ check_docker() {
     GEO_DETECTION_IDEMPOTENCY_HMAC_KEY=ci-only-geo-detection-hmac-key-with-more-than-fifty-characters-000000 \
     PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY=ci-only-plan-change-hmac-key-with-more-than-fifty-characters-000000 \
     IMAGE_IDEMPOTENCY_HMAC_KEY=ci-only-image-hmac-key-with-more-than-fifty-characters-000000 \
+    VIDEO_IDEMPOTENCY_HMAC_KEY=ci-only-video-hmac-key-with-more-than-fifty-characters-000000 \
     WEB_IMPORT_IDEMPOTENCY_HMAC_KEY=ci-only-web-import-hmac-key-with-more-than-fifty-characters-000000 \
     ALLOWED_HOSTS=localhost,api \
     CSRF_TRUSTED_ORIGINS=http://localhost:3000 \
@@ -170,6 +171,7 @@ check_docker() {
     GEO_DETECTION_IDEMPOTENCY_HMAC_KEY=ci-only-geo-detection-hmac-key-with-more-than-fifty-characters-000000 \
     PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY=ci-only-plan-change-hmac-key-with-more-than-fifty-characters-000000 \
     IMAGE_IDEMPOTENCY_HMAC_KEY=ci-only-image-hmac-key-with-more-than-fifty-characters-000000 \
+    VIDEO_IDEMPOTENCY_HMAC_KEY=ci-only-video-hmac-key-with-more-than-fifty-characters-000000 \
     WEB_IMPORT_IDEMPOTENCY_HMAC_KEY=ci-only-web-import-hmac-key-with-more-than-fifty-characters-000000 \
     ALLOWED_HOSTS=localhost,api \
     CSRF_TRUSTED_ORIGINS=http://localhost:3000 \

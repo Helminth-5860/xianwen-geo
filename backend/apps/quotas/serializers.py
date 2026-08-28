@@ -61,6 +61,7 @@ class UserQuotaAccountSerializer(serializers.ModelSerializer):
             "detection_points": "\u68c0\u6d4b\u70b9\u6570",
             "article_credits": "\u6587\u7ae0\u989d\u5ea6",
             "image_credits": "\u56fe\u7247\u989d\u5ea6",
+            "video_credits": "\u89c6\u9891\u989d\u5ea6",
             "storage_bytes": "\u5b58\u50a8\u7a7a\u95f4",
             "assistant_messages": "AI \u52a9\u624b\u6d88\u606f",
         }
@@ -81,6 +82,7 @@ class UserQuotaSummarySerializer(serializers.Serializer):
             "detection_points": "检测点数",
             "article_credits": "文章额度",
             "image_credits": "图片额度",
+            "video_credits": "视频额度",
             "storage_bytes": "存储空间",
             "assistant_messages": "AI 助手消息",
         }

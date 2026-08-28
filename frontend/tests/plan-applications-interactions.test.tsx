@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -145,11 +145,13 @@ afterEach(() => {
 describe("套餐申请真实交互", () => {
   it("登录用户通过 Modal 提交绑定版本，试用套餐不出现申请按钮", async () => {
     render(<PlanCatalog />);
-    const buttons = await screen.findAllByRole("button", { name: "申请套餐 / 联系开通" });
+    const buttons = await screen.findAllByRole("button", { name: "申请开通" });
     expect(buttons).toHaveLength(1);
-    expect(screen.getByText("试用由管理员审核后发放")).toBeTruthy();
+    expect(screen.getByText("提交申请后，我们会联系你确认试用开通事宜。")).toBeTruthy();
     await userEvent.click(buttons[0]);
-    expect(await screen.findByText("标准套餐 · 第 3 版")).toBeTruthy();
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("标准套餐")).toBeTruthy();
+    expect(within(dialog).queryByText(/第 3 版/)).toBeNull();
     await userEvent.type(screen.getByLabelText("申请备注"), "请联系");
     await userEvent.click(screen.getByRole("button", { name: "确认申请" }));
     await waitFor(() => expect(createPlanApplication).toHaveBeenCalledTimes(1));
@@ -166,7 +168,7 @@ describe("套餐申请真实交互", () => {
       .mockRejectedValueOnce(new Error("网络暂时不可用"))
       .mockResolvedValueOnce(application);
     render(<PlanCatalog />);
-    await userEvent.click(await screen.findByRole("button", { name: "申请套餐 / 联系开通" }));
+    await userEvent.click(await screen.findByRole("button", { name: "申请开通" }));
     await userEvent.click(screen.getByRole("button", { name: "确认申请" }));
     expect(await screen.findByText("网络暂时不可用")).toBeTruthy();
     await userEvent.click(screen.getByRole("button", { name: "确认申请" }));

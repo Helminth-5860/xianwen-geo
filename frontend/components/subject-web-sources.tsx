@@ -12,6 +12,14 @@ import {
   type WebSourceImport,
 } from "@/lib/web-sources-client";
 
+const webSourceStatusLabels: Readonly<Record<string, string>> = {
+  queued: "等待导入",
+  fetching: "正在导入",
+  retry_wait: "等待再次处理",
+  succeeded: "可以确认",
+  failed: "导入未完成",
+};
+
 export function SubjectWebSources({
   subjectId,
   disabled = false,
@@ -48,7 +56,7 @@ export function SubjectWebSources({
     setMessage("");
     try {
       let source = await importWebSource(subjectId, url);
-      setMessage("网页导入任务已受理，系统正在安全抓取公开内容");
+      setMessage("正在导入公开网页内容，完成后即可查看并确认。");
       for (
         let attempt = 0;
         attempt < 30 && ["queued", "fetching", "retry_wait"].includes(source.status);
@@ -62,7 +70,7 @@ export function SubjectWebSources({
       if (source.status === "succeeded") {
         setMessage("抓取完成，请检查并确认网页文本");
       } else if (source.status === "retry_wait") {
-        setMessage("网页抓取暂时不可用，系统会安全重试");
+        setMessage("网页暂时无法导入，请稍后重新尝试。");
       } else if (source.status === "failed") {
         setError("网页内容未能安全导入");
       }
@@ -95,7 +103,7 @@ export function SubjectWebSources({
   return (
     <Card title="公开网页资料" style={{ marginBottom: 20 }}>
       <Typography.Paragraph type="secondary">
-        仅支持公开 HTTP/HTTPS 网页。系统不会登录网站、携带 Cookie、执行脚本或加载子资源。
+        仅支持无需登录即可访问的公开网页。系统不会使用你的登录信息，也不会打开网页中的其他内容。
       </Typography.Paragraph>
       {error && <Alert type="error" showIcon message={error} />}
       {message && <Alert type="info" showIcon message={message} />}
@@ -104,7 +112,7 @@ export function SubjectWebSources({
           aria-label="公开网页地址"
           value={url}
           disabled={disabled || busy}
-          placeholder="https://example.com/public-page"
+          placeholder="粘贴公开网页链接"
           onChange={(event) => setUrl(event.target.value)}
         />
         <Button
@@ -118,7 +126,7 @@ export function SubjectWebSources({
       </Space.Compact>
       <List
         dataSource={sources}
-        locale={{ emptyText: "暂无网页资料" }}
+        locale={{ emptyText: "还没有网页资料，粘贴公开网页链接后即可导入。" }}
         renderItem={(source) => (
           <List.Item
             actions={[
@@ -138,7 +146,7 @@ export function SubjectWebSources({
             <Space>
               <Typography.Text>{source.display_url}</Typography.Text>
               {source.has_query && <Tag>含查询参数，已隐藏</Tag>}
-              <Tag>{source.status}</Tag>
+              <Tag>{webSourceStatusLabels[source.status] ?? "状态待确认"}</Tag>
             </Space>
           </List.Item>
         )}

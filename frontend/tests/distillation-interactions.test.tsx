@@ -289,8 +289,11 @@ describe("DistillationPanel", () => {
     });
     render(<DistillationPanel subjectId="subject-1" keywordDirty={false} />);
 
-    expect(await screen.findByText("当前没有待蒸馏关键词。")).toBeTruthy();
+    expect(await screen.findByText(/当前没有待蒸馏关键词，请先添加或生成关键词/)).toBeTruthy();
     expect(screen.getByText("待蒸馏关键词 0")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "去添加关键词" }).getAttribute("href")).toBe(
+      "/subjects/subject-1/keywords/custom",
+    );
     expect(screen.queryByText("品牌咨询")).toBeNull();
     expect(screen.queryByRole("button", { name: "确认蒸馏结果" })).toBeNull();
     expect(screen.getByRole("button", { name: "AI 蒸馏关键词" })).toHaveProperty("disabled", true);

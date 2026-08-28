@@ -9,6 +9,7 @@ import {
   type PlanApplication,
   type PublicPlan,
 } from "@/lib/plans-client";
+import { PLAN_APPLICATION_STATUS_LABELS, publicPlanBenefitLines } from "@/lib/product-copy";
 
 export function PlanCatalog() {
   const [plans, setPlans] = useState<PublicPlan[] | null>(null);
@@ -63,7 +64,9 @@ export function PlanCatalog() {
   };
   if (error) return <Alert type="error" message="套餐加载失败" description={error} />;
   if (!plans) return <Spin description="正在加载套餐" />;
-  if (!plans.length) return <Empty description="当前暂无可用套餐" />;
+  if (!plans.length) {
+    return <Empty description="当前没有可申请的套餐，请稍后查看或联系管理员。" />;
+  }
   return (
     <section aria-labelledby="plans-title">
       <Typography.Title level={2} id="plans-title">
@@ -86,19 +89,19 @@ export function PlanCatalog() {
                 </Tag>
               </Space>
               <Typography.Paragraph>
-                模型：{plan.models.map((item) => item.name).join("、")}
+                支持的 AI 平台：{plan.models.map((item) => item.name).join("、")}
               </Typography.Paragraph>
               {plan.is_trial ? (
-                <Alert type="info" message="试用由管理员审核后发放" />
+                <Alert type="info" message="提交申请后，我们会联系你确认试用开通事宜。" />
               ) : authenticated ? (
                 <Button type="primary" onClick={() => openApplication(plan)}>
-                  申请套餐 / 联系开通
+                  申请开通
                 </Button>
               ) : (
                 <Button href="/login?next=%2F">登录后申请套餐</Button>
               )}
               <Typography.Paragraph type="secondary">
-                不提供在线购买，不会创建申请或订单。
+                提交后，工作人员会联系你确认套餐和开通时间。
               </Typography.Paragraph>
             </Card>
           </List.Item>
@@ -116,12 +119,14 @@ export function PlanCatalog() {
       >
         {selected && (
           <Space direction="vertical" style={{ width: "100%" }}>
-            <Typography.Text strong>
-              {selected.name} · 第 {selected.version_no} 版
-            </Typography.Text>
-            <Typography.Paragraph>
-              权益摘要：{Object.keys(selected.benefits).join("、") || "以套餐公开说明为准"}
-            </Typography.Paragraph>
+            <Typography.Text strong>{selected.name}</Typography.Text>
+            <List
+              size="small"
+              header="套餐包含"
+              dataSource={publicPlanBenefitLines(selected.benefits)}
+              locale={{ emptyText: "具体内容以套餐说明为准。" }}
+              renderItem={(benefit) => <List.Item>{benefit}</List.Item>}
+            />
             {!application && (
               <Input.TextArea
                 aria-label="申请备注"
@@ -137,7 +142,7 @@ export function PlanCatalog() {
                 type="success"
                 showIcon
                 message="申请已提交"
-                description={`申请编号：${application.id}，状态：${application.status}`}
+                description={`申请编号：${application.id}，当前状态：${PLAN_APPLICATION_STATUS_LABELS[application.status]}`}
               />
             )}
           </Space>

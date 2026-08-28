@@ -30,7 +30,8 @@ describe("管理员 capability 壳层", () => {
     );
 
     expect(await screen.findByText("无权访问后台")).toBeTruthy();
-    expect(screen.getByText("没有权限执行此操作")).toBeTruthy();
+    expect(screen.getByText("你没有权限查看或操作这项内容。")).toBeTruthy();
+    expect(screen.queryByText("没有权限执行此操作")).toBeNull();
     expect(screen.queryByText("不应展示的后台内容")).toBeNull();
   });
 });

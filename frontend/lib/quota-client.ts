@@ -2,7 +2,12 @@ import { get, post, type PageData } from "./auth-client";
 import type { RiskExecution } from "./risk-client";
 
 export type QuotaType =
-  "detection_points" | "article_credits" | "image_credits" | "storage_bytes" | "assistant_messages";
+  | "detection_points"
+  | "article_credits"
+  | "image_credits"
+  | "video_credits"
+  | "storage_bytes"
+  | "assistant_messages";
 
 export type QuotaAccount = Readonly<{
   id: string;

@@ -512,6 +512,50 @@ def _artifact_bytes(artifact) -> tuple[bytes, str | None]:
     return fetched.body, fetched.content_type
 
 
+def generate_internal_video_first_frame(
+    *,
+    prompt: str,
+    aspect_ratio: str,
+    request_id,
+    correlation_id,
+) -> tuple[bytes, str, str]:
+    """Generate an internal video first frame without creating or charging an image job."""
+
+    if aspect_ratio not in {"9:16", "16:9"}:
+        raise ImageInputInvalid("IMAGE_VIDEO_ASPECT_INVALID")
+    clean_prompt = prompt.strip()
+    if not clean_prompt or len(clean_prompt) > 1500:
+        raise ImageInputInvalid("IMAGE_VIDEO_PROMPT_INVALID")
+    runtime, _binding = _runtime_and_binding()
+    adapter = model_registry.resolve(
+        provider_key=runtime.provider_key,
+        model_key=runtime.model_key,
+        capability=AIModelCapability.IMAGE_GENERATION,
+    )
+    response = adapter.invoke(
+        AIAdapterRequest(
+            request_id=str(request_id),
+            correlation_id=str(correlation_id),
+            identity=adapter.descriptor.identity,
+            capability=AIModelCapability.IMAGE_GENERATION,
+            adapter_version=adapter.descriptor.adapter_version,
+            prompt_version="geo-video-first-frame-v1",
+            timeout_seconds=runtime.timeout_seconds,
+            payload=ImageGenerationPayload(
+                provider_model_id=runtime.provider_model_id,
+                prompt=(
+                    "为以下短视频生成一张无文字、构图清晰、适合动画延展的首帧图片：\n"
+                    f"{clean_prompt}"
+                ),
+                size="1440x2560" if aspect_ratio == "9:16" else "2560x1440",
+                output_format="jpeg",
+            ),
+        )
+    )
+    raw, _claimed_mime = _artifact_bytes(response.output.artifacts[0])
+    return raw, runtime.provider_key, runtime.provider_model_id
+
+
 def _settle(job: ImageGenerationJob, action: str) -> None:
     operation = consume_hold if action == "consume" else release_hold
     operation(

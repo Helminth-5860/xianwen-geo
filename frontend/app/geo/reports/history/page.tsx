@@ -63,9 +63,9 @@ function notComparableReasons(comparison: GeoReportPairComparison["comparison"])
   const reasons: string[] = [];
   if (!comparison.same_subject) reasons.push("所属主体不同");
   if (!comparison.same_questions) reasons.push("检测问题集合不同");
-  if (!comparison.same_models) reasons.push("逻辑模型集合不同");
-  if (!comparison.same_scoring_rule) reasons.push("评分规则版本不同");
-  return reasons.length ? reasons.join("；") : "来源事实不满足正式可比条件";
+  if (!comparison.same_models) reasons.push("检测模型不同");
+  if (!comparison.same_scoring_rule) reasons.push("评分口径不同");
+  return reasons.length ? reasons.join("；") : "两份报告的检测条件不一致";
 }
 
 export default function GeoReportHistoryPage() {
@@ -162,10 +162,10 @@ export default function GeoReportHistoryPage() {
     <main className="geo-dashboard">
       <section className="geo-dashboard__header">
         <div>
-          <Text type="secondary">GEO COMPARISON</Text>
+          <Text type="secondary">GEO 报告对比</Text>
           <Title level={2}>历史报告对比</Title>
           <Paragraph type="secondary">
-            选择当前报告与基准报告，系统按两份不可变来源事实判断是否可比，再展示正式涨跌。
+            选择当前报告与基准报告，系统会核对两次检测的问题、模型和评分口径，再展示可比变化。
           </Paragraph>
         </div>
         <Space wrap>
@@ -178,7 +178,7 @@ export default function GeoReportHistoryPage() {
         <Card>
           <Empty description="请先创建并选择当前主体">
             <Button type="primary" href="/subjects">
-              进入主体与知识
+              进入主体档案
             </Button>
           </Empty>
         </Card>
@@ -189,7 +189,7 @@ export default function GeoReportHistoryPage() {
               <Text type="secondary">当前主体</Text>
               <Title level={3}>{subject.official_name || subject.subject_type.name}</Title>
             </div>
-            <Tag>不可变报告 {state?.reports.length ?? 0}</Tag>
+            <Tag>历史报告 {state?.reports.length ?? 0}</Tag>
           </section>
 
           {state?.error && <Alert type="error" showIcon message={state.error} />}
@@ -261,7 +261,7 @@ export default function GeoReportHistoryPage() {
                     }
                     description={
                       result.comparison.status === "comparable"
-                        ? "下列涨跌均由后端基于冻结问题、逻辑模型和评分规则计算。"
+                        ? "下列变化基于相同的检测问题、模型和评分口径计算。"
                         : `${notComparableReasons(result.comparison)}；仅可并排查看原始分值，不展示正式涨跌。`
                     }
                   />
@@ -322,7 +322,10 @@ export default function GeoReportHistoryPage() {
                     <Row gutter={[16, 16]}>
                       {Object.entries(result.current.summary.dimensions).map(([key, value]) => (
                         <Col xs={12} md={8} lg={4} key={key}>
-                          <Statistic title={dimensionLabels[key] || key} value={value ?? "—"} />
+                          <Statistic
+                            title={dimensionLabels[key] || "其他指标"}
+                            value={value ?? "—"}
+                          />
                           <Space orientation="vertical" size={0}>
                             <Text type="secondary">
                               基准 {result.baseline.summary.dimensions[key] ?? "—"}
@@ -342,7 +345,7 @@ export default function GeoReportHistoryPage() {
                     <Alert
                       type="info"
                       showIcon
-                      title="两份报告使用了不同的主体资料版本；报告来源事实仍保持不可变。"
+                      title="两份报告基于不同时间的主体资料；历史报告内容不会因此改变。"
                     />
                   )}
                 </>

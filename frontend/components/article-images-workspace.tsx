@@ -48,32 +48,32 @@ const IMAGE_ERROR_MESSAGES: Readonly<Record<string, string>> = {
   IMAGE_INPUT_TEXT_SENSITIVE: "提示词未通过内容安全检查，额度已释放。",
   IMAGE_INPUT_REFERENCE_SENSITIVE: "参考图未通过内容安全检查，额度已释放。",
   IMAGE_OUTPUT_SENSITIVE: "生成结果未通过内容安全检查，额度已释放。",
-  IMAGE_CREDENTIAL_UNAVAILABLE: "图片生成服务凭据尚未配置，请联系管理员。",
-  IMAGE_CREDENTIAL_BINDING_UNAVAILABLE: "图片生成服务凭据尚未启用，请联系管理员。",
-  IMAGE_CREDENTIAL_DECRYPTION_FAILED: "图片生成服务凭据读取失败，请联系管理员。",
-  IMAGE_CREDENTIAL_PROVENANCE_CHANGED: "图片生成服务配置已变更，请重新提交。",
-  IMAGE_RUNTIME_UNAVAILABLE: "图片生成服务尚未启用，请联系管理员。",
-  IMAGE_STORAGE_UNAVAILABLE: "图片存储服务尚未配置，请联系管理员。",
-  IMAGE_STORAGE_VERIFICATION_FAILED: "图片保存校验失败，本次额度已释放，请重试。",
-  IMAGE_PROVIDER_AUTHENTICATION_FAILED: "豆包图片服务鉴权失败，请联系管理员。",
+  IMAGE_CREDENTIAL_UNAVAILABLE: "图片生成服务暂不可用，请联系管理员。",
+  IMAGE_CREDENTIAL_BINDING_UNAVAILABLE: "图片生成服务暂不可用，请联系管理员。",
+  IMAGE_CREDENTIAL_DECRYPTION_FAILED: "图片生成服务暂不可用，请联系管理员。",
+  IMAGE_CREDENTIAL_PROVENANCE_CHANGED: "图片生成服务状态已更新，请重新提交。",
+  IMAGE_RUNTIME_UNAVAILABLE: "图片生成服务暂不可用，请联系管理员。",
+  IMAGE_STORAGE_UNAVAILABLE: "图片暂时无法保存，请稍后重新尝试或联系管理员。",
+  IMAGE_STORAGE_VERIFICATION_FAILED: "图片未能保存，本次额度未扣除，请重新尝试。",
+  IMAGE_PROVIDER_AUTHENTICATION_FAILED: "豆包图片服务暂不可用，请联系管理员。",
   IMAGE_PROVIDER_QUOTA_EXCEEDED: "豆包图片服务额度不足，请联系管理员。",
-  IMAGE_PROVIDER_RATE_LIMIT: "图片生成请求较多，请稍后重试。",
-  IMAGE_PROVIDER_TIMEOUT: "图片生成响应超时，本次额度已释放，请重试。",
-  IMAGE_PROVIDER_NETWORK_FAILURE: "图片生成网络暂时不可用，请稍后重试。",
-  IMAGE_PROVIDER_TEMPORARY_FAILURE: "豆包图片服务暂时不可用，请稍后重试。",
-  IMAGE_PROVIDER_REQUEST_REJECTED: "豆包图片服务拒绝了本次请求，请调整内容后重试。",
-  IMAGE_PROVIDER_REQUEST_INVALID: "图片生成参数不正确，请调整后重试。",
-  IMAGE_PROVIDER_RESPONSE_INVALID: "豆包图片服务返回格式异常，请稍后重试。",
-  IMAGE_QUEUE_UNAVAILABLE: "图片任务队列暂时不可用，请稍后重试。",
-  IMAGE_INTERNAL_FAILURE: "图片生成处理失败，本次额度已释放，请稍后重试。",
+  IMAGE_PROVIDER_RATE_LIMIT: "当前使用人数较多，请稍后重新生成。",
+  IMAGE_PROVIDER_TIMEOUT: "图片生成时间较长，本次额度已释放，请重新生成。",
+  IMAGE_PROVIDER_NETWORK_FAILURE: "图片生成服务暂时不可用，请稍后重新生成。",
+  IMAGE_PROVIDER_TEMPORARY_FAILURE: "豆包图片服务暂时不可用，请稍后重新生成。",
+  IMAGE_PROVIDER_REQUEST_REJECTED: "本次图片未能生成，请调整内容后重新尝试。",
+  IMAGE_PROVIDER_REQUEST_INVALID: "当前生成条件无法处理，请调整后重新尝试。",
+  IMAGE_PROVIDER_RESPONSE_INVALID: "本次图片未能生成，请稍后重新尝试。",
+  IMAGE_QUEUE_UNAVAILABLE: "图片生成服务暂时繁忙，请稍后重新尝试。",
+  IMAGE_INTERNAL_FAILURE: "本次图片未能生成，额度已释放，请稍后重新尝试。",
   IMAGE_PLAN_REQUIRED: "当前账号尚未开通图片生成权限。",
-  IMAGE_QUOTA_ACCOUNT_UNAVAILABLE: "图片额度账户不可用，请联系管理员。",
+  IMAGE_QUOTA_ACCOUNT_UNAVAILABLE: "图片额度暂不可用，请联系管理员。",
 };
 
 const IMAGE_JOB_STATUS: Readonly<Record<ImageJob["status"], string>> = {
   queued: "等待处理",
   running: "生成中",
-  retry_wait: "等待重试",
+  retry_wait: "等待再次处理",
   succeeded: "生成成功",
   failed: "生成失败",
 };
@@ -93,7 +93,7 @@ const IMAGE_REVIEW_LABEL: Readonly<Record<ImageAsset["moderation_status"], strin
 
 function imageErrorMessage(code: string): string {
   if (!code) return "";
-  return IMAGE_ERROR_MESSAGES[code] ?? "图片生成失败，请稍后重试。";
+  return IMAGE_ERROR_MESSAGES[code] ?? "本次图片未能生成，请稍后重新尝试。";
 }
 
 function imageUserMessage(error: unknown): string {
@@ -228,7 +228,7 @@ export function ArticleImagesWorkspace({
       });
       setJob(result.job);
       setQuota(result.quota);
-      setNotice("图片任务已提交并冻结 1 个图片额度；失败会自动释放。 ");
+      setNotice("已开始生成图片，并暂时预留 1 个图片额度；未完成则不会扣除。");
     } catch (reason) {
       setError(imageUserMessage(reason));
     } finally {
@@ -246,14 +246,14 @@ export function ArticleImagesWorkspace({
       <Space orientation="vertical" size="middle" style={{ width: "100%" }}>
         <Space wrap>
           <Statistic title="可用图片额度" value={quota.unlimited ? "不限" : quota.available} />
-          <Statistic title="已冻结" value={quota.frozen} />
+          <Statistic title="生成中预留" value={quota.frozen} />
           <Statistic title="已消耗" value={quota.consumed} />
         </Space>
         <Alert
           type="info"
           showIcon
-          title="图片由豆包图片模型生成，成功后立即校验并转存私有存储"
-          description="页面只接收系统内的私有图片地址，不展示供应商临时链接、原始响应或凭据。"
+          title="图片由豆包图片模型生成，完成后自动保存到当前主体"
+          description="生成结果仅对当前账号可见，可保存到主体图库或选入当前文章。"
         />
         {error && <Alert type="error" showIcon title={error} />}
         {notice && <Alert type="success" showIcon title={notice} />}
@@ -271,10 +271,7 @@ export function ArticleImagesWorkspace({
                     </Button>,
                   ]}
                 >
-                  <List.Item.Meta
-                    title={`${item.purpose} · ${item.position}`}
-                    description={item.prompt}
-                  />
+                  <List.Item.Meta title={item.purpose} description={item.prompt} />
                 </List.Item>
               )}
             />
@@ -353,7 +350,7 @@ export function ArticleImagesWorkspace({
           }}
         />
         <Input
-          aria-label="HTTPS 参考图地址"
+          aria-label="网络参考图链接"
           value={referenceUrl}
           disabled={Boolean(referenceAssetId || referenceDocumentVersionId)}
           placeholder="可选：粘贴安全的图片链接（系统会校验链接与文件）"
@@ -379,19 +376,23 @@ export function ArticleImagesWorkspace({
               job.status === "failed" ? "error" : job.status === "succeeded" ? "success" : "info"
             }
             showIcon
-            title={`图片任务：${IMAGE_JOB_STATUS[job.status]}`}
+            title={`图片生成进度：${IMAGE_JOB_STATUS[job.status]}`}
             description={
               job.status === "failed"
                 ? imageErrorMessage(job.safe_error_code)
-                : `尝试 ${job.attempt_count}/${job.max_retries + 1} · ${IMAGE_JOB_STATUS[job.status]}`
+                : job.status === "succeeded"
+                  ? "图片已生成，可在下方预览并保存。"
+                  : job.status === "retry_wait"
+                    ? "系统正在自动再次尝试，请稍候。"
+                    : "正在处理，请稍候。"
             }
             action={
-              job.status === "failed" ? <Button onClick={submit}>修改后重试</Button> : undefined
+              job.status === "failed" ? <Button onClick={submit}>调整后重新生成</Button> : undefined
             }
           />
         )}
         {activeImage?.url && (
-          <Card size="small" title="私有存储预览">
+          <Card size="small" title="生成结果预览">
             <Space orientation="vertical">
               <Image src={activeImage.url} alt="生成图片预览" width={320} />
               <Space wrap>
@@ -441,7 +442,7 @@ export function ArticleImagesWorkspace({
                       });
                       setJob(result.job);
                       setQuota(result.quota);
-                      setNotice("AI 智能处理已提交并冻结 1 个图片额度；交付成功后扣除。");
+                      setNotice("已开始 AI 智能扩图，并暂时预留 1 个图片额度；未完成则不会扣除。");
                     } catch (reason) {
                       setError(imageUserMessage(reason));
                     }

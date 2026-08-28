@@ -55,14 +55,14 @@ export default function GeoStrategyIndexPage() {
   const reports = state?.reports ?? [];
 
   if (subjectLoading || (subjectId && !state))
-    return <Spin fullscreen description="正在加载优化策略" />;
+    return <Spin fullscreen description="正在加载优化方案" />;
 
   return (
     <main className="geo-dashboard">
       <section className="geo-dashboard__header">
         <div>
-          <Text type="secondary">GEO OPTIMIZATION</Text>
-          <Title level={2}>优化策略</Title>
+          <Text type="secondary">GEO 优化</Text>
+          <Title level={2}>优化方案</Title>
           <Paragraph type="secondary">
             优化建议必须来自真实 GEO 报告。先确定问题，再生成优先级、行动计划和内容选题。
           </Paragraph>
@@ -76,13 +76,13 @@ export default function GeoStrategyIndexPage() {
         <Card>
           <Empty description="请先创建并选择当前主体">
             <Button type="primary" href="/subjects">
-              进入主体与知识
+              进入主体档案
             </Button>
           </Empty>
         </Card>
       ) : reports.length === 0 ? (
         <Card>
-          <Empty description="当前主体还没有 GEO 报告，暂时无法生成有依据的优化策略。">
+          <Empty description="当前主体还没有 GEO 报告，暂时无法生成有依据的优化方案。">
             <Button type="primary" href="/geo/detections" icon={<RadarChartOutlined />}>
               先完成 AI 可见度检测
             </Button>
@@ -108,13 +108,13 @@ export default function GeoStrategyIndexPage() {
                       <Text strong>{index === 0 ? "基于最新报告" : "基于历史报告"}</Text>
                       {index === 0 && <Tag color="blue">推荐</Tag>}
                     </Space>
-                    <Title level={4}>GEO Score {report.summary.geo.score ?? "—"}</Title>
+                    <Title level={4}>GEO 评分 {report.summary.geo.score ?? "—"}</Title>
                     <Text type="secondary">
                       报告时间 {new Date(report.generated_at).toLocaleString("zh-CN")}
                     </Text>
                   </div>
                   <Space>
-                    <Text type="secondary">进入策略工作台</Text>
+                    <Text type="secondary">查看优化方案</Text>
                     <ArrowRightOutlined />
                   </Space>
                 </a>

@@ -10,6 +10,7 @@ import {
   getPlanApplication,
   type PlanApplication,
 } from "@/lib/plans-client";
+import { PLAN_APPLICATION_STATUS_LABELS } from "@/lib/product-copy";
 
 export default function PlanApplicationDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -40,9 +41,8 @@ export default function PlanApplicationDetailPage() {
           <Descriptions.Item label="套餐">
             {String(item.public_plan_snapshot.name)}
           </Descriptions.Item>
-          <Descriptions.Item label="绑定版本">第 {item.requested_version_no} 版</Descriptions.Item>
           <Descriptions.Item label="状态">
-            <Tag>{item.status}</Tag>
+            <Tag>{PLAN_APPLICATION_STATUS_LABELS[item.status]}</Tag>
           </Descriptions.Item>
           <Descriptions.Item label="申请备注">{item.user_note || "无"}</Descriptions.Item>
         </Descriptions>

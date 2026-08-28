@@ -17,10 +17,32 @@ import type { SubjectDetail } from "@/lib/subjects-client";
 
 const activeStatuses = new Set(["queued", "running", "retry_wait"]);
 
-function displayValue(value: unknown) {
+const enrichmentSourceLabels: Readonly<Record<EnrichmentSource["source_type"], string>> = {
+  document: "文件资料",
+  web: "网页资料",
+};
+
+const enrichmentStatusLabels: Readonly<Record<EnrichmentJob["status"], string>> = {
+  queued: "等待补充",
+  running: "正在补充",
+  retry_wait: "等待再次处理",
+  succeeded: "补充完成",
+  failed: "补充未完成",
+};
+
+function displayValue(value: unknown): string {
   if (value === null || value === undefined || value === "") return "（空）";
   if (typeof value === "string") return value;
-  return JSON.stringify(value);
+  if (typeof value === "number") return String(value);
+  if (typeof value === "boolean") return value ? "是" : "否";
+  if (Array.isArray(value)) return value.map(displayValue).filter(Boolean).join("、");
+  if (typeof value === "object") {
+    const values: string[] = Object.values(value)
+      .map(displayValue)
+      .filter((item) => item !== "（空）");
+    return values.length ? values.join("、") : "已补充相关资料";
+  }
+  return "已补充相关资料";
 }
 
 export function SubjectAiEnrichment({
@@ -110,7 +132,7 @@ export function SubjectAiEnrichment({
       );
       setJob(created);
       setDecisions({});
-      setMessage("AI 补充任务已受理；来源文本只作为不可信数据，不会执行其中的指令");
+      setMessage("AI 正在根据已选择的资料补充内容，完成后请逐项确认。");
     } catch (reason) {
       setError(userMessage(reason));
     } finally {
@@ -157,7 +179,7 @@ export function SubjectAiEnrichment({
       <List
         size="small"
         dataSource={sources}
-        locale={{ emptyText: "暂无已确认的文件或网页资料" }}
+        locale={{ emptyText: "还没有可用资料，可先上传文件或导入公开网页。" }}
         renderItem={(source) => {
           const key = `${source.source_type}:${source.parsed_version_id}`;
           const checked = selectedSources.includes(key);
@@ -174,7 +196,7 @@ export function SubjectAiEnrichment({
                   )
                 }
               >
-                {source.label} <Tag>{source.source_type}</Tag> <Tag>v{source.version_no}</Tag>
+                {source.label} <Tag>{enrichmentSourceLabels[source.source_type]}</Tag>
               </Checkbox>
             </List.Item>
           );
@@ -213,12 +235,16 @@ export function SubjectAiEnrichment({
         </Button>
       </div>
       {job && (
-        <Card size="small" title={`任务状态：${job.status}`} style={{ marginTop: 16 }}>
+        <Card
+          size="small"
+          title={`资料补充进度：${enrichmentStatusLabels[job.status]}`}
+          style={{ marginTop: 16 }}
+        >
           {job.status === "failed" && (
-            <Alert type="error" message="AI 补充失败，请稍后使用新的请求重试" />
+            <Alert type="error" message="AI 补充未完成，请稍后重新尝试。" />
           )}
           {job.status === "retry_wait" && (
-            <Alert type="info" message="AI 服务暂时不可用，系统会自动重试" />
+            <Alert type="info" message="AI 服务暂时繁忙，系统会自动再次尝试。" />
           )}
           {job.status === "succeeded" && !job.applied && (
             <>

@@ -80,6 +80,7 @@ INSTALLED_APPS = [
     "apps.web_sources",
     "apps.articles",
     "apps.images",
+    "apps.videos",
     "apps.operations",
 ]
 
@@ -240,6 +241,39 @@ IMAGE_PROMPT_MAX_LENGTH = positive_env_int("IMAGE_PROMPT_MAX_LENGTH", 4000)
 IMAGE_MAX_BYTES = positive_env_int("IMAGE_MAX_BYTES", 10 * 1024 * 1024)
 IMAGE_MAX_PIXELS = positive_env_int("IMAGE_MAX_PIXELS", 40_000_000)
 IMAGE_BATCH_RETENTION_SECONDS = positive_env_int("IMAGE_BATCH_RETENTION_SECONDS", 86_400)
+VIDEO_PROVIDER = os.getenv("VIDEO_PROVIDER", "unavailable").strip().lower()
+if VIDEO_PROVIDER not in {"unavailable", "aliyun"}:
+    raise ImproperlyConfigured("VIDEO_PROVIDER must be unavailable or aliyun.")
+VIDEO_MODEL = os.getenv("VIDEO_MODEL", "wan2.6-i2v-flash").strip()
+VIDEO_RESOLUTION = os.getenv("VIDEO_RESOLUTION", "720P").strip().upper()
+if VIDEO_MODEL != "wan2.6-i2v-flash":
+    raise ImproperlyConfigured("VIDEO_MODEL must be wan2.6-i2v-flash.")
+if VIDEO_RESOLUTION != "720P":
+    raise ImproperlyConfigured("VIDEO_RESOLUTION must be 720P.")
+VIDEO_ALLOWED_DURATIONS = (5, 10)
+VIDEO_ALLOWED_ASPECT_RATIOS = ("9:16", "16:9")
+VIDEO_PROMPT_MAX_LENGTH = positive_env_int("VIDEO_PROMPT_MAX_LENGTH", 1500)
+if VIDEO_PROMPT_MAX_LENGTH > 1500:
+    raise ImproperlyConfigured("VIDEO_PROMPT_MAX_LENGTH must not exceed 1500.")
+VIDEO_SOURCE_IMAGE_MAX_BYTES = positive_env_int("VIDEO_SOURCE_IMAGE_MAX_BYTES", 20 * 1024 * 1024)
+VIDEO_MAX_BYTES = positive_env_int("VIDEO_MAX_BYTES", 128 * 1024 * 1024)
+if VIDEO_MAX_BYTES > 128 * 1024 * 1024:
+    raise ImproperlyConfigured("VIDEO_MAX_BYTES must not exceed 128 MiB.")
+VIDEO_POLL_SECONDS = positive_env_int("VIDEO_POLL_SECONDS", 15)
+VIDEO_MAX_POLLS = positive_env_int("VIDEO_MAX_POLLS", 240)
+VIDEO_PROVIDER_TIMEOUT_SECONDS = positive_env_int("VIDEO_PROVIDER_TIMEOUT_SECONDS", 30)
+VIDEO_DOWNLOAD_TIMEOUT_SECONDS = positive_env_int("VIDEO_DOWNLOAD_TIMEOUT_SECONDS", 180)
+VIDEO_JOB_LEASE_SECONDS = positive_env_int("VIDEO_JOB_LEASE_SECONDS", 390)
+if VIDEO_JOB_LEASE_SECONDS <= 330:
+    raise ImproperlyConfigured("VIDEO_JOB_LEASE_SECONDS must exceed the video task hard limit.")
+VIDEO_IDEMPOTENCY_HMAC_KEY = os.getenv(
+    "VIDEO_IDEMPOTENCY_HMAC_KEY",
+    "local-test-video-idempotency-key-not-for-production",
+).strip()
+if len(VIDEO_IDEMPOTENCY_HMAC_KEY) < 32:
+    raise ImproperlyConfigured("VIDEO_IDEMPOTENCY_HMAC_KEY is too weak; minimum length is 32.")
+ALIYUN_VIDEO_API_BASE_URL = os.getenv("ALIYUN_VIDEO_API_BASE_URL", "").strip().rstrip("/")
+ALIYUN_VIDEO_API_KEY = os.getenv("ALIYUN_VIDEO_API_KEY", "").strip()
 FILE_VALIDATION_MAX_COMPRESSION_RATIO = positive_env_int(
     "FILE_VALIDATION_MAX_COMPRESSION_RATIO", 100
 )
@@ -541,6 +575,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "questions.dispatch_generation_jobs",
         "schedule": timedelta(seconds=60),
     },
+    "dispatch-video-generation-jobs": {
+        "task": "videos.dispatch_due_jobs",
+        "schedule": timedelta(seconds=60),
+    },
     "dispatch-geo-detection-calls": {
         "task": "geo.dispatch_model_calls",
         "schedule": timedelta(seconds=5),
@@ -564,6 +602,8 @@ CELERY_TASK_ROUTES = {
     "documents.execute_parse_job": {"queue": "file_processing"},
     "web_sources.execute_import": {"queue": "web_fetch"},
     "images.execute_generation": {"queue": "image_generation"},
+    "videos.execute_generation": {"queue": "image_generation"},
+    "videos.dispatch_due_jobs": {"queue": "image_generation"},
 }
 
 CELERY_PRODUCTION_QUEUES = tuple(

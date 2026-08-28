@@ -124,7 +124,8 @@ afterEach(() => {
 describe("subject formal version history", () => {
   it("lists immutable formal versions", async () => {
     render(<SubjectVersionsPage />);
-    expect(await screen.findByText(/v1/)).toBeTruthy();
+    expect(await screen.findByText("第 1 次保存 · 冻结主体名")).toBeTruthy();
+    expect(screen.queryByText(/v1/i)).toBeNull();
     expect(getSubjectVersions).toHaveBeenCalledWith("subject-1");
   });
 
@@ -132,7 +133,13 @@ describe("subject formal version history", () => {
     render(<SubjectVersionDetailPage />);
     expect(await screen.findByText("\u5386\u53f2\u6b63\u5f0f\u540d\u79f0")).toBeTruthy();
     expect(screen.getByText("\u5386\u53f2\u9009\u9879\u6807\u7b7e")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "冻结主体名 · 第 1 次保存" })).toBeTruthy();
+    expect(screen.getAllByText("主体名称").length).toBeGreaterThan(0);
+    expect(
+      screen.getByText("这里展示该次保存时的主体资料，之后的修改不会影响这份记录。"),
+    ).toBeTruthy();
     expect(screen.queryByText(/digest|schema_snapshot|matching_value/i)).toBeNull();
+    expect(screen.queryByText(/Schema|official_name|v1/i)).toBeNull();
     expect(getSubjectVersion).toHaveBeenCalledWith("subject-1", "version-1");
   });
 });

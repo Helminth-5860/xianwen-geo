@@ -87,4 +87,18 @@ describe("内容库", () => {
     await userEvent.click(screen.getByTitle("Next Page"));
     await waitFor(() => expect(articleApi.getContentLibrary).toHaveBeenCalledWith("subject-1", 2));
   });
+
+  it("内容为空时直接引导生成第一篇文章", async () => {
+    articleApi.getContentLibrary.mockResolvedValue({
+      items: [],
+      pagination: { page: 1, page_size: 20, count: 0, total_pages: 0 },
+    });
+
+    render(<ContentLibrary subjectId="subject-1" />);
+
+    expect(await screen.findByText("还没有文章，生成并保存到内容库后会出现在这里。")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "生成第一篇文章" }).getAttribute("href")).toBe(
+      "/subjects/subject-1/articles/new",
+    );
+  });
 });

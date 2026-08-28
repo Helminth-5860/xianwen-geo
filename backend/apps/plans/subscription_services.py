@@ -96,6 +96,7 @@ def _internal_test_snapshot(generated_at) -> dict:
             "detection_points": INTERNAL_TEST_MAX_QUOTA,
             "article_credits": INTERNAL_TEST_MAX_QUOTA,
             "image_credits": INTERNAL_TEST_MAX_QUOTA,
+            "video_credits": INTERNAL_TEST_MAX_QUOTA,
             "keyword_generation_limit": 1_000_000,
             "question_bank_limit": 1_000_000,
             "keyword_regenerations_per_cycle": INTERNAL_TEST_MAX_QUOTA,
@@ -120,6 +121,7 @@ def _internal_test_snapshot(generated_at) -> dict:
                 "detection_points": "retain",
                 "article_credits": "retain",
                 "image_credits": "retain",
+                "video_credits": "retain",
             },
         },
         "model_permissions": [

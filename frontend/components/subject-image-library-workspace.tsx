@@ -1,6 +1,6 @@
 "use client";
 
-import { Alert, Button, Card, Image, List, Pagination, Space, Tag, Typography } from "antd";
+import { Alert, Button, Card, Empty, Image, List, Pagination, Space, Tag, Typography } from "antd";
 import { useEffect, useMemo, useState } from "react";
 
 import { userMessage } from "@/lib/auth-client";
@@ -84,7 +84,15 @@ export function SubjectImageLibraryWorkspace({ subjectId }: Props) {
               loading={loading || loadedSubjectId !== subjectId}
               grid={{ gutter: 12, xs: 1, sm: 2, md: 3 }}
               dataSource={pageImages}
-              locale={{ emptyText: "主体图片库暂无图片" }}
+              locale={{
+                emptyText: (
+                  <Empty description="还没有图片，生成并保存后会出现在这里。">
+                    <Button type="primary" href={`/subjects/${subjectId}/images`}>
+                      生成第一张图片
+                    </Button>
+                  </Empty>
+                ),
+              }}
               renderItem={(image) => (
                 <List.Item>
                   <Card
@@ -103,7 +111,7 @@ export function SubjectImageLibraryWorkspace({ subjectId }: Props) {
                     <Space orientation="vertical">
                       <Space>
                         <input
-                          aria-label={`选择图片 ${image.id}`}
+                          aria-label={`选择${IMAGE_ROLE_LABEL[image.role]}图片`}
                           type="checkbox"
                           checked={selectedIds.includes(image.id)}
                           onChange={(event) =>

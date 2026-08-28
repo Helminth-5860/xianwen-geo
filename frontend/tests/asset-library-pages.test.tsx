@@ -7,6 +7,7 @@ import { CustomLibraryWorkspace } from "../components/custom-library-workspace";
 import { VideoLibraryWorkspace } from "../components/video-library-workspace";
 
 const getSubjectDocuments = vi.hoisted(() => vi.fn());
+const listSubjectVideos = vi.hoisted(() => vi.fn());
 
 vi.mock("../lib/documents-client", async () => {
   const actual =
@@ -14,6 +15,15 @@ vi.mock("../lib/documents-client", async () => {
   return {
     ...actual,
     getSubjectDocuments: (...args: unknown[]) => getSubjectDocuments(...args),
+  };
+});
+
+vi.mock("../lib/videos-client", async () => {
+  const actual =
+    await vi.importActual<typeof import("../lib/videos-client")>("../lib/videos-client");
+  return {
+    ...actual,
+    listSubjectVideos: (...args: unknown[]) => listSubjectVideos(...args),
   };
 });
 
@@ -38,6 +48,10 @@ beforeAll(() => {
 
 beforeEach(() => {
   getSubjectDocuments.mockResolvedValue({ documents: [] });
+  listSubjectVideos.mockResolvedValue({
+    items: [],
+    pagination: { page: 1, page_size: 20, count: 0, total_pages: 0 },
+  });
 });
 
 afterEach(() => {
@@ -46,12 +60,17 @@ afterEach(() => {
 });
 
 describe("主体资产库页面", () => {
-  it("视频库在没有后端视频资产能力时显示真实空态，不伪造数据", () => {
+  it("视频库提供清晰空状态和下一步操作", async () => {
     render(<VideoLibraryWorkspace subjectId="subject-1" />);
 
     expect(screen.getByRole("heading", { name: "视频库" })).toBeTruthy();
-    expect(screen.getByText("视频资产能力尚未接入")).toBeTruthy();
-    expect(screen.getByText("当前主体暂无视频或视频脚本资产")).toBeTruthy();
+    expect(screen.getByText("视频仅对当前主体可见")).toBeTruthy();
+    expect(await screen.findByText("当前主体还没有已保存的视频。")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "生成第一个视频" }).getAttribute("href")).toBe(
+      "/subjects/subject-1/videos/new",
+    );
+    expect(listSubjectVideos).toHaveBeenCalledWith("subject-1", 1, 20, expect.any(AbortSignal));
+    expect(screen.queryByText(/数据接口|后端/)).toBeNull();
     expect(screen.queryByRole("listitem")).toBeNull();
   });
 
@@ -61,6 +80,6 @@ describe("主体资产库页面", () => {
     expect(screen.getByRole("heading", { name: "自定义库" })).toBeTruthy();
     expect(await screen.findByRole("button", { name: "上传资料" })).toBeTruthy();
     expect(getSubjectDocuments).toHaveBeenCalledWith("subject-1");
-    expect(screen.getByText("暂无已验证文件")).toBeTruthy();
+    expect(screen.getByText("还没有已确认的文件，上传并确认内容后会显示在这里。")).toBeTruthy();
   });
 });

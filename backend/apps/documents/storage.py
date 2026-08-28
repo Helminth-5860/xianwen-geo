@@ -52,6 +52,15 @@ class StorageProvider(Protocol):
     def create_download_url(self, *, key: str, filename: str, content_type: str) -> str: ...
     def list_system_objects(self, *, prefix: str, limit: int) -> list[StoredObject]: ...
     def put_system_object(self, *, key: str, data: bytes, content_type: str) -> None: ...
+    def put_system_stream(
+        self,
+        *,
+        key: str,
+        stream: BinaryIO,
+        content_type: str,
+        size: int,
+        sha256: str,
+    ) -> None: ...
 
 
 class S3CompatibleStorageProvider:
@@ -195,6 +204,52 @@ class S3CompatibleStorageProvider:
         except Exception as exc:
             raise FileStorageUnavailable from exc
 
+    def put_system_stream(
+        self,
+        *,
+        key: str,
+        stream: BinaryIO,
+        content_type: str,
+        size: int,
+        sha256: str,
+    ) -> None:
+        """Upload a verified stream without materialising it in application memory."""
+
+        try:
+            existing = self.client.head_object(Bucket=self.bucket, Key=key)
+        except Exception as exc:
+            response = getattr(exc, "response", {})
+            error = response.get("Error", {}) if isinstance(response, dict) else {}
+            metadata = response.get("ResponseMetadata", {}) if isinstance(response, dict) else {}
+            code = str(error.get("Code", "")) if isinstance(error, dict) else ""
+            status = metadata.get("HTTPStatusCode") if isinstance(metadata, dict) else None
+            if code in {"404", "NoSuchKey", "NotFound"} or status == 404:
+                existing = None
+            else:
+                raise FileStorageUnavailable from exc
+        if existing is not None:
+            metadata = existing.get("Metadata", {})
+            if (
+                int(existing["ContentLength"]) == size
+                and metadata.get("sha256") == sha256
+                and existing.get("ContentType") == content_type
+            ):
+                return
+            raise FileStorageUnavailable
+        try:
+            stream.seek(0)
+            self.client.upload_fileobj(
+                stream,
+                self.bucket,
+                key,
+                ExtraArgs={
+                    "ContentType": content_type,
+                    "Metadata": {"sha256": sha256},
+                },
+            )
+        except Exception as exc:
+            raise FileStorageUnavailable from exc
+
 
 class MockStorageProvider:
     _objects: dict[str, tuple[bytes, str, dict[str, str]]] = {}
@@ -275,6 +330,24 @@ class MockStorageProvider:
 
     def put_system_object(self, *, key: str, data: bytes, content_type: str) -> None:
         self.put_for_test(key, data, content_type)
+
+    def put_system_stream(
+        self,
+        *,
+        key: str,
+        stream: BinaryIO,
+        content_type: str,
+        size: int,
+        sha256: str,
+    ) -> None:
+        try:
+            stream.seek(0)
+            data = stream.read(size + 1)
+        except Exception as exc:
+            raise FileStorageUnavailable from exc
+        if len(data) != size or hashlib_sha256(data) != sha256:
+            raise FileStorageUnavailable
+        self.put_for_test(key, data, content_type, metadata={"sha256": sha256})
 
     def list_system_objects(self, *, prefix: str, limit: int) -> list[StoredObject]:
         with self._lock:

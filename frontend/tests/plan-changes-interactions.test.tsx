@@ -236,7 +236,8 @@ describe("套餐变更真实交互", () => {
   it("用户变更记录只展示安全摘要，不暴露内部批次或迁移字段", async () => {
     render(<SubscriptionChangeHistory />);
     expect(await screen.findByText("专业套餐")).toBeTruthy();
-    expect(screen.getByText(/变更类型：renewal/)).toBeTruthy();
+    expect(screen.getByText(/调整方式：续费/)).toBeTruthy();
+    expect(document.body.textContent).not.toContain("renewal");
     expect(document.body.textContent).not.toMatch(
       /business_id|batch_key|source_account|target_account|request_digest|idempotency/,
     );

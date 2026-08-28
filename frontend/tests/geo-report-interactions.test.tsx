@@ -224,9 +224,7 @@ describe("GeoReportPage", () => {
       });
     }
 
-    expect(
-      screen.getByText(/系统已停止等待，检测结果不会丢失；后续配置报告模型后可重新检查/),
-    ).toBeTruthy();
+    expect(screen.getByText(/检测结果不会丢失，请稍后点击“重新检查报告”/)).toBeTruthy();
     expect(screen.getByRole("link", { name: "返回检测结果" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "重新检查报告" })).toBeTruthy();
     expect(getReportForDetection).toHaveBeenCalledTimes(REPORT_READY_MAX_POLL_ATTEMPTS);
@@ -266,7 +264,7 @@ describe("GeoReportPage", () => {
     });
     render(<GeoReportPage reportId="report-1" />);
     await screen.findByText("导出与复测");
-    expect(screen.getByText(/不会替换不可用模型/)).toBeTruthy();
+    expect(screen.getByText(/不会自动替换/)).toBeTruthy();
     await userEvent.click(screen.getByRole("button", { name: "快速复测" }));
     await waitFor(() => expect(push).toHaveBeenCalledWith("/geo/detections/detection-new"));
   });
@@ -285,7 +283,7 @@ describe("GeoReportPage", () => {
     render(<GeoReportPage reportId="report-1" />);
     await screen.findByText("导出与复测");
     await userEvent.click(screen.getByRole("button", { name: "快速复测" }));
-    expect(await screen.findByText(/deepseek：原报告模型正在维护暂停/)).toBeTruthy();
+    expect(await screen.findByText(/DeepSeek：该模型正在维护/)).toBeTruthy();
     expect(screen.getByText(/使用调整后复测重新选择/)).toBeTruthy();
     expect(push).not.toHaveBeenCalled();
   });

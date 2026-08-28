@@ -20,6 +20,7 @@ QUOTA_CATALOG = (
     QuotaDefinition("detection_points", "detection_points", "point", "subscription", "none", False),
     QuotaDefinition("article_credits", "article_credits", "article", "subscription", "none", False),
     QuotaDefinition("image_credits", "image_credits", "image", "subscription", "none", False),
+    QuotaDefinition("video_credits", "video_credits", "second", "subscription", "none", False),
     QuotaDefinition(
         "storage_bytes",
         "storage_bytes",
@@ -122,6 +123,15 @@ def snapshot_quota_values(snapshot: dict) -> dict[str, int]:
     limits = snapshot["limits"]
     values: dict[str, int] = {}
     for definition in QUOTA_CATALOG:
+        # video_credits was added after immutable historical subscription
+        # snapshots had already been issued. Those subscriptions remain valid
+        # with a fail-closed zero entitlement until renewed or changed.
+        if (
+            definition.source_limit_key == "video_credits"
+            and definition.source_limit_key not in limits
+        ):
+            values[definition.key] = 0
+            continue
         if definition.source_limit_key not in limits:
             raise ValueError("订阅权益快照缺少额度定义。")
         values[definition.key] = validate_quota_amount(

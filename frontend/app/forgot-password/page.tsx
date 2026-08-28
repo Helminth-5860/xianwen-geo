@@ -48,7 +48,7 @@ export default function ForgotPasswordPage() {
     <AuthShell
       eyebrow="找回账号"
       title="重置登录密码"
-      description="验证手机号后设置新密码。重置完成后，所有旧登录会话都会失效。"
+      description="验证手机号后设置新密码。重置完成后，其他设备需要使用新密码重新登录。"
       footer={
         <Text>
           已想起密码？<Link href="/login">返回登录</Link>

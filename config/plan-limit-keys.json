@@ -1,6 +1,6 @@
 {
   "schema_version": "2.0",
-  "catalog_version": "2",
+  "catalog_version": "3",
   "limits": [
     {
       "key": "valid_days",
@@ -197,6 +197,24 @@
       "description": "新图片生成额度"
     },
     {
+      "key": "video_credits",
+      "name": "视频额度",
+      "category": "quota",
+      "value_type": "integer",
+      "storage_kind": "plan_limit",
+      "scope": "subscription",
+      "quota_type": "video_credits",
+      "status": "active",
+      "catalog_version": 1,
+      "sort_order": 225,
+      "required": true,
+      "default": 0,
+      "minimum": 0,
+      "maximum": 9223372036854775807,
+      "unit": "second",
+      "description": "AI 视频生成额度；按生成视频秒数扣除"
+    },
+    {
       "key": "keyword_generation_limit",
       "name": "关键词生成数量上限",
       "category": "subjects",
@@ -250,6 +268,6 @@
     {"key":"document_retention_days_after_expiry","name":"到期资料保留天数","category":"retention","value_type":"json","storage_kind":"plan_limit","scope":"account","quota_type":"","status":"active","catalog_version":1,"sort_order":530,"required":true,"default":null,"unit":"day","description":"null 表示永久","json_schema":{"kind":"nullable_non_negative_integer","maximum":36500}},
     {"key":"document_expiry_action","name":"到期资料处理方式","category":"retention","value_type":"enum","storage_kind":"plan_limit","scope":"account","quota_type":"","status":"active","catalog_version":1,"sort_order":540,"required":true,"default":"move_to_trash","unit":"","description":"资料保留期结束动作","enum_values":["delete_immediately","move_to_trash"]},
     {"key":"document_trash_days","name":"资料回收站天数","category":"retention","value_type":"integer","storage_kind":"plan_limit","scope":"account","quota_type":"","status":"active","catalog_version":1,"sort_order":550,"required":true,"default":30,"minimum":0,"maximum":36500,"unit":"day","description":"资料回收站保留天数"},
-    {"key":"expiry_quota_policy","name":"到期额度处理策略","category":"expiration","value_type":"json","storage_kind":"plan_limit","scope":"subscription","quota_type":"","status":"active","catalog_version":1,"sort_order":560,"required":true,"default":{"detection_points":"zero","article_credits":"zero","image_credits":"zero"},"unit":"","description":"套餐到期后的额度处理白名单","json_schema":{"kind":"quota_expiry_policy","allowed_values":["zero","freeze","retain"]}}
+    {"key":"expiry_quota_policy","name":"到期额度处理策略","category":"expiration","value_type":"json","storage_kind":"plan_limit","scope":"subscription","quota_type":"","status":"active","catalog_version":1,"sort_order":560,"required":true,"default":{"detection_points":"zero","article_credits":"zero","image_credits":"zero","video_credits":"zero"},"unit":"","description":"套餐到期后的额度处理白名单","json_schema":{"kind":"quota_expiry_policy","allowed_values":["zero","freeze","retain"]}}
   ]
 }

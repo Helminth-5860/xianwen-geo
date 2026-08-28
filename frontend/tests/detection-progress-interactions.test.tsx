@@ -118,16 +118,14 @@ describe("DetectionProgressPage", () => {
     expect(await screen.findByText("GEO 检测进度")).toBeTruthy();
     expect(getDetectionJob).toHaveBeenCalledWith("detection-42", expect.any(AbortSignal));
     expect(getDetectionModelProgress).toHaveBeenCalledWith("detection-42", expect.any(AbortSignal));
-    expect(screen.getByText("模型执行状态（共 8 个）")).toBeTruthy();
+    expect(screen.getByText("各模型检测进度（共 8 个）")).toBeTruthy();
     expect(screen.getAllByText("50%").length).toBeGreaterThan(0);
-    expect(screen.getByText("计划／冻结")).toBeTruthy();
+    expect(screen.getByText("预计／预留")).toBeTruthy();
     expect(screen.getByText("实际扣除")).toBeTruthy();
     expect(screen.getByText("返还／释放")).toBeTruthy();
     expect(screen.getByText("部分结算")).toBeTruthy();
-    expect(screen.getByText("调用进度：3 / 4")).toBeTruthy();
-    for (let index = 1; index <= 8; index += 1) {
-      expect(screen.getByText(`model-${index}`)).toBeTruthy();
-    }
+    expect(screen.getByText("检测进度：3 / 4")).toBeTruthy();
+    expect(screen.getAllByText("AI 平台")).toHaveLength(8);
   });
 
   it("polls a non-terminal job using the conservative interval", async () => {
@@ -157,9 +155,9 @@ describe("DetectionProgressPage", () => {
   it("shows an API failure and allows retry", async () => {
     getDetectionJob.mockRejectedValueOnce(new Error("网络暂不可用"));
     render(<DetectionProgressPage />);
-    expect(await screen.findByText("检测进度加载失败")).toBeTruthy();
+    expect(await screen.findByText("暂时无法查看检测进度")).toBeTruthy();
     expect(screen.getByText("网络暂不可用")).toBeTruthy();
-    await userEvent.click(screen.getByRole("button", { name: /重\s*试/ }));
+    await userEvent.click(screen.getByRole("button", { name: "重新查看" }));
     await waitFor(() => expect(getDetectionJob).toHaveBeenCalledTimes(2));
   });
 
@@ -178,12 +176,12 @@ describe("DetectionProgressPage", () => {
     render(<DetectionProgressPage />);
     await act(async () => void (await Promise.resolve()));
     await act(async () => void (await vi.advanceTimersByTimeAsync(DETECTION_POLL_INTERVAL_MS)));
-    expect(screen.getByText("检测进度刷新失败，系统会自动重试")).toBeTruthy();
+    expect(screen.getByText("检测进度暂未更新，系统会自动再次尝试")).toBeTruthy();
 
     await act(async () => void (await vi.advanceTimersByTimeAsync(DETECTION_POLL_INTERVAL_MS)));
     expect(getDetectionJob).toHaveBeenCalledTimes(3);
     expect(screen.getAllByText("检测中").length).toBeGreaterThan(0);
-    expect(screen.queryByText("检测进度刷新失败，系统会自动重试")).toBeNull();
+    expect(screen.queryByText("检测进度暂未更新，系统会自动再次尝试")).toBeNull();
   });
 
   it("times out a hanging detail request and keeps retrying without overlap", async () => {
@@ -209,7 +207,7 @@ describe("DetectionProgressPage", () => {
 
     await act(async () => void (await vi.advanceTimersByTimeAsync(1)));
     expect(abortedRequests).toBe(1);
-    expect(screen.getByText("请求超时，系统正在自动重试")).toBeTruthy();
+    expect(screen.getByText("数据更新时间较长，系统会自动再次尝试。")).toBeTruthy();
     await act(async () => void (await vi.advanceTimersByTimeAsync(DETECTION_POLL_INTERVAL_MS)));
     expect(getDetectionJob).toHaveBeenCalledTimes(2);
   });
@@ -232,7 +230,7 @@ describe("DetectionProgressPage", () => {
     render(<DetectionProgressPage />);
     await act(async () => void (await Promise.resolve()));
     expect(screen.getByText("GEO 检测进度")).toBeTruthy();
-    expect(screen.getByText("模型明细暂时未更新，系统会自动重试")).toBeTruthy();
+    expect(screen.getByText("模型明细暂时未更新，系统会自动再次尝试")).toBeTruthy();
 
     await act(
       async () => void (await vi.advanceTimersByTimeAsync(DETECTION_RUNNING_POLL_INTERVAL_MS)),
@@ -276,8 +274,8 @@ describe("DetectionProgressPage", () => {
 
     render(<DetectionProgressPage />);
     await act(async () => void (await Promise.resolve()));
-    expect(screen.getByText(/已排队 1 分 5 秒/)).toBeTruthy();
-    expect(screen.getByText("任务长时间未被执行器领取")).toBeTruthy();
-    expect(screen.getByText(/最后刷新：/)).toBeTruthy();
+    expect(screen.getByText(/已等待 1 分 5 秒/)).toBeTruthy();
+    expect(screen.getByText("检测等待时间较长")).toBeTruthy();
+    expect(screen.getByText(/最近更新：/)).toBeTruthy();
   });
 });

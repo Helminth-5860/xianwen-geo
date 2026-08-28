@@ -51,7 +51,7 @@ export default function GeoRetestIndexPage() {
     <main className="geo-dashboard">
       <section className="geo-dashboard__header">
         <div>
-          <Text type="secondary">GEO VALIDATION</Text>
+          <Text type="secondary">GEO 复测</Text>
           <Title level={2}>复测验证</Title>
           <Paragraph type="secondary">
             GEO
@@ -67,7 +67,7 @@ export default function GeoRetestIndexPage() {
         <Card>
           <Empty description="请先创建并选择当前主体">
             <Button type="primary" href="/subjects">
-              进入主体与知识
+              进入主体档案
             </Button>
           </Empty>
         </Card>
@@ -101,7 +101,7 @@ export default function GeoRetestIndexPage() {
               <Space direction="vertical" size="middle" style={{ width: "100%" }}>
                 <div>
                   <Text type="secondary">最新报告</Text>
-                  <Title level={3}>GEO Score {latest.summary.geo.score ?? "—"}</Title>
+                  <Title level={3}>GEO 评分 {latest.summary.geo.score ?? "—"}</Title>
                   <Space wrap>
                     <Text type="secondary">曝光 {latest.summary.exposure.exposure_index}</Text>
                     <Text type="secondary">提及 {latest.summary.exposure.mention_rate_score}</Text>
@@ -118,7 +118,7 @@ export default function GeoRetestIndexPage() {
                   }
                   description={
                     subject.retest_required
-                      ? "当前主体版本与既有检测基线已经不同，进入最新报告后选择复测方式。"
+                      ? "当前主体资料已更新，进入最新报告后选择复测方式。"
                       : "完成一轮优化后，进入最新报告发起快速复测或调整复测，并与基线比较。"
                   }
                 />
@@ -132,7 +132,7 @@ export default function GeoRetestIndexPage() {
               <Space direction="vertical" size="middle">
                 <Text>1. 先保留基线报告，不覆盖历史结果。</Text>
                 <Text>2. 优先使用相同问题、相同模型做可比复测。</Text>
-                <Text>3. 对比 GEO Score、曝光、提及、推荐及各模型变化。</Text>
+                <Text>3. 对比 GEO 评分、曝光、提及、推荐及各模型变化。</Text>
                 <Text>4. 指标没有改善时，回到策略和内容环节继续迭代。</Text>
               </Space>
             </Card>
@@ -144,7 +144,7 @@ export default function GeoRetestIndexPage() {
                 {reports.slice(0, 6).map((report) => (
                   <a key={report.id} href={`/geo/reports/${report.id}`} className="geo-report-card">
                     <div>
-                      <Text strong>GEO Score {report.summary.geo.score ?? "—"}</Text>
+                      <Text strong>GEO 评分 {report.summary.geo.score ?? "—"}</Text>
                       <Text type="secondary">
                         {new Date(report.generated_at).toLocaleString("zh-CN")}
                       </Text>

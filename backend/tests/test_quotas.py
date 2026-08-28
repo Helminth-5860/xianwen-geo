@@ -84,13 +84,13 @@ def fund(account, admin, *, amount=5):
 
 
 @pytest.mark.django_db
-def test_subscription_initializes_all_five_accounts_even_zero():
+def test_subscription_initializes_all_current_accounts_even_zero():
     _, _, subscription = provision()
     accounts = QuotaAccount.objects.filter(subscription=subscription)
     assert set(accounts.values_list("quota_type", flat=True)) == {
         item.key for item in CURRENT_ACCOUNT_DEFINITIONS
     }
-    assert accounts.count() == 5
+    assert accounts.count() == len(CURRENT_ACCOUNT_DEFINITIONS)
     for account in accounts:
         assert account.ledger_sequence == 1
         assert account.last_ledger_entry.sequence == 1
@@ -123,6 +123,29 @@ def test_snapshot_rejects_bool_negative_and_overflow(bad_value):
 def test_snapshot_rejects_unknown_or_missing_catalog_key():
     with pytest.raises(ValueError):
         snapshot_quota_values({"limits": {"unknown": 1}})
+
+
+def test_pre_video_immutable_snapshot_gets_only_fail_closed_video_default():
+    limits = {item.source_limit_key: 0 for item in CURRENT_ACCOUNT_DEFINITIONS}
+    limits.pop("video_credits")
+    limits.update(
+        {
+            "keyword_regenerations_per_cycle": 0,
+            "distillation_regenerations_per_cycle": 0,
+            "question_bank_regenerations_per_cycle": 0,
+            "strategy_regenerations_per_cycle": 0,
+            "outline_regenerations_per_cycle": 0,
+            "local_ai_edits_per_cycle": 0,
+            "quality_rechecks_per_cycle": 0,
+        }
+    )
+
+    values = snapshot_quota_values({"limits": limits})
+
+    assert values["video_credits"] == 0
+    limits.pop("image_credits")
+    with pytest.raises(ValueError):
+        snapshot_quota_values({"limits": limits})
 
 
 @pytest.mark.django_db
@@ -173,6 +196,45 @@ def test_freeze_consume_release_and_replay():
             idempotency_key="release-key-unique-0002",
             request_id=uuid.uuid4(),
         )
+
+
+@pytest.mark.django_db
+def test_video_seconds_use_existing_freeze_consume_release_ledger():
+    admin, _, subscription = provision()
+    account = QuotaAccount.objects.get(subscription=subscription, quota_type="video_credits")
+    account = fund(account, admin, amount=10)
+    business_id = uuid.uuid4()
+
+    hold = freeze_quota(
+        account_id=account.pk,
+        amount=10,
+        business_type="video_generation",
+        business_id=business_id,
+        idempotency_key="video-freeze-key-unique-0001",
+        request_id=uuid.uuid4(),
+    )
+    consume_hold(
+        hold_id=hold.pk,
+        amount=5,
+        idempotency_key="video-consume-key-unique-0001",
+        request_id=uuid.uuid4(),
+    )
+    release_hold(
+        hold_id=hold.pk,
+        amount=5,
+        idempotency_key="video-release-key-unique-0001",
+        request_id=uuid.uuid4(),
+    )
+
+    hold.refresh_from_db()
+    account.refresh_from_db()
+    assert hold.status == QuotaHold.Status.SETTLED
+    assert hold.consumed_amount == 5
+    assert hold.released_amount == 5
+    assert account.available == 5
+    assert account.frozen == 0
+    replay = replay_account(account)
+    assert (replay.available, replay.frozen) == (5, 0)
 
 
 @pytest.mark.django_db
