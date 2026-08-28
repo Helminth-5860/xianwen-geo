@@ -71,10 +71,7 @@ def _compact_value(value: object) -> object:
     if isinstance(value, list):
         return [_compact_value(item) for item in value[:30]]
     if isinstance(value, dict):
-        return {
-            str(key)[:100]: _compact_value(item)
-            for key, item in list(value.items())[:50]
-        }
+        return {str(key)[:100]: _compact_value(item) for key, item in list(value.items())[:50]}
     if value is None or isinstance(value, (bool, int, float)):
         return value
     return str(value)[:1000]
@@ -267,9 +264,7 @@ def _source_snapshot(
 def website_readiness(*, user, subject: Subject) -> dict[str, object]:
     version = subject.current_version
     product_count = (
-        SubjectProduct.objects.filter(subject_version=version).count()
-        if version is not None
-        else 0
+        SubjectProduct.objects.filter(subject_version=version).count() if version is not None else 0
     )
     keywords = _keyword_rows(user=user, subject=subject) if version is not None else []
     questions = _question_rows(user=user, subject=subject) if version is not None else []
@@ -321,9 +316,7 @@ def project_payload(project: WebsiteProject) -> dict[str, object]:
         "contact": _contact_from_snapshot(project.source_snapshot),
         "generation_count": project.generation_count,
         "error_message": (
-            "官网生成暂未完成，请重新尝试"
-            if project.status == WebsiteProject.Status.FAILED
-            else ""
+            "官网生成暂未完成，请重新尝试" if project.status == WebsiteProject.Status.FAILED else ""
         ),
         "version": project.version,
         "created_at": project.created_at,
@@ -363,9 +356,7 @@ def website_state(*, user, subject_id) -> dict[str, object]:
         "subject": {
             "id": str(subject.pk),
             "official_name": (
-                subject.current_version.official_name
-                if subject.current_version is not None
-                else ""
+                subject.current_version.official_name if subject.current_version is not None else ""
             ),
         },
         "readiness": website_readiness(user=user, subject=subject),
@@ -447,9 +438,7 @@ def create_generation_job(
             return project, replay, False
 
         project = (
-            WebsiteProject.objects.select_for_update()
-            .filter(subject=subject, user=user)
-            .first()
+            WebsiteProject.objects.select_for_update().filter(subject=subject, user=user).first()
         )
         if project is None:
             project = WebsiteProject.objects.create(
@@ -633,18 +622,14 @@ def _mark_failed(job_id: str) -> dict[str, str]:
         failed.status = WebsiteGenerationJob.Status.FAILED
         failed.safe_error_code = "WEBSITE_GENERATION_FAILED"
         failed.finished_at = timezone.now()
-        failed.save(
-            update_fields=("status", "safe_error_code", "finished_at", "updated_at")
-        )
+        failed.save(update_fields=("status", "safe_error_code", "finished_at", "updated_at"))
         project = WebsiteProject.objects.select_for_update().get(pk=failed.project_id)
         project.status = (
             WebsiteProject.Status.READY if project.site_json else WebsiteProject.Status.FAILED
         )
         project.last_error_code = "WEBSITE_GENERATION_FAILED"
         project.version += 1
-        project.save(
-            update_fields=("status", "last_error_code", "version", "updated_at")
-        )
+        project.save(update_fields=("status", "last_error_code", "version", "updated_at"))
     return {"status": "failed"}
 
 
