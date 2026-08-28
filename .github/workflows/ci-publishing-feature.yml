@@ -1,3 +1,4 @@
+# Final pre-acceptance validation for the automatic publishing feature branch.
 name: Publishing Feature CI
 
 on:
