@@ -936,6 +936,8 @@ describe("GEO 产品工作台", () => {
       "/geo/strategy",
     );
     expect(subjectSwitchTargetPath("/geo/strategy/report-1", "subject-2")).toBe("/geo/strategy");
+    expect(subjectSwitchTargetPath("/geo/execution", "subject-2")).toBe("/geo/execution");
+    expect(subjectSwitchTargetPath("/geo/execution/plan-1", "subject-2")).toBe("/geo/execution");
     expect(subjectSwitchTargetPath("/geo/detections/detection-1", "subject-2")).toBe(
       "/geo/detections",
     );

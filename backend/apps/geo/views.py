@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import math
 
 from django.conf import settings
 from django.db import transaction
@@ -24,12 +25,23 @@ from rest_framework.views import APIView
 from apps.core.error_codes import ErrorCode
 from apps.core.responses import error_response
 from apps.documents.storage import storage_provider
+from apps.media_inquiries.exceptions import PaidMediaBusinessError
 from apps.quotas.exceptions import QuotaError
 from apps.subjects.permissions import IsAvailableAuthenticatedUser
 from apps.subjects.subject_services import subject_for_user_or_404
 
 from .assistant import assistant_context_payload, respond_to_assistant
 from .exceptions import AssistantError, GeoDetectionError, StrategyError
+from .execution_plans import (
+    ExecutionPlanError,
+    ExecutionPlanInputInvalid,
+    create_execution_plan,
+    execution_plan_for_user,
+    execution_plan_payload,
+    execution_plans_for_subject,
+    execution_preview,
+    update_execution_plan,
+)
 from .models import GeoDetectionQuestionSnapshot, GeoReport, ReportExport, ReportShare, StrategyNote
 from .reports import (
     comparison,
@@ -52,6 +64,8 @@ from .serializers import (
     ReportShareCreateSerializer,
     ReportShareUnlockSerializer,
     StrategyCreateSerializer,
+    StrategyExecutionPlanCreateSerializer,
+    StrategyExecutionPlanUpdateSerializer,
     StrategyNoteDeleteSerializer,
     StrategyNoteSerializer,
     WhiteLabelSerializer,
@@ -160,6 +174,25 @@ def _assistant_error(exc: AssistantError, request):
         ErrorCode(exc.code),
         status_code=ASSISTANT_ERROR_STATUS.get(exc.code, HTTP_409_CONFLICT),
         request=request,
+    )
+
+
+def _execution_plan_error(exc: ExecutionPlanError | PaidMediaBusinessError, request):
+    code = (
+        ErrorCode.VALIDATION_ERROR
+        if exc.status == HTTP_422_UNPROCESSABLE_ENTITY
+        else ErrorCode.SERVICE_TEMPORARILY_UNAVAILABLE
+        if exc.status == HTTP_503_SERVICE_UNAVAILABLE
+        else ErrorCode.ACCOUNT_STATE_CONFLICT
+    )
+    return _no_store(
+        error_response(
+            code,
+            status_code=exc.status,
+            request=request,
+            message=exc.message,
+            details={"execution_plan_code": exc.code},
+        )
     )
 
 
@@ -695,6 +728,102 @@ class StrategyNoteView(APIView):
         except StrategyError as exc:
             return _strategy_error(exc, request)
         return _no_store(Response(status=HTTP_204_NO_CONTENT))
+
+
+def _execution_plan_page_values(request) -> tuple[int, int]:
+    try:
+        page = int(request.query_params.get("page", "1"))
+        page_size = int(request.query_params.get("page_size", "20"))
+    except (TypeError, ValueError) as exc:
+        raise ExecutionPlanInputInvalid("分页选择不正确。") from exc
+    if page < 1 or page_size < 1 or page_size > 20:
+        raise ExecutionPlanInputInvalid("每页最多显示 20 条执行方案。")
+    return page, page_size
+
+
+class StrategyExecutionPreviewView(APIView):
+    permission_classes = [IsAvailableAuthenticatedUser]
+
+    def get(self, request, strategy_id):
+        try:
+            payload = execution_preview(user=request.user, strategy_id=strategy_id)
+        except ExecutionPlanError as exc:
+            return _execution_plan_error(exc, request)
+        return _no_store(Response(payload))
+
+
+class StrategyExecutionPlanCreateView(APIView):
+    permission_classes = [IsAvailableAuthenticatedUser]
+
+    @method_decorator(csrf_protect)
+    def post(self, request, strategy_id):
+        serializer = StrategyExecutionPlanCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            plan, created = create_execution_plan(
+                user=request.user,
+                strategy_id=strategy_id,
+                idempotency_key=request.headers.get("Idempotency-Key"),
+                request_id=request.request_id,
+                **serializer.validated_data,
+            )
+        except (ExecutionPlanError, PaidMediaBusinessError) as exc:
+            return _execution_plan_error(exc, request)
+        payload = execution_plan_payload(plan)
+        payload["replayed"] = not created
+        return _no_store(Response(payload, status=HTTP_201_CREATED if created else 200))
+
+
+class SubjectExecutionPlanListView(APIView):
+    permission_classes = [IsAvailableAuthenticatedUser]
+
+    def get(self, request, subject_id):
+        try:
+            page, page_size = _execution_plan_page_values(request)
+            queryset = execution_plans_for_subject(
+                user=request.user,
+                subject_id=subject_id,
+            )
+        except ExecutionPlanError as exc:
+            return _execution_plan_error(exc, request)
+        count = queryset.count()
+        start = (page - 1) * page_size
+        rows = queryset[start : start + page_size]
+        return _no_store(
+            Response(
+                {
+                    "items": [execution_plan_payload(row) for row in rows],
+                    "pagination": {
+                        "page": page,
+                        "page_size": page_size,
+                        "count": count,
+                        "total_pages": math.ceil(count / page_size) if count else 0,
+                    },
+                }
+            )
+        )
+
+
+class StrategyExecutionPlanDetailView(APIView):
+    permission_classes = [IsAvailableAuthenticatedUser]
+
+    def get(self, request, plan_id):
+        plan = execution_plan_for_user(user=request.user, plan_id=plan_id)
+        return _no_store(Response(execution_plan_payload(plan)))
+
+    @method_decorator(csrf_protect)
+    def patch(self, request, plan_id):
+        serializer = StrategyExecutionPlanUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            plan = update_execution_plan(
+                user=request.user,
+                plan_id=plan_id,
+                **serializer.validated_data,
+            )
+        except (ExecutionPlanError, PaidMediaBusinessError) as exc:
+            return _execution_plan_error(exc, request)
+        return _no_store(Response(execution_plan_payload(plan)))
 
 
 class AssistantContextView(APIView):

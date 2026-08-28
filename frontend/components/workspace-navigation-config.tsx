@@ -239,7 +239,8 @@ export const navigationConfig: readonly WorkspaceNavigationItem[] = [
       {
         key: "optimization-execution",
         label: "执行计划",
-        disabled: true,
+        href: "/geo/execution",
+        isActive: pathStartsWith("/geo/execution"),
       },
       {
         key: "optimization-paid-media",

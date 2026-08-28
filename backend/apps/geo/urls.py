@@ -32,7 +32,11 @@ from .views import (
     PublicReportShareView,
     ReportShareCloseView,
     StrategyDetailView,
+    StrategyExecutionPlanCreateView,
+    StrategyExecutionPlanDetailView,
+    StrategyExecutionPreviewView,
     StrategyNoteView,
+    SubjectExecutionPlanListView,
     SubjectWhiteLabelView,
 )
 
@@ -163,6 +167,26 @@ urlpatterns = [
         "strategies/<uuid:strategy_id>/note",
         StrategyNoteView.as_view(),
         name="strategy-note",
+    ),
+    path(
+        "strategies/<uuid:strategy_id>/execution-preview",
+        StrategyExecutionPreviewView.as_view(),
+        name="strategy-execution-preview",
+    ),
+    path(
+        "strategies/<uuid:strategy_id>/execution-plans",
+        StrategyExecutionPlanCreateView.as_view(),
+        name="strategy-execution-plan-create",
+    ),
+    path(
+        "subjects/<uuid:subject_id>/execution-plans",
+        SubjectExecutionPlanListView.as_view(),
+        name="subject-execution-plans",
+    ),
+    path(
+        "execution-plans/<uuid:plan_id>",
+        StrategyExecutionPlanDetailView.as_view(),
+        name="strategy-execution-plan-detail",
     ),
     path("assistant/context", AssistantContextView.as_view(), name="assistant-context"),
     path("assistant/respond", AssistantRespondView.as_view(), name="assistant-respond"),

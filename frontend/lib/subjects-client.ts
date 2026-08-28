@@ -364,6 +364,7 @@ export function subjectSwitchTargetPath(pathname: string, nextSubjectId: string)
     return pathname.includes("/strategy") ? "/geo/strategy" : "/geo/reports";
   }
   if (/^\/geo\/strategy\/[^/]+/.test(pathname)) return "/geo/strategy";
+  if (/^\/geo\/execution\/[^/]+/.test(pathname)) return "/geo/execution";
   return pathname;
 }
 

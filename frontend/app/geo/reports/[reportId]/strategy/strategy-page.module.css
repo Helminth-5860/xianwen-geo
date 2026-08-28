@@ -1,0 +1,370 @@
+.page {
+  width: min(1280px, calc(100% - 56px));
+  margin: 0 auto;
+  padding: 36px 0 132px;
+  color: var(--xw-text);
+}
+
+.page > * + * {
+  margin-top: 20px;
+}
+
+.header,
+.subjectBar,
+.sectionHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.header h2,
+.subjectBar h3,
+.sectionHeading h3 {
+  margin: 4px 0 8px !important;
+}
+
+.header p,
+.sectionHeading p {
+  max-width: 760px;
+  margin-bottom: 0 !important;
+}
+
+.subjectBar {
+  padding: 18px 20px;
+  border: 1px solid var(--xw-border);
+  border-radius: var(--xw-radius-md);
+  background: var(--xw-surface);
+  box-shadow: var(--xw-shadow-sm);
+}
+
+.heroGrid {
+  display: grid;
+  grid-template-columns: minmax(340px, 0.85fr) minmax(0, 1.65fr);
+  gap: 18px;
+}
+
+.metricGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.painGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.painCard {
+  min-height: 164px;
+  padding: 18px;
+  border: 1px solid var(--xw-border);
+  border-top: 3px solid var(--xw-text-tertiary);
+  border-radius: var(--xw-radius-md);
+  background: var(--xw-surface-subtle);
+}
+
+.painCard[data-tone="danger"] {
+  border-top-color: var(--xw-danger);
+}
+
+.painCard[data-tone="warning"] {
+  border-top-color: var(--xw-warning);
+}
+
+.painCard[data-tone="positive"] {
+  border-top-color: var(--xw-positive);
+}
+
+.painCardHeader,
+.packageHeader,
+.summaryBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.painCardHeader span {
+  color: var(--xw-text-secondary);
+  font-size: 12px;
+}
+
+.painValue {
+  margin: 14px 0 8px;
+  font-size: 25px;
+  font-weight: 700;
+}
+
+.painCard p:last-child {
+  margin: 0;
+  color: var(--xw-text-secondary);
+  line-height: 1.65;
+}
+
+.impactPanel {
+  display: flex;
+  gap: 18px;
+  padding: 24px;
+  border: 1px solid color-mix(in srgb, var(--xw-danger) 30%, transparent);
+  border-radius: var(--xw-radius-lg);
+  background: color-mix(in srgb, var(--xw-danger) 6%, var(--xw-surface));
+}
+
+.impactPanel > span {
+  margin-top: 5px;
+  color: var(--xw-danger);
+  font-size: 24px;
+}
+
+.impactPanel h2 {
+  margin: 0 0 10px;
+  font-size: 18px;
+}
+
+.impactPanel ul {
+  margin: 0 0 10px;
+  padding-left: 20px;
+  line-height: 1.8;
+}
+
+.packageGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.packageCard {
+  display: flex;
+  min-height: 190px;
+  padding: 20px;
+  border: 1px solid var(--xw-border);
+  border-radius: var(--xw-radius-lg);
+  background: var(--xw-surface);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: var(--xw-shadow-sm);
+}
+
+.packageCard:hover,
+.packageCardActive {
+  border-color: var(--xw-primary);
+  box-shadow: var(--xw-shadow-md);
+}
+
+.packageCard:disabled {
+  cursor: default;
+}
+
+.packageCard:disabled:hover {
+  border-color: var(--xw-border);
+  box-shadow: var(--xw-shadow-sm);
+}
+
+.packageCardActive:disabled:hover {
+  border-color: var(--xw-primary);
+  box-shadow: var(--xw-shadow-md);
+}
+
+.packageCard > b {
+  margin-top: auto;
+  color: var(--xw-primary);
+  font-size: 18px;
+}
+
+.packageCard > small,
+.packageCard > span:nth-child(2) {
+  color: var(--xw-text-secondary);
+  line-height: 1.6;
+}
+
+.actionList {
+  display: grid;
+  gap: 12px;
+}
+
+.actionItem {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid var(--xw-border);
+  border-radius: var(--xw-radius-md);
+}
+
+.actionItem p {
+  margin: 9px 0;
+  color: var(--xw-text-secondary);
+}
+
+.actionItem dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+
+.actionItem dl div {
+  padding: 10px;
+  border-radius: var(--xw-radius-sm);
+  background: var(--xw-surface-subtle);
+}
+
+.actionItem dt {
+  color: var(--xw-text-tertiary);
+  font-size: 12px;
+}
+
+.actionItem dd {
+  margin: 5px 0 0;
+  line-height: 1.55;
+}
+
+.actionMeta {
+  display: flex;
+  min-width: 110px;
+  align-items: flex-end;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mediaGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.mediaItem {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--xw-border);
+  border-radius: var(--xw-radius-md);
+}
+
+.mediaItem div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mediaItem div span {
+  overflow: hidden;
+  color: var(--xw-text-secondary);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mediaLogo,
+.mediaLogoFallback {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.mediaLogoFallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--xw-primary-soft);
+  color: var(--xw-primary);
+  font-weight: 700;
+}
+
+.summaryBar {
+  position: sticky;
+  z-index: 12;
+  bottom: 18px;
+  padding: 16px 20px;
+  border: 1px solid var(--xw-border-strong);
+  border-radius: var(--xw-radius-lg);
+  background: color-mix(in srgb, var(--xw-surface) 94%, transparent);
+  box-shadow: var(--xw-shadow-md);
+  backdrop-filter: blur(16px);
+}
+
+.summaryBar > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.totalPrice {
+  color: var(--xw-danger);
+  font-size: 20px;
+}
+
+.overviewText {
+  white-space: pre-line;
+}
+
+.articleIcon,
+.successIcon {
+  color: var(--xw-primary);
+  font-size: 20px;
+}
+
+.historyItem {
+  cursor: pointer;
+}
+
+@media (max-width: 1080px) {
+  .heroGrid,
+  .packageGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .painGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .summaryBar {
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 720px) {
+  .page {
+    width: min(100% - 28px, 1280px);
+    padding-top: 22px;
+  }
+
+  .header,
+  .subjectBar,
+  .sectionHeading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .metricGrid,
+  .painGrid,
+  .mediaGrid,
+  .actionItem dl {
+    grid-template-columns: 1fr;
+  }
+
+  .actionItem {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .actionMeta {
+    grid-column: 2;
+    align-items: flex-start;
+  }
+
+  .summaryBar {
+    position: static;
+    align-items: stretch;
+    flex-direction: column;
+  }
+}

@@ -14,6 +14,8 @@ const userPages = [
   "../app/geo/retest/page.tsx",
   "../app/geo/strategy/page.tsx",
   "../app/geo/reports/[reportId]/strategy/strategy-page.tsx",
+  "../app/geo/execution/page.tsx",
+  "../app/geo/execution/[planId]/execution-plan-page.tsx",
   "../app/subjects/[id]/videos/new/video-generation-workspace.tsx",
   "../components/video-library-workspace.tsx",
 ].map(read);

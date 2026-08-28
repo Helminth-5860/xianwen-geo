@@ -1294,6 +1294,120 @@ class StrategyReport(models.Model):  # noqa: DJ008
         raise TypeError("Strategy history cannot be deleted.")
 
 
+class StrategyExecutionPlanQuerySet(models.QuerySet):
+    def delete(self):
+        raise TypeError("Execution plans cannot be deleted.")
+
+
+class StrategyExecutionPlan(models.Model):  # noqa: DJ008
+    class PackageCode(models.TextChoices):
+        BASIC = "basic", "基础改善"
+        FOCUSED = "focused", "重点提升"
+        COMPREHENSIVE = "comprehensive", "全面建设"
+        CUSTOM = "custom", "自定义"
+
+    class Status(models.TextChoices):
+        ACTIVE = "active", "执行中"
+        COMPLETED = "completed", "已完成"
+        CANCELLED = "cancelled", "已取消"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    strategy = models.OneToOneField(
+        StrategyReport,
+        on_delete=models.PROTECT,
+        related_name="execution_plan",
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="strategy_execution_plans",
+    )
+    subject = models.ForeignKey(
+        "subjects.Subject",
+        on_delete=models.PROTECT,
+        related_name="strategy_execution_plans",
+    )
+    report = models.ForeignKey(
+        GeoReport,
+        on_delete=models.PROTECT,
+        related_name="strategy_execution_plans",
+    )
+    package_code = models.CharField(max_length=24, choices=PackageCode.choices)
+    items = models.JSONField(default=list)
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.ACTIVE)
+    paid_media_inquiry = models.ForeignKey(
+        "media_inquiries.PaidMediaInquiry",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="strategy_execution_plans",
+    )
+    media_total = models.DecimalField(max_digits=16, decimal_places=2, default=0)
+    request_digest = models.CharField(max_length=64)
+    version = models.PositiveBigIntegerField(default=1)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    objects = StrategyExecutionPlanQuerySet.as_manager()
+
+    class Meta:
+        db_table = "strategy_execution_plans"
+        ordering = ("-created_at", "-id")
+        indexes = [
+            models.Index(
+                fields=("user", "subject", "created_at"),
+                name="strategy_plan_owner_idx",
+            ),
+            models.Index(fields=("status", "created_at"), name="strategy_plan_status_idx"),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(package_code__in=("basic", "focused", "comprehensive", "custom")),
+                name="strategy_plan_package_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(status__in=("active", "completed", "cancelled")),
+                name="strategy_plan_status_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(media_total__gte=0),
+                name="strategy_plan_media_total_nonnegative",
+            ),
+            models.CheckConstraint(
+                condition=Q(version__gte=1),
+                name="strategy_plan_version_gte_1",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self._state.adding:
+            strategy = StrategyReport.objects.get(pk=self.strategy_id)
+            if (
+                strategy.user_id != self.user_id
+                or strategy.subject_id != self.subject_id
+                or strategy.report_id != self.report_id
+            ):
+                raise TypeError("Execution plan ownership must match its strategy.")
+        else:
+            previous = StrategyExecutionPlan.objects.get(pk=self.pk)
+            frozen = (
+                "strategy_id",
+                "user_id",
+                "subject_id",
+                "report_id",
+                "package_code",
+                "paid_media_inquiry_id",
+                "media_total",
+                "request_digest",
+            )
+            if any(getattr(previous, field) != getattr(self, field) for field in frozen):
+                raise TypeError("Execution plan source facts cannot be changed.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise TypeError("Execution plans cannot be deleted.")
+
+
 class StrategyNote(models.Model):  # noqa: DJ008
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     strategy = models.OneToOneField(StrategyReport, on_delete=models.CASCADE, related_name="note")

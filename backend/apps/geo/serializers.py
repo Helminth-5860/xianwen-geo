@@ -81,6 +81,97 @@ class StrategyNoteDeleteSerializer(StrictSerializer):
     expected_version = serializers.IntegerField(min_value=1)
 
 
+class StrategyExecutionPlanCreateSerializer(StrictSerializer):
+    package_code = serializers.ChoiceField(
+        choices=("basic", "focused", "comprehensive", "custom"),
+        error_messages={
+            "required": "请选择执行方案。",
+            "invalid_choice": "请选择可用的执行方案。",
+        },
+    )
+    item_keys = serializers.ListField(
+        child=serializers.CharField(
+            max_length=100,
+            trim_whitespace=True,
+            error_messages={
+                "blank": "执行项目不能为空。",
+                "max_length": "执行项目标识过长，请刷新后重试。",
+            },
+        ),
+        allow_empty=True,
+        max_length=100,
+        required=False,
+        default=list,
+        error_messages={
+            "not_a_list": "执行项目选择不正确。",
+            "max_length": "一次最多选择 100 个执行项目。",
+        },
+    )
+    media_ids = serializers.ListField(
+        child=serializers.CharField(
+            max_length=128,
+            trim_whitespace=True,
+            error_messages={
+                "blank": "媒体选择不能为空。",
+                "max_length": "媒体标识过长，请刷新后重试。",
+            },
+        ),
+        allow_empty=True,
+        max_length=200,
+        required=False,
+        default=list,
+        error_messages={
+            "not_a_list": "媒体选择不正确。",
+            "max_length": "一次最多选择 200 家媒体。",
+        },
+    )
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        for field in ("item_keys", "media_ids"):
+            values = attrs[field]
+            if len(values) != len(set(values)):
+                label = "执行项目" if field == "item_keys" else "媒体"
+                raise serializers.ValidationError(f"{label}中存在重复选择，请重新选择。")
+        return attrs
+
+
+class StrategyExecutionPlanUpdateSerializer(StrictSerializer):
+    action = serializers.ChoiceField(
+        choices=("start_item", "complete_item", "cancel_item", "restore_item", "cancel_plan"),
+        error_messages={
+            "required": "请选择要执行的操作。",
+            "invalid_choice": "请选择可用的执行操作。",
+        },
+    )
+    item_key = serializers.CharField(
+        max_length=100,
+        trim_whitespace=True,
+        required=False,
+        allow_blank=False,
+        error_messages={
+            "blank": "请选择执行项目。",
+            "max_length": "执行项目标识过长，请刷新后重试。",
+        },
+    )
+    expected_version = serializers.IntegerField(
+        min_value=1,
+        error_messages={
+            "required": "页面状态已失效，请刷新后重试。",
+            "invalid": "页面状态已失效，请刷新后重试。",
+            "min_value": "页面状态已失效，请刷新后重试。",
+        },
+    )
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        if attrs["action"] == "cancel_plan" and "item_key" in attrs:
+            raise serializers.ValidationError("取消整个方案时不需要选择单个项目。")
+        if attrs["action"] != "cancel_plan" and "item_key" not in attrs:
+            raise serializers.ValidationError("请选择要操作的执行项目。")
+        return attrs
+
+
 class AssistantMessageSerializer(StrictSerializer):
     role = serializers.ChoiceField(choices=("user", "assistant"))
     content = serializers.CharField(max_length=2000, trim_whitespace=True)

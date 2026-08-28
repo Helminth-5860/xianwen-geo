@@ -20,6 +20,9 @@ class PaidMediaCatalogItem:
     url: str | None
     domain: str | None
     logo_path: str | None
+    category: str | None = None
+    region: str | None = None
+    portal_type: str | None = None
 
     def public_payload(self) -> dict[str, object]:
         return {
@@ -75,6 +78,9 @@ def _catalog_item(raw: object) -> PaidMediaCatalogItem:
     url = _catalog_url(raw.get("url"))
     domain = raw.get("domain")
     logo_path = raw.get("logo_path")
+    category = raw.get("category")
+    region = raw.get("region")
+    portal_type = raw.get("portal_type")
     if (
         not isinstance(item_id, str)
         or not item_id.strip()
@@ -88,6 +94,11 @@ def _catalog_item(raw: object) -> PaidMediaCatalogItem:
         or not isinstance(domain, str)
         or len(domain) > 255
         or (logo_path is not None and (not isinstance(logo_path, str) or len(logo_path) > 500))
+        or (category is not None and (not isinstance(category, str) or len(category) > 100))
+        or (region is not None and (not isinstance(region, str) or len(region) > 100))
+        or (
+            portal_type is not None and (not isinstance(portal_type, str) or len(portal_type) > 100)
+        )
     ):
         raise PaidMediaCatalogUnavailable
     return PaidMediaCatalogItem(
@@ -97,6 +108,9 @@ def _catalog_item(raw: object) -> PaidMediaCatalogItem:
         url=url,
         domain=domain.strip() or None,
         logo_path=logo_path or None,
+        category=category.strip() or None if isinstance(category, str) else None,
+        region=region.strip() or None if isinstance(region, str) else None,
+        portal_type=portal_type.strip() or None if isinstance(portal_type, str) else None,
     )
 
 
