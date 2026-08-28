@@ -61,9 +61,19 @@ export type PublicationTarget = Readonly<{
   id: string;
   platform_key: string;
   platform_name: string;
-  status: "waiting" | "ready" | "running" | "succeeded" | "failed" | "auth_required" | "paused";
+  status:
+    | "waiting"
+    | "ready"
+    | "running"
+    | "submitted"
+    | "succeeded"
+    | "failed"
+    | "auth_required"
+    | "paused";
   scheduled_at: string | null;
+  submitted_at?: string | null;
   published_at: string | null;
+  management_url?: string;
   public_url: string;
   attempts: number;
   error_message: string;
