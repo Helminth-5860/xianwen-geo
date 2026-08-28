@@ -1,4 +1,6 @@
 # ruff: noqa: F403, F405
+import os
+
 from apps.core.logging import build_logging_config
 
 from .base import *
@@ -37,10 +39,11 @@ WEB_IMPORT_TEST_ALLOWED_CIDRS = (
     ip_network("::1/128"),
 )
 
-# pytest imports this module directly rather than config.settings, so feature apps
-# that are registered by the environment wrapper must be repeated here when their
-# tests exercise model loading and migrations.
-INSTALLED_APPS = [*INSTALLED_APPS, "apps.source_index"]
+# pytest/mypy import this module directly, while manage.py imports config.settings
+# which already appends feature apps after loading this module. Only add source_index
+# here for the direct-settings path, otherwise Django sees the app twice.
+if os.getenv("DJANGO_SETTINGS_MODULE") == "config.django_settings.test":
+    INSTALLED_APPS = [*INSTALLED_APPS, "apps.source_index"]
 
 DEBUG = False
 ALLOWED_HOSTS = ["testserver", "localhost", "127.0.0.1"]
