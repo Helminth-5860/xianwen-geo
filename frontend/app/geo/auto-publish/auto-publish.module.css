@@ -1,0 +1,170 @@
+.stack {
+  display: grid;
+  gap: 16px;
+}
+
+.heroCard {
+  overflow: hidden;
+}
+
+.heroRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.noMargin {
+  margin: 0 !important;
+}
+
+.heroDescription {
+  max-width: 760px;
+  margin: 10px 0 0 !important;
+}
+
+.platformGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.platformCard {
+  min-height: 154px;
+}
+
+.platformHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.platformMeta,
+.targetMeta {
+  margin-top: 6px;
+  color: rgba(0, 0, 0, 0.45);
+  font-size: 12px;
+}
+
+.platformActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 28px;
+}
+
+.targetList {
+  display: grid;
+}
+
+.targetRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 68px;
+  padding: 12px 0;
+  border-bottom: 1px solid rgba(5, 5, 5, 0.06);
+}
+
+.targetRow:last-child {
+  border-bottom: 0;
+}
+
+.jobCard {
+  overflow: hidden;
+}
+
+.jobHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.compactDivider {
+  margin: 12px 0 0 !important;
+}
+
+.articlePicker {
+  width: min(760px, 100%);
+}
+
+.articlePicker :global(.ant-select) {
+  flex: 1;
+}
+
+.settingsGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 30px 36px;
+}
+
+.radioStack {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.fullWidth {
+  width: 100%;
+  margin-top: 14px;
+}
+
+.settingHelp {
+  margin: 10px 0 0 !important;
+}
+
+.authForm {
+  margin-top: 18px;
+}
+
+.authSnapshot {
+  display: grid;
+  place-items: center;
+  min-height: 420px;
+  margin: 18px 0;
+  overflow: hidden;
+  background: #f6f8fb;
+  border: 1px solid rgba(5, 5, 5, 0.08);
+  border-radius: 12px;
+}
+
+.authSnapshot img {
+  display: block;
+  width: 100%;
+  max-height: 560px;
+  object-fit: contain;
+}
+
+.successIcon {
+  color: #52c41a;
+  font-size: 46px;
+}
+
+@media (max-width: 1100px) {
+  .platformGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .heroRow,
+  .platformActions,
+  .jobHeader,
+  .targetRow {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .platformGrid,
+  .settingsGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .platformActions {
+    margin-top: 18px;
+  }
+}
