@@ -217,6 +217,7 @@ class PublicationTarget(models.Model):  # noqa: DJ008
         WAITING = "waiting", "等待发布"
         READY = "ready", "已准备"
         RUNNING = "running", "正在发布"
+        SUBMITTED = "submitted", "平台审核中"
         SUCCEEDED = "succeeded", "已发布"
         FAILED = "failed", "发布失败"
         AUTH_REQUIRED = "auth_required", "需要重新授权"
@@ -231,9 +232,12 @@ class PublicationTarget(models.Model):  # noqa: DJ008
     adapted_content = models.TextField(blank=True)
     media_payload = models.JSONField(default=dict)
     scheduled_at = models.DateTimeField(null=True, blank=True)
+    submitted_at = models.DateTimeField(null=True, blank=True)
     published_at = models.DateTimeField(null=True, blank=True)
     external_post_id = models.CharField(max_length=255, blank=True)
+    management_url = models.TextField(blank=True)
     public_url = models.TextField(blank=True)
+    next_status_check_at = models.DateTimeField(null=True, blank=True)
     attempts = models.PositiveSmallIntegerField(default=0)
     safe_error_code = models.CharField(max_length=100, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
