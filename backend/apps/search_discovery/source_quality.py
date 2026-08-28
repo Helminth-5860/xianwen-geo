@@ -45,7 +45,14 @@ KNOWN_DOMAINS: dict[str, tuple[str, int]] = {
 }
 
 
-def classify_source(*, root: str, domain: str, website: str, title: str, self_domains: set[str]) -> tuple[str, int]:
+def classify_source(
+    *,
+    root: str,
+    domain: str,
+    website: str,
+    title: str,
+    self_domains: set[str],
+) -> tuple[str, int]:
     if root in self_domains or domain in self_domains:
         return ENTERPRISE_SITE, 65
     if root.endswith("gov.cn") or domain.endswith("gov.cn"):
@@ -53,30 +60,84 @@ def classify_source(*, root: str, domain: str, website: str, title: str, self_do
     for known, classification in KNOWN_DOMAINS.items():
         if domain == known or domain.endswith(f".{known}") or root == known:
             return classification
+
     text = f"{website} {title}".lower()
-    government_tokens = ("人民政府", "政府网", "委员会", "管理局", "协会", "学会", "商会", "人民法院", "法院")
+    government_tokens = (
+        "人民政府",
+        "政府网",
+        "委员会",
+        "管理局",
+        "协会",
+        "学会",
+        "商会",
+    )
     if any(token in text for token in government_tokens):
         return GOVERNMENT_ASSOCIATION, 88
-    news_tokens = ("新闻网", "新闻中心", "日报", "晚报", "报业", "电视台", "融媒体", "广播电视")
+    news_tokens = (
+        "新闻网",
+        "新闻中心",
+        "日报",
+        "晚报",
+        "报业",
+        "电视台",
+        "融媒体",
+        "广播电视",
+    )
     if any(token in text for token in news_tokens):
         return NEWS_MEDIA, 80
-    industry_tokens = ("行业网", "产业网", "财经网", "科技网", "商业评论", "行业媒体", "研究院", "研究中心")
+    industry_tokens = (
+        "行业网",
+        "产业网",
+        "财经网",
+        "科技网",
+        "商业评论",
+        "行业媒体",
+        "研究院",
+        "研究中心",
+    )
     if any(token in text for token in industry_tokens):
         return INDUSTRY_MEDIA, 74
+
     forum_domain = any(token in domain for token in ("bbs.", "forum."))
     forum_label = any(token in text for token in ("论坛", "社区", "贴吧"))
     if forum_domain or forum_label:
         return FORUM_COMMUNITY, 44
-    if any(token in text for token in ("企业信息", "工商信息", "黄页", "企业名录", "信用查询")):
+    if any(
+        token in text
+        for token in (
+            "企业信息",
+            "工商信息",
+            "黄页",
+            "企业名录",
+            "信用查询",
+        )
+    ):
         return DIRECTORY_BUSINESS, 43
-    if any(token in domain for token in ("weixin", "weibo", "zhihu", "toutiao", "baijiahao")):
+    if any(
+        token in domain
+        for token in (
+            "weixin",
+            "weibo",
+            "zhihu",
+            "toutiao",
+            "baijiahao",
+        )
+    ):
         return CONTENT_PLATFORM, 55
     if any(token in text for token in ("号作者", "自媒体", "博客")):
         return CONTENT_PLATFORM, 50
     return OTHER, 42
 
 
-def relevance_score(*, title: str, snippet: str, website: str, anchors: list[str], official_name: str, matched_queries: set[str]) -> int:
+def relevance_score(
+    *,
+    title: str,
+    snippet: str,
+    website: str,
+    anchors: list[str],
+    official_name: str,
+    matched_queries: set[str],
+) -> int:
     title_l = title.casefold()
     snippet_l = snippet.casefold()
     website_l = website.casefold()
@@ -95,7 +156,9 @@ def relevance_score(*, title: str, snippet: str, website: str, anchors: list[str
             return 80
         if token in website_l:
             return 70
-    if official and any(query.casefold().strip() == official for query in matched_queries):
+    if official and any(
+        query.casefold().strip() == official for query in matched_queries
+    ):
         return 45
     return 35
 
