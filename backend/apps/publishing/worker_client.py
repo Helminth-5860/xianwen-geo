@@ -152,3 +152,37 @@ def publish_to_platform(
     if response.status_code >= 400:
         raise PublishingWorkerError("worker_rejected_request")
     return _decode_response(response)
+
+
+def check_platform_publication_status(
+    *,
+    platform_key: str,
+    external_post_id: str,
+    management_url: str,
+    credentials: dict[str, Any],
+) -> dict[str, Any]:
+    base_url, secret = _configuration()
+    payload = {
+        "platform_key": platform_key,
+        "external_post_id": external_post_id,
+        "management_url": management_url,
+        "credentials": credentials,
+    }
+    try:
+        response = httpx.post(
+            f"{base_url}/v1/status",
+            json=payload,
+            headers=_headers(secret),
+            timeout=float(getattr(settings, "PUBLISHING_WORKER_STATUS_TIMEOUT_SECONDS", 75)),
+        )
+    except httpx.TimeoutException as exc:
+        raise PublishingWorkerError("worker_timeout") from exc
+    except httpx.HTTPError as exc:
+        raise PublishingWorkerError("worker_unavailable") from exc
+    if response.status_code == 409:
+        raise PublishingWorkerError("platform_not_ready")
+    if response.status_code >= 500:
+        raise PublishingWorkerError("worker_unavailable")
+    if response.status_code >= 400:
+        raise PublishingWorkerError("worker_rejected_request")
+    return _decode_response(response)
