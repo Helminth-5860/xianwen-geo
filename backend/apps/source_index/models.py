@@ -128,6 +128,7 @@ class SourceIndexItem(models.Model):  # noqa: DJ008
     scan = models.ForeignKey(SourceIndexScan, on_delete=models.CASCADE, related_name="items")
     original_url = models.URLField(max_length=4096)
     normalized_url = models.CharField(max_length=4096)
+    normalized_url_hash = models.CharField(max_length=64)
     domain = models.CharField(max_length=255)
     root_domain = models.CharField(max_length=255)
     website = models.CharField(max_length=500, blank=True)
@@ -159,8 +160,8 @@ class SourceIndexItem(models.Model):  # noqa: DJ008
         ]
         constraints = [
             models.UniqueConstraint(
-                fields=("scan", "normalized_url"),
-                name="src_item_scan_url_unique",
+                fields=("scan", "normalized_url_hash"),
+                name="src_item_scan_urlhash_unique",
             ),
             models.CheckConstraint(
                 condition=Q(authority_score__lte=100),
