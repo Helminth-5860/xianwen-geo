@@ -1,7 +1,7 @@
 "use client";
 
 import { Segmented, Space, Tag, Typography } from "antd";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import type {
   WebsiteContact,
@@ -269,14 +269,8 @@ export function WebsiteDraftPreview({ project, subjectName, materials, design }:
   const styleKey = design?.styleKey ?? project.style_key;
   const themeKey = design?.themeKey ?? project.theme_key;
   const densityKey = design?.densityKey ?? project.density_key;
-
-  useEffect(() => {
-    if (pages.length && !pages.some((page) => page.key === activePageKey)) {
-      setActivePageKey(pages[0].key);
-    }
-  }, [activePageKey, pages]);
-
   const activePage = pages.find((page) => page.key === activePageKey) ?? pages[0];
+
   if (!activePage) return null;
 
   return (
