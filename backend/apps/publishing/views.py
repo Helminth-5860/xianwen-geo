@@ -28,6 +28,7 @@ from .services import (
     subject_for_user,
     update_preference,
 )
+from .tasks import prepare_publication_task
 
 
 class SubjectPublishingStateView(APIView):
@@ -130,4 +131,5 @@ class SubjectPublicationCreateView(APIView):
         except PublishingInputError as exc:
             raise ValidationError({"publication": [str(exc)]}) from exc
         publication = publication.__class__.objects.prefetch_related("targets").get(id=publication.id)
+        prepare_publication_task.delay(str(publication.id))
         return Response({"publication": publication_payload(publication)}, status=HTTP_201_CREATED)
