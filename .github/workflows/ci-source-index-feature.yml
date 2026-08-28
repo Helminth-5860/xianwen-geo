@@ -8,10 +8,13 @@ on:
     paths:
       - "backend/apps/source_index/**"
       - "backend/config/settings.py"
+      - "backend/config/django_settings/test.py"
       - "backend/config/urls.py"
       - "backend/tests/api_urls.py"
       - "backend/tests/test_source_index.py"
       - "frontend/lib/source-index-client.ts"
+      - "frontend/components/source-index-workspace.tsx"
+      - "frontend/components/source-index-workspace.module.css"
       - ".env.example"
       - ".github/workflows/ci-source-index-feature.yml"
   workflow_dispatch:
