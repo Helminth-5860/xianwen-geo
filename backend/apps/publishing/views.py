@@ -8,6 +8,7 @@ from rest_framework.views import APIView
 
 from apps.subjects.permissions import IsAvailableAuthenticatedUser
 
+from .authorization import begin_browser_authorization, sync_authorization_session
 from .models import PlatformAccount, PlatformAuthorizationSession
 from .serializers import (
     AuthorizationStartSerializer,
@@ -19,7 +20,6 @@ from .services import (
     PublishingInputError,
     account_payload,
     auth_session_payload,
-    create_authorization_session,
     create_publication,
     disconnect_platform_account,
     preference_payload,
@@ -61,7 +61,7 @@ class SubjectPublishingAuthorizationStartView(APIView):
         serializer = AuthorizationStartSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
-            session, one_time_token = create_authorization_session(
+            session = begin_browser_authorization(
                 user=request.user,
                 subject_id=subject_id,
                 platform_key=serializer.validated_data["platform_key"],
@@ -69,7 +69,7 @@ class SubjectPublishingAuthorizationStartView(APIView):
         except PublishingInputError as exc:
             raise ValidationError({"authorization": [str(exc)]}) from exc
         return Response(
-            {"authorization": auth_session_payload(session, one_time_token=one_time_token)},
+            {"authorization": auth_session_payload(session)},
             status=HTTP_202_ACCEPTED,
         )
 
@@ -79,10 +79,11 @@ class PublishingAuthorizationSessionView(APIView):
 
     def get(self, request, session_id):
         session = get_object_or_404(
-            PlatformAuthorizationSession,
+            PlatformAuthorizationSession.objects.select_related("account"),
             id=session_id,
             user=request.user,
         )
+        session = sync_authorization_session(session)
         return Response({"authorization": auth_session_payload(session)})
 
 
