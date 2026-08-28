@@ -111,7 +111,8 @@ class BaiduProviderTests(SimpleTestCase):
         self.assertLessEqual(baidu_query_units(truncated), 72)
         self.assertEqual(len(truncated), 36)
 
-    def test_search_uses_metadata_only_contract(self):
+    @patch("apps.source_index.provider.resolve_baidu_search_api_key", return_value="test-key")
+    def test_search_uses_metadata_only_contract(self, resolve_key):
         provider = BaiduSearchProvider()
         response = Mock()
         response.status_code = 200
@@ -134,6 +135,7 @@ class BaiduProviderTests(SimpleTestCase):
             request_kwargs = provider.client.post.call_args.kwargs
         finally:
             provider.close()
+        resolve_key.assert_called_once_with()
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0].title, "显问 GEO 报道")
         self.assertEqual(
