@@ -46,7 +46,9 @@ class NegativeIndexScanSummarySerializer(serializers.ModelSerializer):
         )
 
     def get_elapsed_seconds(self, obj):
-        return None if obj.elapsed_ms is None else round(obj.elapsed_ms / 1000, 2)
+        if obj.elapsed_ms is None:
+            return None
+        return round(obj.elapsed_ms / 1000, 2)
 
     def get_risk_level(self, obj):
         return risk_level(obj.index_score)
@@ -63,10 +65,18 @@ class NegativeIndexScanDetailSerializer(NegativeIndexScanSummarySerializer):
         )
 
     def get_category_distribution(self, obj):
-        return list(obj.events.values("category").annotate(count=Count("id")).order_by("-count", "category"))
+        return list(
+            obj.events.values("category")
+            .annotate(count=Count("id"))
+            .order_by("-count", "category")
+        )
 
     def get_status_distribution(self, obj):
-        return list(obj.events.values("status").annotate(count=Count("id")).order_by("-count", "status"))
+        return list(
+            obj.events.values("status")
+            .annotate(count=Count("id"))
+            .order_by("-count", "status")
+        )
 
 
 class NegativeIndexItemSerializer(serializers.ModelSerializer):
@@ -109,7 +119,8 @@ class NegativeIndexItemSerializer(serializers.ModelSerializer):
     def get_matched_queries(self, obj):
         queries: list[str] = []
         seen: set[str] = set()
-        for query in obj.hits.order_by("rank", "id").values_list("query", flat=True):
+        rows = obj.hits.order_by("rank", "id").values_list("query", flat=True)
+        for query in rows:
             if query not in seen:
                 seen.add(query)
                 queries.append(query)
@@ -147,5 +158,9 @@ class NegativeEventDetailSerializer(NegativeEventSummarySerializer):
         fields = NegativeEventSummarySerializer.Meta.fields + ("sources",)
 
     def get_sources(self, obj):
-        items = obj.items.prefetch_related("hits").order_by("-evidence_confidence", "best_rank", "id")[:100]
+        items = obj.items.prefetch_related("hits").order_by(
+            "-evidence_confidence",
+            "best_rank",
+            "id",
+        )[:100]
         return NegativeIndexItemSerializer(items, many=True).data
