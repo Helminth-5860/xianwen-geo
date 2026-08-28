@@ -38,10 +38,11 @@ export type PublicationInput = Readonly<{
 export type PublicationResult = Readonly<{
   success: boolean;
   platformKey: string;
-  status: "drafted" | "published" | "failed" | "auth_required" | "action_required";
+  status: "drafted" | "submitted" | "published" | "failed" | "auth_required" | "action_required";
   externalPostId?: string;
   publicUrl?: string;
   editUrl?: string;
+  managementUrl?: string;
   safeErrorCode?: string;
 }>;
 
