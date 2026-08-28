@@ -27,7 +27,7 @@ def _create_managed_publication(article_id) -> None:
         user=article.user,
         subject=article.subject,
         is_enabled=True,
-        mode=PublishingPreference.Mode.MANAGED,
+        mode__in=(PublishingPreference.Mode.MANAGED, PublishingPreference.Mode.REVIEW),
     ).first()
     if preference is None:
         return
