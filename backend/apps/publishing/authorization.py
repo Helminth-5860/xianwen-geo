@@ -4,6 +4,7 @@ from django.utils import timezone
 
 from .models import PlatformAccount, PlatformAuthorizationSession
 from .services import PublishingInputError, complete_authorization_session, create_authorization_session
+from .wechat_component import WechatComponentUnavailable, begin_wechat_component_authorization
 from .worker_client import (
     PublishingWorkerError,
     delete_authorization_session,
@@ -33,14 +34,26 @@ def _mark_failed(session: PlatformAuthorizationSession, code: str) -> None:
 
 
 def begin_browser_authorization(*, user, subject_id, platform_key: str) -> PlatformAuthorizationSession:
+    """Start the platform's approved authorization flow.
+
+    The historical function name is kept for API compatibility; official-API platforms
+    are routed to their formal OAuth/component flow rather than the browser worker.
+    """
     session, _unused_one_time_token = create_authorization_session(
         user=user,
         subject_id=subject_id,
         platform_key=platform_key,
     )
-    if session.auth_method != PlatformAccount.AuthMethod.BROWSER_SESSION:
-        _mark_failed(session, "official_authorization_required")
-        raise PublishingInputError("该平台需要使用正式授权方式，请稍后在平台授权页完成配置")
+
+    if session.auth_method == PlatformAccount.AuthMethod.OFFICIAL_API:
+        if platform_key != "wechat":
+            _mark_failed(session, "official_authorization_required")
+            raise PublishingInputError("该平台的正式授权尚未开放")
+        try:
+            return begin_wechat_component_authorization(session)
+        except WechatComponentUnavailable as exc:
+            _mark_failed(session, "platform_unavailable")
+            raise PublishingInputError("微信公众号正式授权暂未就绪，请稍后再试") from exc
 
     try:
         remote = start_authorization_session(
@@ -81,9 +94,17 @@ def sync_authorization_session(session: PlatformAuthorizationSession) -> Platfor
         session.safe_error_code = "authorization_timeout"
         session.completed_at = timezone.now()
         session.save(update_fields=("status", "safe_error_code", "completed_at", "updated_at"))
-        if session.remote_session_ref:
+        if session.auth_method == PlatformAccount.AuthMethod.BROWSER_SESSION and session.remote_session_ref:
             delete_authorization_session(remote_session_ref=session.remote_session_ref)
         return session
+
+    # Official component/OAuth flows complete asynchronously through their signed callback.
+    # Polling this endpoint only reads the database state; it must never send the official
+    # authorization reference to the browser worker.
+    if session.auth_method == PlatformAccount.AuthMethod.OFFICIAL_API:
+        session.refresh_from_db()
+        return session
+
     if not session.remote_session_ref:
         return session
 
