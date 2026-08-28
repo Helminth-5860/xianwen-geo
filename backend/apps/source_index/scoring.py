@@ -135,11 +135,18 @@ def classify_source(
 ) -> tuple[str, int]:
     if root in self_domains or domain in self_domains:
         return SourceIndexItem.SourceType.ENTERPRISE_SITE, 65
-    if root.endswith("gov.cn") or domain.endswith("gov.cn"):
+    if root == "gov.cn" or root.endswith(".gov.cn") or domain.endswith(".gov.cn"):
         return SourceIndexItem.SourceType.GOVERNMENT_ASSOCIATION, 98
-    for known, classification in KNOWN_DOMAINS.items():
-        if domain == known or domain.endswith(f".{known}") or root == known:
+    # Prefer the most-specific known host first. Without this ordering,
+    # mp.weixin.qq.com would be incorrectly classified by the broader qq.com rule.
+    for known in sorted(KNOWN_DOMAINS, key=len, reverse=True):
+        classification = KNOWN_DOMAINS[known]
+        if domain == known or domain.endswith(f".{known}"):
             return classification
+    # Root-domain fallback is intentionally second so specific subdomain profiles win.
+    root_classification = KNOWN_DOMAINS.get(root)
+    if root_classification is not None:
+        return root_classification
     text = f"{website} {title}".lower()
     government_tokens = ("人民政府", "政府网", "委员会", "管理局", "协会", "学会", "商会")
     if any(token in text for token in government_tokens):
