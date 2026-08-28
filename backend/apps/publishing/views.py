@@ -3,13 +3,14 @@ from __future__ import annotations
 from django.shortcuts import get_object_or_404
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
-from rest_framework.status import HTTP_201_CREATED, HTTP_202_ACCEPTED, HTTP_204_NO_CONTENT
+from rest_framework.status import HTTP_200_OK, HTTP_201_CREATED, HTTP_202_ACCEPTED, HTTP_204_NO_CONTENT
 from rest_framework.views import APIView
 
 from apps.subjects.permissions import IsAvailableAuthenticatedUser
 
 from .authorization import begin_browser_authorization, sync_authorization_session
-from .models import PlatformAccount, PlatformAuthorizationSession, PublishingPreference
+from .models import PlatformAccount, PlatformAuthorizationSession, Publication, PublishingPreference
+from .review import approve_publication, is_waiting_review
 from .serializers import (
     AuthorizationStartSerializer,
     PlatformToggleSerializer,
@@ -80,7 +81,10 @@ class SubjectPublishingPreferenceView(APIView):
                 preference.custom_platform_keys = enabled_keys
                 preference.version += 1
                 preference.save(update_fields=("custom_platform_keys", "version", "updated_at"))
-        if preference.is_enabled and preference.mode == PublishingPreference.Mode.MANAGED:
+        if preference.is_enabled and preference.mode in {
+            PublishingPreference.Mode.MANAGED,
+            PublishingPreference.Mode.REVIEW,
+        }:
             adopt_ready_articles_task.delay(str(request.user.pk), str(subject_id))
         return Response({"preference": preference_payload(preference)})
 
@@ -169,3 +173,19 @@ class SubjectPublicationCreateView(APIView):
         publication = publication.__class__.objects.prefetch_related("targets").get(id=publication.id)
         prepare_publication_task.delay(str(publication.id))
         return Response({"publication": publication_payload(publication)}, status=HTTP_201_CREATED)
+
+
+class PublicationApproveView(APIView):
+    permission_classes = [IsAvailableAuthenticatedUser]
+
+    def post(self, request, publication_id):
+        publication = get_object_or_404(
+            Publication.objects.prefetch_related("targets"),
+            pk=publication_id,
+            user=request.user,
+        )
+        if not is_waiting_review(publication):
+            raise ValidationError({"publication": ["当前内容不需要确认，或已进入发布流程"]})
+        publication = approve_publication(user=request.user, publication_id=publication_id)
+        publication = Publication.objects.prefetch_related("targets").get(pk=publication.pk)
+        return Response({"publication": publication_payload(publication)}, status=HTTP_200_OK)
