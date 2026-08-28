@@ -1,6 +1,7 @@
 import pytest
 
 from apps.websites.ai import _model_user_payload
+from apps.websites.design import content_style_key, design_options_payload
 from apps.websites.serializers import WebsiteGenerateSerializer
 from apps.websites.services import WebsiteSchemaError, normalize_site_output
 
@@ -70,6 +71,8 @@ def test_generate_serializer_limits_combined_image_materials():
     serializer = WebsiteGenerateSerializer(
         data={
             "style_key": "professional",
+            "theme_key": "ocean",
+            "density_key": "standard",
             "image_asset_ids": [
                 f"00000000-0000-0000-0000-{index:012d}" for index in range(8)
             ],
@@ -83,10 +86,34 @@ def test_generate_serializer_limits_combined_image_materials():
     assert "document_ids" in serializer.errors
 
 
+def test_generate_serializer_accepts_new_design_dimensions():
+    serializer = WebsiteGenerateSerializer(
+        data={
+            "style_key": "industrial",
+            "theme_key": "obsidian",
+            "density_key": "rich",
+            "image_asset_ids": [],
+            "document_ids": [],
+        }
+    )
+
+    assert serializer.is_valid(), serializer.errors
+
+
+def test_design_options_form_six_by_six_by_three_system():
+    options = design_options_payload()
+
+    assert len(options["styles"]) == 6
+    assert len(options["themes"]) == 6
+    assert len(options["densities"]) == 3
+    assert content_style_key("industrial") == "professional"
+    assert content_style_key("technology") == "technology"
+
+
 def test_model_payload_excludes_contact_and_image_metadata():
     safe = _model_user_payload(
         {
-            "site_style": "科技简约",
+            "site_style": "科技未来",
             "authorized_subject": {
                 "subject": {"official_name": "显问科技"},
                 "keywords": ["GEO"],
@@ -105,7 +132,7 @@ def test_model_payload_excludes_contact_and_image_metadata():
     )
 
     assert safe == {
-        "site_style": "科技简约",
+        "site_style": "科技未来",
         "authorized_subject": {
             "subject": {"official_name": "显问科技"},
             "keywords": ["GEO"],
