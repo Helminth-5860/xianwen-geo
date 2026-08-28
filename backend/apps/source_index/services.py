@@ -77,9 +77,11 @@ def create_source_index_scan(*, user, subject_id) -> SourceIndexScan:
 def _start_scan(scan_id) -> SourceIndexScan:
     with transaction.atomic():
         try:
-            scan = SourceIndexScan.objects.select_for_update().select_related(
-                "subject", "subject__current_version"
-            ).get(pk=scan_id)
+            scan = (
+                SourceIndexScan.objects.select_for_update()
+                .select_related("subject")
+                .get(pk=scan_id)
+            )
         except SourceIndexScan.DoesNotExist as exc:
             raise SourceIndexNotFound from exc
         if scan.status in {

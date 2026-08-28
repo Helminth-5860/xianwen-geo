@@ -3,7 +3,9 @@ from decimal import Decimal
 from unittest.mock import Mock, patch
 
 from django.contrib.auth import get_user_model
+from django.db import connection
 from django.test import SimpleTestCase, TestCase, override_settings
+from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 from rest_framework.test import APIClient
 
@@ -28,6 +30,7 @@ from apps.source_index.scoring import (
     source_weight,
     visibility_score,
 )
+from apps.source_index.services import _start_scan
 from apps.subjects.models import Subject, SubjectType
 
 
@@ -207,6 +210,23 @@ class SourceIndexApiIsolationTests(TestCase):
         )
         self.scan = SourceIndexScan.objects.create(user=self.user_a, subject=self.subject)
         self.client = APIClient()
+
+    def test_start_scan_with_nullable_current_version_avoids_outer_join_lock(self):
+        self.assertIsNone(self.subject.current_version_id)
+        current_version_table = (
+            Subject._meta.get_field("current_version").related_model._meta.db_table
+        )
+
+        with CaptureQueriesContext(connection) as captured:
+            started = _start_scan(self.scan.id)
+
+        self.assertEqual(started.status, SourceIndexScan.Status.RUNNING)
+        if connection.vendor == "postgresql":
+            self.assertTrue(
+                any("FOR UPDATE" in query["sql"] for query in captured.captured_queries)
+            )
+        executed_sql = "\n".join(query["sql"] for query in captured.captured_queries)
+        self.assertNotIn(current_version_table, executed_sql)
 
     def test_other_user_cannot_read_scan(self):
         self.client.force_authenticate(self.user_b)
