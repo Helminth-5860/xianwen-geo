@@ -4,9 +4,10 @@ from datetime import timedelta
 
 from django.utils import timezone
 
+from .credentials import PlatformCredentialRuntimeUnavailable, platform_credentials
 from .models import PlatformAccount, PublicationTarget
 from .publication_state import aggregate_publication
-from .security import PublishingCredentialError, decrypt_secret
+from .security import PublishingCredentialError
 from .worker_client import PublishingWorkerError, check_platform_publication_status
 
 
@@ -46,7 +47,15 @@ def check_submitted_target(*, target_id) -> dict:
         aggregate_publication(target.publication_id)
         return {"status": "auth_required"}
     try:
-        credentials = decrypt_secret(target.account.secret_ciphertext)
+        credentials = platform_credentials(target.account)
+    except PlatformCredentialRuntimeUnavailable:
+        # 微信第三方平台 ticket / 网络临时不可用，不代表客户授权失效。
+        eta = _next_check(target)
+        PublicationTarget.objects.filter(pk=target.pk).update(
+            next_status_check_at=eta,
+            safe_error_code="",
+        )
+        return {"status": "submitted", "eta": eta}
     except PublishingCredentialError:
         PlatformAccount.objects.filter(pk=target.account_id).update(
             status=PlatformAccount.Status.ACTION_REQUIRED,
