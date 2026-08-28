@@ -6,6 +6,8 @@ from typing import Any
 import httpx
 from django.conf import settings
 
+from .platform_health import platform_circuit_open, record_platform_failure, record_platform_success
+
 
 class PublishingWorkerError(RuntimeError):
     def __init__(self, code: str):
@@ -45,6 +47,21 @@ def _decode_response(response: httpx.Response) -> dict[str, Any]:
     if not isinstance(data, dict):
         raise PublishingWorkerError("worker_invalid_response")
     return data
+
+
+def _record_result_health(platform_key: str, data: dict[str, Any]) -> None:
+    status = str(data.get("status") or "")
+    safe_code = str(data.get("safeErrorCode") or "")
+    if bool(data.get("success")) or status in {"submitted", "published", "drafted"}:
+        record_platform_success(platform_key)
+        return
+    if safe_code in {
+        "platform_unavailable",
+        "editor_changed",
+        "publish_control_changed",
+        "publish_result_unconfirmed",
+    }:
+        record_platform_failure(platform_key, safe_code)
 
 
 def start_authorization_session(*, session_id: str, platform_key: str, expires_at) -> dict[str, Any]:
@@ -130,6 +147,8 @@ def publish_to_platform(
     credentials: dict[str, Any],
     publish_mode: str = "public",
 ) -> dict[str, Any]:
+    if platform_circuit_open(platform_key):
+        raise PublishingWorkerError("platform_circuit_open")
     base_url, secret = _configuration()
     payload = {
         "platform_key": platform_key,
@@ -151,16 +170,21 @@ def publish_to_platform(
             timeout=_positive_timeout("PUBLISHING_WORKER_PUBLISH_TIMEOUT_SECONDS", 120, 300),
         )
     except httpx.TimeoutException as exc:
+        record_platform_failure(platform_key, "worker_timeout")
         raise PublishingWorkerError("worker_timeout") from exc
     except httpx.HTTPError as exc:
+        record_platform_failure(platform_key, "worker_unavailable")
         raise PublishingWorkerError("worker_unavailable") from exc
     if response.status_code == 409:
         raise PublishingWorkerError("platform_not_ready")
     if response.status_code >= 500:
+        record_platform_failure(platform_key, "worker_unavailable")
         raise PublishingWorkerError("worker_unavailable")
     if response.status_code >= 400:
         raise PublishingWorkerError("worker_rejected_request")
-    return _decode_response(response)
+    data = _decode_response(response)
+    _record_result_health(platform_key, data)
+    return data
 
 
 def check_platform_publication_status(
@@ -185,13 +209,19 @@ def check_platform_publication_status(
             timeout=_positive_timeout("PUBLISHING_WORKER_STATUS_TIMEOUT_SECONDS", 75, 180),
         )
     except httpx.TimeoutException as exc:
+        record_platform_failure(platform_key, "status_timeout")
         raise PublishingWorkerError("worker_timeout") from exc
     except httpx.HTTPError as exc:
+        record_platform_failure(platform_key, "status_unavailable")
         raise PublishingWorkerError("worker_unavailable") from exc
     if response.status_code == 409:
         raise PublishingWorkerError("platform_not_ready")
     if response.status_code >= 500:
+        record_platform_failure(platform_key, "status_unavailable")
         raise PublishingWorkerError("worker_unavailable")
     if response.status_code >= 400:
         raise PublishingWorkerError("worker_rejected_request")
-    return _decode_response(response)
+    data = _decode_response(response)
+    if str(data.get("status") or "") == "published":
+        record_platform_success(platform_key)
+    return data
