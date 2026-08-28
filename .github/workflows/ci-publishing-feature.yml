@@ -34,6 +34,7 @@ jobs:
         working-directory: backend
         env:
           APP_ENV: test
+          DJANGO_SETTINGS_MODULE: config.settings
         run: python -m pytest tests/test_publishing_foundation.py tests/test_publishing_safety.py -q
 
   frontend:
