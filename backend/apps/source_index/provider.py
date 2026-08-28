@@ -38,15 +38,34 @@ class SearchProvider(Protocol):
         ...
 
 
+def resolve_baidu_search_api_key() -> str:
+    """Resolve the dedicated Baidu Search credential from the encrypted admin credential center.
+
+    Database credentials are authoritative. The legacy environment variable remains as an
+    emergency/backward-compatible fallback only when no active baidu_search credential exists.
+    """
+
+    from apps.ai.credentials import DatabaseCredentialResolver
+    from apps.ai.exceptions import AICredentialCryptoFailure, AICredentialStateConflict
+
+    try:
+        return DatabaseCredentialResolver().resolve("baidu_search").value
+    except AICredentialCryptoFailure as exc:
+        raise SearchProviderError("BAIDU_SEARCH_CREDENTIAL_INVALID") from exc
+    except AICredentialStateConflict:
+        fallback = getattr(settings, "BAIDU_SEARCH_API_KEY", "").strip()
+        if fallback:
+            return fallback
+        raise SearchProviderError("BAIDU_SEARCH_API_KEY_MISSING") from None
+
+
 class BaiduSearchProvider:
     endpoint = "https://qianfan.baidubce.com/v2/ai_search/web_search"
     top_k = 50
 
     def __init__(self):
-        self.api_key = getattr(settings, "BAIDU_SEARCH_API_KEY", "").strip()
+        self.api_key = resolve_baidu_search_api_key()
         self.auth_header = getattr(settings, "BAIDU_SEARCH_AUTH_HEADER", "Authorization").strip()
-        if not self.api_key:
-            raise SearchProviderError("BAIDU_SEARCH_API_KEY_MISSING")
         if self.auth_header not in {"Authorization", "X-Appbuilder-Authorization"}:
             raise SearchProviderError("BAIDU_SEARCH_AUTH_HEADER_INVALID")
         timeout = float(getattr(settings, "SOURCE_INDEX_REQUEST_TIMEOUT_SECONDS", 12))
