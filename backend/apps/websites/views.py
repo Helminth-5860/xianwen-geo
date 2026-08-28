@@ -73,9 +73,7 @@ class SubjectWebsiteGenerateView(APIView):
         except WebsiteDesignConflict as exc:
             raise ValidationError({"website": [str(exc)]}) from exc
         except AIAdapterError as exc:
-            raise ValidationError(
-                {"website": ["当前内容生成服务暂不可用，请稍后再试"]}
-            ) from exc
+            raise ValidationError({"website": ["当前内容生成服务暂不可用，请稍后再试"]}) from exc
         return Response(
             {"project": _project_payload_with_design(project), "job": job_payload(job)},
             status=HTTP_202_ACCEPTED if created else HTTP_200_OK,
