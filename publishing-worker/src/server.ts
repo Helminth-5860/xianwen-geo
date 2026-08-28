@@ -6,6 +6,7 @@ import {
   deleteAuthSession,
   getAuthSession,
   internalSessionPayload,
+  sessionClick,
   sessionPreview,
   startAuthSession,
   viewerAuthorized,
@@ -86,14 +87,14 @@ body{margin:0;background:#f4f6f9;color:#111827;font-family:-apple-system,BlinkMa
 main{max-width:1080px;margin:0 auto;padding:24px}
 .card{background:#fff;border:1px solid #e5e7eb;border-radius:18px;padding:22px;box-shadow:0 14px 34px rgba(15,23,42,.07)}
 h1{font-size:22px;margin:0 0 8px}.hint{color:#667085;line-height:1.7;margin-bottom:18px}
-.preview{width:100%;min-height:560px;object-fit:contain;background:#fff;border:1px solid #e5e7eb;border-radius:12px}
+.preview{width:100%;min-height:560px;object-fit:contain;background:#fff;border:1px solid #e5e7eb;border-radius:12px;cursor:pointer}
 .status{display:inline-flex;margin:0 0 16px;padding:6px 10px;border-radius:999px;background:#eef4ff;color:#344054;font-size:14px}
 .safe{margin-top:16px;color:#667085;font-size:13px;line-height:1.7}
 </style>
 </head>
 <body><main><div class="card">
 <h1>授权${escapeHtml(platformName)}</h1>
-<p class="hint">请在下方平台登录页面中完成扫码。短信验证码、平台安全验证等必须由你本人完成；显问不会要求你填写平台账号密码。</p>
+<p class="hint">请优先使用扫码完成登录。若平台当前显示其他登录方式，可点击下方画面切换“扫码登录”或刷新二维码。显问不会提供键盘输入，因此平台密码和短信验证码不会经过这个页面。</p>
 <div id="status" class="status">正在等待完成登录</div>
 <img id="preview" class="preview" alt="平台授权页面" src="/authorize/${safeId}/preview?token=${safeToken}&v=0" />
 <p class="safe">此授权画面只对当前一次性链接开放，并会在授权结束后失效。请勿把此页面转发给其他人。</p>
@@ -102,13 +103,34 @@ h1{font-size:22px;margin:0 0 8px}.hint{color:#667085;line-height:1.7;margin-bott
 const statusEl=document.getElementById('status');
 const preview=document.getElementById('preview');
 let tick=0;
+let finished=false;
+preview.addEventListener('click',async(event)=>{
+  if(finished)return;
+  const rect=preview.getBoundingClientRect();
+  const naturalW=preview.naturalWidth||1280;
+  const naturalH=preview.naturalHeight||900;
+  const renderedRatio=rect.width/rect.height;
+  const naturalRatio=naturalW/naturalH;
+  let contentW=rect.width,contentH=rect.height,offsetX=0,offsetY=0;
+  if(renderedRatio>naturalRatio){contentW=rect.height*naturalRatio;offsetX=(rect.width-contentW)/2;}
+  else{contentH=rect.width/naturalRatio;offsetY=(rect.height-contentH)/2;}
+  const px=event.clientX-rect.left-offsetX;
+  const py=event.clientY-rect.top-offsetY;
+  if(px<0||py<0||px>contentW||py>contentH)return;
+  const x=Math.max(0,Math.min(1280,px/contentW*1280));
+  const y=Math.max(0,Math.min(900,py/contentH*900));
+  try{
+    await fetch('/authorize/${safeId}/click?token=${safeToken}',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({x,y})});
+    tick+=1;preview.src='/authorize/${safeId}/preview?token=${safeToken}&v='+tick;
+  }catch{}
+});
 async function refresh(){
   try{
     const response=await fetch('/authorize/${safeId}/status?token=${safeToken}',{cache:'no-store'});
     const data=await response.json();
-    if(data.status==='succeeded'){statusEl.textContent='授权成功，可以关闭此窗口';preview.style.opacity='.45';return;}
-    if(data.status==='expired'){statusEl.textContent='授权已过期，请返回显问重新授权';return;}
-    if(data.status==='failed'){statusEl.textContent='本次授权未完成，请返回显问重新尝试';return;}
+    if(data.status==='succeeded'){finished=true;statusEl.textContent='授权成功，可以关闭此窗口';preview.style.opacity='.45';return;}
+    if(data.status==='expired'){finished=true;statusEl.textContent='授权已过期，请返回显问重新授权';return;}
+    if(data.status==='failed'){finished=true;statusEl.textContent='本次授权未完成，请返回显问重新尝试';return;}
     statusEl.textContent='正在等待完成登录';
     tick+=1;preview.src='/authorize/${safeId}/preview?token=${safeToken}&v='+tick;
     setTimeout(refresh,1800);
@@ -232,6 +254,23 @@ const server = http.createServer(async (request, response) => {
     const session = getAuthSession(id);
     if (!session || !viewerAuthorized(session, token)) return json(response, 404, { error: "not_found" });
     return json(response, 200, { status: session.status });
+  }
+
+  const clickMatch = url.pathname.match(/^\/authorize\/([^/]+)\/click$/);
+  if (method === "POST" && clickMatch) {
+    const id = decodeURIComponent(clickMatch[1]);
+    const token = url.searchParams.get("token") || "";
+    const session = getAuthSession(id);
+    if (!session || !viewerAuthorized(session, token)) return json(response, 404, { error: "not_found" });
+    try {
+      const body = await readJson(request, 2048);
+      const x = typeof body.x === "number" ? body.x : NaN;
+      const y = typeof body.y === "number" ? body.y : NaN;
+      await sessionClick(session, x, y);
+      return json(response, 200, { clicked: true });
+    } catch {
+      return json(response, 400, { error: "invalid_click" });
+    }
   }
 
   const previewMatch = url.pathname.match(/^\/authorize\/([^/]+)\/preview$/);
