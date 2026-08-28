@@ -21,6 +21,7 @@ urlpatterns = [
     path("api/v1/", include("apps.videos.urls")),
     path("api/v1/", include("apps.media_inquiries.urls")),
     path("api/v1/", include("apps.websites.urls")),
+    path("api/v1/", include("apps.source_index.urls")),
     path("api/v1/", include("apps.operations.urls")),
 ]
 
