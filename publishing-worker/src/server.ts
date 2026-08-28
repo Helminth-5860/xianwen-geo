@@ -10,6 +10,8 @@ import {
   startAuthSession,
   viewerAuthorized,
 } from "./auth-sessions.js";
+import { getPublisher, publisherCapabilities } from "./publishers/index.js";
+import type { PlatformCredentials, PublicationInput } from "./publishers/types.js";
 
 const port = Number(process.env.PORT || "8092");
 const host = process.env.HOST || "0.0.0.0";
@@ -52,13 +54,13 @@ const internalAuthorized = (request: IncomingMessage) => {
   return safeSecretEqual(header.slice("Bearer ".length));
 };
 
-async function readJson(request: IncomingMessage): Promise<Record<string, unknown>> {
+async function readJson(request: IncomingMessage, maxBytes = 64 * 1024): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = [];
   let total = 0;
   for await (const chunk of request) {
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
     total += buffer.length;
-    if (total > 64 * 1024) throw new Error("request_too_large");
+    if (total > maxBytes) throw new Error("request_too_large");
     chunks.push(buffer);
   }
   if (!chunks.length) return {};
@@ -116,12 +118,66 @@ setTimeout(refresh,1600);
 </script></body></html>`;
 }
 
+function validatePublishInput(body: Record<string, unknown>): PublicationInput | null {
+  const platformKey = typeof body.platform_key === "string" ? body.platform_key : "";
+  const targetId = typeof body.target_id === "string" ? body.target_id : "";
+  const title = typeof body.title === "string" ? body.title.trim() : "";
+  const contentHtml = typeof body.content_html === "string" ? body.content_html : "";
+  const contentText = typeof body.content_text === "string" ? body.content_text : "";
+  const publishMode = body.publish_mode === "draft" ? "draft" : body.publish_mode === "public" ? "public" : null;
+  const credentials = body.credentials;
+  if (!platformKey || !targetId || !title || !publishMode || !credentials || typeof credentials !== "object" || Array.isArray(credentials)) return null;
+  const tags = Array.isArray(body.tags) ? body.tags.filter((item): item is string => typeof item === "string").slice(0, 30) : [];
+  const assets = Array.isArray(body.assets)
+    ? body.assets
+        .filter((item): item is { role: "cover" | "inline" | "information"; url: string; alt?: string } => {
+          if (!item || typeof item !== "object" || Array.isArray(item)) return false;
+          const candidate = item as Record<string, unknown>;
+          return ["cover", "inline", "information"].includes(String(candidate.role)) && typeof candidate.url === "string";
+        })
+        .slice(0, 20)
+    : [];
+  return {
+    targetId,
+    title: title.slice(0, 500),
+    contentHtml,
+    contentText,
+    summary: typeof body.summary === "string" ? body.summary.slice(0, 1000) : undefined,
+    tags,
+    assets,
+    credentials: credentials as PlatformCredentials,
+    publishMode,
+  };
+}
+
 const server = http.createServer(async (request, response) => {
   const method = request.method || "GET";
   const url = new URL(request.url || "/", publicBaseUrl);
 
   if (method === "GET" && url.pathname === "/health") {
     return json(response, 200, { status: "ok" });
+  }
+
+  if (method === "GET" && url.pathname === "/v1/capabilities") {
+    if (!internalAuthorized(request)) return json(response, 401, { error: "unauthorized" });
+    return json(response, 200, { publishers: publisherCapabilities() });
+  }
+
+  if (method === "POST" && url.pathname === "/v1/publish") {
+    if (!internalAuthorized(request)) return json(response, 401, { error: "unauthorized" });
+    try {
+      const body = await readJson(request, 2 * 1024 * 1024);
+      const platformKey = typeof body.platform_key === "string" ? body.platform_key : "";
+      const publisher = getPublisher(platformKey);
+      if (!publisher) return json(response, 409, { error: "platform_not_ready" });
+      const input = validatePublishInput(body);
+      if (!input) return json(response, 400, { error: "invalid_request" });
+      const result = await publisher.publish(input);
+      return json(response, 200, result);
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "publish_failed";
+      return json(response, code === "request_too_large" ? 413 : 500, { error: code });
+    }
   }
 
   if (url.pathname === "/v1/auth-sessions" && method === "POST") {
