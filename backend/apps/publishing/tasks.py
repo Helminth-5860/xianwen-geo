@@ -23,6 +23,32 @@ def _running_stale_seconds() -> int:
     return max(390, min(3600, value))
 
 
+def _automation_enabled_for_publication(publication_id: str) -> bool:
+    from .models import Publication, PublishingPreference
+
+    publication = Publication.objects.only("user_id", "subject_id").filter(pk=publication_id).first()
+    if publication is None:
+        return False
+    return PublishingPreference.objects.filter(
+        user_id=publication.user_id,
+        subject_id=publication.subject_id,
+        is_enabled=True,
+    ).exists()
+
+
+def _pause_publication_subject(publication_id: str) -> None:
+    from .models import Publication
+    from .pause_control import pause_subject_publications
+
+    publication = Publication.objects.only("user_id", "subject_id").filter(pk=publication_id).first()
+    if publication is None:
+        return
+    pause_subject_publications(
+        user_id=publication.user_id,
+        subject_id=publication.subject_id,
+    )
+
+
 @shared_task(name="publishing.sync_authorization_session", bind=True, ignore_result=True)
 def sync_authorization_session_task(self, session_id: str):
     from .authorization import sync_authorization_session
@@ -47,8 +73,21 @@ def sync_authorization_session_task(self, session_id: str):
 
 @shared_task(name="publishing.prepare_publication", bind=True, ignore_result=True)
 def prepare_publication_task(self, publication_id: str):
+    # The user may disable automation while a previous preparation retry is already
+    # queued. Stop before creating more adaptation/image work in that case.
+    if not _automation_enabled_for_publication(publication_id):
+        _pause_publication_subject(publication_id)
+        return None
+
     recover_preparation_jobs(publication_id)
     result = prepare_publication(publication_id=publication_id)
+
+    # Preparation can take long enough for the user to turn automation off while AI
+    # image/content jobs are running. Check again before rescheduling or publishing.
+    if not _automation_enabled_for_publication(publication_id):
+        _pause_publication_subject(publication_id)
+        return None
+
     if result.get("status") == "waiting":
         self.apply_async(
             args=[publication_id],
