@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from datetime import datetime
 
-import pytest
 from django.core.cache import cache
 from django.utils import timezone
 
@@ -57,7 +56,6 @@ def test_review_gate_uses_distinct_non_publishable_reason():
     assert AWAITING_REVIEW_CODE not in {"authorization_required", "platform_unavailable"}
 
 
-@pytest.mark.django_db
 def test_wechat_is_not_exposed_without_component_ticket(monkeypatch):
     cache.clear()
     monkeypatch.setenv("PUBLISHING_WECHAT_COMPONENT_APP_ID", "wx-component-test")
