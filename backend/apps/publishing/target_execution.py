@@ -14,10 +14,11 @@ from apps.documents.storage import storage_provider
 from apps.images.models import ImageAsset, ImageDerivative
 
 from .catalog import PLATFORM_BY_KEY
+from .credentials import PlatformCredentialRuntimeUnavailable, platform_credentials
 from .models import PlatformAccount, PublicationTarget, PublishingPreference
 from .pause_control import AUTOMATION_PAUSED_CODE, PLATFORM_DISABLED_CODE
 from .publication_state import aggregate_publication
-from .security import PublishingCredentialError, decrypt_secret
+from .security import PublishingCredentialError
 from .worker_client import PublishingWorkerError, publish_to_platform
 
 
@@ -193,9 +194,21 @@ def execute_target(*, target_id) -> dict[str, Any]:
         .get(pk=target_id)
     )
     try:
-        credentials = decrypt_secret(
-            target.account.secret_ciphertext if target.account else ""
+        credentials = platform_credentials(target.account)
+    except PlatformCredentialRuntimeUnavailable:
+        if target.attempts < _target_max_retries():
+            PublicationTarget.objects.filter(pk=target.pk).update(
+                status=PublicationTarget.Status.READY,
+                safe_error_code="platform_unavailable",
+            )
+            aggregate_publication(target.publication_id)
+            return {"status": "retry", "retry_after": _TRANSIENT_RETRY_SECONDS}
+        PublicationTarget.objects.filter(pk=target.pk).update(
+            status=PublicationTarget.Status.PAUSED,
+            safe_error_code="platform_unavailable",
         )
+        aggregate_publication(target.publication_id)
+        return {"status": "paused"}
     except PublishingCredentialError:
         PlatformAccount.objects.filter(pk=target.account_id).update(
             status=PlatformAccount.Status.ACTION_REQUIRED,
