@@ -69,7 +69,10 @@ def platform_payload(enabled_keys: set[str] | None = None) -> list[dict[str, obj
                 "supports_inline_images": item.supports_inline_images,
                 "supports_tags": item.supports_tags,
                 "supports_scheduling": item.supports_scheduling,
-                "supports_public_publish": item.supports_public_publish,
+                # A code path existing is not the same as a production capability.
+                # Public publishing is advertised only after the platform is explicitly
+                # enabled following real-account acceptance and any runtime prerequisites.
+                "supports_public_publish": bool(enabled and item.supports_public_publish),
                 "verification_state": "ready" if enabled else item.verification_state,
                 "authorization_enabled": enabled,
                 "runtime_status": health["status"],

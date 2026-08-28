@@ -1,9 +1,13 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from types import SimpleNamespace
 
+import pytest
+from cryptography.fernet import Fernet
 from django.core.cache import cache
+from django.core.exceptions import ImproperlyConfigured
+from django.test import override_settings
 from django.utils import timezone
 
 from apps.publishing.catalog import PLATFORMS, platform_payload
@@ -15,9 +19,11 @@ from apps.publishing.platform_health import (
     record_platform_success,
 )
 from apps.publishing.review import AWAITING_REVIEW_CODE
-from apps.publishing.scheduling import _fit_window
+from apps.publishing.runtime_config import validate_runtime_configuration
+from apps.publishing.scheduling import _fit_window, _fixed_slot
 from apps.publishing.services import _smart_platform_selection
 from apps.publishing.target_execution import _target_max_retries
+from apps.publishing.tasks import _running_stale_seconds
 from apps.publishing.worker_client import _uncertain_publish_result
 
 
@@ -99,6 +105,24 @@ def test_smart_distribution_prioritizes_visual_channels_for_product_guides():
     assert len(selected) <= 8
 
 
+def test_fixed_daily_slots_spread_articles_and_leave_platform_wave_room():
+    day = date(2026, 8, 28)
+    first = _fixed_slot(day, 0, posts_per_day=2, platform_count=4)
+    second = _fixed_slot(day, 1, posts_per_day=2, platform_count=4)
+    assert first is not None and second is not None
+    assert timezone.localtime(first).time().isoformat(timespec="minutes") == "09:30"
+    assert second > first
+    # Four platforms need 105 minutes after the article start, so the second slot
+    # must be early enough for the complete wave to finish by 20:30.
+    assert timezone.localtime(second).time().isoformat(timespec="minutes") == "18:45"
+
+
+def test_single_daily_article_uses_one_slot_only():
+    slot = _fixed_slot(date(2026, 8, 28), 0, posts_per_day=1, platform_count=8)
+    assert slot is not None
+    assert timezone.localtime(slot).time().isoformat(timespec="minutes") == "09:30"
+
+
 def test_wechat_is_not_exposed_without_component_ticket(monkeypatch):
     cache.clear()
     monkeypatch.setenv("PUBLISHING_WECHAT_COMPONENT_APP_ID", "wx-component-test")
@@ -113,6 +137,7 @@ def test_wechat_is_not_exposed_without_component_ticket(monkeypatch):
     payload = {item["key"]: item for item in platform_payload({"wechat"})}
     assert payload["wechat"]["authorization_enabled"] is False
     assert payload["wechat"]["verification_state"] == "validation"
+    assert payload["wechat"]["supports_public_publish"] is False
 
 
 def test_platform_circuit_breaker_opens_and_success_resets():
@@ -138,6 +163,51 @@ def test_retry_count_is_bounded_from_environment(monkeypatch):
     assert _target_max_retries() == 10
     monkeypatch.setenv("PUBLISHING_TARGET_MAX_RETRIES", "not-a-number")
     assert _target_max_retries() == 3
+
+
+def test_running_stale_window_is_always_beyond_publish_task_limit(monkeypatch):
+    monkeypatch.setenv("PUBLISHING_RUNNING_STALE_SECONDS", "1")
+    assert _running_stale_seconds() >= 390
+    monkeypatch.setenv("PUBLISHING_RUNNING_STALE_SECONDS", "99999")
+    assert _running_stale_seconds() == 3600
+
+
+def test_production_enabled_platforms_require_dedicated_encryption_key(monkeypatch):
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("PUBLISHING_WORKER_EXPERIMENTAL_PLATFORM_KEYS", "zhihu")
+    with override_settings(
+        PUBLISHING_ENABLED_PLATFORM_KEYS=("zhihu",),
+        PUBLISHING_WORKER_BASE_URL="http://publishing-worker:8092",
+        PUBLISHING_WORKER_INTERNAL_SECRET="x" * 32,
+        PUBLISHING_CREDENTIAL_ENCRYPTION_KEY="",
+    ):
+        with pytest.raises(ImproperlyConfigured):
+            validate_runtime_configuration()
+
+
+def test_browser_platform_gate_must_match_worker_gate(monkeypatch):
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("PUBLISHING_WORKER_EXPERIMENTAL_PLATFORM_KEYS", "")
+    with override_settings(
+        PUBLISHING_ENABLED_PLATFORM_KEYS=("zhihu",),
+        PUBLISHING_WORKER_BASE_URL="http://publishing-worker:8092",
+        PUBLISHING_WORKER_INTERNAL_SECRET="x" * 32,
+        PUBLISHING_CREDENTIAL_ENCRYPTION_KEY=Fernet.generate_key().decode("ascii"),
+    ):
+        with pytest.raises(ImproperlyConfigured):
+            validate_runtime_configuration()
+
+
+def test_valid_dedicated_key_allows_enabled_platform_runtime(monkeypatch):
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("PUBLISHING_WORKER_EXPERIMENTAL_PLATFORM_KEYS", "zhihu")
+    with override_settings(
+        PUBLISHING_ENABLED_PLATFORM_KEYS=("zhihu",),
+        PUBLISHING_WORKER_BASE_URL="http://publishing-worker:8092",
+        PUBLISHING_WORKER_INTERNAL_SECRET="x" * 32,
+        PUBLISHING_CREDENTIAL_ENCRYPTION_KEY=Fernet.generate_key().decode("ascii"),
+    ):
+        validate_runtime_configuration()
 
 
 def test_late_platform_wave_rolls_to_next_day():
