@@ -80,6 +80,7 @@ INSTALLED_APPS = [
     "apps.web_sources",
     "apps.articles",
     "apps.images",
+    "apps.websites",
     "apps.operations",
 ]
 
@@ -560,6 +561,7 @@ CELERY_TASK_ROUTES = {
     "keywords.execute_distillation": {"queue": "ai_content"},
     "questions.execute_generation": {"queue": "ai_content"},
     "geo.execute_strategy_report": {"queue": "ai_content"},
+    "websites.execute_generation_job": {"queue": "ai_content"},
     "geo.execute_model_call": {"queue": "geo_detection"},
     "documents.execute_parse_job": {"queue": "file_processing"},
     "web_sources.execute_import": {"queue": "web_fetch"},
