@@ -41,6 +41,7 @@ export type WebsiteProject = Readonly<{
   style_name: string;
   status: WebsiteProjectStatus;
   selected_asset_ids: string[];
+  selected_document_ids: string[];
   site_schema_version: number;
   site: WebsiteSite | null;
   contact: WebsiteContact;
@@ -68,6 +69,8 @@ export type WebsiteReadiness = Readonly<{
   keyword_count: number;
   question_count: number;
   image_count: number;
+  library_image_count: number;
+  uploaded_image_count: number;
 }>;
 
 export type WebsiteState = Readonly<{
@@ -83,9 +86,16 @@ export const getWebsiteState = (subjectId: string) =>
 export const getWebsiteJob = (jobId: string) =>
   get<{ job: WebsiteJob; project: WebsiteProject }>(`/website-jobs/${jobId}`);
 
+export const getWebsiteDocumentUrl = (documentId: string) =>
+  post<{ url: string; expires_in: number }>(`/documents/${documentId}/download-intents`, {});
+
 export function generateWebsite(
   subjectId: string,
-  input: { style_key: WebsiteStyleKey; image_asset_ids: string[] },
+  input: {
+    style_key: WebsiteStyleKey;
+    image_asset_ids: string[];
+    document_ids: string[];
+  },
 ) {
   return post<{ project: WebsiteProject; job: WebsiteJob }>(
     `/subjects/${subjectId}/website/generate`,
