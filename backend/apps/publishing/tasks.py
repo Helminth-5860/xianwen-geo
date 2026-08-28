@@ -3,9 +3,9 @@ from __future__ import annotations
 from datetime import timedelta
 
 from celery import shared_task  # type: ignore[import-untyped]
-from django.utils import timezone
 
 from .execution import prepare_publication
+from .scheduling import assign_publication_schedule
 from .target_execution import execute_target
 
 
@@ -21,21 +21,18 @@ def prepare_publication_task(self, publication_id: str):
     if result.get("status") == "ready":
         from .models import PublicationTarget
 
+        base_time = assign_publication_schedule(publication_id)
         targets = list(
             PublicationTarget.objects.filter(
                 publication_id=publication_id,
                 status=PublicationTarget.Status.READY,
             )
             .only("id", "scheduled_at", "platform_key")
-            .order_by("scheduled_at", "platform_key", "id")
+            .order_by("platform_key", "id")
         )
-        start = timezone.now()
         for index, target in enumerate(targets):
-            eta = target.scheduled_at
-            if eta is None:
-                # 默认错峰发布，避免同一秒向所有平台同时提交。第一站立即执行，
-                # 后续平台按 35 分钟间隔排开；用户明确设置计划时间时尊重原计划。
-                eta = start + timedelta(minutes=35 * index)
+            eta = target.scheduled_at or (base_time + timedelta(minutes=35 * index))
+            if target.scheduled_at is None:
                 PublicationTarget.objects.filter(pk=target.pk).update(scheduled_at=eta)
             execute_publication_target_task.apply_async(args=[str(target.pk)], eta=eta)
     return None
@@ -70,7 +67,15 @@ def adopt_ready_articles_task(user_id: str, subject_id: str):
     if preference is None:
         return None
 
-    limit = max(1, min(10, preference.posts_per_day if preference.frequency_mode == PublishingPreference.FrequencyMode.FIXED else 3))
+    limit = max(
+        1,
+        min(
+            10,
+            preference.posts_per_day
+            if preference.frequency_mode == PublishingPreference.FrequencyMode.FIXED
+            else 3,
+        ),
+    )
     candidates = Article.objects.filter(
         user_id=user_id,
         subject_id=subject_id,
