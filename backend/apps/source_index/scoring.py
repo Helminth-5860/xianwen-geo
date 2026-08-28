@@ -4,7 +4,7 @@ import hashlib
 import math
 import re
 from datetime import datetime, time, timedelta
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from django.utils import timezone
@@ -135,11 +135,32 @@ def classify_source(
         if domain == known or domain.endswith(f".{known}") or root == known:
             return classification
     text = f"{website} {title}".lower()
-    if any(token in text for token in ("人民政府", "政府网", "委员会", "管理局", "协会", "学会", "商会")):
+    government_tokens = ("人民政府", "政府网", "委员会", "管理局", "协会", "学会", "商会")
+    if any(token in text for token in government_tokens):
         return SourceIndexItem.SourceType.GOVERNMENT_ASSOCIATION, 88
-    if any(token in text for token in ("新闻网", "新闻中心", "日报", "晚报", "报业", "电视台", "融媒体", "广播电视")):
+    news_tokens = (
+        "新闻网",
+        "新闻中心",
+        "日报",
+        "晚报",
+        "报业",
+        "电视台",
+        "融媒体",
+        "广播电视",
+    )
+    if any(token in text for token in news_tokens):
         return SourceIndexItem.SourceType.NEWS_MEDIA, 80
-    if any(token in text for token in ("行业网", "产业网", "财经网", "科技网", "商业评论", "行业媒体", "研究院", "研究中心")):
+    industry_tokens = (
+        "行业网",
+        "产业网",
+        "财经网",
+        "科技网",
+        "商业评论",
+        "行业媒体",
+        "研究院",
+        "研究中心",
+    )
+    if any(token in text for token in industry_tokens):
         return SourceIndexItem.SourceType.INDUSTRY_MEDIA, 74
     forum_domain = any(token in domain for token in ("bbs.", "forum."))
     forum_label = any(token in text for token in ("论坛", "社区", "贴吧"))

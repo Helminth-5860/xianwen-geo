@@ -162,7 +162,7 @@ class SourceScannerTests(SimpleTestCase):
         tasks = list(_expand_task(SearchTask("显问")))
         self.assertGreaterEqual(len(tasks), 4)
         ordered = sorted(tasks, key=lambda task: task.range_start)
-        for previous, current in zip(ordered, ordered[1:]):
+        for previous, current in zip(ordered, ordered[1:], strict=False):
             self.assertLess(previous.range_end, current.range_start)
 
     def test_bounded_branch_splits_in_half(self):

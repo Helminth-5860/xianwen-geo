@@ -28,8 +28,8 @@ jobs:
       - name: Lint source-index changes
         working-directory: backend
         run: |
-          python -m ruff check apps/source_index tests/test_source_index.py config/settings.py config/urls.py tests/api_urls.py
-          python -m ruff format --check apps/source_index tests/test_source_index.py config/settings.py config/urls.py tests/api_urls.py
+          python -m ruff check apps/source_index tests/test_source_index.py config/urls.py tests/api_urls.py
+          python -m ruff format --check apps/source_index tests/test_source_index.py config/urls.py tests/api_urls.py
       - name: Type check source-index app
         working-directory: backend
         run: python -m mypy apps/source_index

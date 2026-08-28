@@ -3,10 +3,10 @@ from __future__ import annotations
 import re
 import time as time_module
 from collections import deque
+from collections.abc import Iterable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import date, timedelta
-from typing import Iterable
 
 from django.conf import settings
 from django.utils import timezone
@@ -385,7 +385,7 @@ def _expand_task(task: SearchTask) -> Iterable[SearchTask]:
             value = min(value, today)
             if not normalized or value > normalized[-1]:
                 normalized.append(value)
-        for start, end_exclusive in zip(normalized, normalized[1:]):
+        for start, end_exclusive in zip(normalized, normalized[1:], strict=False):
             end = end_exclusive - timedelta(days=1)
             if start <= end:
                 yield SearchTask(task.query, start, end, depth=1)
