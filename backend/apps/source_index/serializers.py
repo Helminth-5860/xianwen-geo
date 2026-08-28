@@ -11,7 +11,7 @@ class SourceIndexScanSummarySerializer(serializers.ModelSerializer):
 
     class Meta:
         model = SourceIndexScan
-        fields = (
+        fields: tuple[str, ...] = (
             "id",
             "subject_id",
             "status",
@@ -50,7 +50,7 @@ class SourceIndexScanDetailSerializer(SourceIndexScanSummarySerializer):
     top_sources = serializers.SerializerMethodField()
 
     class Meta(SourceIndexScanSummarySerializer.Meta):
-        fields = SourceIndexScanSummarySerializer.Meta.fields + (
+        fields: tuple[str, ...] = SourceIndexScanSummarySerializer.Meta.fields + (
             "source_type_distribution",
             "query_coverage",
             "top_sources",
@@ -103,7 +103,7 @@ class SourceIndexItemSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = SourceIndexItem
-        fields = (
+        fields: tuple[str, ...] = (
             "id",
             "original_url",
             "domain",
