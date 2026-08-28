@@ -35,7 +35,7 @@ def seed_domestic_channels(apps, schema_editor):
 
     for order, (key, name, url, channel_type, image_ratios, rules) in enumerate(CHANNELS, start=10):
         channel_id = uuid.uuid5(BASE_NAMESPACE, f"channel:{key}")
-        channel, _ = PublishingChannel.objects.update_or_create(
+        channel, created = PublishingChannel.objects.get_or_create(
             key=key,
             defaults={
                 "id": channel_id,
@@ -49,17 +49,23 @@ def seed_domestic_channels(apps, schema_editor):
                 "sort_order": order,
             },
         )
-        current = ChannelTemplateVersion.objects.filter(channel=channel, is_current=True).first()
-        if current is not None and current.rules == rules:
+        if not created:
+            # PublishingChannel 本身可更新；ChannelTemplateVersion 已受数据库不可变触发器保护，
+            # 所以绝不修改历史模板。现有渠道沿用其当前模板，新渠道写入本次规则。
+            channel.name = name
+            channel.official_url = url
+            channel.channel_type = channel_type
+            channel.description = "显问自动发文渠道；内容适配与真实发布能力需按平台逐项验收后开放。"
+            channel.image_ratios = image_ratios
+            channel.enabled = True
+            channel.sort_order = order
+            channel.save(update_fields=("name", "official_url", "channel_type", "description", "image_ratios", "enabled", "sort_order"))
+
+        if ChannelTemplateVersion.objects.filter(channel=channel, is_current=True).exists():
             continue
-        if current is not None:
-            current.is_current = False
-            current.save(update_fields=("is_current",))
-        latest = ChannelTemplateVersion.objects.filter(channel=channel).order_by("-version_no").first()
-        version_no = 1 if latest is None else latest.version_no + 1
         ChannelTemplateVersion.objects.create(
             channel=channel,
-            version_no=version_no,
+            version_no=1,
             rules=rules,
             prompt_version=f"channel-{key}-publishing-v1",
             is_current=True,
