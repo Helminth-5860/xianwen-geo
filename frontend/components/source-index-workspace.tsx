@@ -40,7 +40,6 @@ import {
   type QueryCoverageRow,
   type SourceIndexItem,
   type SourceIndexOrdering,
-  type SourceIndexScanDetail,
   type SourceIndexScanSummary,
   type SourceType,
   type SourceTypeDistributionRow,
@@ -81,7 +80,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   SOURCE_INDEX_FAILED: "本次信源扫描未完成，请稍后重试。",
 };
 
-const fmtNumber = (value: number | undefined | null) => new Intl.NumberFormat("zh-CN").format(value ?? 0);
+const fmtNumber = (value: number | undefined | null) =>
+  new Intl.NumberFormat("zh-CN").format(value ?? 0);
 
 const fmtDateTime = (value: string | null | undefined) => {
   if (!value) return "—";
@@ -113,10 +113,22 @@ const terminalStatus = (status: SourceIndexScanSummary["status"]) =>
 function ScoreExplanation({ item }: { item: SourceIndexItem }) {
   return (
     <div className={styles.scoreBreakdown}>
-      <div><span>来源权威度</span><strong>{item.authority_score}</strong></div>
-      <div><span>主体相关度</span><strong>{item.relevance_score}</strong></div>
-      <div><span>搜索可见度</span><strong>{item.visibility_score}</strong></div>
-      <div><span>内容新鲜度</span><strong>{item.freshness_score}</strong></div>
+      <div>
+        <span>来源权威度</span>
+        <strong>{item.authority_score}</strong>
+      </div>
+      <div>
+        <span>主体相关度</span>
+        <strong>{item.relevance_score}</strong>
+      </div>
+      <div>
+        <span>搜索可见度</span>
+        <strong>{item.visibility_score}</strong>
+      </div>
+      <div>
+        <span>内容新鲜度</span>
+        <strong>{item.freshness_score}</strong>
+      </div>
       <div className={styles.scoreFormula}>综合权重由固定公式计算，不由 AI 主观打分。</div>
     </div>
   );
@@ -213,7 +225,9 @@ export function SourceIndexWorkspace() {
                   : "公开信源扫描完成",
               );
             } else if (scan.status === "failed") {
-              messageApi.warning(ERROR_MESSAGES[scan.stable_error_code] ?? "本次信源扫描未完成");
+              messageApi.warning(
+                ERROR_MESSAGES[scan.stable_error_code] ?? "本次信源扫描未完成",
+              );
             }
           }
         })
@@ -253,13 +267,23 @@ export function SourceIndexWorkspace() {
   }, [loadSources]);
 
   const beginScan = async () => {
-    if (!currentSubject?.id || starting || (activeScan && isSourceIndexScanActive(activeScan.status))) return;
+    if (
+      !currentSubject?.id ||
+      starting ||
+      (activeScan && isSourceIndexScanActive(activeScan.status))
+    ) {
+      return;
+    }
     setStarting(true);
     setError("");
     try {
       const scan = await startSourceIndexScan(currentSubject.id);
       setActiveScan(scan);
-      setState((current) => (current ? { ...current, active_scan: scan } : { active_scan: scan, latest_result: null }));
+      setState((current) =>
+        current
+          ? { ...current, active_scan: scan }
+          : { active_scan: scan, latest_result: null },
+      );
       messageApi.success("已开始扫描公开网络信源");
     } catch (reason: unknown) {
       const text = userMessage(reason);
@@ -289,7 +313,11 @@ export function SourceIndexWorkspace() {
           <Typography.Text strong ellipsis={{ tooltip: item.website || item.root_domain }}>
             {item.website || item.root_domain}
           </Typography.Text>
-          <Typography.Text type="secondary" className={styles.domainText} ellipsis={{ tooltip: item.root_domain }}>
+          <Typography.Text
+            type="secondary"
+            className={styles.domainText}
+            ellipsis={{ tooltip: item.root_domain }}
+          >
             {item.root_domain}
           </Typography.Text>
         </div>
@@ -301,7 +329,12 @@ export function SourceIndexWorkspace() {
       key: "title",
       render: (title: string, item) => (
         <div className={styles.titleCell}>
-          <a href={item.original_url} target="_blank" rel="noopener noreferrer" className={styles.sourceTitle}>
+          <a
+            href={item.original_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={styles.sourceTitle}
+          >
             {title}
           </a>
           {item.repost_cluster_id ? <Tag bordered={false}>疑似转载簇</Tag> : null}
@@ -336,7 +369,9 @@ export function SourceIndexWorkspace() {
       width: 120,
       render: (value: string, item) => (
         <Popover title="信源权重构成" content={<ScoreExplanation item={item} />}>
-          <Button type="link" className={styles.scoreButton}>{Number(value).toFixed(1)}</Button>
+          <Button type="link" className={styles.scoreButton}>
+            {Number(value).toFixed(1)}
+          </Button>
         </Popover>
       ),
     },
@@ -346,7 +381,13 @@ export function SourceIndexWorkspace() {
       width: 80,
       render: (_, item) => (
         <Tooltip title="打开原始网页">
-          <Button type="text" icon={<LinkOutlined />} href={item.original_url} target="_blank" rel="noopener noreferrer" />
+          <Button
+            type="text"
+            icon={<LinkOutlined />}
+            href={item.original_url}
+            target="_blank"
+            rel="noopener noreferrer"
+          />
         </Tooltip>
       ),
     },
@@ -355,7 +396,12 @@ export function SourceIndexWorkspace() {
   const queryColumns: ColumnsType<QueryCoverageRow> = [
     { title: "查询主题", dataIndex: "query", key: "query" },
     { title: "发现信源", dataIndex: "source_count", key: "source_count", width: 110 },
-    { title: "独立来源", dataIndex: "independent_source_count", key: "independent_source_count", width: 110 },
+    {
+      title: "独立来源",
+      dataIndex: "independent_source_count",
+      key: "independent_source_count",
+      width: 110,
+    },
     {
       title: "本次最好位置",
       dataIndex: "best_rank",
@@ -385,7 +431,11 @@ export function SourceIndexWorkspace() {
   ];
 
   if (subjectLoading) {
-    return <main className="page-shell"><Skeleton active paragraph={{ rows: 8 }} /></main>;
+    return (
+      <main className="page-shell">
+        <Skeleton active paragraph={{ rows: 8 }} />
+      </main>
+    );
   }
 
   if (!currentSubject) {
@@ -398,7 +448,11 @@ export function SourceIndexWorkspace() {
   }
 
   if (loading && !state) {
-    return <main className="page-shell"><Skeleton active paragraph={{ rows: 8 }} /></main>;
+    return (
+      <main className="page-shell">
+        <Skeleton active paragraph={{ rows: 8 }} />
+      </main>
+    );
   }
 
   const running = Boolean(activeScan && isSourceIndexScanActive(activeScan.status));
@@ -414,7 +468,9 @@ export function SourceIndexWorkspace() {
         <div>
           <Space size="small" align="center">
             <GlobalOutlined className={styles.headerIcon} />
-            <Typography.Title level={2} className={styles.pageTitle}>信源指数</Typography.Title>
+            <Typography.Title level={2} className={styles.pageTitle}>
+              信源指数
+            </Typography.Title>
           </Space>
           <Typography.Paragraph type="secondary" className={styles.subtitle}>
             扫描公开网络中与当前主体相关的可发现信源，分析外部曝光、独立来源与媒体覆盖。仅使用公开搜索元数据，不抓取文章全文。
@@ -441,21 +497,42 @@ export function SourceIndexWorkspace() {
           <div className={styles.scanHeader}>
             <div>
               <Typography.Text strong>{SCAN_STAGE_LABELS[activeScan.stage]}</Typography.Text>
-              <div className={styles.scanHint}>发现趋于饱和后会自动结束；复杂主体最长约 5 分钟。</div>
+              <div className={styles.scanHint}>
+                发现趋于饱和后会自动结束；复杂主体最长约 5 分钟。
+              </div>
             </div>
             <Tag color="processing">百度公开搜索</Tag>
           </div>
           <div className={styles.liveMetrics}>
-            <div><span>原始结果</span><strong>{fmtNumber(scanProgress.raw ?? activeScan.raw_result_count)}</strong></div>
-            <div><span>去重结果</span><strong>{fmtNumber(scanProgress.unique ?? activeScan.unique_result_count)}</strong></div>
-            <div><span>已请求</span><strong>{fmtNumber(activeScan.provider_request_count)}</strong></div>
-            <div><span>待搜索分支</span><strong>{fmtNumber(scanProgress.queries_remaining)}</strong></div>
+            <div>
+              <span>原始结果</span>
+              <strong>{fmtNumber(scanProgress.raw ?? activeScan.raw_result_count)}</strong>
+            </div>
+            <div>
+              <span>去重结果</span>
+              <strong>{fmtNumber(scanProgress.unique ?? activeScan.unique_result_count)}</strong>
+            </div>
+            <div>
+              <span>已请求</span>
+              <strong>{fmtNumber(activeScan.provider_request_count)}</strong>
+            </div>
+            <div>
+              <span>待搜索分支</span>
+              <strong>{fmtNumber(scanProgress.queries_remaining)}</strong>
+            </div>
           </div>
           <div className={styles.stageTrack}>
             {["preparing", "searching", "classifying", "scoring"].map((stage, index) => {
               const order = ["preparing", "searching", "classifying", "scoring", "completed"];
               const reached = order.indexOf(activeScan.stage) >= index;
-              return <span key={stage} className={reached ? styles.stageReached : styles.stagePending}>{index + 1}</span>;
+              return (
+                <span
+                  key={stage}
+                  className={reached ? styles.stageReached : styles.stagePending}
+                >
+                  {index + 1}
+                </span>
+              );
             })}
           </div>
         </Card>
@@ -466,13 +543,20 @@ export function SourceIndexWorkspace() {
           <Empty
             image={<FileSearchOutlined className={styles.emptyIcon} />}
             description={
-              <Space orientation="vertical" size={4}>
+              <Space direction="vertical" size={4}>
                 <Typography.Text strong>尚未扫描公开信源</Typography.Text>
-                <Typography.Text type="secondary">开始扫描后，系统会自动判断何时已接近饱和，无需手动选择扫描深度。</Typography.Text>
+                <Typography.Text type="secondary">
+                  开始扫描后，系统会自动判断何时已接近饱和，无需手动选择扫描深度。
+                </Typography.Text>
               </Space>
             }
           >
-            <Button type="primary" loading={starting} disabled={running} onClick={() => void beginScan()}>
+            <Button
+              type="primary"
+              loading={starting}
+              disabled={running}
+              onClick={() => void beginScan()}
+            >
               开始扫描
             </Button>
           </Empty>
@@ -480,10 +564,20 @@ export function SourceIndexWorkspace() {
       ) : (
         <>
           {latest.status === "partial" ? (
-            <Alert type="warning" showIcon message="部分公开搜索请求未完成，本次数据可能不完整。" className={styles.alert} />
+            <Alert
+              type="warning"
+              showIcon
+              message="部分公开搜索请求未完成，本次数据可能不完整。"
+              className={styles.alert}
+            />
           ) : null}
           {latest.status === "limit_reached" ? (
-            <Alert type="info" showIcon message="本次扫描已达到安全上限，并基于当前已发现信源完成分析。" className={styles.alert} />
+            <Alert
+              type="info"
+              showIcon
+              message="本次扫描已达到安全上限，并基于当前已发现信源完成分析。"
+              className={styles.alert}
+            />
           ) : null}
 
           <div className={styles.metricGrid}>
@@ -493,16 +587,38 @@ export function SourceIndexWorkspace() {
               emphasize
               hint="基于当前扫描发现的有效信源规模、独立来源、来源权威度、搜索可见度和新鲜度综合计算。"
             />
-            <MetricCard label="公开信源" value={fmtNumber(latest.public_source_count)} hint="当前扫描去重并通过主体相关性过滤后的有效公开信源。" />
-            <MetricCard label="独立来源" value={fmtNumber(latest.independent_domain_count)} hint="有效信源来自的独立根域名数量。" />
-            <MetricCard label="新闻 / 媒体" value={fmtNumber(latest.news_media_count)} hint="新闻媒体与行业媒体类型的有效信源数量。" />
-            <MetricCard label="高权重信源" value={fmtNumber(latest.high_weight_count)} hint="当前算法下信源权重达到高权重阈值的结果。" />
-            <MetricCard label="近30天发布" value={fmtNumber(latest.recent_30d_count)} hint="能够识别发布时间且发布时间位于最近30天的有效信源。" />
+            <MetricCard
+              label="公开信源"
+              value={fmtNumber(latest.public_source_count)}
+              hint="当前扫描去重并通过主体相关性过滤后的有效公开信源。"
+            />
+            <MetricCard
+              label="独立来源"
+              value={fmtNumber(latest.independent_domain_count)}
+              hint="有效信源来自的独立根域名数量。"
+            />
+            <MetricCard
+              label="新闻 / 媒体"
+              value={fmtNumber(latest.news_media_count)}
+              hint="新闻媒体与行业媒体类型的有效信源数量。"
+            />
+            <MetricCard
+              label="高权重信源"
+              value={fmtNumber(latest.high_weight_count)}
+              hint="当前算法下信源权重达到高权重阈值的结果。"
+            />
+            <MetricCard
+              label="近30天发布"
+              value={fmtNumber(latest.recent_30d_count)}
+              hint="能够识别发布时间且发布时间位于最近30天的有效信源。"
+            />
           </div>
 
           <div className={styles.scanMeta}>
             <span>最近扫描：{fmtDateTime(latest.finished_at)}</span>
-            <span>耗时：{latest.elapsed_seconds == null ? "—" : `${latest.elapsed_seconds.toFixed(1)} 秒`}</span>
+            <span>
+              耗时：{latest.elapsed_seconds == null ? "—" : `${latest.elapsed_seconds.toFixed(1)} 秒`}
+            </span>
             <span>搜索请求：{fmtNumber(latest.provider_request_count)} 次</span>
             <span>原始结果：{fmtNumber(latest.raw_result_count)}</span>
             <span>去重候选：{fmtNumber(latest.unique_result_count)}</span>
@@ -510,8 +626,10 @@ export function SourceIndexWorkspace() {
 
           <div className={styles.twoColumnGrid}>
             <Card title="来源类型分布" className={styles.sectionCard}>
-              {!typeDistribution.length ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} /> : (
-                <Space orientation="vertical" size="middle" style={{ width: "100%" }}>
+              {!typeDistribution.length ? (
+                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} />
+              ) : (
+                <Space direction="vertical" size="middle" style={{ width: "100%" }}>
                   {typeDistribution.map((row: SourceTypeDistributionRow & { percent: number }) => (
                     <div key={row.source_type} className={styles.distributionRow}>
                       <div className={styles.distributionLabel}>
@@ -534,7 +652,7 @@ export function SourceIndexWorkspace() {
               }
               className={styles.sectionCard}
             >
-              <Space orientation="vertical" size="middle" style={{ width: "100%" }}>
+              <Space direction="vertical" size="middle" style={{ width: "100%" }}>
                 {[
                   ["曝光规模", latest.factor_scores.exposure ?? 0],
                   ["独立来源多样性", latest.factor_scores.diversity ?? 0],
@@ -544,7 +662,11 @@ export function SourceIndexWorkspace() {
                 ].map(([label, value]) => (
                   <div key={String(label)} className={styles.factorRow}>
                     <span>{label}</span>
-                    <Progress percent={Number(value)} size="small" format={(percent) => `${Number(percent).toFixed(0)}`} />
+                    <Progress
+                      percent={Number(value)}
+                      size="small"
+                      format={(percent) => `${Number(percent).toFixed(0)}`}
+                    />
                   </div>
                 ))}
                 <Typography.Text type="secondary" className={styles.formulaNote}>
@@ -585,8 +707,14 @@ export function SourceIndexWorkspace() {
                   placeholder="全部来源类型"
                   value={sourceType}
                   style={{ width: 180 }}
-                  options={Object.entries(SOURCE_TYPE_LABELS).map(([value, label]) => ({ value: value as SourceType, label }))}
-                  onChange={(value) => { setSourceType(value); setPage(1); }}
+                  options={Object.entries(SOURCE_TYPE_LABELS).map(([value, label]) => ({
+                    value: value as SourceType,
+                    label,
+                  }))}
+                  onChange={(value) => {
+                    setSourceType(value);
+                    setPage(1);
+                  }}
                 />
                 <Select<SourceIndexOrdering>
                   value={ordering}
@@ -597,10 +725,15 @@ export function SourceIndexWorkspace() {
                     { value: "best_rank", label: "检索位置靠前" },
                     { value: "-authority_score", label: "来源权威度优先" },
                   ]}
-                  onChange={(value) => { setOrdering(value); setPage(1); }}
+                  onChange={(value) => {
+                    setOrdering(value);
+                    setPage(1);
+                  }}
                 />
               </Space>
-              <Typography.Text type="secondary">当前筛选 {fmtNumber(sourceCount)} 条</Typography.Text>
+              <Typography.Text type="secondary">
+                当前筛选 {fmtNumber(sourceCount)} 条
+              </Typography.Text>
             </div>
             <Table<SourceIndexItem>
               rowKey="id"
