@@ -10,7 +10,12 @@ from apps.subjects.permissions import IsAvailableAuthenticatedUser
 
 from .authorization import begin_browser_authorization, sync_authorization_session
 from .models import PlatformAccount, PlatformAuthorizationSession, Publication, PublishingPreference
-from .pause_control import pause_subject_publications, resume_subject_publications
+from .pause_control import (
+    pause_platform_publications,
+    pause_subject_publications,
+    resume_platform_publications,
+    resume_subject_publications,
+)
 from .review import approve_publication, is_waiting_review
 from .serializers import (
     AuthorizationStartSerializer,
@@ -146,10 +151,29 @@ class SubjectPlatformAccountView(APIView):
         account.save(update_fields=("enabled_for_auto", "updated_at"))
         preference = PublishingPreference.objects.filter(user=request.user, subject=subject).first()
         _sync_custom_platform(preference, platform_key, enabled)
+
+        if enabled:
+            resume_platform_publications(
+                user_id=request.user.pk,
+                subject_id=subject_id,
+                platform_key=platform_key,
+                automation_enabled=bool(preference and preference.is_enabled),
+            )
+        else:
+            pause_platform_publications(
+                user_id=request.user.pk,
+                subject_id=subject_id,
+                platform_key=platform_key,
+            )
         return Response({"account": account_payload(account)})
 
     def delete(self, request, subject_id, platform_key):
         subject = subject_for_user(user=request.user, subject_id=subject_id)
+        pause_platform_publications(
+            user_id=request.user.pk,
+            subject_id=subject_id,
+            platform_key=platform_key,
+        )
         disconnect_platform_account(
             user=request.user,
             subject_id=subject_id,
