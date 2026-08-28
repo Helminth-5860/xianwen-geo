@@ -22,6 +22,7 @@ class Migration(migrations.Migration):
                 ("style_key", models.CharField(choices=[("professional", "专业商务"), ("technology", "科技简约"), ("premium", "高端品牌")], default="professional", max_length=24)),
                 ("status", models.CharField(choices=[("draft", "待生成"), ("generating", "正在生成"), ("ready", "已生成"), ("failed", "生成未完成")], default="draft", max_length=24)),
                 ("selected_asset_ids", models.JSONField(default=list)),
+                ("selected_document_ids", models.JSONField(default=list)),
                 ("source_snapshot", models.JSONField(default=dict)),
                 ("site_schema_version", models.PositiveSmallIntegerField(default=1)),
                 ("site_json", models.JSONField(default=dict)),
