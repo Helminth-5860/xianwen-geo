@@ -41,6 +41,7 @@ class WebsiteProject(models.Model):  # noqa: DJ008
     )
     status = models.CharField(max_length=24, choices=Status.choices, default=Status.DRAFT)
     selected_asset_ids = models.JSONField(default=list)
+    selected_document_ids = models.JSONField(default=list)
     source_snapshot = models.JSONField(default=dict)
     site_schema_version = models.PositiveSmallIntegerField(default=1)
     site_json = models.JSONField(default=dict)
