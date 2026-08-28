@@ -6,6 +6,7 @@ from celery import shared_task  # type: ignore[import-untyped]
 
 from .execution import prepare_publication
 from .scheduling import assign_publication_schedule
+from .status_tracking import check_submitted_target
 from .target_execution import execute_target
 
 
@@ -48,6 +49,21 @@ def execute_publication_target_task(self, target_id: str):
             args=[target_id],
             countdown=max(30, min(900, int(result.get("retry_after") or 75))),
         )
+    elif result.get("status") == "submitted":
+        from .models import PublicationTarget
+
+        target = PublicationTarget.objects.only("next_status_check_at").get(pk=target_id)
+        if target.next_status_check_at is not None:
+            check_submitted_target_task.apply_async(args=[target_id], eta=target.next_status_check_at)
+    return None
+
+
+@shared_task(name="publishing.check_submitted_target", bind=True, ignore_result=True)
+def check_submitted_target_task(self, target_id: str):
+    result = check_submitted_target(target_id=target_id)
+    eta = result.get("eta")
+    if result.get("status") in {"scheduled", "submitted"} and eta is not None:
+        self.apply_async(args=[target_id], eta=eta)
     return None
 
 
