@@ -10,6 +10,8 @@ import type {
   PublicationAsset,
   PublicationInput,
   PublicationResult,
+  PublicationStatusInput,
+  PublicationStatusResult,
 } from "./types.js";
 
 export type BrowserPublisherConfig = Readonly<{
@@ -116,6 +118,14 @@ async function detectPublicUrl(page: Page, config: BrowserPublisherConfig): Prom
     const href = await locator.getAttribute("href").catch(() => null);
     if (href && /^https?:\/\//.test(href)) return href;
   }
+  const links = page.locator('a[href^="http"]');
+  const count = Math.min(await links.count().catch(() => 0), 80);
+  for (let index = 0; index < count; index += 1) {
+    const href = await links.nth(index).getAttribute("href").catch(() => null);
+    if (!href) continue;
+    if (href.includes("login") || href.includes("edit") || href.includes("write") || href.includes("publish")) continue;
+    if (href.includes(new URL(config.editorUrl).hostname)) return href;
+  }
   const current = page.url();
   if (!current.includes("/edit") && !current.includes("/publish") && !current.includes("/write") && !current.includes("builder")) {
     return current;
@@ -137,6 +147,46 @@ export class BrowserFormPublisher implements PlatformPublisher {
 
   async checkAuth(credentials: PlatformCredentials) {
     return { ok: Boolean(credentials.cookies?.length) };
+  }
+
+  async checkStatus(input: PublicationStatusInput): Promise<PublicationStatusResult> {
+    if (!this.enabled()) return { platformKey: this.platformKey, status: "unknown" };
+    if (!input.credentials.cookies?.length) {
+      return { platformKey: this.platformKey, status: "auth_required", safeErrorCode: "authorization_required" };
+    }
+    if (!input.managementUrl) return { platformKey: this.platformKey, status: "unknown" };
+
+    const browser = await chromium.launch({
+      headless: browserHeadless,
+      args: ["--disable-dev-shm-usage", "--no-sandbox"],
+    });
+    let context: BrowserContext | null = null;
+    try {
+      context = await browser.newContext({ viewport: { width: 1360, height: 900 }, locale: "zh-CN" });
+      const stored = cookies(input.credentials);
+      if (stored.length) await context.addCookies(stored);
+      const page = await context.newPage();
+      await page.goto(input.managementUrl, { waitUntil: "domcontentloaded", timeout: 60_000 });
+      await page.waitForTimeout(1200);
+      const currentUrl = page.url().toLowerCase();
+      if ((this.config.loginMarkers || ["login", "signin", "passport"]).some((marker) => currentUrl.includes(marker))) {
+        return { platformKey: this.platformKey, status: "auth_required", safeErrorCode: "authorization_required" };
+      }
+      const body = (await page.locator("body").innerText().catch(() => "")).slice(-40_000);
+      const failure = (this.config.failureTexts || ["审核不通过", "发布失败", "已驳回", "未通过"]).some((item) => body.includes(item));
+      if (failure) return { platformKey: this.platformKey, status: "failed", managementUrl: page.url(), safeErrorCode: "content_rejected" };
+      const publicUrl = await detectPublicUrl(page, this.config);
+      if (publicUrl) return { platformKey: this.platformKey, status: "published", publicUrl, managementUrl: page.url() };
+      if ([...(this.config.reviewTexts || []), "审核中", "待审核", "处理中"].some((item) => body.includes(item))) {
+        return { platformKey: this.platformKey, status: "submitted", managementUrl: page.url() };
+      }
+      return { platformKey: this.platformKey, status: "unknown", managementUrl: page.url() };
+    } catch {
+      return { platformKey: this.platformKey, status: "unknown", safeErrorCode: "platform_unavailable" };
+    } finally {
+      if (context) await context.close().catch(() => undefined);
+      await browser.close().catch(() => undefined);
+    }
   }
 
   async publish(input: PublicationInput): Promise<PublicationResult> {
