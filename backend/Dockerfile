@@ -55,6 +55,11 @@ USER app
 ENTRYPOINT ["/app/entrypoint.sh"]
 CMD ["celery", "-A", "config", "worker", "--loglevel=INFO", "--queues=browser_audit", "--concurrency=1", "--prefetch-multiplier=1"]
 
+# Platform authorization and publishing get an isolated browser-capable worker.
+# Keeping this separate prevents a slow login session from blocking website audits.
+FROM browser AS publication
+CMD ["celery", "-A", "config", "worker", "--loglevel=INFO", "--queues=publication", "--concurrency=1", "--prefetch-multiplier=1"]
+
 FROM base AS production
 COPY --chown=app:app backend/ .
 COPY --chown=app:app config/plan-limit-keys.json /config/plan-limit-keys.json
