@@ -10,6 +10,7 @@ import {
   sessionPreview,
   startAuthSession,
   viewerAuthorized,
+  type ManagedAuthSession,
 } from "./auth-sessions.js";
 import { getPublisher, publisherCapabilities } from "./publishers/index.js";
 import type { PlatformCredentials, PublicationInput, PublicationStatusInput } from "./publishers/types.js";
@@ -22,6 +23,22 @@ const internalSecret = process.env.PUBLISHING_WORKER_INTERNAL_SECRET || "";
 if (internalSecret.length < 32) {
   throw new Error("PUBLISHING_WORKER_INTERNAL_SECRET must be at least 32 characters");
 }
+
+let publicUrl: URL;
+try {
+  publicUrl = new URL(publicBaseUrl);
+} catch {
+  throw new Error("PUBLISHING_WORKER_PUBLIC_BASE_URL must be an absolute URL");
+}
+if (!["http:", "https:"].includes(publicUrl.protocol) || publicUrl.username || publicUrl.password || publicUrl.search || publicUrl.hash) {
+  throw new Error("PUBLISHING_WORKER_PUBLIC_BASE_URL is invalid");
+}
+if ((process.env.APP_ENV || "").toLowerCase() === "production" && publicUrl.protocol !== "https:") {
+  throw new Error("PUBLISHING_WORKER_PUBLIC_BASE_URL must use HTTPS in production");
+}
+const publicOrigin = publicUrl.origin;
+const publicBasePath = publicUrl.pathname === "/" ? "" : publicUrl.pathname.replace(/\/$/, "");
+const secureViewerCookie = publicUrl.protocol === "https:";
 
 const json = (response: ServerResponse, status: number, payload: unknown) => {
   response.writeHead(status, {
@@ -73,9 +90,70 @@ async function readJson(request: IncomingMessage, maxBytes = 64 * 1024): Promise
 const escapeHtml = (value: string) =>
   value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
 
-function authorizationPage(sessionId: string, token: string, platformName: string) {
+const viewerCookieName = (sessionId: string) => `xw_pub_${sessionId.replace(/[^a-zA-Z0-9]/g, "").slice(0, 20)}`;
+
+function requestCookie(request: IncomingMessage, name: string) {
+  const raw = request.headers.cookie || "";
+  for (const part of raw.split(";")) {
+    const index = part.indexOf("=");
+    if (index <= 0) continue;
+    if (part.slice(0, index).trim() !== name) continue;
+    try {
+      return decodeURIComponent(part.slice(index + 1).trim());
+    } catch {
+      return "";
+    }
+  }
+  return "";
+}
+
+function viewerRequestAuthorized(request: IncomingMessage, session: ManagedAuthSession) {
+  return viewerAuthorized(session, requestCookie(request, viewerCookieName(session.id)));
+}
+
+function sameOriginPost(request: IncomingMessage) {
+  return request.headers.origin === publicOrigin;
+}
+
+function routePath(pathname: string) {
+  if (!publicBasePath) return pathname;
+  if (pathname === publicBasePath) return "/";
+  if (pathname.startsWith(`${publicBasePath}/`)) return pathname.slice(publicBasePath.length);
+  return pathname;
+}
+
+function browserPath(path: string) {
+  return `${publicBasePath}${path}` || "/";
+}
+
+function authorizationBootstrap(sessionId: string, platformName: string) {
   const safeId = encodeURIComponent(sessionId);
-  const safeToken = encodeURIComponent(token);
+  const exchangePath = browserPath(`/authorize/${safeId}/session`);
+  const cleanPath = browserPath(`/authorize/${safeId}`);
+  return `<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>授权${escapeHtml(platformName)}</title></head><body>
+<p>正在安全打开授权页面…</p>
+<script>
+(async()=>{
+  try{
+    const params=new URLSearchParams(location.hash.startsWith('#')?location.hash.slice(1):location.hash);
+    const token=params.get('token')||'';
+    history.replaceState(null,'',location.pathname);
+    if(!token)throw new Error('missing');
+    const response=await fetch('${exchangePath}',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({token})});
+    if(!response.ok)throw new Error('invalid');
+    location.replace('${cleanPath}');
+  }catch{document.body.innerHTML='<p>授权链接已失效，请返回显问重新授权。</p>';}
+})();
+</script></body></html>`;
+}
+
+function authorizationPage(sessionId: string, platformName: string) {
+  const safeId = encodeURIComponent(sessionId);
+  const previewPath = browserPath(`/authorize/${safeId}/preview`);
+  const clickPath = browserPath(`/authorize/${safeId}/click`);
+  const statusPath = browserPath(`/authorize/${safeId}/status`);
   return `<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -96,7 +174,7 @@ h1{font-size:22px;margin:0 0 8px}.hint{color:#667085;line-height:1.7;margin-bott
 <h1>授权${escapeHtml(platformName)}</h1>
 <p class="hint">请优先使用扫码完成登录。若平台当前显示其他登录方式，可点击下方画面切换“扫码登录”或刷新二维码。显问不会提供键盘输入，因此平台密码和短信验证码不会经过这个页面。</p>
 <div id="status" class="status">正在等待完成登录</div>
-<img id="preview" class="preview" alt="平台授权页面" src="/authorize/${safeId}/preview?token=${safeToken}&v=0" />
+<img id="preview" class="preview" alt="平台授权页面" src="${previewPath}?v=0" />
 <p class="safe">此授权画面只对当前一次性链接开放，并会在授权结束后失效。请勿把此页面转发给其他人。</p>
 </div></main>
 <script>
@@ -120,19 +198,19 @@ preview.addEventListener('click',async(event)=>{
   const x=Math.max(0,Math.min(1280,px/contentW*1280));
   const y=Math.max(0,Math.min(900,py/contentH*900));
   try{
-    await fetch('/authorize/${safeId}/click?token=${safeToken}',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({x,y})});
-    tick+=1;preview.src='/authorize/${safeId}/preview?token=${safeToken}&v='+tick;
+    await fetch('${clickPath}',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({x,y})});
+    tick+=1;preview.src='${previewPath}?v='+tick;
   }catch{}
 });
 async function refresh(){
   try{
-    const response=await fetch('/authorize/${safeId}/status?token=${safeToken}',{cache:'no-store'});
+    const response=await fetch('${statusPath}',{cache:'no-store',credentials:'same-origin'});
     const data=await response.json();
     if(data.status==='succeeded'){finished=true;statusEl.textContent='授权成功，可以关闭此窗口';preview.style.opacity='.45';return;}
     if(data.status==='expired'){finished=true;statusEl.textContent='授权已过期，请返回显问重新授权';return;}
     if(data.status==='failed'){finished=true;statusEl.textContent='本次授权未完成，请返回显问重新尝试';return;}
     statusEl.textContent='正在等待完成登录';
-    tick+=1;preview.src='/authorize/${safeId}/preview?token=${safeToken}&v='+tick;
+    tick+=1;preview.src='${previewPath}?v='+tick;
     setTimeout(refresh,1800);
   }catch{statusEl.textContent='授权页面正在重新连接';setTimeout(refresh,2500);}
 }
@@ -192,17 +270,18 @@ function validateStatusInput(body: Record<string, unknown>): { platformKey: stri
 const server = http.createServer(async (request, response) => {
   const method = request.method || "GET";
   const url = new URL(request.url || "/", publicBaseUrl);
+  const path = routePath(url.pathname);
 
-  if (method === "GET" && url.pathname === "/health") {
+  if (method === "GET" && path === "/health") {
     return json(response, 200, { status: "ok" });
   }
 
-  if (method === "GET" && url.pathname === "/v1/capabilities") {
+  if (method === "GET" && path === "/v1/capabilities") {
     if (!internalAuthorized(request)) return json(response, 401, { error: "unauthorized" });
     return json(response, 200, { publishers: publisherCapabilities() });
   }
 
-  if (method === "POST" && url.pathname === "/v1/publish") {
+  if (method === "POST" && path === "/v1/publish") {
     if (!internalAuthorized(request)) return json(response, 401, { error: "unauthorized" });
     try {
       const body = await readJson(request, 2 * 1024 * 1024);
@@ -219,7 +298,7 @@ const server = http.createServer(async (request, response) => {
     }
   }
 
-  if (method === "POST" && url.pathname === "/v1/status") {
+  if (method === "POST" && path === "/v1/status") {
     if (!internalAuthorized(request)) return json(response, 401, { error: "unauthorized" });
     try {
       const body = await readJson(request, 128 * 1024);
@@ -235,7 +314,7 @@ const server = http.createServer(async (request, response) => {
     }
   }
 
-  if (url.pathname === "/v1/auth-sessions" && method === "POST") {
+  if (path === "/v1/auth-sessions" && method === "POST") {
     if (!internalAuthorized(request)) return json(response, 401, { error: "unauthorized" });
     try {
       const body = await readJson(request);
@@ -256,7 +335,7 @@ const server = http.createServer(async (request, response) => {
     }
   }
 
-  const internalMatch = url.pathname.match(/^\/v1\/auth-sessions\/([^/]+)$/);
+  const internalMatch = path.match(/^\/v1\/auth-sessions\/([^/]+)$/);
   if (internalMatch) {
     if (!internalAuthorized(request)) return json(response, 401, { error: "unauthorized" });
     const id = decodeURIComponent(internalMatch[1]);
@@ -271,30 +350,62 @@ const server = http.createServer(async (request, response) => {
     }
   }
 
-  const pageMatch = url.pathname.match(/^\/authorize\/([^/]+)$/);
-  if (method === "GET" && pageMatch) {
-    const id = decodeURIComponent(pageMatch[1]);
-    const token = url.searchParams.get("token") || "";
+  const exchangeMatch = path.match(/^\/authorize\/([^/]+)\/session$/);
+  if (method === "POST" && exchangeMatch) {
+    if (!sameOriginPost(request)) return json(response, 403, { error: "forbidden_origin" });
+    const id = decodeURIComponent(exchangeMatch[1]);
     const session = getAuthSession(id);
-    if (!session || !viewerAuthorized(session, token)) return text(response, 404, "授权链接已失效");
-    return text(response, 200, authorizationPage(id, token, session.platform.name), "text/html; charset=utf-8");
+    if (!session) return json(response, 404, { error: "not_found" });
+    try {
+      const body = await readJson(request, 4096);
+      const token = typeof body.token === "string" ? body.token : "";
+      if (!viewerAuthorized(session, token)) return json(response, 404, { error: "not_found" });
+      const maxAge = Math.max(1, Math.ceil((session.expiresAt - Date.now()) / 1000));
+      const cookiePath = browserPath(`/authorize/${encodeURIComponent(id)}`);
+      const cookie = [
+        `${viewerCookieName(id)}=${encodeURIComponent(token)}`,
+        `Path=${cookiePath}`,
+        `Max-Age=${maxAge}`,
+        "HttpOnly",
+        "SameSite=Strict",
+        ...(secureViewerCookie ? ["Secure"] : []),
+      ].join("; ");
+      response.writeHead(204, {
+        "Cache-Control": "no-store",
+        "Set-Cookie": cookie,
+        "Referrer-Policy": "no-referrer",
+      });
+      return response.end();
+    } catch {
+      return json(response, 400, { error: "invalid_request" });
+    }
   }
 
-  const statusMatch = url.pathname.match(/^\/authorize\/([^/]+)\/status$/);
+  const pageMatch = path.match(/^\/authorize\/([^/]+)$/);
+  if (method === "GET" && pageMatch) {
+    const id = decodeURIComponent(pageMatch[1]);
+    const session = getAuthSession(id);
+    if (!session) return text(response, 404, "授权链接已失效");
+    if (!viewerRequestAuthorized(request, session)) {
+      return text(response, 200, authorizationBootstrap(id, session.platform.name), "text/html; charset=utf-8");
+    }
+    return text(response, 200, authorizationPage(id, session.platform.name), "text/html; charset=utf-8");
+  }
+
+  const statusMatch = path.match(/^\/authorize\/([^/]+)\/status$/);
   if (method === "GET" && statusMatch) {
     const id = decodeURIComponent(statusMatch[1]);
-    const token = url.searchParams.get("token") || "";
     const session = getAuthSession(id);
-    if (!session || !viewerAuthorized(session, token)) return json(response, 404, { error: "not_found" });
+    if (!session || !viewerRequestAuthorized(request, session)) return json(response, 404, { error: "not_found" });
     return json(response, 200, { status: session.status });
   }
 
-  const clickMatch = url.pathname.match(/^\/authorize\/([^/]+)\/click$/);
+  const clickMatch = path.match(/^\/authorize\/([^/]+)\/click$/);
   if (method === "POST" && clickMatch) {
+    if (!sameOriginPost(request)) return json(response, 403, { error: "forbidden_origin" });
     const id = decodeURIComponent(clickMatch[1]);
-    const token = url.searchParams.get("token") || "";
     const session = getAuthSession(id);
-    if (!session || !viewerAuthorized(session, token)) return json(response, 404, { error: "not_found" });
+    if (!session || !viewerRequestAuthorized(request, session)) return json(response, 404, { error: "not_found" });
     try {
       const body = await readJson(request, 2048);
       const x = typeof body.x === "number" ? body.x : NaN;
@@ -306,12 +417,11 @@ const server = http.createServer(async (request, response) => {
     }
   }
 
-  const previewMatch = url.pathname.match(/^\/authorize\/([^/]+)\/preview$/);
+  const previewMatch = path.match(/^\/authorize\/([^/]+)\/preview$/);
   if (method === "GET" && previewMatch) {
     const id = decodeURIComponent(previewMatch[1]);
-    const token = url.searchParams.get("token") || "";
     const session = getAuthSession(id);
-    if (!session || !viewerAuthorized(session, token)) return text(response, 404, "授权链接已失效");
+    if (!session || !viewerRequestAuthorized(request, session)) return text(response, 404, "授权链接已失效");
     const image = await sessionPreview(session);
     if (!image) return text(response, 409, "授权画面暂不可用");
     response.writeHead(200, {
@@ -319,6 +429,7 @@ const server = http.createServer(async (request, response) => {
       "Cache-Control": "no-store, max-age=0",
       "X-Content-Type-Options": "nosniff",
       "Content-Security-Policy": "default-src 'none'",
+      "Referrer-Policy": "no-referrer",
     });
     return response.end(image);
   }
