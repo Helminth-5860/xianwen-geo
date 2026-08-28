@@ -23,6 +23,28 @@ def _running_stale_seconds() -> int:
     return max(390, min(3600, value))
 
 
+@shared_task(name="publishing.sync_authorization_session", bind=True, ignore_result=True)
+def sync_authorization_session_task(self, session_id: str):
+    from .authorization import sync_authorization_session
+    from .models import PlatformAccount, PlatformAuthorizationSession
+
+    try:
+        session = PlatformAuthorizationSession.objects.select_related("account").get(pk=session_id)
+    except PlatformAuthorizationSession.DoesNotExist:
+        return None
+    if session.auth_method == PlatformAccount.AuthMethod.OFFICIAL_API:
+        # Official authorization completes through the signed platform callback.
+        return None
+    session = sync_authorization_session(session)
+    if session.status in {
+        PlatformAuthorizationSession.Status.CREATED,
+        PlatformAuthorizationSession.Status.STARTING,
+        PlatformAuthorizationSession.Status.WAITING_USER,
+    } and session.expires_at > timezone.now():
+        self.apply_async(args=[session_id], countdown=3)
+    return None
+
+
 @shared_task(name="publishing.prepare_publication", bind=True, ignore_result=True)
 def prepare_publication_task(self, publication_id: str):
     recover_preparation_jobs(publication_id)
