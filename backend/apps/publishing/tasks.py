@@ -52,3 +52,51 @@ def execute_publication_target_task(self, target_id: str):
             countdown=max(30, min(900, int(result.get("retry_after") or 75))),
         )
     return None
+
+
+@shared_task(name="publishing.adopt_ready_articles", ignore_result=True)
+def adopt_ready_articles_task(user_id: str, subject_id: str):
+    from apps.articles.models import Article
+
+    from .models import Publication, PublishingPreference
+    from .services import PublishingInputError, create_publication
+
+    preference = PublishingPreference.objects.filter(
+        user_id=user_id,
+        subject_id=subject_id,
+        is_enabled=True,
+        mode=PublishingPreference.Mode.MANAGED,
+    ).first()
+    if preference is None:
+        return None
+
+    limit = max(1, min(10, preference.posts_per_day if preference.frequency_mode == PublishingPreference.FrequencyMode.FIXED else 3))
+    candidates = Article.objects.filter(
+        user_id=user_id,
+        subject_id=subject_id,
+        status=Article.Status.READY,
+        moderation_status=Article.Moderation.PASSED,
+    ).order_by("-updated_at")[: limit * 3]
+    adopted = 0
+    for article in candidates:
+        if adopted >= limit:
+            break
+        if Publication.objects.filter(
+            user_id=user_id,
+            subject_id=subject_id,
+            article=article,
+        ).exclude(status=Publication.Status.CANCELLED).exists():
+            continue
+        try:
+            publication = create_publication(
+                user=article.user,
+                subject_id=subject_id,
+                article_id=article.pk,
+                platform_keys=None,
+                scheduled_at=None,
+            )
+        except PublishingInputError:
+            continue
+        prepare_publication_task.delay(str(publication.pk))
+        adopted += 1
+    return None
