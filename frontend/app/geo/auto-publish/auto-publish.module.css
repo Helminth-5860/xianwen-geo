@@ -139,6 +139,12 @@
   object-fit: contain;
 }
 
+.authorizedState {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+}
+
 .successIcon {
   color: #52c41a;
   font-size: 46px;
