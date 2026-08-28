@@ -183,6 +183,17 @@ export async function sessionPreview(session: ManagedAuthSession) {
   }
 }
 
+export async function sessionClick(session: ManagedAuthSession, x: number, y: number) {
+  if (session.status !== "waiting_user") throw new Error("session_not_interactive");
+  if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || x > 1280 || y < 0 || y > 900) {
+    throw new Error("invalid_coordinates");
+  }
+  // 只代理鼠标点击，用于切换“扫码登录”、刷新二维码或确认非敏感提示。
+  // 不提供键盘输入接口，因此平台密码、短信验证码等不会经过显问授权页。
+  await session.page.mouse.click(Math.round(x), Math.round(y));
+  await session.page.waitForTimeout(350);
+}
+
 export function internalSessionPayload(session: ManagedAuthSession) {
   return {
     id: session.id,
