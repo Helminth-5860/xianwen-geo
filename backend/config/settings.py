@@ -20,8 +20,13 @@ for setting_name in dir(settings_module):
     if setting_name.isupper():
         globals()[setting_name] = getattr(settings_module, setting_name)
 
-# 官网深度检测在所有运行环境共用同一套扫描内核；网络安全策略复用 web_sources。
-INSTALLED_APPS = [*INSTALLED_APPS, "apps.website_audits", "apps.publishing"]
+# 官网深度检测、自动发文和信源指数在所有环境共用同一套业务内核。
+INSTALLED_APPS = [
+    *INSTALLED_APPS,
+    "apps.website_audits",
+    "apps.publishing",
+    "apps.source_index",
+]
 
 # 自动发文平台必须逐个平台经过真实账号验证后才开放授权；默认全部保持“适配验证中”。
 PUBLISHING_ENABLED_PLATFORM_KEYS = tuple(
@@ -41,6 +46,50 @@ if PUBLISHING_AUTH_SESSION_TTL_SECONDS < 300 or PUBLISHING_AUTH_SESSION_TTL_SECO
     )
 if PUBLISHING_WORKER_INTERNAL_SECRET and len(PUBLISHING_WORKER_INTERNAL_SECRET) < 32:
     raise ImproperlyConfigured("PUBLISHING_WORKER_INTERNAL_SECRET must be at least 32 characters.")
+
+# 信源指数只使用百度公开搜索元数据，不抓取目标网页正文。5分钟是硬上限，不是目标耗时。
+BAIDU_SEARCH_API_KEY = os.getenv("BAIDU_SEARCH_API_KEY", "").strip()
+BAIDU_SEARCH_AUTH_HEADER = os.getenv("BAIDU_SEARCH_AUTH_HEADER", "Authorization").strip()
+SOURCE_INDEX_REQUEST_TIMEOUT_SECONDS = int(os.getenv("SOURCE_INDEX_REQUEST_TIMEOUT_SECONDS", "8"))
+SOURCE_INDEX_SEARCH_BUDGET_SECONDS = int(os.getenv("SOURCE_INDEX_SEARCH_BUDGET_SECONDS", "240"))
+SOURCE_INDEX_TOTAL_TIMEOUT_SECONDS = int(os.getenv("SOURCE_INDEX_TOTAL_TIMEOUT_SECONDS", "300"))
+SOURCE_INDEX_MAX_REQUESTS = int(os.getenv("SOURCE_INDEX_MAX_REQUESTS", "200"))
+SOURCE_INDEX_SEARCH_CONCURRENCY = int(os.getenv("SOURCE_INDEX_SEARCH_CONCURRENCY", "3"))
+SOURCE_INDEX_MIN_REQUESTS = int(os.getenv("SOURCE_INDEX_MIN_REQUESTS", "12"))
+SOURCE_INDEX_STOP_YIELD_RATIO = float(os.getenv("SOURCE_INDEX_STOP_YIELD_RATIO", "0.08"))
+SOURCE_INDEX_LOW_YIELD_BATCHES = int(os.getenv("SOURCE_INDEX_LOW_YIELD_BATCHES", "3"))
+SOURCE_INDEX_MIN_RELEVANCE_SCORE = int(os.getenv("SOURCE_INDEX_MIN_RELEVANCE_SCORE", "60"))
+SOURCE_INDEX_HIGH_WEIGHT_SCORE = float(os.getenv("SOURCE_INDEX_HIGH_WEIGHT_SCORE", "75"))
+
+if BAIDU_SEARCH_AUTH_HEADER not in {"Authorization", "X-Appbuilder-Authorization"}:
+    raise ImproperlyConfigured(
+        "BAIDU_SEARCH_AUTH_HEADER must be Authorization or X-Appbuilder-Authorization."
+    )
+if SOURCE_INDEX_REQUEST_TIMEOUT_SECONDS <= 0 or SOURCE_INDEX_REQUEST_TIMEOUT_SECONDS > 30:
+    raise ImproperlyConfigured("SOURCE_INDEX_REQUEST_TIMEOUT_SECONDS must be between 1 and 30.")
+if SOURCE_INDEX_TOTAL_TIMEOUT_SECONDS <= 0 or SOURCE_INDEX_TOTAL_TIMEOUT_SECONDS > 300:
+    raise ImproperlyConfigured("SOURCE_INDEX_TOTAL_TIMEOUT_SECONDS must be between 1 and 300.")
+if (
+    SOURCE_INDEX_SEARCH_BUDGET_SECONDS <= 0
+    or SOURCE_INDEX_SEARCH_BUDGET_SECONDS > SOURCE_INDEX_TOTAL_TIMEOUT_SECONDS - 30
+):
+    raise ImproperlyConfigured(
+        "SOURCE_INDEX_SEARCH_BUDGET_SECONDS must leave at least 30 seconds for finalization."
+    )
+if SOURCE_INDEX_MAX_REQUESTS <= 0 or SOURCE_INDEX_MAX_REQUESTS > 500:
+    raise ImproperlyConfigured("SOURCE_INDEX_MAX_REQUESTS must be between 1 and 500.")
+if SOURCE_INDEX_SEARCH_CONCURRENCY <= 0 or SOURCE_INDEX_SEARCH_CONCURRENCY > 10:
+    raise ImproperlyConfigured("SOURCE_INDEX_SEARCH_CONCURRENCY must be between 1 and 10.")
+if SOURCE_INDEX_MIN_REQUESTS <= 0 or SOURCE_INDEX_MIN_REQUESTS > SOURCE_INDEX_MAX_REQUESTS:
+    raise ImproperlyConfigured("SOURCE_INDEX_MIN_REQUESTS must be within the request budget.")
+if not 0 < SOURCE_INDEX_STOP_YIELD_RATIO < 1:
+    raise ImproperlyConfigured("SOURCE_INDEX_STOP_YIELD_RATIO must be between 0 and 1.")
+if SOURCE_INDEX_LOW_YIELD_BATCHES <= 0 or SOURCE_INDEX_LOW_YIELD_BATCHES > 10:
+    raise ImproperlyConfigured("SOURCE_INDEX_LOW_YIELD_BATCHES must be between 1 and 10.")
+if not 0 <= SOURCE_INDEX_MIN_RELEVANCE_SCORE <= 100:
+    raise ImproperlyConfigured("SOURCE_INDEX_MIN_RELEVANCE_SCORE must be between 0 and 100.")
+if not 0 <= SOURCE_INDEX_HIGH_WEIGHT_SCORE <= 100:
+    raise ImproperlyConfigured("SOURCE_INDEX_HIGH_WEIGHT_SCORE must be between 0 and 100.")
 
 WEBSITE_AUDIT_MAX_PAGES = int(os.getenv("WEBSITE_AUDIT_MAX_PAGES", "200"))
 WEBSITE_AUDIT_MAX_SITEMAPS = int(os.getenv("WEBSITE_AUDIT_MAX_SITEMAPS", "20"))
