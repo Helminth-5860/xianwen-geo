@@ -18,7 +18,7 @@ def seed_baidu_search_provider(apps, schema_editor):
     Provider = apps.get_model("ai", "AIProvider")
     Provider.objects.update_or_create(
         provider_key="baidu_search",
-        defaults={"canonical_name": "百度搜索", "is_builtin": True},
+        defaults={"canonical_name": "百度搜索（信源指数）", "is_builtin": True},
     )
 
 

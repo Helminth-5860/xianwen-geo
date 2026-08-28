@@ -1,7 +1,7 @@
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
-from ...catalog import BUILTIN_AI_MODELS
+from ...catalog import BUILTIN_AI_MODELS, BUILTIN_PROVIDER_KEYS
 from ...models import AIModel, AIModelRuntimeConfig, AIProvider
 
 
@@ -16,7 +16,7 @@ class Command(BaseCommand):
         apply_changes = options["apply"]
         changes = 0
         expected_model_keys = {item.model_key for item in BUILTIN_AI_MODELS}
-        expected_provider_keys = {item.provider_key for item in BUILTIN_AI_MODELS}
+        expected_provider_keys = set(BUILTIN_PROVIDER_KEYS)
         unexpected_models = AIModel.objects.exclude(model_key__in=expected_model_keys).count()
         unexpected_providers = AIProvider.objects.exclude(
             provider_key__in=expected_provider_keys

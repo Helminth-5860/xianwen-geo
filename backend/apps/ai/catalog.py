@@ -28,9 +28,10 @@ BUILTIN_AI_MODELS = (
 )
 
 # Non-model provider credentials that are managed by the same encrypted credential center.
-# They intentionally do not create AIModel rows and therefore do not appear in the model runtime table.
+# They intentionally do not create AIModel rows and therefore do not appear in the
+# model runtime table.
 BUILTIN_API_SERVICES = (
-    BuiltinAPIService("baidu_search", "百度搜索"),
+    BuiltinAPIService("baidu_search", "百度搜索（信源指数）"),
 )
 
 BUILTIN_PROVIDER_KEYS = tuple(

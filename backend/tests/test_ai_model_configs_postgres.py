@@ -3,6 +3,7 @@ import pytest
 from django.core.management import call_command
 from django.db import DatabaseError, IntegrityError, connection, transaction
 
+from apps.ai.catalog import BUILTIN_AI_MODELS, BUILTIN_PROVIDER_KEYS
 from apps.ai.models import AIModel, AIModelRuntimeConfig, AIProvider
 
 pytestmark = [
@@ -19,10 +20,10 @@ def synchronize_builtin_catalog():
     call_command("sync_ai_model_catalog", "--apply", verbosity=0)
 
 
-def test_seed_has_exactly_eight_provider_model_and_runtime_rows():
-    assert AIProvider.objects.count() == 8
-    assert AIModel.objects.count() == 8
-    assert AIModelRuntimeConfig.objects.count() == 8
+def test_seed_has_builtin_provider_model_and_runtime_rows():
+    assert AIProvider.objects.count() == len(BUILTIN_PROVIDER_KEYS)
+    assert AIModel.objects.count() == len(BUILTIN_AI_MODELS)
+    assert AIModelRuntimeConfig.objects.count() == len(BUILTIN_AI_MODELS)
 
 
 def test_builtin_provider_and_model_identity_and_delete_are_database_protected():

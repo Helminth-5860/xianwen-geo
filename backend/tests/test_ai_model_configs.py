@@ -5,7 +5,7 @@ from django.core.management import call_command
 from rest_framework.test import APIClient
 
 from apps.admin_rbac.models import AuditEvent
-from apps.ai.catalog import BUILTIN_AI_MODELS
+from apps.ai.catalog import BUILTIN_AI_MODELS, BUILTIN_PROVIDER_KEYS
 from apps.ai.errors import AIAdapterError
 from apps.ai.models import AICapabilityRuntimeConfig, AIModel, AIModelRuntimeConfig, AIProvider
 from apps.ai.registry import AIModelRegistry
@@ -42,15 +42,19 @@ def data(response):
 
 
 @pytest.mark.django_db
-def test_seed_contains_exactly_eight_disabled_builtin_models_and_is_idempotent():
+def test_seed_contains_builtin_providers_and_eight_disabled_models_idempotently():
     expected = [item.model_key for item in BUILTIN_AI_MODELS]
     assert (
         list(AIModel.objects.order_by("canonical_order").values_list("model_key", flat=True))
         == expected
     )
-    assert AIProvider.objects.count() == 8
-    assert AIModel.objects.count() == 8
-    assert AIModelRuntimeConfig.objects.count() == 8
+    assert AIProvider.objects.count() == len(BUILTIN_PROVIDER_KEYS)
+    assert (
+        AIProvider.objects.get(provider_key="baidu_search").canonical_name
+        == "百度搜索（信源指数）"
+    )
+    assert AIModel.objects.count() == len(BUILTIN_AI_MODELS)
+    assert AIModelRuntimeConfig.objects.count() == len(BUILTIN_AI_MODELS)
     assert not AIModelRuntimeConfig.objects.filter(enabled=True).exists()
     assert not AIModelRuntimeConfig.objects.filter(paused=True).exists()
 
@@ -62,9 +66,9 @@ def test_seed_contains_exactly_eight_disabled_builtin_models_and_is_idempotent()
     assert article_runtime.enabled is False
 
     call_command("sync_ai_model_catalog", "--apply", verbosity=0)
-    assert AIProvider.objects.count() == 8
-    assert AIModel.objects.count() == 8
-    assert AIModelRuntimeConfig.objects.count() == 8
+    assert AIProvider.objects.count() == len(BUILTIN_PROVIDER_KEYS)
+    assert AIModel.objects.count() == len(BUILTIN_AI_MODELS)
+    assert AIModelRuntimeConfig.objects.count() == len(BUILTIN_AI_MODELS)
 
 
 @pytest.mark.django_db
