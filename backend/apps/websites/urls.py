@@ -8,7 +8,11 @@ from .views import (
 )
 
 urlpatterns = [
-    path("subjects/<uuid:subject_id>/website", SubjectWebsiteView.as_view(), name="subject-website"),
+    path(
+        "subjects/<uuid:subject_id>/website",
+        SubjectWebsiteView.as_view(),
+        name="subject-website",
+    ),
     path(
         "subjects/<uuid:subject_id>/website/generate",
         SubjectWebsiteGenerateView.as_view(),
