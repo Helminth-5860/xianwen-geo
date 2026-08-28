@@ -46,9 +46,24 @@ export type PublicationResult = Readonly<{
   safeErrorCode?: string;
 }>;
 
+export type PublicationStatusInput = Readonly<{
+  credentials: PlatformCredentials;
+  externalPostId?: string;
+  managementUrl?: string;
+}>;
+
+export type PublicationStatusResult = Readonly<{
+  platformKey: string;
+  status: "submitted" | "published" | "failed" | "auth_required" | "unknown";
+  publicUrl?: string;
+  managementUrl?: string;
+  safeErrorCode?: string;
+}>;
+
 export interface PlatformPublisher {
   readonly platformKey: string;
   readonly verifiedCapabilities: readonly ("auth" | "draft" | "public_publish" | "image_upload")[];
   checkAuth(credentials: PlatformCredentials): Promise<{ ok: boolean; displayName?: string; externalAccountId?: string }>;
   publish(input: PublicationInput): Promise<PublicationResult>;
+  checkStatus?(input: PublicationStatusInput): Promise<PublicationStatusResult>;
 }
