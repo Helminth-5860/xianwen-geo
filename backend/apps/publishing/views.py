@@ -9,7 +9,7 @@ from rest_framework.views import APIView
 from apps.subjects.permissions import IsAvailableAuthenticatedUser
 
 from .authorization import begin_browser_authorization, sync_authorization_session
-from .models import PlatformAccount, PlatformAuthorizationSession
+from .models import PlatformAccount, PlatformAuthorizationSession, PublishingPreference
 from .serializers import (
     AuthorizationStartSerializer,
     PlatformToggleSerializer,
@@ -28,7 +28,7 @@ from .services import (
     subject_for_user,
     update_preference,
 )
-from .tasks import prepare_publication_task
+from .tasks import adopt_ready_articles_task, prepare_publication_task
 
 
 class SubjectPublishingStateView(APIView):
@@ -52,6 +52,8 @@ class SubjectPublishingPreferenceView(APIView):
             )
         except PublishingInputError as exc:
             raise ValidationError({"publishing": [str(exc)]}) from exc
+        if preference.is_enabled and preference.mode == PublishingPreference.Mode.MANAGED:
+            adopt_ready_articles_task.delay(str(request.user.pk), str(subject_id))
         return Response({"preference": preference_payload(preference)})
 
 
