@@ -1,12 +1,7 @@
 import { get, post, write } from "./auth-client";
 
 export type WebsiteStyleKey =
-  | "professional"
-  | "technology"
-  | "premium"
-  | "industrial"
-  | "local_service"
-  | "authority";
+  "professional" | "technology" | "premium" | "industrial" | "local_service" | "authority";
 export type WebsiteThemeKey = "ocean" | "obsidian" | "cloud" | "amethyst" | "jade" | "gold";
 export type WebsiteDensityKey = "compact" | "standard" | "rich";
 export type WebsiteProjectStatus = "draft" | "generating" | "ready" | "failed";
@@ -152,5 +147,9 @@ export function updateWebsiteDesign(
     expected_version: number;
   },
 ) {
-  return write<{ project: WebsiteProject }>("PATCH", `/subjects/${subjectId}/website/design`, input);
+  return write<{ project: WebsiteProject }>(
+    "PATCH",
+    `/subjects/${subjectId}/website/design`,
+    input,
+  );
 }

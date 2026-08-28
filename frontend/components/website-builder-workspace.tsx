@@ -7,25 +7,12 @@ import {
   ReloadOutlined,
   RocketOutlined,
 } from "@ant-design/icons";
-import {
-  Alert,
-  Button,
-  Card,
-  Empty,
-  Skeleton,
-  Space,
-  Tag,
-  Typography,
-  message,
-} from "antd";
+import { Alert, Button, Card, Empty, Skeleton, Space, Tag, Typography, message } from "antd";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useSubjectWorkspace } from "@/components/subject-workspace-context";
 import { WebsiteDesignSelector } from "@/components/website-design-selector";
-import {
-  WebsiteDraftPreview,
-  type WebsitePreviewImage,
-} from "@/components/website-draft-preview";
+import { WebsiteDraftPreview, type WebsitePreviewImage } from "@/components/website-draft-preview";
 import { userMessage } from "@/lib/auth-client";
 import {
   completeUploadIntent,
@@ -109,9 +96,7 @@ export function WebsiteBuilderWorkspace() {
         return { document, previewUrl: value.url } satisfies DocumentMaterial;
       }),
     );
-    return signed.flatMap((result) =>
-      result.status === "fulfilled" ? [result.value] : [],
-    );
+    return signed.flatMap((result) => (result.status === "fulfilled" ? [result.value] : []));
   }, []);
 
   const loadWorkspace = useCallback(
@@ -129,7 +114,9 @@ export function WebsiteBuilderWorkspace() {
         setDocuments(documentMaterials);
         setProject(website.project);
         setActiveJob(website.latest_job);
-        setGenerating(Boolean(website.latest_job && RUNNING_JOB_STATUSES.has(website.latest_job.status)));
+        setGenerating(
+          Boolean(website.latest_job && RUNNING_JOB_STATUSES.has(website.latest_job.status)),
+        );
         if (website.project) {
           setStyleKey(website.project.style_key);
           setThemeKey(website.project.theme_key);
@@ -211,9 +198,9 @@ export function WebsiteBuilderWorkspace() {
   const selectedCount = selectedAssetIds.length + selectedDocumentIds.length;
   const designDirty = Boolean(
     project &&
-      (project.style_key !== styleKey ||
-        project.theme_key !== themeKey ||
-        project.density_key !== densityKey),
+    (project.style_key !== styleKey ||
+      project.theme_key !== themeKey ||
+      project.density_key !== densityKey),
   );
 
   const selectStyle = (value: WebsiteStyleKey) => {
@@ -486,7 +473,8 @@ export function WebsiteBuilderWorkspace() {
                 官网图片素材
               </Typography.Title>
               <Typography.Text type="secondary">
-                已选择 {selectedCount}/{MAX_MATERIALS} 张。客户上传的真实图片会优先用于首屏和内容展示。
+                已选择 {selectedCount}/{MAX_MATERIALS}{" "}
+                张。客户上传的真实图片会优先用于首屏和内容展示。
               </Typography.Text>
             </div>
             <Space wrap>
