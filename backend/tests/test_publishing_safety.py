@@ -119,6 +119,7 @@ def test_wechat_is_not_exposed_without_component_ticket(monkeypatch):
     payload = {item["key"]: item for item in platform_payload({"wechat"})}
     assert payload["wechat"]["authorization_enabled"] is False
     assert payload["wechat"]["verification_state"] == "validation"
+    assert payload["wechat"]["supports_public_publish"] is False
 
 
 def test_platform_circuit_breaker_opens_and_success_resets():
@@ -155,6 +156,7 @@ def test_running_stale_window_is_always_beyond_publish_task_limit(monkeypatch):
 
 def test_production_enabled_platforms_require_dedicated_encryption_key(monkeypatch):
     monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("PUBLISHING_WORKER_EXPERIMENTAL_PLATFORM_KEYS", "zhihu")
     with override_settings(
         PUBLISHING_ENABLED_PLATFORM_KEYS=("zhihu",),
         PUBLISHING_WORKER_BASE_URL="http://publishing-worker:8092",
@@ -165,8 +167,22 @@ def test_production_enabled_platforms_require_dedicated_encryption_key(monkeypat
             validate_runtime_configuration()
 
 
+def test_browser_platform_gate_must_match_worker_gate(monkeypatch):
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("PUBLISHING_WORKER_EXPERIMENTAL_PLATFORM_KEYS", "")
+    with override_settings(
+        PUBLISHING_ENABLED_PLATFORM_KEYS=("zhihu",),
+        PUBLISHING_WORKER_BASE_URL="http://publishing-worker:8092",
+        PUBLISHING_WORKER_INTERNAL_SECRET="x" * 32,
+        PUBLISHING_CREDENTIAL_ENCRYPTION_KEY=Fernet.generate_key().decode("ascii"),
+    ):
+        with pytest.raises(ImproperlyConfigured):
+            validate_runtime_configuration()
+
+
 def test_valid_dedicated_key_allows_enabled_platform_runtime(monkeypatch):
     monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("PUBLISHING_WORKER_EXPERIMENTAL_PLATFORM_KEYS", "zhihu")
     with override_settings(
         PUBLISHING_ENABLED_PLATFORM_KEYS=("zhihu",),
         PUBLISHING_WORKER_BASE_URL="http://publishing-worker:8092",
