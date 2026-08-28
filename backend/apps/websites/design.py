@@ -13,7 +13,7 @@ STYLE_OPTIONS = (
     {
         "key": "professional",
         "name": "专业商务",
-        "description": "稳重清晰，适合企业服务、咨询、贸易与通用 B2B 场景。",
+        "description": "稳重清晰，适合企业服务、咨询、贸易与企业间业务。",
     },
     {
         "key": "technology",
@@ -155,19 +155,57 @@ def recommend_design(*, user, subject_id) -> dict[str, str]:
     rules = (
         (
             "industrial",
-            ("制造", "机械", "设备", "工厂", "工业", "自动化", "机器人", "工程", "五金", "材料"),
+            (
+                "制造",
+                "机械",
+                "设备",
+                "工厂",
+                "工业",
+                "自动化",
+                "机器人",
+                "工程",
+                "五金",
+                "材料",
+            ),
             "obsidian",
             "rich",
         ),
         (
             "local_service",
-            ("家政", "装修", "门店", "维修", "培训", "教育", "诊所", "美容", "健身", "物业", "搬家", "婚庆"),
+            (
+                "家政",
+                "装修",
+                "门店",
+                "维修",
+                "培训",
+                "教育",
+                "医疗",
+                "诊所",
+                "餐饮",
+                "美容",
+                "摄影",
+                "健身",
+                "物业",
+                "搬家",
+                "婚庆",
+            ),
             "jade",
             "standard",
         ),
         (
             "authority",
-            ("咨询", "研究", "律师", "法律", "会计", "审计", "专利", "知识产权", "认证", "研究院"),
+            (
+                "咨询",
+                "研究",
+                "律师",
+                "法律",
+                "会计",
+                "审计",
+                "专利",
+                "知识产权",
+                "认证",
+                "研究院",
+            ),
             "cloud",
             "rich",
         ),
@@ -179,7 +217,17 @@ def recommend_design(*, user, subject_id) -> dict[str, str]:
         ),
         (
             "technology",
-            ("人工智能", "ai", "软件", "数字化", "数据", "云计算", "saas", "信息技术", "智能系统"),
+            (
+                "人工智能",
+                "ai",
+                "软件",
+                "数字化",
+                "数据",
+                "云计算",
+                "saas",
+                "信息技术",
+                "智能系统",
+            ),
             "ocean",
             "standard",
         ),
@@ -225,7 +273,11 @@ def apply_project_design(
     density_key: str,
     expected_version: int | None = None,
 ) -> WebsiteProject:
-    if style_key not in STYLE_NAMES or theme_key not in THEME_NAMES or density_key not in DENSITY_NAMES:
+    if (
+        style_key not in STYLE_NAMES
+        or theme_key not in THEME_NAMES
+        or density_key not in DENSITY_NAMES
+    ):
         raise WebsiteDesignConflict("请选择有效的网站设计")
 
     with transaction.atomic():
