@@ -23,9 +23,11 @@ from apps.source_index.scoring import (
     calculate_index,
     classify_source,
     freshness_score,
+    mark_cross_domain_reposts,
     normalize_url,
     relevance_score,
     source_weight,
+    url_identity_hash,
     visibility_score,
 )
 from apps.subjects.models import Subject, SubjectType
@@ -39,6 +41,14 @@ class SourceScoringTests(SimpleTestCase):
         self.assertEqual(url, "https://example.com/a?id=42")
         self.assertEqual(domain, "example.com")
         self.assertEqual(root, "example.com")
+
+    def test_url_identity_hash_is_fixed_width_and_stable(self):
+        first = url_identity_hash("https://example.com/" + "a" * 3500)
+        second = url_identity_hash("https://example.com/" + "a" * 3500)
+        changed = url_identity_hash("https://example.com/" + "b" * 3500)
+        self.assertEqual(len(first), 64)
+        self.assertEqual(first, second)
+        self.assertNotEqual(first, changed)
 
     def test_cn_root_domain(self):
         normalized = normalize_url("https://news.example.com.cn/a")
@@ -95,6 +105,22 @@ class SourceScoringTests(SimpleTestCase):
         self.assertGreater(score, 60)
         self.assertLessEqual(score, 100)
         self.assertEqual(factors["diversity"], 100.0)
+
+    def test_repost_cluster_requires_two_distinct_root_domains(self):
+        same_domain = [
+            {"title": "显问发布新一代 GEO 智能系统", "root_domain": "example.com"},
+            {"title": "显问发布新一代 GEO 智能系统", "root_domain": "example.com"},
+        ]
+        mark_cross_domain_reposts(same_domain)
+        self.assertEqual([item["repost_cluster_id"] for item in same_domain], ["", ""])
+
+        cross_domain = [
+            {"title": "显问发布新一代 GEO 智能系统", "root_domain": "media-a.cn"},
+            {"title": "显问发布新一代 GEO 智能系统", "root_domain": "media-b.cn"},
+        ]
+        mark_cross_domain_reposts(cross_domain)
+        self.assertTrue(cross_domain[0]["repost_cluster_id"])
+        self.assertEqual(cross_domain[0]["repost_cluster_id"], cross_domain[1]["repost_cluster_id"])
 
 
 @override_settings(
@@ -240,10 +266,12 @@ class SourceIndexApiIsolationTests(TestCase):
         self.scan.index_score = Decimal("60.00")
         self.scan.finished_at = timezone.now()
         self.scan.save()
+        normalized_url = "https://example.com/report"
         item = SourceIndexItem.objects.create(
             scan=self.scan,
-            original_url="https://example.com/report",
-            normalized_url="https://example.com/report",
+            original_url=normalized_url,
+            normalized_url=normalized_url,
+            normalized_url_hash=url_identity_hash(normalized_url),
             domain="example.com",
             root_domain="example.com",
             website="示例媒体",
@@ -268,7 +296,9 @@ class SourceIndexApiIsolationTests(TestCase):
         self.client.force_authenticate(self.user_a)
         response = self.client.get(f"/api/v1/subjects/{self.subject.id}/source-index/")
         self.assertEqual(response.status_code, 200)
-        coverage = response.json()["latest_result"]["query_coverage"]
+        payload = response.json()
+        self.assertTrue(payload["success"])
+        coverage = payload["data"]["latest_result"]["query_coverage"]
         self.assertEqual(len(coverage), 1)
         self.assertIsNone(coverage[0]["best_rank"])
 
