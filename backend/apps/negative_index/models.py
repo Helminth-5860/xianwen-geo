@@ -31,10 +31,26 @@ class NegativeIndexScan(models.Model):  # noqa: DJ008
         COMPLETED = "completed", "Completed"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="negative_index_scans")
-    subject = models.ForeignKey("subjects.Subject", on_delete=models.PROTECT, related_name="negative_index_scans")
-    status = models.CharField(max_length=20, choices=Status.choices, default=Status.QUEUED)
-    stage = models.CharField(max_length=20, choices=Stage.choices, default=Stage.PREPARING)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="negative_index_scans",
+    )
+    subject = models.ForeignKey(
+        "subjects.Subject",
+        on_delete=models.PROTECT,
+        related_name="negative_index_scans",
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.QUEUED,
+    )
+    stage = models.CharField(
+        max_length=20,
+        choices=Stage.choices,
+        default=Stage.PREPARING,
+    )
     provider = models.CharField(max_length=32, default="baidu")
     ai_provider = models.CharField(max_length=32, blank=True)
     ai_model_key = models.CharField(max_length=100, blank=True)
@@ -50,11 +66,19 @@ class NegativeIndexScan(models.Model):  # noqa: DJ008
     high_risk_event_count = models.PositiveIntegerField(default=0)
     recent_30d_event_count = models.PositiveIntegerField(default=0)
     verified_item_count = models.PositiveIntegerField(default=0)
-    index_score = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    index_score = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        null=True,
+        blank=True,
+    )
     factor_scores = models.JSONField(default=dict)
     progress = models.JSONField(default=dict)
     formula_version = models.CharField(max_length=64, default="negative-index-v1")
-    classifier_version = models.CharField(max_length=64, default="negative-classifier-v1")
+    classifier_version = models.CharField(
+        max_length=64,
+        default="negative-classifier-v1",
+    )
     stable_error_code = models.CharField(max_length=100, blank=True)
     started_at = models.DateTimeField(null=True, blank=True)
     finished_at = models.DateTimeField(null=True, blank=True)
@@ -68,14 +92,53 @@ class NegativeIndexScan(models.Model):  # noqa: DJ008
         db_table = "negative_index_scans"
         ordering = ("-created_at", "-id")
         indexes = [
-            models.Index(fields=("user", "subject", "created_at"), name="neg_scan_user_subj_idx"),
-            models.Index(fields=("status", "created_at"), name="neg_scan_status_idx"),
+            models.Index(
+                fields=("user", "subject", "created_at"),
+                name="neg_scan_user_subj_idx",
+            ),
+            models.Index(
+                fields=("status", "created_at"),
+                name="neg_scan_status_idx",
+            ),
         ]
         constraints = [
-            models.CheckConstraint(condition=Q(status__in=("queued", "running", "succeeded", "partial", "limit_reached", "failed")), name="neg_scan_status_valid"),
-            models.CheckConstraint(condition=Q(stage__in=("preparing", "searching", "classifying", "verifying", "clustering", "scoring", "completed")), name="neg_scan_stage_valid"),
-            models.CheckConstraint(condition=Q(index_score__isnull=True) | Q(index_score__gte=0, index_score__lte=100), name="neg_scan_index_range"),
-            models.UniqueConstraint(fields=("user", "subject"), condition=Q(status__in=("queued", "running")), name="neg_scan_one_active_per_subject"),
+            models.CheckConstraint(
+                condition=Q(
+                    status__in=(
+                        "queued",
+                        "running",
+                        "succeeded",
+                        "partial",
+                        "limit_reached",
+                        "failed",
+                    )
+                ),
+                name="neg_scan_status_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(
+                    stage__in=(
+                        "preparing",
+                        "searching",
+                        "classifying",
+                        "verifying",
+                        "clustering",
+                        "scoring",
+                        "completed",
+                    )
+                ),
+                name="neg_scan_stage_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(index_score__isnull=True)
+                | Q(index_score__gte=0, index_score__lte=100),
+                name="neg_scan_index_range",
+            ),
+            models.UniqueConstraint(
+                fields=("user", "subject"),
+                condition=Q(status__in=("queued", "running")),
+                name="neg_scan_one_active_per_subject",
+            ),
         ]
 
     def delete(self, *args, **kwargs):
@@ -112,7 +175,11 @@ class NegativeEvent(models.Model):  # noqa: DJ008
         FALSE_POSITIVE = "false_positive", "误判"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    scan = models.ForeignKey(NegativeIndexScan, on_delete=models.CASCADE, related_name="events")
+    scan = models.ForeignKey(
+        NegativeIndexScan,
+        on_delete=models.CASCADE,
+        related_name="events",
+    )
     category = models.CharField(max_length=32, choices=Category.choices)
     claim_type = models.CharField(max_length=32, choices=ClaimType.choices)
     status = models.CharField(max_length=24, choices=Status.choices)
@@ -134,17 +201,44 @@ class NegativeEvent(models.Model):  # noqa: DJ008
         db_table = "negative_events"
         ordering = ("-current_risk", "-last_seen_at", "id")
         indexes = [
-            models.Index(fields=("scan", "category", "current_risk"), name="neg_event_category_idx"),
-            models.Index(fields=("scan", "status", "current_risk"), name="neg_event_status_idx"),
-            models.Index(fields=("scan", "last_seen_at"), name="neg_event_date_idx"),
+            models.Index(
+                fields=("scan", "category", "current_risk"),
+                name="neg_event_category_idx",
+            ),
+            models.Index(
+                fields=("scan", "status", "current_risk"),
+                name="neg_event_status_idx",
+            ),
+            models.Index(
+                fields=("scan", "last_seen_at"),
+                name="neg_event_date_idx",
+            ),
         ]
         constraints = [
-            models.UniqueConstraint(fields=("scan", "cluster_key"), name="neg_event_cluster_unique"),
-            models.CheckConstraint(condition=Q(severity_score__lte=100), name="neg_event_severity_lte100"),
-            models.CheckConstraint(condition=Q(evidence_score__lte=100), name="neg_event_evidence_lte100"),
-            models.CheckConstraint(condition=Q(visibility_score__lte=100), name="neg_event_visibility_lte100"),
-            models.CheckConstraint(condition=Q(freshness_score__lte=100), name="neg_event_freshness_lte100"),
-            models.CheckConstraint(condition=Q(current_risk__gte=0, current_risk__lte=100), name="neg_event_risk_range"),
+            models.UniqueConstraint(
+                fields=("scan", "cluster_key"),
+                name="neg_event_cluster_unique",
+            ),
+            models.CheckConstraint(
+                condition=Q(severity_score__lte=100),
+                name="neg_event_severity_lte100",
+            ),
+            models.CheckConstraint(
+                condition=Q(evidence_score__lte=100),
+                name="neg_event_evidence_lte100",
+            ),
+            models.CheckConstraint(
+                condition=Q(visibility_score__lte=100),
+                name="neg_event_visibility_lte100",
+            ),
+            models.CheckConstraint(
+                condition=Q(freshness_score__lte=100),
+                name="neg_event_freshness_lte100",
+            ),
+            models.CheckConstraint(
+                condition=Q(current_risk__gte=0, current_risk__lte=100),
+                name="neg_event_risk_range",
+            ),
         ]
 
 
@@ -160,8 +254,16 @@ class NegativeIndexItem(models.Model):  # noqa: DJ008
         VERIFIED_AI = "verified_ai", "正文核验后AI判定"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    scan = models.ForeignKey(NegativeIndexScan, on_delete=models.CASCADE, related_name="items")
-    event = models.ForeignKey(NegativeEvent, on_delete=models.CASCADE, related_name="items")
+    scan = models.ForeignKey(
+        NegativeIndexScan,
+        on_delete=models.CASCADE,
+        related_name="items",
+    )
+    event = models.ForeignKey(
+        NegativeEvent,
+        on_delete=models.CASCADE,
+        related_name="items",
+    )
     original_url = models.URLField(max_length=4096)
     normalized_url = models.CharField(max_length=4096)
     domain = models.CharField(max_length=255)
@@ -181,13 +283,29 @@ class NegativeIndexItem(models.Model):  # noqa: DJ008
     negative_confidence = models.PositiveSmallIntegerField(default=0)
     severity_score = models.PositiveSmallIntegerField(default=0)
     evidence_confidence = models.PositiveSmallIntegerField(default=0)
-    category = models.CharField(max_length=32, choices=NegativeEvent.Category.choices)
-    claim_type = models.CharField(max_length=32, choices=NegativeEvent.ClaimType.choices)
-    event_status = models.CharField(max_length=24, choices=NegativeEvent.Status.choices)
+    category = models.CharField(
+        max_length=32,
+        choices=NegativeEvent.Category.choices,
+    )
+    claim_type = models.CharField(
+        max_length=32,
+        choices=NegativeEvent.ClaimType.choices,
+    )
+    event_status = models.CharField(
+        max_length=24,
+        choices=NegativeEvent.Status.choices,
+    )
     event_title = models.CharField(max_length=500)
     ai_summary = models.TextField(blank=True)
-    classification_source = models.CharField(max_length=20, choices=ClassificationSource.choices)
-    verification_status = models.CharField(max_length=20, choices=VerificationStatus.choices, default=VerificationStatus.NOT_REQUESTED)
+    classification_source = models.CharField(
+        max_length=20,
+        choices=ClassificationSource.choices,
+    )
+    verification_status = models.CharField(
+        max_length=20,
+        choices=VerificationStatus.choices,
+        default=VerificationStatus.NOT_REQUESTED,
+    )
     verification_excerpt = models.TextField(blank=True)
     verification_error_code = models.CharField(max_length=100, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -196,27 +314,71 @@ class NegativeIndexItem(models.Model):  # noqa: DJ008
         db_table = "negative_index_items"
         ordering = ("-severity_score", "-evidence_confidence", "best_rank", "id")
         indexes = [
-            models.Index(fields=("scan", "category", "severity_score"), name="neg_item_category_idx"),
-            models.Index(fields=("scan", "root_domain"), name="neg_item_domain_idx"),
-            models.Index(fields=("event", "published_at"), name="neg_item_event_date_idx"),
+            models.Index(
+                fields=("scan", "category", "severity_score"),
+                name="neg_item_category_idx",
+            ),
+            models.Index(
+                fields=("scan", "root_domain"),
+                name="neg_item_domain_idx",
+            ),
+            models.Index(
+                fields=("event", "published_at"),
+                name="neg_item_event_date_idx",
+            ),
         ]
         constraints = [
-            models.UniqueConstraint(fields=("scan", "normalized_url"), name="neg_item_scan_url_unique"),
-            models.CheckConstraint(condition=Q(authority_score__lte=100), name="neg_item_authority_lte100"),
-            models.CheckConstraint(condition=Q(relevance_score__lte=100), name="neg_item_relevance_lte100"),
-            models.CheckConstraint(condition=Q(visibility_score__lte=100), name="neg_item_visibility_lte100"),
-            models.CheckConstraint(condition=Q(freshness_score__lte=100), name="neg_item_freshness_lte100"),
-            models.CheckConstraint(condition=Q(rule_signal_score__lte=100), name="neg_item_rule_lte100"),
-            models.CheckConstraint(condition=Q(negative_confidence__lte=100), name="neg_item_negative_lte100"),
-            models.CheckConstraint(condition=Q(severity_score__lte=100), name="neg_item_severity_lte100"),
-            models.CheckConstraint(condition=Q(evidence_confidence__lte=100), name="neg_item_evidence_lte100"),
+            models.UniqueConstraint(
+                fields=("scan", "normalized_url"),
+                name="neg_item_scan_url_unique",
+            ),
+            models.CheckConstraint(
+                condition=Q(authority_score__lte=100),
+                name="neg_item_authority_lte100",
+            ),
+            models.CheckConstraint(
+                condition=Q(relevance_score__lte=100),
+                name="neg_item_relevance_lte100",
+            ),
+            models.CheckConstraint(
+                condition=Q(visibility_score__lte=100),
+                name="neg_item_visibility_lte100",
+            ),
+            models.CheckConstraint(
+                condition=Q(freshness_score__lte=100),
+                name="neg_item_freshness_lte100",
+            ),
+            models.CheckConstraint(
+                condition=Q(rule_signal_score__lte=100),
+                name="neg_item_rule_lte100",
+            ),
+            models.CheckConstraint(
+                condition=Q(negative_confidence__lte=100),
+                name="neg_item_negative_lte100",
+            ),
+            models.CheckConstraint(
+                condition=Q(severity_score__lte=100),
+                name="neg_item_severity_lte100",
+            ),
+            models.CheckConstraint(
+                condition=Q(evidence_confidence__lte=100),
+                name="neg_item_evidence_lte100",
+            ),
         ]
 
 
 class NegativeIndexHit(models.Model):  # noqa: DJ008
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    scan = models.ForeignKey(NegativeIndexScan, on_delete=models.CASCADE, related_name="hits")
-    item = models.ForeignKey(NegativeIndexItem, on_delete=models.CASCADE, related_name="hits")
+    scan = models.ForeignKey(
+        NegativeIndexScan,
+        on_delete=models.CASCADE,
+        related_name="hits",
+    )
+    item = models.ForeignKey(
+        NegativeIndexItem,
+        on_delete=models.CASCADE,
+        related_name="hits",
+    )
     query = models.CharField(max_length=200)
     rank = models.PositiveIntegerField()
     range_start = models.DateField(null=True, blank=True)
@@ -227,9 +389,22 @@ class NegativeIndexHit(models.Model):  # noqa: DJ008
         db_table = "negative_index_hits"
         ordering = ("scan_id", "query", "rank", "id")
         indexes = [
-            models.Index(fields=("scan", "query", "rank"), name="neg_hit_query_rank_idx"),
+            models.Index(
+                fields=("scan", "query", "rank"),
+                name="neg_hit_query_rank_idx",
+            ),
             models.Index(fields=("item", "rank"), name="neg_hit_item_rank_idx"),
         ]
         constraints = [
-            models.UniqueConstraint(fields=("scan", "item", "query", "range_start", "range_end"), name="neg_hit_item_query_unique", nulls_distinct=False)
+            models.UniqueConstraint(
+                fields=(
+                    "scan",
+                    "item",
+                    "query",
+                    "range_start",
+                    "range_end",
+                ),
+                name="neg_hit_item_query_unique",
+                nulls_distinct=False,
+            )
         ]
