@@ -69,6 +69,32 @@ function publicArticleUrl(status: WechatResponse) {
   return detail?.item?.find((item) => typeof item.article_url === "string")?.article_url;
 }
 
+function injectIllustrations(contentHtml: string, illustrations: Array<{ url: string; alt: string }>) {
+  if (!illustrations.length) return contentHtml;
+  const blocks = illustrations.map(
+    (item) => `<p><img src="${item.url}" alt="${item.alt.replace(/[<>\"]/g, "")}" /></p>`,
+  );
+  const endings = [...contentHtml.matchAll(/<\/(?:p|h2|h3|blockquote|ul|ol)>/gi)];
+  if (!endings.length) return `${contentHtml}${blocks.join("")}`;
+
+  const insertions = blocks.map((block, index) => {
+    const ordinal = Math.min(
+      endings.length - 1,
+      Math.max(0, Math.floor(((index + 1) * endings.length) / (blocks.length + 1))),
+    );
+    const match = endings[ordinal];
+    return { position: (match.index ?? 0) + match[0].length, block };
+  });
+  let result = contentHtml;
+  let offset = 0;
+  for (const insertion of insertions) {
+    const position = insertion.position + offset;
+    result = `${result.slice(0, position)}${insertion.block}${result.slice(position)}`;
+    offset += insertion.block.length;
+  }
+  return result;
+}
+
 export class WechatPublisher implements PlatformPublisher {
   readonly platformKey = "wechat";
   // 正式 API 流程已接入，但必须用显问测试公众号完成真实发布验收后才能标记为已验证。
@@ -121,16 +147,17 @@ export class WechatPublisher implements PlatformPublisher {
       const thumbMediaId = typeof coverResult.media_id === "string" ? coverResult.media_id : "";
       if (!thumbMediaId) return { success: false, platformKey: this.platformKey, status: "failed", safeErrorCode: "media_invalid" };
 
-      let content = input.contentHtml;
+      const illustrations: Array<{ url: string; alt: string }> = [];
       for (const asset of input.assets.filter((item) => item.role !== "cover").slice(0, 8)) {
         try {
           const uploaded = await uploadMaterial(token, asset.url, "image");
           const url = typeof uploaded.url === "string" ? uploaded.url : "";
-          if (url) content += `<p><img src="${url}" alt="${(asset.alt || "").replace(/[<>\"]/g, "")}" /></p>`;
+          if (url) illustrations.push({ url, alt: asset.alt || "" });
         } catch {
           // 单张正文插图失败不应破坏主文章；封面失败才阻断发布。
         }
       }
+      const content = injectIllustrations(input.contentHtml, illustrations);
 
       const draft = await jsonRequest(
         `https://api.weixin.qq.com/cgi-bin/draft/add?access_token=${encodeURIComponent(token)}`,
