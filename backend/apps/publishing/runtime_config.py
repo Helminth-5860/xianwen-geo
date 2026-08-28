@@ -26,6 +26,15 @@ _PLATFORM_KEYS = {
     "jianshu",
     "douban",
 }
+_BROWSER_PLATFORM_KEYS = _PLATFORM_KEYS - {"wechat"}
+
+
+def _worker_experimental_keys() -> set[str]:
+    return {
+        item.strip().lower()
+        for item in os.getenv("PUBLISHING_WORKER_EXPERIMENTAL_PLATFORM_KEYS", "").split(",")
+        if item.strip()
+    }
 
 
 def validate_runtime_configuration() -> None:
@@ -61,6 +70,20 @@ def validate_runtime_configuration() -> None:
     if len(worker_secret) < 32:
         raise ImproperlyConfigured(
             "PUBLISHING_WORKER_INTERNAL_SECRET is required before enabling publishing platforms."
+        )
+
+    browser_enabled = configured & _BROWSER_PLATFORM_KEYS
+    worker_enabled = _worker_experimental_keys()
+    missing_worker_gate = browser_enabled - worker_enabled
+    if missing_worker_gate:
+        raise ImproperlyConfigured(
+            "Browser publishing platforms enabled in Django must also be explicitly enabled "
+            "in PUBLISHING_WORKER_EXPERIMENTAL_PLATFORM_KEYS after real-account acceptance."
+        )
+    unknown_worker_keys = worker_enabled - _BROWSER_PLATFORM_KEYS
+    if unknown_worker_keys:
+        raise ImproperlyConfigured(
+            "PUBLISHING_WORKER_EXPERIMENTAL_PLATFORM_KEYS contains unsupported browser platform keys."
         )
 
     if os.getenv("APP_ENV", "local").strip().lower() == "production" and not encryption_key:
