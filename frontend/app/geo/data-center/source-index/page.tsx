@@ -497,7 +497,7 @@ export default function SourceIndexPage() {
                   <Statistic title="高权重信源" value={latestResult.high_weight_count} />
                 </Card>
                 <Card>
-                  <Statistic title="近30天新增" value={latestResult.recent_30d_count} />
+                  <Statistic title="近30天信源" value={latestResult.recent_30d_count} />
                 </Card>
               </section>
 
