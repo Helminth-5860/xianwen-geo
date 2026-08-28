@@ -69,8 +69,12 @@ def test_generate_serializer_limits_combined_image_materials():
     serializer = WebsiteGenerateSerializer(
         data={
             "style_key": "professional",
-            "image_asset_ids": [f"00000000-0000-0000-0000-{index:012d}" for index in range(8)],
-            "document_ids": [f"10000000-0000-0000-0000-{index:012d}" for index in range(5)],
+            "image_asset_ids": [
+                f"00000000-0000-0000-0000-{index:012d}" for index in range(8)
+            ],
+            "document_ids": [
+                f"10000000-0000-0000-0000-{index:012d}" for index in range(5)
+            ],
         }
     )
 
