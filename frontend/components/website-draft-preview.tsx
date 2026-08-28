@@ -1,9 +1,8 @@
 "use client";
 
 import { Segmented, Space, Tag, Typography } from "antd";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
-import type { ImageAsset } from "@/lib/images-client";
 import type {
   WebsiteContact,
   WebsitePage,
@@ -13,10 +12,17 @@ import type {
 
 import styles from "./website-draft-preview.module.css";
 
+export type WebsitePreviewImage = Readonly<{
+  id: string;
+  url: string;
+  name: string;
+  source: "客户上传" | "内容图片库";
+}>;
+
 type Props = Readonly<{
   project: WebsiteProject;
   subjectName: string;
-  images: ImageAsset[];
+  materials: WebsitePreviewImage[];
 }>;
 
 const contactLabels: Readonly<Record<keyof WebsiteContact, string>> = {
@@ -42,7 +48,7 @@ function SectionView({
   section: WebsiteSection;
   index: number;
   contact: WebsiteContact;
-  images: ImageAsset[];
+  images: WebsitePreviewImage[];
 }>) {
   if (section.type === "faq") {
     return (
@@ -97,7 +103,7 @@ function SectionView({
             return (
               <article className={styles.card} key={`${item.title}-${itemIndex}`}>
                 {image?.url && (
-                  // Signed subject-library URLs are already access controlled by the backend.
+                  // Signed private-media URLs are issued by the existing backend.
                   // eslint-disable-next-line @next/next/no-img-element
                   <img className={styles.cardImage} src={image.url} alt={item.title} />
                 )}
@@ -137,20 +143,20 @@ function PagePreview({
   page,
   project,
   subjectName,
-  selectedImages,
+  materials,
   onNavigate,
 }: Readonly<{
   page: WebsitePage;
   project: WebsiteProject;
   subjectName: string;
-  selectedImages: ImageAsset[];
+  materials: WebsitePreviewImage[];
   onNavigate: (key: WebsitePage["key"]) => void;
 }>) {
   const heroIndex = page.sections.findIndex((section) => section.type === "hero");
   const hero = page.sections[heroIndex >= 0 ? heroIndex : 0];
   const remaining = page.sections.filter((_, index) => index !== (heroIndex >= 0 ? heroIndex : 0));
-  const heroImage = selectedImages[0];
-  const cardImages = selectedImages.slice(1);
+  const heroImage = materials[0];
+  const cardImages = materials.slice(1);
 
   return (
     <>
@@ -203,7 +209,7 @@ function PagePreview({
   );
 }
 
-export function WebsiteDraftPreview({ project, subjectName, images }: Props) {
+export function WebsiteDraftPreview({ project, subjectName, materials }: Props) {
   const pages = project.site?.pages ?? [];
   const [device, setDevice] = useState<"电脑预览" | "手机预览">("电脑预览");
   const [activePageKey, setActivePageKey] = useState<WebsitePage["key"]>("home");
@@ -213,14 +219,6 @@ export function WebsiteDraftPreview({ project, subjectName, images }: Props) {
       setActivePageKey(pages[0].key);
     }
   }, [activePageKey, pages]);
-
-  const selectedImages = useMemo(() => {
-    const byId = new Map(images.map((image) => [image.id, image]));
-    return project.selected_asset_ids.flatMap((id) => {
-      const image = byId.get(id);
-      return image ? [image] : [];
-    });
-  }, [images, project.selected_asset_ids]);
 
   const activePage = pages.find((page) => page.key === activePageKey) ?? pages[0];
   if (!activePage) return null;
@@ -257,7 +255,7 @@ export function WebsiteDraftPreview({ project, subjectName, images }: Props) {
             page={activePage}
             project={project}
             subjectName={subjectName}
-            selectedImages={selectedImages}
+            materials={materials}
             onNavigate={setActivePageKey}
           />
         </div>
