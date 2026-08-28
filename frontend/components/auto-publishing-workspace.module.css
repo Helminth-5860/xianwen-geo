@@ -1,0 +1,156 @@
+.workspace {
+  display: grid;
+  gap: 20px;
+}
+
+.hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 24px;
+  align-items: center;
+  padding: 24px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 20px;
+  background: linear-gradient(135deg, rgba(255,255,255,0.98), rgba(244,247,251,0.92));
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.06);
+}
+
+.heroTitle {
+  margin: 6px 0 8px;
+  font-size: 26px;
+  line-height: 1.25;
+  color: #111827;
+}
+
+.heroDescription {
+  max-width: 720px;
+  margin: 0;
+  color: #667085;
+  line-height: 1.75;
+}
+
+.summaryGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.summaryCard {
+  padding: 18px;
+  border: 1px solid rgba(15, 23, 42, 0.07);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.summaryValue {
+  margin-top: 8px;
+  font-size: 28px;
+  font-weight: 700;
+  color: #111827;
+}
+
+.sectionCard {
+  border-radius: 18px !important;
+}
+
+.platformGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.platformCard {
+  display: grid;
+  gap: 14px;
+  min-height: 168px;
+  padding: 18px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 16px;
+  background: #fff;
+}
+
+.platformHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.platformName {
+  margin: 0;
+  font-size: 17px;
+  color: #111827;
+}
+
+.platformMeta {
+  color: #667085;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.platformActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: auto;
+}
+
+.settingGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.settingBlock {
+  padding: 18px;
+  border: 1px solid rgba(15, 23, 42, 0.07);
+  border-radius: 16px;
+  background: #fbfcfe;
+}
+
+.settingTitle {
+  margin-bottom: 10px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.settingHint {
+  margin-top: 8px;
+  color: #667085;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.emptyPlan {
+  padding: 34px 0;
+  text-align: center;
+  color: #667085;
+}
+
+.targetList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+@media (max-width: 1100px) {
+  .summaryGrid,
+  .platformGrid,
+  .settingGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .hero {
+    grid-template-columns: 1fr;
+  }
+
+  .summaryGrid,
+  .platformGrid,
+  .settingGrid {
+    grid-template-columns: 1fr;
+  }
+}
