@@ -81,9 +81,15 @@ INSTALLED_APPS = [
     "apps.articles",
     "apps.images",
     "apps.videos",
+    "apps.media_inquiries",
     "apps.websites",
     "apps.operations",
 ]
+
+PAID_MEDIA_CATALOG_PATH = os.getenv(
+    "PAID_MEDIA_CATALOG_PATH",
+    str(BASE_DIR.parent / "config" / "paid-media-catalog.json"),
+).strip()
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
