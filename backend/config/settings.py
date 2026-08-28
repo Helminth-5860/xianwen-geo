@@ -21,7 +21,7 @@ for setting_name in dir(settings_module):
         globals()[setting_name] = getattr(settings_module, setting_name)
 
 # 官网深度检测在所有运行环境共用同一套扫描内核；网络安全策略复用 web_sources。
-INSTALLED_APPS = [*INSTALLED_APPS, "apps.website_audits"]
+INSTALLED_APPS = [*INSTALLED_APPS, "apps.website_audits", "apps.publications"]
 WEBSITE_AUDIT_MAX_PAGES = int(os.getenv("WEBSITE_AUDIT_MAX_PAGES", "200"))
 WEBSITE_AUDIT_MAX_SITEMAPS = int(os.getenv("WEBSITE_AUDIT_MAX_SITEMAPS", "20"))
 WEBSITE_AUDIT_MAX_RESPONSE_BYTES = int(
@@ -136,3 +136,23 @@ if WEBSITE_AUDIT_SEMANTIC_MAX_KEYWORDS > 200:
     raise ImproperlyConfigured("WEBSITE_AUDIT_SEMANTIC_MAX_KEYWORDS must not exceed 200.")
 if WEBSITE_AUDIT_SEMANTIC_MAX_QUESTIONS > 100:
     raise ImproperlyConfigured("WEBSITE_AUDIT_SEMANTIC_MAX_QUESTIONS must not exceed 100.")
+
+# 自动发文：授权凭据与浏览器会话统一使用 FIELD_ENCRYPTION_MASTER_KEY 加密保存。
+PUBLISHING_IDEMPOTENCY_HMAC_KEY = os.getenv(
+    "PUBLISHING_IDEMPOTENCY_HMAC_KEY",
+    "local-test-publication-idempotency-key-not-for-production",
+).strip()
+if len(PUBLISHING_IDEMPOTENCY_HMAC_KEY) < 32:
+    raise ImproperlyConfigured("PUBLISHING_IDEMPOTENCY_HMAC_KEY is too weak; minimum length is 32.")
+AUTO_PUBLISH_ALLOW_TESTING_PLATFORMS = os.getenv(
+    "AUTO_PUBLISH_ALLOW_TESTING_PLATFORMS", "false"
+).strip().lower() in {"1", "true", "yes", "on"}
+
+# 到点任务由主 Celery 轻量扫描；真正的外部平台浏览器操作进入 publication 队列。
+CELERY_BEAT_SCHEDULE = {
+    **CELERY_BEAT_SCHEDULE,
+    "dispatch-due-publication-targets": {
+        "task": "publications.dispatch_due_targets",
+        "schedule": 30.0,
+    },
+}
