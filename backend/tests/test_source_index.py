@@ -33,9 +33,7 @@ from apps.subjects.models import Subject, SubjectType
 
 class SourceScoringTests(SimpleTestCase):
     def test_url_normalization_removes_tracking_but_preserves_semantic_query(self):
-        normalized = normalize_url(
-            "http://Example.COM/a/?utm_source=x&id=42&fbclid=abc#section"
-        )
+        normalized = normalize_url("http://Example.COM/a/?utm_source=x&id=42&fbclid=abc#section")
         self.assertIsNotNone(normalized)
         url, domain, root = normalized
         self.assertEqual(url, "https://example.com/a?id=42")
