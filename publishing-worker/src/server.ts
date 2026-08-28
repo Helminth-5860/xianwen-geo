@@ -12,7 +12,7 @@ import {
   viewerAuthorized,
 } from "./auth-sessions.js";
 import { getPublisher, publisherCapabilities } from "./publishers/index.js";
-import type { PlatformCredentials, PublicationInput } from "./publishers/types.js";
+import type { PlatformCredentials, PublicationInput, PublicationStatusInput } from "./publishers/types.js";
 
 const port = Number(process.env.PORT || "8092");
 const host = process.env.HOST || "0.0.0.0";
@@ -172,6 +172,23 @@ function validatePublishInput(body: Record<string, unknown>): PublicationInput |
   };
 }
 
+function validateStatusInput(body: Record<string, unknown>): { platformKey: string; input: PublicationStatusInput } | null {
+  const platformKey = typeof body.platform_key === "string" ? body.platform_key : "";
+  const credentials = body.credentials;
+  if (!platformKey || !credentials || typeof credentials !== "object" || Array.isArray(credentials)) return null;
+  const externalPostId = typeof body.external_post_id === "string" ? body.external_post_id.slice(0, 255) : undefined;
+  const managementUrl = typeof body.management_url === "string" ? body.management_url.slice(0, 4000) : undefined;
+  if (!externalPostId && !managementUrl) return null;
+  return {
+    platformKey,
+    input: {
+      credentials: credentials as PlatformCredentials,
+      externalPostId,
+      managementUrl,
+    },
+  };
+}
+
 const server = http.createServer(async (request, response) => {
   const method = request.method || "GET";
   const url = new URL(request.url || "/", publicBaseUrl);
@@ -198,6 +215,22 @@ const server = http.createServer(async (request, response) => {
       return json(response, 200, result);
     } catch (error) {
       const code = error instanceof Error ? error.message : "publish_failed";
+      return json(response, code === "request_too_large" ? 413 : 500, { error: code });
+    }
+  }
+
+  if (method === "POST" && url.pathname === "/v1/status") {
+    if (!internalAuthorized(request)) return json(response, 401, { error: "unauthorized" });
+    try {
+      const body = await readJson(request, 128 * 1024);
+      const validated = validateStatusInput(body);
+      if (!validated) return json(response, 400, { error: "invalid_request" });
+      const publisher = getPublisher(validated.platformKey);
+      if (!publisher) return json(response, 409, { error: "platform_not_ready" });
+      if (!publisher.checkStatus) return json(response, 200, { platformKey: validated.platformKey, status: "unknown" });
+      return json(response, 200, await publisher.checkStatus(validated.input));
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "status_check_failed";
       return json(response, code === "request_too_large" ? 413 : 500, { error: code });
     }
   }
