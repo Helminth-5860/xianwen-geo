@@ -3,7 +3,16 @@ name: Source Index Feature CI
 on:
   push:
     branches:
-      - feature/XW-source-index-baidu-v1
+      - integration/XW-source-index-current-20260828-v2
+  pull_request:
+    paths:
+      - "backend/apps/source_index/**"
+      - "backend/config/settings.py"
+      - "backend/config/urls.py"
+      - "backend/tests/api_urls.py"
+      - "backend/tests/test_source_index.py"
+      - ".env.example"
+      - ".github/workflows/ci-source-index-feature.yml"
   workflow_dispatch:
 
 permissions:
