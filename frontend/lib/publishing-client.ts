@@ -157,3 +157,6 @@ export const createPublication = (
   subjectId: string,
   input: { article_id: string; platform_keys?: string[]; scheduled_at?: string | null },
 ) => post<{ publication: Publication }>(`/subjects/${subjectId}/publishing/publications`, input);
+
+export const approvePublication = (publicationId: string) =>
+  post<{ publication: Publication }>(`/publishing/publications/${publicationId}/approve`, {});
