@@ -3,7 +3,11 @@ from __future__ import annotations
 from datetime import datetime
 from types import SimpleNamespace
 
+import pytest
+from cryptography.fernet import Fernet
 from django.core.cache import cache
+from django.core.exceptions import ImproperlyConfigured
+from django.test import override_settings
 from django.utils import timezone
 
 from apps.publishing.catalog import PLATFORMS, platform_payload
@@ -15,6 +19,7 @@ from apps.publishing.platform_health import (
     record_platform_success,
 )
 from apps.publishing.review import AWAITING_REVIEW_CODE
+from apps.publishing.runtime_config import validate_runtime_configuration
 from apps.publishing.scheduling import _fit_window
 from apps.publishing.services import _smart_platform_selection
 from apps.publishing.target_execution import _target_max_retries
@@ -146,6 +151,29 @@ def test_running_stale_window_is_always_beyond_publish_task_limit(monkeypatch):
     assert _running_stale_seconds() >= 390
     monkeypatch.setenv("PUBLISHING_RUNNING_STALE_SECONDS", "99999")
     assert _running_stale_seconds() == 3600
+
+
+def test_production_enabled_platforms_require_dedicated_encryption_key(monkeypatch):
+    monkeypatch.setenv("APP_ENV", "production")
+    with override_settings(
+        PUBLISHING_ENABLED_PLATFORM_KEYS=("zhihu",),
+        PUBLISHING_WORKER_BASE_URL="http://publishing-worker:8092",
+        PUBLISHING_WORKER_INTERNAL_SECRET="x" * 32,
+        PUBLISHING_CREDENTIAL_ENCRYPTION_KEY="",
+    ):
+        with pytest.raises(ImproperlyConfigured):
+            validate_runtime_configuration()
+
+
+def test_valid_dedicated_key_allows_enabled_platform_runtime(monkeypatch):
+    monkeypatch.setenv("APP_ENV", "production")
+    with override_settings(
+        PUBLISHING_ENABLED_PLATFORM_KEYS=("zhihu",),
+        PUBLISHING_WORKER_BASE_URL="http://publishing-worker:8092",
+        PUBLISHING_WORKER_INTERNAL_SECRET="x" * 32,
+        PUBLISHING_CREDENTIAL_ENCRYPTION_KEY=Fernet.generate_key().decode("ascii"),
+    ):
+        validate_runtime_configuration()
 
 
 def test_late_platform_wave_rolls_to_next_day():
