@@ -18,6 +18,7 @@ from apps.publishing.review import AWAITING_REVIEW_CODE
 from apps.publishing.scheduling import _fit_window
 from apps.publishing.services import _smart_platform_selection
 from apps.publishing.target_execution import _target_max_retries
+from apps.publishing.tasks import _running_stale_seconds
 from apps.publishing.worker_client import _uncertain_publish_result
 
 
@@ -138,6 +139,13 @@ def test_retry_count_is_bounded_from_environment(monkeypatch):
     assert _target_max_retries() == 10
     monkeypatch.setenv("PUBLISHING_TARGET_MAX_RETRIES", "not-a-number")
     assert _target_max_retries() == 3
+
+
+def test_running_stale_window_is_always_beyond_publish_task_limit(monkeypatch):
+    monkeypatch.setenv("PUBLISHING_RUNNING_STALE_SECONDS", "1")
+    assert _running_stale_seconds() >= 390
+    monkeypatch.setenv("PUBLISHING_RUNNING_STALE_SECONDS", "99999")
+    assert _running_stale_seconds() == 3600
 
 
 def test_late_platform_wave_rolls_to_next_day():
