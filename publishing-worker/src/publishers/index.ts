@@ -1,5 +1,8 @@
+import { BaijiahaoPublisher } from "./baijiahao.js";
 import { BROWSER_PUBLISHER_CONFIGS } from "./browser-configs.js";
 import { BrowserFormPublisher } from "./browser-form.js";
+import { DouyinImagePublisher, XiaohongshuPublisher } from "./social-image.js";
+import { WechatPublisher } from "./wechat.js";
 import { ZhihuPublisher } from "./zhihu.js";
 import type { PlatformPublisher } from "./types.js";
 
@@ -9,8 +12,11 @@ const browserPublishers = Object.fromEntries(
 
 const publishers: Readonly<Record<string, PlatformPublisher>> = {
   ...browserPublishers,
-  // 专用实现覆盖通用候选实现。知乎当前只验证到授权 + 草稿，公开发布仍保持关闭。
+  wechat: new WechatPublisher(),
   zhihu: new ZhihuPublisher(),
+  baijiahao: new BaijiahaoPublisher(),
+  xiaohongshu: new XiaohongshuPublisher(),
+  douyin: new DouyinImagePublisher(),
 };
 
 export function getPublisher(platformKey: string) {
