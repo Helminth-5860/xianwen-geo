@@ -186,6 +186,7 @@ class Publication(models.Model):  # noqa: DJ008
         PREPARING = "preparing", "准备中"
         QUEUED = "queued", "等待发布"
         RUNNING = "running", "正在发布"
+        PAUSED = "paused", "已暂停"
         PARTIAL = "partial", "部分完成"
         SUCCEEDED = "succeeded", "发布完成"
         FAILED = "failed", "发布未完成"
