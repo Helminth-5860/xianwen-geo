@@ -39,9 +39,10 @@ class SubjectWebsiteView(APIView):
         data = website_state(user=request.user, subject_id=subject_id)
         data["design_options"] = design_options_payload()
         data["recommendation"] = recommend_design(user=request.user, subject_id=subject_id)
-        if data["project"] is not None:
+        project_data = data.get("project")
+        if isinstance(project_data, dict):
             project = project_for_subject(user=request.user, subject_id=subject_id)
-            data["project"].update(project_design_payload(project))
+            project_data.update(project_design_payload(project))
         return Response(data)
 
 
