@@ -1,6 +1,7 @@
 from django.urls import path
 
 from .views import (
+    PublicationApproveView,
     PublishingAuthorizationSessionView,
     SubjectPlatformAccountView,
     SubjectPublicationCreateView,
@@ -40,6 +41,11 @@ urlpatterns = [
         "subjects/<uuid:subject_id>/publishing/publications",
         SubjectPublicationCreateView.as_view(),
         name="subject-publication-create",
+    ),
+    path(
+        "publishing/publications/<uuid:publication_id>/approve",
+        PublicationApproveView.as_view(),
+        name="publication-approve",
     ),
     path(
         "publishing/wechat/component/events",
