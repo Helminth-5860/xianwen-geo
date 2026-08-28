@@ -230,10 +230,13 @@ export default function AdminAIModelsPage() {
     }
   };
 
-  const providerOptions = Array.from(new Set(rows.map((row) => row.provider_key))).map((value) => ({
-    value,
-    label: value,
-  }));
+  const modelProviderOptions = Array.from(new Set(rows.map((row) => row.provider_key))).map(
+    (value) => ({ value, label: value }),
+  );
+  const providerOptions = [
+    { value: "baidu_search", label: "百度搜索（信源指数）" },
+    ...modelProviderOptions.filter((item) => item.value !== "baidu_search"),
+  ];
 
   const credentialColumns = [
     { title: "接口服务商", dataIndex: "provider_name" },
