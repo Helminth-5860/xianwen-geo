@@ -1,4 +1,11 @@
-import type { PlatformCredentials, PlatformPublisher, PublicationInput, PublicationResult } from "./types.js";
+import type {
+  PlatformCredentials,
+  PlatformPublisher,
+  PublicationInput,
+  PublicationResult,
+  PublicationStatusInput,
+  PublicationStatusResult,
+} from "./types.js";
 
 type WechatResponse = Record<string, unknown> & { errcode?: number; errmsg?: string };
 
@@ -46,6 +53,22 @@ async function uploadMaterial(token: string, url: string, type: "thumb" | "image
   return data;
 }
 
+async function getPublishStatus(token: string, publishId: string) {
+  return jsonRequest(
+    `https://api.weixin.qq.com/cgi-bin/freepublish/get?access_token=${encodeURIComponent(token)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ publish_id: publishId }),
+    },
+  );
+}
+
+function publicArticleUrl(status: WechatResponse) {
+  const detail = status.article_detail as { item?: Array<{ article_url?: string }> } | undefined;
+  return detail?.item?.find((item) => typeof item.article_url === "string")?.article_url;
+}
+
 export class WechatPublisher implements PlatformPublisher {
   readonly platformKey = "wechat";
   // 正式 API 流程已接入，但必须用显问测试公众号完成真实发布验收后才能标记为已验证。
@@ -57,6 +80,33 @@ export class WechatPublisher implements PlatformPublisher {
       return { ok: true };
     } catch {
       return { ok: false };
+    }
+  }
+
+  async checkStatus(input: PublicationStatusInput): Promise<PublicationStatusResult> {
+    if (!input.externalPostId) {
+      return { platformKey: this.platformKey, status: "unknown" };
+    }
+    try {
+      const token = await accessToken(input.credentials);
+      const status = await getPublishStatus(token, input.externalPostId);
+      const publishStatus = typeof status.publish_status === "number" ? status.publish_status : -1;
+      if (publishStatus === 0) {
+        const publicUrl = publicArticleUrl(status);
+        return publicUrl
+          ? { platformKey: this.platformKey, status: "published", publicUrl }
+          : { platformKey: this.platformKey, status: "submitted" };
+      }
+      if ([2, 3, 5, 6].includes(publishStatus)) {
+        return { platformKey: this.platformKey, status: "failed", safeErrorCode: "content_rejected" };
+      }
+      return { platformKey: this.platformKey, status: "submitted" };
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "platform_unavailable";
+      if (code === "authorization_required") {
+        return { platformKey: this.platformKey, status: "auth_required", safeErrorCode: code };
+      }
+      return { platformKey: this.platformKey, status: "unknown", safeErrorCode: "platform_unavailable" };
     }
   }
 
@@ -122,18 +172,10 @@ export class WechatPublisher implements PlatformPublisher {
 
       for (let attempt = 0; attempt < 4; attempt += 1) {
         await new Promise((resolve) => setTimeout(resolve, 1800));
-        const status = await jsonRequest(
-          `https://api.weixin.qq.com/cgi-bin/freepublish/get?access_token=${encodeURIComponent(token)}`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ publish_id: publishId }),
-          },
-        );
+        const status = await getPublishStatus(token, publishId);
         const publishStatus = typeof status.publish_status === "number" ? status.publish_status : -1;
         if (publishStatus === 0) {
-          const detail = status.article_detail as { item?: Array<{ article_url?: string }> } | undefined;
-          const publicUrl = detail?.item?.find((item) => typeof item.article_url === "string")?.article_url;
+          const publicUrl = publicArticleUrl(status);
           if (publicUrl) {
             return { success: true, platformKey: this.platformKey, status: "published", externalPostId: publishId, publicUrl };
           }
