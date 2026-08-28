@@ -113,7 +113,7 @@ function workspaceMenu(subjectId: string | null): MenuItem[] {
       children: [
         linkedItem("knowledge-subject", "主体实体建设", "/geo/knowledge-graph/subjects"),
         linkedItem("knowledge-map", "地图实体建设", "/geo/knowledge-graph/maps"),
-        unavailableItem("knowledge-website", "官网实体建设"),
+        linkedItem("knowledge-website", "官网实体建设", "/geo/knowledge-graph/websites"),
         linkedItem("knowledge-media", "媒体信号建设", "/geo/knowledge-graph/media-signals"),
       ],
     },
@@ -163,6 +163,7 @@ function selectedMenuKey(pathname: string) {
   if (/^\/geo\/exposure(?:\/|$)/.test(pathname)) return "insights-exposure";
   if (pathname.startsWith("/geo/reports")) return "insights-reports";
   if (pathname.startsWith("/geo/knowledge-graph/media-signals")) return "knowledge-media";
+  if (pathname.startsWith("/geo/knowledge-graph/websites")) return "knowledge-website";
   if (pathname.startsWith("/geo/knowledge-graph/subjects")) return "knowledge-subject";
   if (pathname.startsWith("/geo/knowledge-graph/maps")) return "knowledge-map";
   if (pathname.startsWith("/geo/strategy") || pathname.includes("/strategy")) {
