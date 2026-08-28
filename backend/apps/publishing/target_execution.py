@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import html
 import re
+from datetime import timedelta
 from typing import Any
 
 from django.conf import settings
@@ -274,7 +275,7 @@ def execute_target(*, target_id) -> dict[str, Any]:
             submitted_at=timezone.now(),
             external_post_id=external_id,
             management_url=management_url,
-            next_status_check_at=timezone.now() + timezone.timedelta(minutes=15),
+            next_status_check_at=timezone.now() + timedelta(minutes=15),
             safe_error_code="",
         )
         _aggregate_publication(target.publication_id)
