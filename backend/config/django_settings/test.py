@@ -41,6 +41,16 @@ ALLOWED_HOSTS = ["testserver", "localhost", "127.0.0.1"]
 CSRF_TRUSTED_ORIGINS = ["http://testserver"]
 CORS_ALLOWED_ORIGINS = ["http://testserver"]
 
+# These apps are registered dynamically by config.settings in normal runtime. Pytest and mypy
+# intentionally load this settings module directly, so mirror that runtime app set here.
+INSTALLED_APPS = [
+    *INSTALLED_APPS,
+    "apps.website_audits",
+    "apps.publishing",
+    "apps.source_index",
+    "apps.negative_index",
+]
+
 DATABASES = {
     "default": database_from_url(
         "sqlite:///:memory:",
