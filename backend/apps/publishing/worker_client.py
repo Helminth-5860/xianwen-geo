@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Any
 
 import httpx
@@ -18,6 +19,14 @@ def _configuration() -> tuple[str, str]:
     if not base_url or len(secret) < 32:
         raise PublishingWorkerError("worker_not_configured")
     return base_url, secret
+
+
+def _positive_timeout(name: str, default: int, maximum: int) -> float:
+    try:
+        value = int(os.getenv(name, str(default)))
+    except ValueError:
+        value = default
+    return float(max(5, min(maximum, value)))
 
 
 def _headers(secret: str) -> dict[str, str]:
@@ -139,7 +148,7 @@ def publish_to_platform(
             f"{base_url}/v1/publish",
             json=payload,
             headers=_headers(secret),
-            timeout=float(getattr(settings, "PUBLISHING_WORKER_PUBLISH_TIMEOUT_SECONDS", 120)),
+            timeout=_positive_timeout("PUBLISHING_WORKER_PUBLISH_TIMEOUT_SECONDS", 120, 300),
         )
     except httpx.TimeoutException as exc:
         raise PublishingWorkerError("worker_timeout") from exc
@@ -173,7 +182,7 @@ def check_platform_publication_status(
             f"{base_url}/v1/status",
             json=payload,
             headers=_headers(secret),
-            timeout=float(getattr(settings, "PUBLISHING_WORKER_STATUS_TIMEOUT_SECONDS", 75)),
+            timeout=_positive_timeout("PUBLISHING_WORKER_STATUS_TIMEOUT_SECONDS", 75, 180),
         )
     except httpx.TimeoutException as exc:
         raise PublishingWorkerError("worker_timeout") from exc
