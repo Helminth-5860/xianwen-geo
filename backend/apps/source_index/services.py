@@ -234,9 +234,7 @@ def execute_source_index_scan(scan_id) -> dict:
                 # retry must not duplicate evidence.
                 return {"scan_id": str(locked.id), "status": locked.status}
             if item_objects:
-                SourceIndexItem.objects.bulk_create(  # type: ignore[attr-defined]
-                    item_objects, batch_size=1000
-                )
+                SourceIndexItem.objects.bulk_create(item_objects, batch_size=1000)
             hit_objects = []
             for hit in payload.hits:
                 item_obj = item_by_url.get(hit["normalized_url"])
@@ -253,7 +251,7 @@ def execute_source_index_scan(scan_id) -> dict:
                     )
                 )
             if hit_objects:
-                SourceIndexHit.objects.bulk_create(  # type: ignore[attr-defined]
+                SourceIndexHit.objects.bulk_create(
                     hit_objects,
                     batch_size=2000,
                     ignore_conflicts=True,
