@@ -51,11 +51,17 @@ class NegativeIndexRuleTests(SimpleTestCase):
             authority=85,
             signal=signal,
         )
-        self.assertEqual(fallback.claim_type, NegativeEvent.ClaimType.REBUTTAL)
+        self.assertEqual(
+            fallback.claim_type,
+            NegativeEvent.ClaimType.REBUTTAL,
+        )
         self.assertLess(fallback.negative_confidence, 10)
 
     def test_official_formal_signal_has_safe_fallback_when_ai_unavailable(self):
-        signal = rule_signal("市场监督管理局对某公司作出行政处罚", "因违法行为罚款并责令整改")
+        signal = rule_signal(
+            "市场监督管理局对某公司作出行政处罚",
+            "因违法行为罚款并责令整改",
+        )
         fallback = fallback_analysis(
             title="市场监督管理局对某公司作出行政处罚",
             snippet="因违法行为罚款并责令整改",
@@ -63,8 +69,14 @@ class NegativeIndexRuleTests(SimpleTestCase):
             authority=98,
             signal=signal,
         )
-        self.assertEqual(fallback.claim_type, NegativeEvent.ClaimType.OFFICIAL_FINDING)
-        self.assertEqual(fallback.event_status, NegativeEvent.Status.CONFIRMED)
+        self.assertEqual(
+            fallback.claim_type,
+            NegativeEvent.ClaimType.OFFICIAL_FINDING,
+        )
+        self.assertEqual(
+            fallback.event_status,
+            NegativeEvent.Status.CONFIRMED,
+        )
         self.assertGreaterEqual(fallback.evidence_confidence, 90)
 
 
@@ -130,14 +142,67 @@ class NegativeIndexScoringTests(SimpleTestCase):
             "ai_summary": "监管部门作出行政处罚。",
         }
         rows = [
-            {**common, "title": "某公司因虚假宣传被处罚50万元", "event_title": "某公司虚假宣传行政处罚"},
-            {**common, "title": "监管部门处罚某公司虚假宣传行为", "event_title": "某公司虚假宣传行政处罚", "root_domain": "example.cn"},
+            {
+                **common,
+                "title": "某公司因虚假宣传被处罚50万元",
+                "event_title": "某公司虚假宣传行政处罚",
+            },
+            {
+                **common,
+                "title": "监管部门处罚某公司虚假宣传行为",
+                "event_title": "某公司虚假宣传行政处罚",
+                "root_domain": "example.cn",
+            },
         ]
         clusters = cluster_items(rows)
         self.assertEqual(len(clusters), 1)
         event = build_event(clusters[0])
         self.assertEqual(event["source_count"], 2)
         self.assertEqual(event["independent_domain_count"], 2)
+
+    def test_event_claim_type_comes_from_strongest_evidence(self):
+        now = timezone.now()
+        rows = [
+            {
+                "category": NegativeEvent.Category.REGULATORY,
+                "claim_type": NegativeEvent.ClaimType.USER_ALLEGATION,
+                "event_status": NegativeEvent.Status.REPORTED,
+                "severity_score": 95,
+                "evidence_confidence": 35,
+                "authority_score": 45,
+                "visibility_score": 90,
+                "freshness_score": 100,
+                "published_at": now,
+                "root_domain": "forum.example",
+                "title": "网友称某公司虚假宣传被重罚",
+                "event_title": "某公司虚假宣传行政处罚",
+                "ai_summary": "用户提出高严重度指控。",
+            },
+            {
+                "category": NegativeEvent.Category.REGULATORY,
+                "claim_type": NegativeEvent.ClaimType.OFFICIAL_FINDING,
+                "event_status": NegativeEvent.Status.CONFIRMED,
+                "severity_score": 70,
+                "evidence_confidence": 99,
+                "authority_score": 98,
+                "visibility_score": 70,
+                "freshness_score": 100,
+                "published_at": now,
+                "root_domain": "example.gov.cn",
+                "title": "监管部门公布某公司行政处罚决定",
+                "event_title": "某公司虚假宣传行政处罚",
+                "ai_summary": "监管部门公布正式处罚决定。",
+            },
+        ]
+        clusters = cluster_items(rows)
+        self.assertEqual(len(clusters), 1)
+        event = build_event(clusters[0])
+        self.assertEqual(
+            event["claim_type"],
+            NegativeEvent.ClaimType.OFFICIAL_FINDING,
+        )
+        self.assertEqual(event["status"], NegativeEvent.Status.CONFIRMED)
+        self.assertEqual(event["summary"], "监管部门公布正式处罚决定。")
 
 
 class NegativeIndexApiIsolationTests(TestCase):
@@ -153,7 +218,10 @@ class NegativeIndexApiIsolationTests(TestCase):
             password="StrongPass123!",
             nickname="B",
         )
-        subject_type = SubjectType.objects.create(key="company-negative-index-test", name="企业")
+        subject_type = SubjectType.objects.create(
+            key="company-negative-index-test",
+            name="企业",
+        )
         self.subject = Subject.objects.create(
             user=self.user_a,
             subject_type=subject_type,
@@ -163,17 +231,24 @@ class NegativeIndexApiIsolationTests(TestCase):
             schema_snapshot={},
             schema_digest="negative-index-test-digest",
         )
-        self.scan = NegativeIndexScan.objects.create(user=self.user_a, subject=self.subject)
+        self.scan = NegativeIndexScan.objects.create(
+            user=self.user_a,
+            subject=self.subject,
+        )
         self.client = APIClient()
 
     def test_other_user_cannot_read_scan(self):
         self.client.force_authenticate(self.user_b)
-        response = self.client.get(f"/api/v1/negative-index/scans/{self.scan.id}/")
+        response = self.client.get(
+            f"/api/v1/negative-index/scans/{self.scan.id}/"
+        )
         self.assertEqual(response.status_code, 404)
 
     def test_subject_summary_is_scoped_to_owner(self):
         self.client.force_authenticate(self.user_b)
-        response = self.client.get(f"/api/v1/subjects/{self.subject.id}/negative-index/")
+        response = self.client.get(
+            f"/api/v1/subjects/{self.subject.id}/negative-index/"
+        )
         self.assertEqual(response.status_code, 404)
 
     @patch("apps.negative_index.views.execute_negative_index_scan_task.apply_async")
@@ -203,7 +278,10 @@ class NegativeIndexPipelineTests(TestCase):
             password="StrongPass123!",
             nickname="Pipeline",
         )
-        subject_type = SubjectType.objects.create(key="company-negative-pipeline", name="企业")
+        subject_type = SubjectType.objects.create(
+            key="company-negative-pipeline",
+            name="企业",
+        )
         self.subject = Subject.objects.create(
             user=self.user,
             subject_type=subject_type,
@@ -213,12 +291,20 @@ class NegativeIndexPipelineTests(TestCase):
             schema_snapshot={},
             schema_digest="negative-pipeline-digest",
         )
-        self.scan = NegativeIndexScan.objects.create(user=self.user, subject=self.subject)
+        self.scan = NegativeIndexScan.objects.create(
+            user=self.user,
+            subject=self.subject,
+        )
 
     @patch("apps.negative_index.services.analyze_candidates")
     @patch("apps.negative_index.services.run_negative_search")
     @patch("apps.negative_index.services.BaiduSearchProvider")
-    def test_pipeline_persists_one_confirmed_event(self, provider_class, run_search, analyze):
+    def test_pipeline_persists_one_confirmed_event(
+        self,
+        provider_class,
+        run_search,
+        analyze,
+    ):
         provider_class.return_value.__enter__.return_value = Mock()
         context = SubjectSearchContext(
             official_name="测试科技有限公司",
@@ -240,7 +326,9 @@ class NegativeIndexPipelineTests(TestCase):
                     "snippet": "市场监督管理局决定罚款并责令整改。",
                     "published_at": timezone.now(),
                     "best_rank": 1,
-                    "matched_queries": {"测试科技有限公司 处罚 违法 监管"},
+                    "matched_queries": {
+                        "测试科技有限公司 处罚 违法 监管"
+                    },
                 }
             },
             hits=[
