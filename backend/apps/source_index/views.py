@@ -100,7 +100,9 @@ class SourceIndexSourceListView(APIView):
         scan = SourceIndexScan.objects.filter(pk=scan_id, user=request.user).first()
         if scan is None:
             return Response({"detail": "信源扫描记录不存在。"}, status=HTTP_404_NOT_FOUND)
-        queryset = SourceIndexItem.objects.filter(scan=scan).prefetch_related("hits")
+        queryset = SourceIndexItem.objects.filter(scan=scan).prefetch_related(  # type: ignore[attr-defined]
+            "hits"
+        )
         source_type = request.query_params.get("source_type", "").strip()
         if source_type:
             valid_types = {choice for choice, _label in SourceIndexItem.SourceType.choices}
@@ -121,6 +123,8 @@ class SourceIndexSourceListView(APIView):
             ordering = "-source_weight"
         queryset = queryset.order_by(ordering, "id")
         paginator = SourceIndexPagination()
-        page = paginator.paginate_queryset(queryset, request, view=self)
+        page: list[SourceIndexItem] | None = paginator.paginate_queryset(
+            queryset, request, view=self
+        )
         serializer = SourceIndexItemSerializer(page, many=True)
         return paginator.get_paginated_response(serializer.data)
