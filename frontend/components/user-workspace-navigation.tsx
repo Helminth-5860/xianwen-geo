@@ -4,6 +4,7 @@ import {
   ApartmentOutlined,
   AreaChartOutlined,
   BarChartOutlined,
+  DatabaseOutlined,
   FileTextOutlined,
   FundProjectionScreenOutlined,
   ProfileOutlined,
@@ -103,8 +104,17 @@ function workspaceMenu(subjectId: string | null): MenuItem[] {
       children: [
         linkedItem("insights-reports", "检测报告", "/geo/reports"),
         linkedItem("insights-history", "历史报告对比", "/geo/reports/history"),
-        linkedItem("insights-exposure", "曝光指数", "/geo/exposure"),
-        unavailableItem("insights-competitors", "竞品对比"),
+      ],
+    },
+    {
+      key: "data-center",
+      icon: <DatabaseOutlined />,
+      label: "数据中心",
+      children: [
+        linkedItem("data-exposure", "曝光指数", "/geo/exposure"),
+        linkedItem("data-competitors", "竞品对比", "/geo/data-center/competitors"),
+        linkedItem("data-source", "信源指数", "/geo/data-center/source-index"),
+        linkedItem("data-negative", "负面信息指数", "/geo/data-center/negative-index"),
       ],
     },
     {
@@ -162,7 +172,14 @@ function selectedMenuKey(pathname: string) {
     return "optimization-strategy";
   }
   if (/^\/geo\/reports\/history(?:\/|$)/.test(pathname)) return "insights-history";
-  if (/^\/geo\/exposure(?:\/|$)/.test(pathname)) return "insights-exposure";
+  if (/^\/geo\/exposure(?:\/|$)/.test(pathname)) return "data-exposure";
+  if (/^\/geo\/data-center\/competitors(?:\/|$)/.test(pathname)) {
+    return "data-competitors";
+  }
+  if (/^\/geo\/data-center\/source-index(?:\/|$)/.test(pathname)) return "data-source";
+  if (/^\/geo\/data-center\/negative-index(?:\/|$)/.test(pathname)) {
+    return "data-negative";
+  }
   if (pathname.startsWith("/geo/reports")) return "insights-reports";
   if (pathname.startsWith("/geo/knowledge-graph/media-signals")) return "knowledge-media";
   if (pathname.startsWith("/geo/knowledge-graph/websites")) return "knowledge-website";
@@ -198,8 +215,10 @@ const menuGroupByChild: Readonly<Record<string, string>> = {
   "detections-publication": "detections",
   "insights-reports": "insights",
   "insights-history": "insights",
-  "insights-exposure": "insights",
-  "insights-competitors": "insights",
+  "data-exposure": "data-center",
+  "data-competitors": "data-center",
+  "data-source": "data-center",
+  "data-negative": "data-center",
   "knowledge-subject": "knowledge-graph",
   "knowledge-map": "knowledge-graph",
   "knowledge-website": "knowledge-graph",

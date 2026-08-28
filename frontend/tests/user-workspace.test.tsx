@@ -604,6 +604,7 @@ describe("GEO 产品工作台", () => {
       "问题库",
       "检测中心",
       "GEO 洞察",
+      "数据中心",
       "知识图谱建设",
       "优化中心",
       "内容资产中心",
@@ -668,11 +669,20 @@ describe("GEO 产品工作台", () => {
     expect(screen.getByRole("link", { name: "历史报告对比" }).getAttribute("href")).toBe(
       "/geo/reports/history",
     );
+
+    await userEvent.click(screen.getByText("数据中心"));
     expect(screen.getByRole("link", { name: "曝光指数" }).getAttribute("href")).toBe(
       "/geo/exposure",
     );
-    expect(screen.getByText("竞品对比")).toBeTruthy();
-    expect(screen.queryByRole("link", { name: "竞品对比" })).toBeNull();
+    expect(screen.getByRole("link", { name: "竞品对比" }).getAttribute("href")).toBe(
+      "/geo/data-center/competitors",
+    );
+    expect(screen.getByRole("link", { name: "信源指数" }).getAttribute("href")).toBe(
+      "/geo/data-center/source-index",
+    );
+    expect(screen.getByRole("link", { name: "负面信息指数" }).getAttribute("href")).toBe(
+      "/geo/data-center/negative-index",
+    );
 
     await userEvent.click(screen.getByText("知识图谱建设"));
     expect(screen.getByRole("link", { name: "媒体信号建设" }).getAttribute("href")).toBe(
@@ -792,7 +802,34 @@ describe("GEO 产品工作台", () => {
     pathname = "/geo/exposure";
     rerender(shell());
     await waitFor(() =>
-      expect(screen.getByRole("menuitem", { name: "曝光指数" }).className).toContain(
+      expect(screen.getByRole("menuitem", { name: /数据中心/ }).getAttribute("aria-expanded")).toBe(
+        "true",
+      ),
+    );
+    expect(screen.getByRole("menuitem", { name: "曝光指数" }).className).toContain(
+      "ant-menu-item-selected",
+    );
+
+    pathname = "/geo/data-center/competitors";
+    rerender(shell());
+    await waitFor(() =>
+      expect(screen.getByRole("menuitem", { name: "竞品对比" }).className).toContain(
+        "ant-menu-item-selected",
+      ),
+    );
+
+    pathname = "/geo/data-center/source-index";
+    rerender(shell());
+    await waitFor(() =>
+      expect(screen.getByRole("menuitem", { name: "信源指数" }).className).toContain(
+        "ant-menu-item-selected",
+      ),
+    );
+
+    pathname = "/geo/data-center/negative-index";
+    rerender(shell());
+    await waitFor(() =>
+      expect(screen.getByRole("menuitem", { name: "负面信息指数" }).className).toContain(
         "ant-menu-item-selected",
       ),
     );
