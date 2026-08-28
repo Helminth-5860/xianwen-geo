@@ -80,6 +80,36 @@
   font-variant-numeric: tabular-nums;
 }
 
+.designHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+
+.designGroup {
+  margin-top: 26px;
+}
+
+.designGroupTitle {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.designGroupTitle strong {
+  color: #172033;
+  font-size: 15px;
+}
+
+.designGroupTitle span {
+  color: #98a2b3;
+  font-size: 12px;
+}
+
 .styleGrid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -87,7 +117,7 @@
 }
 
 .styleButton {
-  min-height: 104px;
+  min-height: 112px;
   padding: 18px;
   border: 1px solid #e3e8f1;
   border-radius: 16px;
@@ -97,9 +127,16 @@
   transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
 }
 
-.styleButton:hover {
+.styleButton:hover:not(:disabled) {
   border-color: rgba(36, 107, 254, 0.38);
   transform: translateY(-2px);
+}
+
+.styleButton:disabled,
+.themeButton:disabled,
+.densityButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.64;
 }
 
 .styleButtonSelected {
@@ -109,7 +146,9 @@
 }
 
 .styleName {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 7px;
   margin-bottom: 7px;
   color: #172033;
   font-weight: 650;
@@ -119,6 +158,132 @@
   color: #667085;
   font-size: 13px;
   line-height: 1.6;
+}
+
+.inlineRecommendation {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: #edf3ff;
+  color: #246bfe;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.themeGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.themeButton {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 13px;
+  border: 1px solid #e3e8f1;
+  border-radius: 14px;
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.themeButton:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: rgba(36, 107, 254, 0.32);
+}
+
+.themeButtonSelected {
+  border-color: #246bfe;
+  box-shadow: 0 0 0 3px rgba(36, 107, 254, 0.08);
+}
+
+.themeSwatch {
+  flex: 0 0 auto;
+  width: 46px;
+  height: 46px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 12px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+.themeCopy {
+  min-width: 0;
+}
+
+.themeName {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #172033;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.themeDescription {
+  display: block;
+  margin-top: 4px;
+  color: #98a2b3;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.densityGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.densityButton {
+  min-height: 92px;
+  padding: 15px 16px;
+  border: 1px solid #e3e8f1;
+  border-radius: 14px;
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.densityButton:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: rgba(36, 107, 254, 0.32);
+}
+
+.densityButtonSelected {
+  border-color: #246bfe;
+  background: linear-gradient(145deg, rgba(36, 107, 254, 0.045), #fff);
+  box-shadow: 0 0 0 3px rgba(36, 107, 254, 0.08);
+}
+
+.densityName {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #172033;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.densityDescription {
+  display: block;
+  margin-top: 6px;
+  color: #667085;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.designHint {
+  margin-top: 22px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #f7f9fc;
+  color: #667085;
+  font-size: 12px;
+  line-height: 1.65;
 }
 
 .materialHeader {
@@ -247,6 +412,10 @@
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
+  .themeGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .materialGrid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
@@ -258,7 +427,9 @@
   }
 
   .sourceGrid,
-  .styleGrid {
+  .styleGrid,
+  .themeGrid,
+  .densityGrid {
     grid-template-columns: 1fr;
   }
 
@@ -269,6 +440,8 @@
 
 @media (prefers-reduced-motion: reduce) {
   .styleButton,
+  .themeButton,
+  .densityButton,
   .materialCard {
     transition: none;
   }
