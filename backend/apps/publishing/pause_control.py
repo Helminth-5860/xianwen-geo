@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import timedelta
+
 from django.db import transaction
 from django.utils import timezone
 
@@ -65,7 +67,7 @@ def resume_subject_publications(*, user_id, subject_id) -> int:
         target.status = PublicationTarget.Status.READY
         target.safe_error_code = ""
         if target.scheduled_at is None or target.scheduled_at <= now:
-            target.scheduled_at = now + timezone.timedelta(seconds=15 + index * 10)
+            target.scheduled_at = now + timedelta(seconds=15 + index * 10)
         target.save(update_fields=("status", "safe_error_code", "scheduled_at", "updated_at"))
         scheduled.append((str(target.pk), target.scheduled_at))
 
