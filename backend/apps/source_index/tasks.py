@@ -1,4 +1,4 @@
-from billiard.exceptions import SoftTimeLimitExceeded
+from billiard.exceptions import SoftTimeLimitExceeded  # type: ignore[import-untyped]
 from celery import shared_task  # type: ignore[import-untyped]
 
 from .provider import SearchProviderError
