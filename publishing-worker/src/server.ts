@@ -7,7 +7,9 @@ import {
   getAuthSession,
   internalSessionPayload,
   sessionClick,
+  sessionKey,
   sessionPreview,
+  sessionType,
   startAuthSession,
   viewerAuthorized,
   type ManagedAuthSession,
@@ -153,6 +155,8 @@ function authorizationPage(sessionId: string, platformName: string) {
   const safeId = encodeURIComponent(sessionId);
   const previewPath = browserPath(`/authorize/${safeId}/preview`);
   const clickPath = browserPath(`/authorize/${safeId}/click`);
+  const typePath = browserPath(`/authorize/${safeId}/type`);
+  const keyPath = browserPath(`/authorize/${safeId}/key`);
   const statusPath = browserPath(`/authorize/${safeId}/status`);
   return `<!doctype html>
 <html lang="zh-CN">
@@ -168,20 +172,31 @@ h1{font-size:22px;margin:0 0 8px}.hint{color:#667085;line-height:1.7;margin-bott
 .preview{width:100%;min-height:560px;object-fit:contain;background:#fff;border:1px solid #e5e7eb;border-radius:12px;cursor:pointer}
 .status{display:inline-flex;margin:0 0 16px;padding:6px 10px;border-radius:999px;background:#eef4ff;color:#344054;font-size:14px}
 .safe{margin-top:16px;color:#667085;font-size:13px;line-height:1.7}
+.keyboard{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:14px 0 0}.keyboard input{flex:1;min-width:260px;padding:10px 12px;border:1px solid #d0d5dd;border-radius:10px;font-size:14px}.keyboard button{padding:9px 12px;border:1px solid #d0d5dd;background:#fff;border-radius:9px;cursor:pointer}.keyboard .primary{background:#111827;color:#fff;border-color:#111827}
 </style>
 </head>
 <body><main><div class="card">
 <h1>授权${escapeHtml(platformName)}</h1>
-<p class="hint">请优先使用扫码完成登录。若平台当前显示其他登录方式，可点击下方画面切换“扫码登录”或刷新二维码。显问不会提供键盘输入，因此平台密码和短信验证码不会经过这个页面。</p>
+<p class="hint">请优先使用扫码登录。如果平台要求手机号、验证码或其他本人输入，请先点击下方平台画面中的输入框，再使用临时输入栏。输入内容只转发到当前授权浏览器，不保存到显问数据库，也不会写入日志。</p>
 <div id="status" class="status">正在等待完成登录</div>
 <img id="preview" class="preview" alt="平台授权页面" src="${previewPath}?v=0" />
-<p class="safe">此授权画面只对当前一次性链接开放，并会在授权结束后失效。请勿把此页面转发给其他人。</p>
+<div class="keyboard">
+  <input id="keyboardInput" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="临时输入：手机号 / 验证码 / 密码等" />
+  <button id="sendInput" class="primary" type="button">输入到平台</button>
+  <button data-key="Tab" type="button">Tab</button>
+  <button data-key="Enter" type="button">确认</button>
+  <button data-key="Backspace" type="button">退格</button>
+</div>
+<p class="safe">此授权画面只对当前一次性链接开放，并会在授权结束后失效。验证码和密码由客户本人输入；系统不保存、不回显，也不尝试绕过平台验证。</p>
 </div></main>
 <script>
 const statusEl=document.getElementById('status');
 const preview=document.getElementById('preview');
+const keyboardInput=document.getElementById('keyboardInput');
+const sendInput=document.getElementById('sendInput');
 let tick=0;
 let finished=false;
+const refreshPreview=()=>{tick+=1;preview.src='${previewPath}?v='+tick;};
 preview.addEventListener('click',async(event)=>{
   if(finished)return;
   const rect=preview.getBoundingClientRect();
@@ -199,18 +214,38 @@ preview.addEventListener('click',async(event)=>{
   const y=Math.max(0,Math.min(900,py/contentH*900));
   try{
     await fetch('${clickPath}',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({x,y})});
-    tick+=1;preview.src='${previewPath}?v='+tick;
+    refreshPreview();
   }catch{}
 });
+sendInput.addEventListener('click',async()=>{
+  if(finished)return;
+  const value=keyboardInput.value;
+  if(!value)return;
+  keyboardInput.value='';
+  try{
+    const response=await fetch('${typePath}',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:value})});
+    if(!response.ok)throw new Error('failed');
+    refreshPreview();
+  }catch{statusEl.textContent='输入未完成，请重新点击平台输入框后再试';}
+});
+keyboardInput.addEventListener('keydown',(event)=>{if(event.key==='Enter'){event.preventDefault();sendInput.click();}});
+document.querySelectorAll('[data-key]').forEach((button)=>button.addEventListener('click',async()=>{
+  if(finished)return;
+  try{
+    const response=await fetch('${keyPath}',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:button.dataset.key})});
+    if(!response.ok)throw new Error('failed');
+    refreshPreview();
+  }catch{}
+}));
 async function refresh(){
   try{
     const response=await fetch('${statusPath}',{cache:'no-store',credentials:'same-origin'});
     const data=await response.json();
-    if(data.status==='succeeded'){finished=true;statusEl.textContent='授权成功，可以关闭此窗口';preview.style.opacity='.45';return;}
+    if(data.status==='succeeded'){finished=true;statusEl.textContent='授权成功，可以关闭此窗口';preview.style.opacity='.45';keyboardInput.disabled=true;sendInput.disabled=true;return;}
     if(data.status==='expired'){finished=true;statusEl.textContent='授权已过期，请返回显问重新授权';return;}
     if(data.status==='failed'){finished=true;statusEl.textContent='本次授权未完成，请返回显问重新尝试';return;}
     statusEl.textContent='正在等待完成登录';
-    tick+=1;preview.src='${previewPath}?v='+tick;
+    refreshPreview();
     setTimeout(refresh,1800);
   }catch{statusEl.textContent='授权页面正在重新连接';setTimeout(refresh,2500);}
 }
@@ -414,6 +449,38 @@ const server = http.createServer(async (request, response) => {
       return json(response, 200, { clicked: true });
     } catch {
       return json(response, 400, { error: "invalid_click" });
+    }
+  }
+
+  const typeMatch = path.match(/^\/authorize\/([^/]+)\/type$/);
+  if (method === "POST" && typeMatch) {
+    if (!sameOriginPost(request)) return json(response, 403, { error: "forbidden_origin" });
+    const id = decodeURIComponent(typeMatch[1]);
+    const session = getAuthSession(id);
+    if (!session || !viewerRequestAuthorized(request, session)) return json(response, 404, { error: "not_found" });
+    try {
+      const body = await readJson(request, 4096);
+      const value = typeof body.text === "string" ? body.text : "";
+      await sessionType(session, value);
+      return json(response, 200, { typed: true });
+    } catch {
+      return json(response, 400, { error: "invalid_input" });
+    }
+  }
+
+  const keyMatch = path.match(/^\/authorize\/([^/]+)\/key$/);
+  if (method === "POST" && keyMatch) {
+    if (!sameOriginPost(request)) return json(response, 403, { error: "forbidden_origin" });
+    const id = decodeURIComponent(keyMatch[1]);
+    const session = getAuthSession(id);
+    if (!session || !viewerRequestAuthorized(request, session)) return json(response, 404, { error: "not_found" });
+    try {
+      const body = await readJson(request, 1024);
+      const key = typeof body.key === "string" ? body.key : "";
+      await sessionKey(session, key);
+      return json(response, 200, { pressed: true });
+    } catch {
+      return json(response, 400, { error: "invalid_key" });
     }
   }
 
