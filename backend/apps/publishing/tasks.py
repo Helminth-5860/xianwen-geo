@@ -3,8 +3,10 @@ from __future__ import annotations
 from datetime import timedelta
 
 from celery import shared_task  # type: ignore[import-untyped]
+from django.utils import timezone
 
 from .execution import prepare_publication
+from .recovery import recover_preparation_jobs
 from .scheduling import assign_publication_schedule
 from .status_tracking import check_submitted_target
 from .target_execution import execute_target
@@ -12,6 +14,7 @@ from .target_execution import execute_target
 
 @shared_task(name="publishing.prepare_publication", bind=True, ignore_result=True)
 def prepare_publication_task(self, publication_id: str):
+    recover_preparation_jobs(publication_id)
     result = prepare_publication(publication_id=publication_id)
     if result.get("status") == "waiting":
         self.apply_async(
@@ -64,6 +67,34 @@ def check_submitted_target_task(self, target_id: str):
     eta = result.get("eta")
     if result.get("status") in {"scheduled", "submitted"} and eta is not None:
         self.apply_async(args=[target_id], eta=eta)
+    return None
+
+
+@shared_task(name="publishing.recover_interrupted", ignore_result=True)
+def recover_interrupted_publishing_task():
+    from .models import Publication, PublicationTarget
+
+    stale = timezone.now() - timedelta(minutes=2)
+    publication_ids = list(
+        Publication.objects.filter(
+            status__in=(Publication.Status.PREPARING, Publication.Status.QUEUED),
+            updated_at__lte=stale,
+        )
+        .values_list("id", flat=True)[:100]
+    )
+    for publication_id in publication_ids:
+        prepare_publication_task.delay(str(publication_id))
+
+    due_target_ids = list(
+        PublicationTarget.objects.filter(
+            status=PublicationTarget.Status.SUBMITTED,
+            next_status_check_at__isnull=False,
+            next_status_check_at__lte=timezone.now(),
+        )
+        .values_list("id", flat=True)[:100]
+    )
+    for target_id in due_target_ids:
+        check_submitted_target_task.delay(str(target_id))
     return None
 
 
