@@ -12,6 +12,7 @@ from django.utils import timezone
 from apps.documents.exceptions import FileStorageUnavailable
 from apps.documents.storage import storage_provider
 from apps.images.models import ImageAsset, ImageDerivative
+from apps.keywords.models import Keyword, KeywordSet
 
 from .catalog import PLATFORM_BY_KEY
 from .credentials import PlatformCredentialRuntimeUnavailable, platform_credentials
@@ -68,6 +69,63 @@ def _simple_html(value: str) -> str:
             paragraph.append(line)
     flush()
     return "\n".join(blocks) or f"<p>{html.escape(value)}</p>"
+
+
+def _publication_tags(target: PublicationTarget) -> list[str]:
+    keyword_set = (
+        KeywordSet.objects.filter(
+            user=target.publication.user,
+            subject=target.publication.subject,
+            current_version__isnull=False,
+        )
+        .select_related("current_version")
+        .first()
+    )
+    if keyword_set is None or keyword_set.current_version_id is None:
+        return []
+
+    title = target.adapted_title.strip().lower()
+    content = _plain_text(target.adapted_content).lower()
+    candidates = list(
+        Keyword.objects.filter(keyword_set_version_id=keyword_set.current_version_id)
+        .only("text", "priority", "relevance_score", "sort_order")
+        .order_by("sort_order")[:100]
+    )
+    ranked: list[tuple[int, int, str]] = []
+    for item in candidates:
+        value = " ".join((item.text or "").strip().split())
+        if not value or len(value) > 40:
+            continue
+        normalized = value.lower()
+        score = 0
+        if normalized in title:
+            score += 8
+        if normalized in content:
+            score += 5
+        if item.priority == "high":
+            score += 2
+        elif item.priority == "medium":
+            score += 1
+        if item.relevance_score is not None and item.relevance_score >= 80:
+            score += 1
+        # Only emit confirmed keyword assets that have a real textual match. Priority
+        # alone is not enough; that would attach unrelated brand keywords to an article.
+        if normalized not in title and normalized not in content:
+            continue
+        ranked.append((score, -item.sort_order, value))
+
+    ranked.sort(reverse=True)
+    result: list[str] = []
+    seen: set[str] = set()
+    for _score, _order, value in ranked:
+        key = value.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(value)
+        if len(result) >= 8:
+            break
+    return result
 
 
 def _delivery_assets(target: PublicationTarget) -> list[dict[str, Any]]:
@@ -243,6 +301,7 @@ def execute_target(*, target_id) -> dict[str, Any]:
         return {"status": "failed"}
 
     text = _plain_text(target.adapted_content)
+    tags = _publication_tags(target)
     try:
         result = publish_to_platform(
             platform_key=target.platform_key,
@@ -251,7 +310,7 @@ def execute_target(*, target_id) -> dict[str, Any]:
             content_html=_simple_html(target.adapted_content),
             content_text=text,
             summary=text[:180],
-            tags=[],
+            tags=tags,
             assets=assets,
             credentials=credentials,
             publish_mode="public",
