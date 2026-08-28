@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from types import SimpleNamespace
 
 import pytest
@@ -20,7 +20,7 @@ from apps.publishing.platform_health import (
 )
 from apps.publishing.review import AWAITING_REVIEW_CODE
 from apps.publishing.runtime_config import validate_runtime_configuration
-from apps.publishing.scheduling import _fit_window
+from apps.publishing.scheduling import _fit_window, _fixed_slot
 from apps.publishing.services import _smart_platform_selection
 from apps.publishing.target_execution import _target_max_retries
 from apps.publishing.tasks import _running_stale_seconds
@@ -103,6 +103,24 @@ def test_smart_distribution_prioritizes_visual_channels_for_product_guides():
     assert "douyin" in selected
     assert "bilibili" in selected
     assert len(selected) <= 8
+
+
+def test_fixed_daily_slots_spread_articles_and_leave_platform_wave_room():
+    day = date(2026, 8, 28)
+    first = _fixed_slot(day, 0, posts_per_day=2, platform_count=4)
+    second = _fixed_slot(day, 1, posts_per_day=2, platform_count=4)
+    assert first is not None and second is not None
+    assert timezone.localtime(first).time().isoformat(timespec="minutes") == "09:30"
+    assert second > first
+    # Four platforms need 105 minutes after the article start, so the second slot
+    # must be early enough for the complete wave to finish by 20:30.
+    assert timezone.localtime(second).time().isoformat(timespec="minutes") == "18:45"
+
+
+def test_single_daily_article_uses_one_slot_only():
+    slot = _fixed_slot(date(2026, 8, 28), 0, posts_per_day=1, platform_count=8)
+    assert slot is not None
+    assert timezone.localtime(slot).time().isoformat(timespec="minutes") == "09:30"
 
 
 def test_wechat_is_not_exposed_without_component_ticket(monkeypatch):
