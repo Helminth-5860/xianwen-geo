@@ -135,12 +135,14 @@ def run_adaptive_scan(scan: SourceIndexScan, *, provider: SearchProvider) -> Sca
         raise SearchProviderError("SOURCE_INDEX_SUBJECT_IDENTITY_MISSING")
 
     started = time_module.monotonic()
-    search_budget = int(getattr(settings, "SOURCE_INDEX_SEARCH_BUDGET_SECONDS", 260))
+    search_budget = int(getattr(settings, "SOURCE_INDEX_SEARCH_BUDGET_SECONDS", 270))
+    request_timeout = float(getattr(settings, "SOURCE_INDEX_REQUEST_TIMEOUT_SECONDS", 8))
     max_requests = int(getattr(settings, "SOURCE_INDEX_MAX_REQUESTS", 200))
     batch_size = int(getattr(settings, "SOURCE_INDEX_SEARCH_CONCURRENCY", 3))
     min_requests = int(getattr(settings, "SOURCE_INDEX_MIN_REQUESTS", 12))
     stop_ratio = float(getattr(settings, "SOURCE_INDEX_STOP_YIELD_RATIO", 0.08))
     low_yield_batches_needed = int(getattr(settings, "SOURCE_INDEX_LOW_YIELD_BATCHES", 3))
+    request_deadline_guard = request_timeout + 1.0
 
     queue: deque[SearchTask] = deque(SearchTask(query=query) for query in initial_queries)
     seen_tasks = {task.key for task in queue}
@@ -163,7 +165,12 @@ def run_adaptive_scan(scan: SourceIndexScan, *, provider: SearchProvider) -> Sca
     )
 
     while queue:
-        if time_module.monotonic() - started >= search_budget or provider_requests >= max_requests:
+        elapsed = time_module.monotonic() - started
+        if (
+            elapsed >= search_budget
+            or search_budget - elapsed <= request_deadline_guard
+            or provider_requests >= max_requests
+        ):
             hit_limit = True
             break
         remaining_requests = max_requests - provider_requests
@@ -184,6 +191,7 @@ def run_adaptive_scan(scan: SourceIndexScan, *, provider: SearchProvider) -> Sca
                     task,
                     started,
                     search_budget,
+                    request_timeout,
                     max_attempts,
                 ): task
                 for task, max_attempts in zip(current_batch, attempt_budgets, strict=True)
@@ -200,6 +208,8 @@ def run_adaptive_scan(scan: SourceIndexScan, *, provider: SearchProvider) -> Sca
                 if error_code:
                     provider_errors += 1
                     partial = True
+                    if error_code == "SOURCE_INDEX_SEARCH_BUDGET_EXHAUSTED":
+                        hit_limit = True
                 outcomes.append((task, results, error_code))
 
         batch_raw = 0
@@ -301,12 +311,18 @@ def run_adaptive_scan(scan: SourceIndexScan, *, provider: SearchProvider) -> Sca
             },
         )
 
+        if hit_limit:
+            break
+
         # Enforce the provider's common 3-QPS baseline without wasting time when
         # requests themselves are slow.
         minimum_batch_window = len(current_batch) / max(1, batch_size)
         elapsed_batch = time_module.monotonic() - batch_started
         if elapsed_batch < minimum_batch_window:
-            time_module.sleep(minimum_batch_window - elapsed_batch)
+            remaining = search_budget - (time_module.monotonic() - started)
+            sleep_for = min(minimum_batch_window - elapsed_batch, max(0.0, remaining))
+            if sleep_for > 0:
+                time_module.sleep(sleep_for)
 
     return ScanPayload(
         context=context,
@@ -326,12 +342,14 @@ def _search_with_retry(
     task: SearchTask,
     scan_started: float,
     search_budget: int,
+    request_timeout: float,
     max_attempts: int = 3,
 ) -> tuple[list[SearchResult], int, str]:
     attempts = 0
     last_code = ""
     for retry_no in range(max_attempts):
-        if time_module.monotonic() - scan_started >= search_budget:
+        elapsed = time_module.monotonic() - scan_started
+        if elapsed >= search_budget or search_budget - elapsed <= request_timeout + 1.0:
             return [], attempts, "SOURCE_INDEX_SEARCH_BUDGET_EXHAUSTED"
         attempts += 1
         try:
@@ -350,7 +368,11 @@ def _search_with_retry(
                 raise
             if retry_no >= max_attempts - 1:
                 return [], attempts, last_code
-            time_module.sleep(min(2.0, 0.5 * (2**retry_no)))
+            remaining = search_budget - (time_module.monotonic() - scan_started)
+            sleep_for = min(2.0, 0.5 * (2**retry_no), max(0.0, remaining - request_timeout - 1.0))
+            if sleep_for <= 0:
+                return [], attempts, "SOURCE_INDEX_SEARCH_BUDGET_EXHAUSTED"
+            time_module.sleep(sleep_for)
     return [], attempts, last_code or "BAIDU_SEARCH_FAILED"
 
 
