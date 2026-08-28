@@ -84,6 +84,12 @@ def begin_browser_authorization(*, user, subject_id, platform_key: str) -> Platf
             "updated_at",
         )
     )
+
+    # Do not depend on the browser UI staying open: the backend itself keeps polling
+    # the worker and imports the encrypted session credentials as soon as login succeeds.
+    from .tasks import sync_authorization_session_task
+
+    sync_authorization_session_task.delay(str(session.pk))
     return session
 
 
