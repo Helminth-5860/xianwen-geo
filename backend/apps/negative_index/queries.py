@@ -1,7 +1,10 @@
 from __future__ import annotations
 
-from apps.search_discovery.subject_context import SubjectSearchContext, append_query, primary_anchor
-
+from apps.search_discovery.subject_context import (
+    SubjectSearchContext,
+    append_query,
+    primary_anchor,
+)
 
 NEGATIVE_QUERY_THEMES = (
     "负面 争议",
@@ -16,7 +19,10 @@ NEGATIVE_QUERY_THEMES = (
 )
 
 
-def build_negative_queries(context: SubjectSearchContext, max_queries: int = 12) -> list[str]:
+def build_negative_queries(
+    context: SubjectSearchContext,
+    max_queries: int = 12,
+) -> list[str]:
     if not context.anchors:
         return []
     official = context.official_name or context.anchors[0]
