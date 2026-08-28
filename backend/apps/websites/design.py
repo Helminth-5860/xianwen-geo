@@ -101,9 +101,7 @@ def design_options_payload() -> dict[str, object]:
         "styles": list(STYLE_OPTIONS),
         "themes": list(THEME_OPTIONS),
         "densities": list(DENSITY_OPTIONS),
-        "recommended_themes": {
-            key: list(values) for key, values in RECOMMENDED_THEMES.items()
-        },
+        "recommended_themes": {key: list(values) for key, values in RECOMMENDED_THEMES.items()},
     }
 
 
