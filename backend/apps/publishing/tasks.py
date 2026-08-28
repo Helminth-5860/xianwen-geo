@@ -5,7 +5,8 @@ from datetime import timedelta
 from celery import shared_task  # type: ignore[import-untyped]
 from django.utils import timezone
 
-from .execution import execute_target, prepare_publication
+from .execution import prepare_publication
+from .target_execution import execute_target
 
 
 @shared_task(name="publishing.prepare_publication", bind=True, ignore_result=True)
