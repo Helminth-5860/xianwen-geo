@@ -1,6 +1,14 @@
-import { get, post } from "./auth-client";
+import { get, post, write } from "./auth-client";
 
-export type WebsiteStyleKey = "professional" | "technology" | "premium";
+export type WebsiteStyleKey =
+  | "professional"
+  | "technology"
+  | "premium"
+  | "industrial"
+  | "local_service"
+  | "authority";
+export type WebsiteThemeKey = "ocean" | "obsidian" | "cloud" | "amethyst" | "jade" | "gold";
+export type WebsiteDensityKey = "compact" | "standard" | "rich";
 export type WebsiteProjectStatus = "draft" | "generating" | "ready" | "failed";
 export type WebsiteJobStatus = "queued" | "running" | "succeeded" | "failed";
 
@@ -39,6 +47,10 @@ export type WebsiteProject = Readonly<{
   subject_version_id: string;
   style_key: WebsiteStyleKey;
   style_name: string;
+  theme_key: WebsiteThemeKey;
+  theme_name: string;
+  density_key: WebsiteDensityKey;
+  density_name: string;
   status: WebsiteProjectStatus;
   selected_asset_ids: string[];
   selected_document_ids: string[];
@@ -73,9 +85,34 @@ export type WebsiteReadiness = Readonly<{
   uploaded_image_count: number;
 }>;
 
+export type WebsiteDesignOption<T extends string> = Readonly<{
+  key: T;
+  name: string;
+  description: string;
+}>;
+
+export type WebsiteDesignOptions = Readonly<{
+  styles: WebsiteDesignOption<WebsiteStyleKey>[];
+  themes: WebsiteDesignOption<WebsiteThemeKey>[];
+  densities: WebsiteDesignOption<WebsiteDensityKey>[];
+  recommended_themes: Record<WebsiteStyleKey, WebsiteThemeKey[]>;
+}>;
+
+export type WebsiteDesignRecommendation = Readonly<{
+  style_key: WebsiteStyleKey;
+  style_name: string;
+  theme_key: WebsiteThemeKey;
+  theme_name: string;
+  density_key: WebsiteDensityKey;
+  density_name: string;
+  reason: string;
+}>;
+
 export type WebsiteState = Readonly<{
   subject: Readonly<{ id: string; official_name: string }>;
   readiness: WebsiteReadiness;
+  design_options: WebsiteDesignOptions;
+  recommendation: WebsiteDesignRecommendation;
   project: WebsiteProject | null;
   latest_job: WebsiteJob | null;
 }>;
@@ -93,6 +130,8 @@ export function generateWebsite(
   subjectId: string,
   input: {
     style_key: WebsiteStyleKey;
+    theme_key: WebsiteThemeKey;
+    density_key: WebsiteDensityKey;
     image_asset_ids: string[];
     document_ids: string[];
   },
@@ -102,4 +141,16 @@ export function generateWebsite(
     input,
     { "Idempotency-Key": crypto.randomUUID() },
   );
+}
+
+export function updateWebsiteDesign(
+  subjectId: string,
+  input: {
+    style_key: WebsiteStyleKey;
+    theme_key: WebsiteThemeKey;
+    density_key: WebsiteDensityKey;
+    expected_version: number;
+  },
+) {
+  return write<{ project: WebsiteProject }>("PATCH", `/subjects/${subjectId}/website/design`, input);
 }
