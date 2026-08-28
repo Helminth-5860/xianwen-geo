@@ -7,6 +7,7 @@ from django.utils import timezone
 
 from .execution import prepare_publication
 from .recovery import recover_preparation_jobs
+from .review import hold_publication_for_review, should_hold_for_review
 from .scheduling import assign_publication_schedule
 from .status_tracking import check_submitted_target
 from .target_execution import execute_target
@@ -23,7 +24,12 @@ def prepare_publication_task(self, publication_id: str):
         )
         return None
     if result.get("status") == "ready":
-        from .models import PublicationTarget
+        from .models import Publication, PublicationTarget
+
+        publication = Publication.objects.select_related("user", "subject").get(pk=publication_id)
+        if should_hold_for_review(publication):
+            hold_publication_for_review(publication_id)
+            return None
 
         base_time = assign_publication_schedule(publication_id)
         targets = list(
@@ -80,6 +86,10 @@ def recover_interrupted_publishing_task():
             status__in=(Publication.Status.PREPARING, Publication.Status.QUEUED),
             updated_at__lte=stale,
         )
+        .exclude(
+            targets__status=PublicationTarget.Status.PAUSED,
+            targets__safe_error_code="awaiting_review",
+        )
         .values_list("id", flat=True)[:100]
     )
     for publication_id in publication_ids:
@@ -109,7 +119,7 @@ def adopt_ready_articles_task(user_id: str, subject_id: str):
         user_id=user_id,
         subject_id=subject_id,
         is_enabled=True,
-        mode=PublishingPreference.Mode.MANAGED,
+        mode__in=(PublishingPreference.Mode.MANAGED, PublishingPreference.Mode.REVIEW),
     ).first()
     if preference is None:
         return None
