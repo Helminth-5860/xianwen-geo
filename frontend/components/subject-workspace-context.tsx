@@ -1,5 +1,6 @@
 "use client";
 
+import { ProfileOutlined } from "@ant-design/icons";
 import { Button, Modal, Select, Space, Spin, Typography, message } from "antd";
 import { usePathname } from "next/navigation";
 import {
@@ -265,14 +266,25 @@ export function useSubjectSwitchGuard(key: string, dirty: boolean, save: () => P
   );
 }
 
-export function SubjectWorkspaceTopbar() {
+export function SubjectWorkspaceSwitcher({
+  className,
+  stacked = false,
+}: Readonly<{ className?: string; stacked?: boolean }>) {
   const { active, currentSubject, loading, requestSubjectSwitch, subjects, switchingSubject } =
     useSubjectWorkspace();
   if (!active) return null;
 
   return (
-    <header className="subject-workspace-topbar">
-      <Space size="middle" wrap>
+    <div
+      className={[
+        "subject-workspace-switcher",
+        stacked && "subject-workspace-switcher--stacked",
+        className,
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
+      <Space size={stacked ? 6 : "middle"} orientation={stacked ? "vertical" : "horizontal"}>
         <Typography.Text type="secondary">当前主体</Typography.Text>
         {loading ? (
           <Spin size="small" />
@@ -292,9 +304,38 @@ export function SubjectWorkspaceTopbar() {
           <Typography.Text strong>尚未创建可用主体</Typography.Text>
         )}
       </Space>
-      <Button href={currentSubject ? `/subjects/${currentSubject.id}` : "/subjects"}>
-        {currentSubject ? "查看主体资料" : "创建主体"}
-      </Button>
+    </div>
+  );
+}
+
+export function SubjectWorkspaceTopbar({
+  navigationTrigger,
+  focusControl,
+}: Readonly<{
+  navigationTrigger?: ReactNode;
+  focusControl?: ReactNode;
+}>) {
+  const { active, currentSubject } = useSubjectWorkspace();
+  if (!active) return null;
+
+  return (
+    <header className="subject-workspace-topbar">
+      <div className="subject-workspace-topbar__leading">
+        {navigationTrigger}
+        <span className="subject-workspace-topbar__mobile-brand">显问 GEO</span>
+        <SubjectWorkspaceSwitcher className="subject-workspace-topbar__subject" />
+      </div>
+      <Space size="small" className="subject-workspace-topbar__actions">
+        {focusControl}
+        <Button
+          className="subject-workspace-topbar__profile-link"
+          icon={<ProfileOutlined />}
+          href={currentSubject ? `/subjects/${currentSubject.id}` : "/subjects"}
+          aria-label={currentSubject ? "查看主体资料" : "创建主体"}
+        >
+          {currentSubject ? "查看主体资料" : "创建主体"}
+        </Button>
+      </Space>
     </header>
   );
 }

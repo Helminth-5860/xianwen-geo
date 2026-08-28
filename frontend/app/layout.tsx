@@ -2,11 +2,8 @@ import { AntdRegistry } from "@ant-design/nextjs-registry";
 import type { Metadata } from "next";
 
 import { UserAssistantWidget } from "@/components/assistant/user-assistant-widget";
-import {
-  SubjectWorkspaceProvider,
-  SubjectWorkspaceTopbar,
-} from "@/components/subject-workspace-context";
-import { UserWorkspaceNavigation } from "@/components/user-workspace-navigation";
+import { ResponsiveWorkspaceShell } from "@/components/responsive-workspace-shell";
+import { SubjectWorkspaceProvider } from "@/components/subject-workspace-context";
 
 import "./globals.css";
 import "./product-shell.css";
@@ -25,14 +22,8 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       <body>
         <AntdRegistry>
           <SubjectWorkspaceProvider>
-            <div className="geo-app-shell">
-              <UserWorkspaceNavigation />
-              <div className="geo-app-shell__content">
-                <SubjectWorkspaceTopbar />
-                {children}
-              </div>
-              <UserAssistantWidget />
-            </div>
+            <ResponsiveWorkspaceShell>{children}</ResponsiveWorkspaceShell>
+            <UserAssistantWidget />
           </SubjectWorkspaceProvider>
         </AntdRegistry>
       </body>
