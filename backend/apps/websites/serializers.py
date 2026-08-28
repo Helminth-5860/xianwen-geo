@@ -6,6 +6,8 @@ from .services import MAX_SELECTED_MATERIALS
 
 class WebsiteGenerateSerializer(serializers.Serializer):
     style_key = serializers.ChoiceField(choices=WebsiteProject.Style.values)
+    theme_key = serializers.ChoiceField(choices=WebsiteProject.Theme.values)
+    density_key = serializers.ChoiceField(choices=WebsiteProject.Density.values)
     image_asset_ids = serializers.ListField(
         child=serializers.UUIDField(),
         required=False,
@@ -26,3 +28,10 @@ class WebsiteGenerateSerializer(serializers.Serializer):
                 {"document_ids": [f"官网素材最多选择 {MAX_SELECTED_MATERIALS} 张图片"]}
             )
         return attrs
+
+
+class WebsiteDesignSerializer(serializers.Serializer):
+    style_key = serializers.ChoiceField(choices=WebsiteProject.Style.values)
+    theme_key = serializers.ChoiceField(choices=WebsiteProject.Theme.values)
+    density_key = serializers.ChoiceField(choices=WebsiteProject.Density.values)
+    expected_version = serializers.IntegerField(min_value=1)
