@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
-from typing import Any
 
 from django.db import transaction
 from django.http import Http404
@@ -13,19 +12,21 @@ from apps.ai.content import StructuredContentPayload
 from apps.ai.contracts import AIAdapterRequest, AIModelCapability
 from apps.ai.errors import AIAdapterError
 from apps.ai.runtime import get_capability_runtime_snapshot
+from apps.documents.models import UserDocument
 from apps.images.models import ImageAsset
 from apps.keywords.models import Keyword, KeywordAssetPreference, KeywordSet
 from apps.questions.bank_models import Question, QuestionBankWorkspace
-from apps.subjects.models import Subject, SubjectProduct
+from apps.subjects.models import Subject, SubjectBusinessProfile, SubjectProduct
 from apps.subjects.subject_services import subject_for_user_or_404
 
 from .ai import DeepSeekWebsiteAdapter
 from .models import WebsiteGenerationJob, WebsiteProject
 
 SITE_SCHEMA_VERSION = 1
-MAX_SELECTED_ASSETS = 12
+MAX_SELECTED_MATERIALS = 12
 MAX_KEYWORDS = 20
 MAX_QUESTIONS = 20
+IMAGE_DOCUMENT_KINDS = {"jpeg", "png", "webp"}
 PAGE_KEYS = ("home", "about", "services", "solutions", "faq", "contact")
 PAGE_SLUGS = {
     "home": "",
@@ -60,7 +61,8 @@ def _idempotency_digest(*, user_id, subject_id, raw_key: str) -> str:
     key = raw_key.strip()
     if not key or len(key) > 200 or any(ord(char) < 33 or ord(char) > 126 for char in key):
         raise WebsiteInputError("请重新提交生成请求")
-    return hashlib.sha256(f"website:v1:{user_id}:{subject_id}:{key}".encode()).hexdigest()
+    value = f"website:v1:{user_id}:{subject_id}:{key}"
+    return hashlib.sha256(value.encode()).hexdigest()
 
 
 def _compact_value(value: object) -> object:
@@ -102,7 +104,7 @@ def _confirmed_subject_fields(subject: Subject) -> list[dict[str, object]]:
 def _business_profile(subject: Subject) -> dict[str, object]:
     try:
         profile = subject.business_profile
-    except Subject.business_profile.RelatedObjectDoesNotExist:
+    except SubjectBusinessProfile.DoesNotExist:
         return {}
     return {
         "brand_name": profile.brand_name,
@@ -127,7 +129,7 @@ def _keyword_rows(*, user, subject: Subject) -> list[str]:
     )
     if preferences:
         return [
-            (item.display_text.strip() or item.source_keyword.text.strip())
+            item.display_text.strip() or item.source_keyword.text.strip()
             for item in preferences
             if item.display_text.strip() or item.source_keyword.text.strip()
         ]
@@ -174,18 +176,53 @@ def _approved_image_queryset(*, user, subject: Subject):
     )
 
 
-def _selected_assets(*, user, subject: Subject, asset_ids: list[uuid.UUID]) -> list[ImageAsset]:
-    if len(asset_ids) > MAX_SELECTED_ASSETS:
-        raise WebsiteInputError(f"官网素材最多选择 {MAX_SELECTED_ASSETS} 张图片")
-    unique_ids = list(dict.fromkeys(asset_ids))
-    rows = list(_approved_image_queryset(user=user, subject=subject).filter(pk__in=unique_ids))
-    by_id = {row.pk: row for row in rows}
-    if len(by_id) != len(unique_ids):
+def _uploaded_image_queryset(*, user, subject: Subject):
+    return (
+        UserDocument.objects.filter(user=user, subject=subject, current_version__isnull=False)
+        .select_related("current_version")
+        .filter(current_version__detected_file_kind__in=IMAGE_DOCUMENT_KINDS)
+    )
+
+
+def _selected_materials(
+    *,
+    user,
+    subject: Subject,
+    asset_ids: list[uuid.UUID],
+    document_ids: list[uuid.UUID],
+) -> tuple[list[ImageAsset], list[UserDocument]]:
+    unique_asset_ids = list(dict.fromkeys(asset_ids))
+    unique_document_ids = list(dict.fromkeys(document_ids))
+    if len(unique_asset_ids) + len(unique_document_ids) > MAX_SELECTED_MATERIALS:
+        raise WebsiteInputError(f"官网素材最多选择 {MAX_SELECTED_MATERIALS} 张图片")
+
+    asset_rows = list(
+        _approved_image_queryset(user=user, subject=subject).filter(pk__in=unique_asset_ids)
+    )
+    assets_by_id = {row.pk: row for row in asset_rows}
+    if len(assets_by_id) != len(unique_asset_ids):
         raise WebsiteInputError("部分图片素材不可用于当前官网，请重新选择")
-    return [by_id[item_id] for item_id in unique_ids]
+
+    document_rows = list(
+        _uploaded_image_queryset(user=user, subject=subject).filter(pk__in=unique_document_ids)
+    )
+    documents_by_id = {row.pk: row for row in document_rows}
+    if len(documents_by_id) != len(unique_document_ids):
+        raise WebsiteInputError("部分上传图片不可用于当前官网，请重新选择")
+
+    return (
+        [assets_by_id[item_id] for item_id in unique_asset_ids],
+        [documents_by_id[item_id] for item_id in unique_document_ids],
+    )
 
 
-def _source_snapshot(*, user, subject: Subject, assets: list[ImageAsset]) -> dict[str, object]:
+def _source_snapshot(
+    *,
+    user,
+    subject: Subject,
+    assets: list[ImageAsset],
+    documents: list[UserDocument],
+) -> dict[str, object]:
     version = subject.current_version
     if version is None:
         raise WebsiteInputError("请先完善并保存主体资料")
@@ -194,7 +231,6 @@ def _source_snapshot(*, user, subject: Subject, assets: list[ImageAsset]) -> dic
         .order_by("display_value")
         .values_list("display_value", flat=True)[:30]
     )
-    profile = _business_profile(subject)
     return {
         "subject": {
             "official_name": version.official_name,
@@ -202,18 +238,28 @@ def _source_snapshot(*, user, subject: Subject, assets: list[ImageAsset]) -> dic
             "confirmed_fields": _confirmed_subject_fields(subject),
             "products": products,
         },
-        "business_profile": profile,
+        "business_profile": _business_profile(subject),
         "keywords": _keyword_rows(user=user, subject=subject),
         "questions": _question_rows(user=user, subject=subject),
         "image_assets": [
             {
                 "id": str(asset.pk),
-                "source_type": asset.source_type,
+                "source": "内容图片库",
                 "role": asset.role,
                 "width": asset.width,
                 "height": asset.height,
             }
             for asset in assets
+        ],
+        "uploaded_images": [
+            {
+                "id": str(document.pk),
+                "source": "客户上传",
+                "name": document.display_name,
+                "file_kind": document.current_version.detected_file_kind,
+            }
+            for document in documents
+            if document.current_version is not None
         ],
     }
 
@@ -221,18 +267,23 @@ def _source_snapshot(*, user, subject: Subject, assets: list[ImageAsset]) -> dic
 def website_readiness(*, user, subject: Subject) -> dict[str, object]:
     version = subject.current_version
     product_count = (
-        SubjectProduct.objects.filter(subject_version=version).count() if version is not None else 0
+        SubjectProduct.objects.filter(subject_version=version).count()
+        if version is not None
+        else 0
     )
     keywords = _keyword_rows(user=user, subject=subject) if version is not None else []
     questions = _question_rows(user=user, subject=subject) if version is not None else []
-    image_count = _approved_image_queryset(user=user, subject=subject).count()
+    library_count = _approved_image_queryset(user=user, subject=subject).count()
+    uploaded_count = _uploaded_image_queryset(user=user, subject=subject).count()
     return {
         "can_generate": subject.status == Subject.Status.ACTIVE and version is not None,
         "subject_ready": subject.status == Subject.Status.ACTIVE and version is not None,
         "product_count": product_count,
         "keyword_count": len(keywords),
         "question_count": len(questions),
-        "image_count": image_count,
+        "image_count": library_count + uploaded_count,
+        "library_image_count": library_count,
+        "uploaded_image_count": uploaded_count,
     }
 
 
@@ -241,17 +292,18 @@ def _contact_from_snapshot(snapshot: dict[str, object]) -> dict[str, str]:
     if not isinstance(profile, dict):
         return {}
     result: dict[str, str] = {}
-    for key in ("brand_name", "primary_business", "business_address", "contact_name", "contact_phone"):
+    keys = (
+        "brand_name",
+        "primary_business",
+        "business_address",
+        "contact_name",
+        "contact_phone",
+    )
+    for key in keys:
         value = profile.get(key)
         if isinstance(value, str) and value.strip():
             result[key] = value.strip()
     return result
-
-
-def _project_error_message(project: WebsiteProject) -> str:
-    if project.status != WebsiteProject.Status.FAILED:
-        return ""
-    return "官网生成暂未完成，请重新尝试"
 
 
 def project_payload(project: WebsiteProject) -> dict[str, object]:
@@ -263,11 +315,16 @@ def project_payload(project: WebsiteProject) -> dict[str, object]:
         "style_name": STYLE_LABELS.get(project.style_key, "专业商务"),
         "status": project.status,
         "selected_asset_ids": project.selected_asset_ids,
+        "selected_document_ids": project.selected_document_ids,
         "site_schema_version": project.site_schema_version,
         "site": project.site_json or None,
         "contact": _contact_from_snapshot(project.source_snapshot),
         "generation_count": project.generation_count,
-        "error_message": _project_error_message(project),
+        "error_message": (
+            "官网生成暂未完成，请重新尝试"
+            if project.status == WebsiteProject.Status.FAILED
+            else ""
+        ),
         "version": project.version,
         "created_at": project.created_at,
         "updated_at": project.updated_at,
@@ -279,9 +336,11 @@ def job_payload(job: WebsiteGenerationJob) -> dict[str, object]:
         "id": str(job.pk),
         "project_id": str(job.project_id),
         "status": job.status,
-        "error_message": "官网生成暂未完成，请重新尝试"
-        if job.status == WebsiteGenerationJob.Status.FAILED
-        else "",
+        "error_message": (
+            "官网生成暂未完成，请重新尝试"
+            if job.status == WebsiteGenerationJob.Status.FAILED
+            else ""
+        ),
         "created_at": job.created_at,
         "started_at": job.started_at,
         "finished_at": job.finished_at,
@@ -295,15 +354,19 @@ def website_state(*, user, subject_id) -> dict[str, object]:
         .select_related("subject", "subject_version")
         .first()
     )
-    latest_job = None
-    if project is not None:
-        latest_job = project.generation_jobs.filter(user=user).order_by("-created_at").first()
+    latest_job = (
+        project.generation_jobs.filter(user=user).order_by("-created_at").first()
+        if project is not None
+        else None
+    )
     return {
         "subject": {
             "id": str(subject.pk),
-            "official_name": subject.current_version.official_name
-            if subject.current_version is not None
-            else "",
+            "official_name": (
+                subject.current_version.official_name
+                if subject.current_version is not None
+                else ""
+            ),
         },
         "readiness": website_readiness(user=user, subject=subject),
         "project": project_payload(project) if project is not None else None,
@@ -314,7 +377,9 @@ def website_state(*, user, subject_id) -> dict[str, object]:
 def website_job_for_user(*, user, job_id) -> WebsiteGenerationJob:
     try:
         return WebsiteGenerationJob.objects.select_related(
-            "project", "project__subject", "project__subject_version"
+            "project",
+            "project__subject",
+            "project__subject_version",
         ).get(pk=job_id, user=user)
     except WebsiteGenerationJob.DoesNotExist as exc:
         raise Http404 from exc
@@ -334,6 +399,7 @@ def create_generation_job(
     subject_id,
     style_key: str,
     image_asset_ids: list[uuid.UUID],
+    document_ids: list[uuid.UUID],
     idempotency_key: str,
     request_id,
 ) -> tuple[WebsiteProject, WebsiteGenerationJob, bool]:
@@ -343,13 +409,24 @@ def create_generation_job(
     if style_key not in STYLE_LABELS:
         raise WebsiteInputError("请选择网站风格")
 
-    assets = _selected_assets(user=user, subject=subject, asset_ids=image_asset_ids)
-    source_snapshot = _source_snapshot(user=user, subject=subject, assets=assets)
+    assets, documents = _selected_materials(
+        user=user,
+        subject=subject,
+        asset_ids=image_asset_ids,
+        document_ids=document_ids,
+    )
+    source_snapshot = _source_snapshot(
+        user=user,
+        subject=subject,
+        assets=assets,
+        documents=documents,
+    )
     runtime, adapter = _runtime_and_adapter()
     input_snapshot = {
         "style_key": style_key,
         "style_name": STYLE_LABELS[style_key],
         "selected_asset_ids": [str(item.pk) for item in assets],
+        "selected_document_ids": [str(item.pk) for item in documents],
         "source": source_snapshot,
     }
     input_digest = _digest(input_snapshot)
@@ -403,6 +480,7 @@ def create_generation_job(
         project.style_key = style_key
         project.status = WebsiteProject.Status.GENERATING
         project.selected_asset_ids = [str(item.pk) for item in assets]
+        project.selected_document_ids = [str(item.pk) for item in documents]
         project.source_snapshot = source_snapshot
         project.last_error_code = ""
         project.version += 1
@@ -455,16 +533,18 @@ def normalize_site_output(value: object) -> dict[str, object]:
     pages = value["pages"]
     if not isinstance(pages, list) or len(pages) != len(PAGE_KEYS):
         raise WebsiteSchemaError("pages_invalid")
+
     normalized_pages: list[dict[str, object]] = []
     seen: set[str] = set()
+    required_page_fields = {
+        "key",
+        "title",
+        "seo_title",
+        "seo_description",
+        "sections",
+    }
     for page in pages:
-        if not isinstance(page, dict) or set(page) != {
-            "key",
-            "title",
-            "seo_title",
-            "seo_description",
-            "sections",
-        }:
+        if not isinstance(page, dict) or set(page) != required_page_fields:
             raise WebsiteSchemaError("page_invalid")
         key = page["key"]
         if not isinstance(key, str) or key not in PAGE_KEYS or key in seen:
@@ -473,9 +553,15 @@ def normalize_site_output(value: object) -> dict[str, object]:
         sections = page["sections"]
         if not isinstance(sections, list) or not 1 <= len(sections) <= 8:
             raise WebsiteSchemaError("sections_invalid")
+
         normalized_sections: list[dict[str, object]] = []
         for section in sections:
-            if not isinstance(section, dict) or set(section) != {"type", "title", "body", "items"}:
+            if not isinstance(section, dict) or set(section) != {
+                "type",
+                "title",
+                "body",
+                "items",
+            }:
                 raise WebsiteSchemaError("section_invalid")
             section_type = section["type"]
             if not isinstance(section_type, str) or section_type not in SECTION_TYPES:
@@ -491,6 +577,7 @@ def normalize_site_output(value: object) -> dict[str, object]:
                     "items": [_normalize_item(item) for item in items],
                 }
             )
+
         normalized_pages.append(
             {
                 "key": key,
@@ -501,6 +588,7 @@ def normalize_site_output(value: object) -> dict[str, object]:
                 "sections": normalized_sections,
             }
         )
+
     if seen != set(PAGE_KEYS):
         raise WebsiteSchemaError("page_set_invalid")
     normalized_pages.sort(key=lambda page: PAGE_KEYS.index(str(page["key"])))
@@ -528,6 +616,36 @@ def _system_prompt() -> str:
         "解决方案页按真实业务与用户问题组织；FAQ 优先覆盖已有检测问题；联系页只写联系引导，"
         "具体联系方式由系统从已确认资料展示。不要在文案中承诺未被资料支持的效果。"
     )
+
+
+def _mark_failed(job_id: str) -> dict[str, str]:
+    with transaction.atomic():
+        failed = (
+            WebsiteGenerationJob.objects.select_for_update()
+            .select_related("project")
+            .get(pk=job_id)
+        )
+        if failed.status not in {
+            WebsiteGenerationJob.Status.QUEUED,
+            WebsiteGenerationJob.Status.RUNNING,
+        }:
+            return {"status": failed.status}
+        failed.status = WebsiteGenerationJob.Status.FAILED
+        failed.safe_error_code = "WEBSITE_GENERATION_FAILED"
+        failed.finished_at = timezone.now()
+        failed.save(
+            update_fields=("status", "safe_error_code", "finished_at", "updated_at")
+        )
+        project = WebsiteProject.objects.select_for_update().get(pk=failed.project_id)
+        project.status = (
+            WebsiteProject.Status.READY if project.site_json else WebsiteProject.Status.FAILED
+        )
+        project.last_error_code = "WEBSITE_GENERATION_FAILED"
+        project.version += 1
+        project.save(
+            update_fields=("status", "last_error_code", "version", "updated_at")
+        )
+    return {"status": "failed"}
 
 
 def execute_generation_job(*, job_id: str) -> dict[str, str]:
@@ -575,33 +693,13 @@ def execute_generation_job(*, job_id: str) -> dict[str, str]:
         )
         normalized = normalize_site_output(response.output.content)
     except (AIAdapterError, WebsiteSchemaError, ValueError, TypeError):
-        with transaction.atomic():
-            failed = WebsiteGenerationJob.objects.select_for_update().select_related("project").get(
-                pk=job_id
-            )
-            if failed.status not in {
-                WebsiteGenerationJob.Status.QUEUED,
-                WebsiteGenerationJob.Status.RUNNING,
-            }:
-                return {"status": failed.status}
-            failed.status = WebsiteGenerationJob.Status.FAILED
-            failed.safe_error_code = "WEBSITE_GENERATION_FAILED"
-            failed.finished_at = timezone.now()
-            failed.save(
-                update_fields=("status", "safe_error_code", "finished_at", "updated_at")
-            )
-            project = WebsiteProject.objects.select_for_update().get(pk=failed.project_id)
-            project.status = (
-                WebsiteProject.Status.READY if project.site_json else WebsiteProject.Status.FAILED
-            )
-            project.last_error_code = "WEBSITE_GENERATION_FAILED"
-            project.version += 1
-            project.save(update_fields=("status", "last_error_code", "version", "updated_at"))
-        return {"status": "failed"}
+        return _mark_failed(job_id)
 
     with transaction.atomic():
-        succeeded = WebsiteGenerationJob.objects.select_for_update().select_related("project").get(
-            pk=job_id
+        succeeded = (
+            WebsiteGenerationJob.objects.select_for_update()
+            .select_related("project")
+            .get(pk=job_id)
         )
         if succeeded.status != WebsiteGenerationJob.Status.RUNNING:
             return {"status": succeeded.status}
