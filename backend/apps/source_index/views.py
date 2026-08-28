@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from django.db import transaction
 from rest_framework.pagination import PageNumberPagination
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.status import HTTP_201_CREATED, HTTP_404_NOT_FOUND, HTTP_409_CONFLICT
 from rest_framework.views import APIView
 
 from apps.subjects.models import Subject
+from apps.subjects.permissions import IsAvailableAuthenticatedUser
 
 from .models import SourceIndexItem, SourceIndexScan
 from .serializers import (
@@ -38,7 +38,7 @@ class SourceIndexPagination(PageNumberPagination):
 
 
 class SourceIndexScanCreateView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAvailableAuthenticatedUser]
 
     def post(self, request, subject_id):
         try:
@@ -61,7 +61,7 @@ class SourceIndexScanCreateView(APIView):
 
 
 class SubjectSourceIndexView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAvailableAuthenticatedUser]
 
     def get(self, request, subject_id):
         if not Subject.objects.filter(pk=subject_id, user=request.user).exists():
@@ -83,7 +83,7 @@ class SubjectSourceIndexView(APIView):
 
 
 class SourceIndexScanDetailView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAvailableAuthenticatedUser]
 
     def get(self, request, scan_id):
         recover_stale_source_index_scans(user=request.user)
@@ -94,7 +94,7 @@ class SourceIndexScanDetailView(APIView):
 
 
 class SourceIndexSourceListView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAvailableAuthenticatedUser]
 
     def get(self, request, scan_id):
         scan = SourceIndexScan.objects.filter(pk=scan_id, user=request.user).first()
