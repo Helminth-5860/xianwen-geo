@@ -71,9 +71,9 @@ export type PublicationTarget = Readonly<{
     | "auth_required"
     | "paused";
   scheduled_at: string | null;
-  submitted_at?: string | null;
+  submitted_at: string | null;
   published_at: string | null;
-  management_url?: string;
+  management_url: string;
   public_url: string;
   attempts: number;
   error_message: string;
@@ -83,7 +83,16 @@ export type Publication = Readonly<{
   id: string;
   article_id: string;
   title: string;
-  status: "preparing" | "queued" | "running" | "partial" | "succeeded" | "failed" | "cancelled";
+  status:
+    | "preparing"
+    | "queued"
+    | "running"
+    | "paused"
+    | "partial"
+    | "succeeded"
+    | "failed"
+    | "cancelled";
+  awaiting_review: boolean;
   distribution_strategy: DistributionStrategy;
   image_strategy: ImageStrategy;
   scheduled_at: string | null;
