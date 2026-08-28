@@ -557,3 +557,162 @@ def test_progress_apis_hide_other_users_jobs_and_missing_jobs(geo_facts):
     assert client.get(f"/api/v1/geo/detections/{job.pk}").status_code == 404
     assert client.get(f"/api/v1/geo/detections/{job.pk}/model-progress").status_code == 404
     assert client.get(f"/api/v1/geo/detections/{uuid.uuid4()}").status_code == 404
+
+
+def _mark_job_terminal(job, status):
+    planned = job.planned_detection_points
+    now = timezone.now()
+    values = {
+        "status": status,
+        "completed_calls": planned,
+        "successful_calls": 0,
+        "failed_calls": 0,
+        "cancelled_calls": 0,
+        "finished_at": now,
+    }
+    if status == GeoDetectionJob.Status.SUCCEEDED:
+        values["successful_calls"] = planned
+    elif status == GeoDetectionJob.Status.PARTIAL:
+        values["successful_calls"] = 1
+        values["failed_calls"] = planned - 1
+    elif status == GeoDetectionJob.Status.FAILED:
+        values["failed_calls"] = planned
+    else:
+        values["cancelled_calls"] = planned
+        values["cancel_requested_at"] = now
+        values["cancelled_at"] = now
+    GeoDetectionJob.objects.filter(pk=job.pk).update(**values)
+    job.refresh_from_db()
+
+
+@pytest.mark.parametrize(
+    "status",
+    (
+        GeoDetectionJob.Status.PARTIAL,
+        GeoDetectionJob.Status.SUCCEEDED,
+        GeoDetectionJob.Status.FAILED,
+        GeoDetectionJob.Status.CANCELLED,
+    ),
+)
+def test_terminal_detection_can_be_idempotently_removed_from_subject_history(geo_facts, status):
+    job, _ = _create(geo_facts, key=f"geo-remove-{status}-{uuid.uuid4()}")
+    _mark_job_terminal(job, status)
+    user, subject, *_ = geo_facts
+    client = APIClient()
+    client.force_authenticate(user)
+    url = f"/api/v1/subjects/{subject.pk}/geo/detections/{job.pk}"
+    snapshot_id = job.snapshot.pk
+    call_ids = list(job.model_calls.order_by("id").values_list("id", flat=True))
+    quota_before = (
+        job.quota_hold.status,
+        job.quota_hold.requested_amount,
+        job.quota_hold.consumed_amount,
+        job.quota_hold.released_amount,
+    )
+
+    removed = client.delete(url)
+    repeated = client.delete(url)
+
+    assert removed.status_code == 200
+    assert removed.json()["data"] == {"removed": True}
+    assert repeated.status_code == 200
+    assert repeated.json()["data"] == {"removed": True}
+    job.refresh_from_db()
+    job.quota_hold.refresh_from_db()
+    assert job.user_removed_at is not None
+    assert job.snapshot.pk == snapshot_id
+    assert list(job.model_calls.order_by("id").values_list("id", flat=True)) == call_ids
+    assert (
+        job.quota_hold.status,
+        job.quota_hold.requested_amount,
+        job.quota_hold.consumed_amount,
+        job.quota_hold.released_amount,
+    ) == quota_before
+    history = client.get(f"/api/v1/subjects/{subject.pk}/geo/detections")
+    assert history.status_code == 200
+    assert history.json()["data"]["items"] == []
+    assert client.get(f"/api/v1/geo/detections/{job.pk}").status_code == 404
+    assert client.get(f"/api/v1/geo/detections/{job.pk}/model-progress").status_code == 404
+    assert client.get(f"/api/v1/geo/detections/{job.pk}/report").status_code == 404
+
+
+@pytest.mark.parametrize("status", (GeoDetectionJob.Status.QUEUED, GeoDetectionJob.Status.RUNNING))
+def test_active_detection_cannot_be_removed(geo_facts, status):
+    job, _ = _create(geo_facts, key=f"geo-remove-active-{status}-{uuid.uuid4()}")
+    if status == GeoDetectionJob.Status.RUNNING:
+        GeoDetectionJob.objects.filter(pk=job.pk).update(
+            status=GeoDetectionJob.Status.RUNNING,
+            started_at=timezone.now(),
+        )
+    user, subject, *_ = geo_facts
+    client = APIClient()
+    client.force_authenticate(user)
+
+    response = client.delete(f"/api/v1/subjects/{subject.pk}/geo/detections/{job.pk}")
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "GEO_DETECTION_STATE_CONFLICT"
+    job.refresh_from_db()
+    assert job.user_removed_at is None
+
+
+def test_detection_remove_is_subject_scoped_and_hides_cross_user_objects(geo_facts):
+    job, _ = _create(geo_facts, key=f"geo-remove-scope-{uuid.uuid4()}")
+    _mark_job_terminal(job, GeoDetectionJob.Status.FAILED)
+    user, subject, *_ = geo_facts
+    owner = APIClient()
+    owner.force_authenticate(user)
+    User = get_user_model()
+    other = User.objects.create_user(
+        phone="13500135043",
+        nickname="Detection remove outsider",
+        password="progress-test-password",
+    )
+    outsider = APIClient()
+    outsider.force_authenticate(other)
+
+    assert (
+        owner.delete(f"/api/v1/subjects/{uuid.uuid4()}/geo/detections/{job.pk}").status_code == 404
+    )
+    assert (
+        outsider.delete(f"/api/v1/subjects/{subject.pk}/geo/detections/{job.pk}").status_code == 404
+    )
+    job.refresh_from_db()
+    assert job.user_removed_at is None
+
+
+def test_detection_history_is_server_paginated_at_twenty_items(geo_facts):
+    user, subject, *_ = geo_facts
+    created_ids = []
+    for index in range(21):
+        job, _ = _create(
+            geo_facts,
+            key=f"geo-history-page-{index}-{uuid.uuid4()}",
+        )
+        created_ids.append(str(job.pk))
+        cancel_detection(user=user, detection_id=job.pk)
+    client = APIClient()
+    client.force_authenticate(user)
+
+    first = client.get(f"/api/v1/subjects/{subject.pk}/geo/detections?page=1&page_size=100")
+    second = client.get(f"/api/v1/subjects/{subject.pk}/geo/detections?page=2&page_size=20")
+
+    assert first.status_code == 200
+    assert len(first.json()["data"]["items"]) == 20
+    assert first.json()["data"]["pagination"] == {
+        "page": 1,
+        "page_size": 20,
+        "count": 21,
+        "total_pages": 2,
+    }
+    assert second.status_code == 200
+    assert len(second.json()["data"]["items"]) == 1
+    assert second.json()["data"]["pagination"] == {
+        "page": 2,
+        "page_size": 20,
+        "count": 21,
+        "total_pages": 2,
+    }
+    returned_ids = [row["id"] for row in first.json()["data"]["items"]]
+    returned_ids += [row["id"] for row in second.json()["data"]["items"]]
+    assert set(returned_ids) == set(created_ids)

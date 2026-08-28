@@ -9,6 +9,7 @@ from .views import (
     GeoDetectionEstimateView,
     GeoDetectionModelProgressView,
     GeoDetectionOptionsView,
+    GeoDetectionRemoveView,
     GeoDetectionReportView,
     GeoModelCallResponseView,
     GeoModelsView,
@@ -51,6 +52,11 @@ urlpatterns = [
         "subjects/<uuid:subject_id>/geo/detections",
         GeoDetectionCreateView.as_view(),
         name="geo-detection-create",
+    ),
+    path(
+        "subjects/<uuid:subject_id>/geo/detections/<uuid:detection_id>",
+        GeoDetectionRemoveView.as_view(),
+        name="geo-detection-remove",
     ),
     path(
         "geo/detections/<uuid:detection_id>",

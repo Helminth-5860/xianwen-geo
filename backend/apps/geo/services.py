@@ -59,6 +59,12 @@ GEO_SYSTEM_PROMPT = (
 GEO_PROMPT_VERSION = "geo-detection-v1"
 GEO_SCORING_RULE_VERSION = "geo-scoring-v1"
 ACTIVE_JOB_STATUSES = (GeoDetectionJob.Status.QUEUED, GeoDetectionJob.Status.RUNNING)
+TERMINAL_JOB_STATUSES = (
+    GeoDetectionJob.Status.PARTIAL,
+    GeoDetectionJob.Status.SUCCEEDED,
+    GeoDetectionJob.Status.FAILED,
+    GeoDetectionJob.Status.CANCELLED,
+)
 TERMINAL_CALL_STATUSES = (
     ModelCall.Status.SUCCEEDED,
     ModelCall.Status.FAILED,
@@ -570,7 +576,10 @@ def create_detection_job(
 
 
 def detection_for_user_or_404(*, user, detection_id, lock: bool = False):
-    query = GeoDetectionJob.objects.filter(user=user).select_related("quota_hold", "subject")
+    query = GeoDetectionJob.objects.filter(
+        user=user,
+        user_removed_at__isnull=True,
+    ).select_related("quota_hold", "subject")
     if lock:
         query = query.select_for_update()
     try:
@@ -643,11 +652,47 @@ def model_progress_payload(job: GeoDetectionJob) -> list[dict]:
     ]
 
 
-def detection_history(*, user, subject_id):
+def detection_history(*, user, subject_id, page: int = 1, page_size: int = 20):
     subject_for_user_or_404(user=user, subject_id=subject_id)
-    return GeoDetectionJob.objects.filter(user=user, subject_id=subject_id).order_by(
-        "-created_at", "-id"
-    )[:100]
+    page = max(1, int(page))
+    page_size = min(20, max(1, int(page_size)))
+    query = (
+        GeoDetectionJob.objects.filter(
+            user=user,
+            subject_id=subject_id,
+            user_removed_at__isnull=True,
+        )
+        .select_related("quota_hold", "subject")
+        .order_by("-created_at", "-id")
+    )
+    count = query.count()
+    start = (page - 1) * page_size
+    rows = list(query[start : start + page_size])
+    return rows, {
+        "page": page,
+        "page_size": page_size,
+        "count": count,
+        "total_pages": (count + page_size - 1) // page_size if count else 0,
+    }
+
+
+@transaction.atomic
+def remove_detection_from_history(*, user, subject_id, detection_id):
+    try:
+        job = (
+            GeoDetectionJob.objects.select_for_update()
+            .select_related("quota_hold", "subject")
+            .get(pk=detection_id, user=user, subject_id=subject_id)
+        )
+    except GeoDetectionJob.DoesNotExist as exc:
+        raise Http404 from exc
+    if job.status not in TERMINAL_JOB_STATUSES:
+        raise GeoDetectionStateConflict
+    if job.user_removed_at is None:
+        job.user_removed_at = timezone.now()
+        job.version += 1
+        job.save(update_fields=("user_removed_at", "version", "updated_at"))
+    return job
 
 
 def _settle_point(call: ModelCall, *, action: str) -> None:

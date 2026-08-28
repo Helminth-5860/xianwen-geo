@@ -55,6 +55,7 @@ class GeoDetectionJob(models.Model):  # noqa: DJ008
     started_at = models.DateTimeField(null=True, blank=True)
     finished_at = models.DateTimeField(null=True, blank=True)
     cancelled_at = models.DateTimeField(null=True, blank=True)
+    user_removed_at = models.DateTimeField(null=True, blank=True)
     version = models.PositiveBigIntegerField(default=1)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -70,6 +71,10 @@ class GeoDetectionJob(models.Model):  # noqa: DJ008
                 fields=("status", "queue_priority", "queued_at"), name="geo_job_queue_idx"
             ),
             models.Index(fields=("subject", "created_at"), name="geo_job_subject_idx"),
+            models.Index(
+                fields=("user", "subject", "user_removed_at", "created_at"),
+                name="geo_job_user_sub_rm_idx",
+            ),
         ]
         constraints = [
             models.CheckConstraint(
@@ -99,6 +104,11 @@ class GeoDetectionJob(models.Model):  # noqa: DJ008
                 name="geo_job_priority_range",
             ),
             models.CheckConstraint(condition=Q(version__gte=1), name="geo_job_version_gte_1"),
+            models.CheckConstraint(
+                condition=Q(user_removed_at__isnull=True)
+                | Q(status__in=("partial", "succeeded", "failed", "cancelled")),
+                name="geo_job_removed_terminal",
+            ),
             models.CheckConstraint(
                 condition=Q(
                     completed_calls=F("successful_calls") + F("failed_calls") + F("cancelled_calls")

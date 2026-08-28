@@ -31,6 +31,7 @@ from apps.geo.reports import (
     report_trends,
 )
 from apps.geo.retests import QuickRetestBlocked, create_adjusted_retest, create_quick_retest
+from apps.geo.services import remove_detection_from_history
 from apps.questions.bank_models import Question, QuestionBankVersion, QuestionBankWorkspace
 from apps.quotas.models import QuotaAccount, QuotaHoldGroup
 from apps.subjects.models import SubjectName, SubjectProduct, SubjectVersion
@@ -124,6 +125,27 @@ def _quick(report: GeoReport, *, key: str | None = None):
             idempotency_key=key or f"quick-retest-{uuid.uuid4()}",
             request_id=uuid.uuid4(),
         )
+
+
+def test_removing_detection_history_preserves_immutable_report(report_facts):
+    user, subject, _, _, _, job, report = report_facts
+    client = APIClient()
+    client.force_authenticate(user)
+
+    remove_detection_from_history(
+        user=user,
+        subject_id=subject.pk,
+        detection_id=job.pk,
+    )
+
+    assert GeoReport.objects.get(pk=report.pk).job_id == job.pk
+    assert client.get(f"/api/v1/geo/detections/{job.pk}").status_code == 404
+    assert client.get(f"/api/v1/geo/detections/{job.pk}/report").status_code == 404
+    detail = client.get(f"/api/v1/geo/reports/{report.pk}")
+    assert detail.status_code == 200
+    history = client.get(f"/api/v1/subjects/{subject.pk}/geo/reports")
+    assert history.status_code == 200
+    assert [row["id"] for row in history.json()["data"]["items"]] == [str(report.pk)]
 
 
 def _adjusted(report: GeoReport, *, question_ids, model_ids, key: str):
