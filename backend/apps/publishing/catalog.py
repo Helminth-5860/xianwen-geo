@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .platform_health import platform_health_payload
+
 
 @dataclass(frozen=True)
 class PlatformDefinition:
@@ -43,20 +45,25 @@ PLATFORM_BY_KEY = {item.key: item for item in PLATFORMS}
 
 def platform_payload(enabled_keys: set[str] | None = None) -> list[dict[str, object]]:
     enabled_keys = enabled_keys or set()
-    return [
-        {
-            "key": item.key,
-            "name": item.name,
-            "category": item.category,
-            "content_types": list(item.content_types),
-            "auth_method": item.auth_method,
-            "supports_cover": item.supports_cover,
-            "supports_inline_images": item.supports_inline_images,
-            "supports_tags": item.supports_tags,
-            "supports_scheduling": item.supports_scheduling,
-            "supports_public_publish": item.supports_public_publish,
-            "verification_state": "ready" if item.key in enabled_keys else item.verification_state,
-            "authorization_enabled": item.key in enabled_keys,
-        }
-        for item in PLATFORMS
-    ]
+    result: list[dict[str, object]] = []
+    for item in PLATFORMS:
+        health = platform_health_payload(item.key)
+        result.append(
+            {
+                "key": item.key,
+                "name": item.name,
+                "category": item.category,
+                "content_types": list(item.content_types),
+                "auth_method": item.auth_method,
+                "supports_cover": item.supports_cover,
+                "supports_inline_images": item.supports_inline_images,
+                "supports_tags": item.supports_tags,
+                "supports_scheduling": item.supports_scheduling,
+                "supports_public_publish": item.supports_public_publish,
+                "verification_state": "ready" if item.key in enabled_keys else item.verification_state,
+                "authorization_enabled": item.key in enabled_keys,
+                "runtime_status": health["status"],
+                "recent_failures": health["recent_failures"],
+            }
+        )
+    return result
