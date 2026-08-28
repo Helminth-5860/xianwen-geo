@@ -298,16 +298,29 @@ def execute_publication_target_task(target_id: str):
 @shared_task(name="publications.dispatch_due_targets", ignore_result=True)
 def dispatch_due_publication_targets_task():
     now = timezone.now()
-    rows = list(
+    due_ids = list(
         PublicationTarget.objects.filter(
             status=PublicationTarget.Status.SCHEDULED,
             scheduled_at__lte=now,
         )
-        .select_related("platform")
-        .order_by("scheduled_at", "created_at")[:50]
+        .order_by("scheduled_at", "created_at")
+        .values_list("pk", flat=True)[:50]
     )
-    for row in rows:
-        execute_publication_target_task.apply_async(
-            args=[str(row.pk)], queue="publication"
+    dispatched = 0
+    for target_id in due_ids:
+        # Claim before enqueueing. Celery beat may run again before the browser worker
+        # starts; without this compare-and-set the same public post could be queued twice.
+        claimed = PublicationTarget.objects.filter(
+            pk=target_id,
+            status=PublicationTarget.Status.SCHEDULED,
+        ).update(
+            status=PublicationTarget.Status.PUBLISHING,
+            updated_at=now,
         )
-    return {"dispatched": len(rows)}
+        if not claimed:
+            continue
+        execute_publication_target_task.apply_async(
+            args=[str(target_id)], queue="publication"
+        )
+        dispatched += 1
+    return {"dispatched": dispatched}
