@@ -37,10 +37,10 @@ PAGE_SLUGS = {
     "contact": "contact",
 }
 SECTION_TYPES = {"hero", "text", "cards", "faq", "contact"}
-STYLE_LABELS = {
-    WebsiteProject.Style.PROFESSIONAL: "专业商务",
-    WebsiteProject.Style.TECHNOLOGY: "科技简约",
-    WebsiteProject.Style.PREMIUM: "高端品牌",
+STYLE_LABELS: dict[str, str] = {
+    "professional": "专业商务",
+    "technology": "科技简约",
+    "premium": "高端品牌",
 }
 
 
@@ -82,19 +82,23 @@ def _confirmed_subject_fields(subject: Subject) -> list[dict[str, object]]:
     if version is None:
         return []
     schema = version.schema_snapshot if isinstance(version.schema_snapshot, dict) else {}
-    fields = schema.get("fields") if isinstance(schema.get("fields"), list) else []
-    labels = {
-        field.get("field_key"): field.get("label")
-        for field in fields
-        if isinstance(field, dict)
-        and isinstance(field.get("field_key"), str)
-        and field.get("used_for_ai") is True
-    }
+    raw_fields = schema.get("fields")
+    fields: list[object] = raw_fields if isinstance(raw_fields, list) else []
+    labels: dict[str, str] = {}
+    for field in fields:
+        if not isinstance(field, dict):
+            continue
+        field_key = field.get("field_key")
+        if not isinstance(field_key, str) or field.get("used_for_ai") is not True:
+            continue
+        label = field.get("label")
+        labels[field_key] = label.strip() if isinstance(label, str) and label.strip() else field_key
+
     results: list[dict[str, object]] = []
     for key, value in version.field_values.items():
         if key not in labels or value in (None, "", [], {}):
             continue
-        results.append({"label": labels[key] or key, "value": _compact_value(value)})
+        results.append({"label": labels[key], "value": _compact_value(value)})
     return results[:40]
 
 
@@ -395,7 +399,8 @@ def create_generation_job(
     request_id,
 ) -> tuple[WebsiteProject, WebsiteGenerationJob, bool]:
     subject = subject_for_user_or_404(user=user, subject_id=subject_id)
-    if subject.status != Subject.Status.ACTIVE or subject.current_version_id is None:
+    subject_version = subject.current_version
+    if subject.status != Subject.Status.ACTIVE or subject_version is None:
         raise WebsiteInputError("请先完善并保存主体资料")
     if style_key not in STYLE_LABELS:
         raise WebsiteInputError("请选择网站风格")
@@ -432,22 +437,24 @@ def create_generation_job(
         if replay is not None:
             if replay.input_digest != input_digest or replay.user_id != user.pk:
                 raise WebsiteInputError("生成内容已变化，请重新操作")
-            project = WebsiteProject.objects.select_related("subject", "subject_version").get(
+            replay_project = WebsiteProject.objects.select_related("subject", "subject_version").get(
                 pk=replay.project_id
             )
-            return project, replay, False
+            return replay_project, replay, False
 
-        project = (
+        existing_project = (
             WebsiteProject.objects.select_for_update().filter(subject=subject, user=user).first()
         )
-        if project is None:
+        if existing_project is None:
             project = WebsiteProject.objects.create(
                 user=user,
                 subject=subject,
-                subject_version=subject.current_version,
+                subject_version=subject_version,
                 style_key=style_key,
                 status=WebsiteProject.Status.DRAFT,
             )
+        else:
+            project = existing_project
 
         running = (
             WebsiteGenerationJob.objects.select_for_update()
@@ -465,7 +472,7 @@ def create_generation_job(
         if running is not None:
             return project, running, False
 
-        project.subject_version = subject.current_version
+        project.subject_version = subject_version
         project.style_key = style_key
         project.status = WebsiteProject.Status.GENERATING
         project.selected_asset_ids = [str(item.pk) for item in assets]
