@@ -1,0 +1,58 @@
+name: Format Website Draft
+
+on:
+  push:
+    branches:
+      - feature/XW-one-click-geo-website-v1
+    paths:
+      - .github/workflows/format-website-draft.yml
+      - frontend/components/website-builder-workspace.tsx
+      - frontend/components/website-builder-workspace.module.css
+      - frontend/components/website-draft-preview.module.css
+      - frontend/lib/websites-client.ts
+
+permissions:
+  contents: write
+
+jobs:
+  prettier:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out feature branch
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: feature/XW-one-click-geo-website-v1
+          fetch-depth: 0
+      - name: Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version-file: frontend/.nvmrc
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Format website draft files
+        working-directory: frontend
+        run: |
+          npx prettier --write \
+            components/website-builder-workspace.tsx \
+            components/website-builder-workspace.module.css \
+            components/website-draft-preview.module.css \
+            lib/websites-client.ts
+      - name: Commit formatting when needed
+        run: |
+          git diff --check
+          if git diff --quiet; then
+            echo "No formatting changes needed."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            frontend/components/website-builder-workspace.tsx \
+            frontend/components/website-builder-workspace.module.css \
+            frontend/components/website-draft-preview.module.css \
+            frontend/lib/websites-client.ts
+          git commit -m "chore: format website draft frontend"
+          git push origin HEAD:feature/XW-one-click-geo-website-v1
