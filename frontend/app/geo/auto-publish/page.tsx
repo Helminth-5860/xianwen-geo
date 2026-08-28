@@ -2,10 +2,8 @@
 
 import {
   CheckCircleOutlined,
-  ClockCircleOutlined,
   ExclamationCircleOutlined,
   LinkOutlined,
-  PauseCircleOutlined,
   ReloadOutlined,
   SafetyCertificateOutlined,
   SendOutlined,
@@ -20,7 +18,6 @@ import {
   Empty,
   Form,
   Input,
-  List,
   Modal,
   Radio,
   Row,
@@ -244,7 +241,11 @@ function JobCard({ job, onApprove }: { job: PublicationJob; onApprove: (job: Pub
       </div>
       <Divider className={styles.compactDivider} />
       <div className={styles.targetList}>
-        {job.targets.length ? job.targets.map((target) => <TargetRow key={target.id} target={target} />) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="正在规划发布平台" />}
+        {job.targets.length ? (
+          job.targets.map((target) => <TargetRow key={target.id} target={target} />)
+        ) : (
+          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="正在规划发布平台" />
+        )}
       </div>
     </Card>
   );
@@ -353,13 +354,16 @@ export default function AutoPublishPage() {
     await savePolicy({ ...settingsDraft, enabled });
   }
 
-  async function startAuthorization(credentials?: { app_id: string; app_secret: string }) {
-    if (!authPlatform || !subjectId) return;
+  async function startAuthorizationFor(
+    platform: PublicationPlatform,
+    credentials?: { app_id: string; app_secret: string },
+  ) {
+    if (!subjectId) return;
     setAuthSubmitting(true);
     try {
       const { authorization } = await beginPlatformAuthorization(
         subjectId,
-        authPlatform.key,
+        platform.key,
         credentials,
       );
       setAuthSession(authorization);
@@ -375,7 +379,7 @@ export default function AutoPublishPage() {
     setAuthSession(undefined);
     setAuthPlatform(platform);
     if (platform.auth_mode === "browser_qr") {
-      void startAuthorization();
+      void startAuthorizationFor(platform);
     }
   }
 
@@ -703,7 +707,7 @@ export default function AutoPublishPage() {
             当前主体：{subject.official_name || subject.subject_type.name}。授权平台后，显问可自动完成图文准备、平台适配、错峰发布和结果记录。
           </Paragraph>
         </div>
-        <Button href="/geo/articles/new">进入文章生成</Button>
+        <Button href={`/subjects/${subjectId}/articles/new`}>进入文章生成</Button>
       </section>
 
       <Tabs
@@ -738,7 +742,9 @@ export default function AutoPublishPage() {
               form={credentialForm}
               layout="vertical"
               className={styles.authForm}
-              onFinish={(values) => void startAuthorization(values)}
+              onFinish={(values) => {
+                if (authPlatform) void startAuthorizationFor(authPlatform, values);
+              }}
             >
               <Form.Item name="app_id" label="AppID" rules={[{ required: true, message: "请输入 AppID" }]}>
                 <Input autoComplete="off" />
@@ -768,7 +774,10 @@ export default function AutoPublishPage() {
               ) : authSession?.status === "needs_interaction" ? (
                 <Empty description="平台要求额外安全验证，请稍后重新授权" />
               ) : authSession?.status === "authorized" ? (
-                <Empty image={<CheckCircleOutlined className={styles.successIcon} />} description="授权成功" />
+                <div className={styles.authorizedState}>
+                  <CheckCircleOutlined className={styles.successIcon} />
+                  <Text strong>授权成功</Text>
+                </div>
               ) : (
                 <Spin description="正在打开平台登录页面" />
               )}
