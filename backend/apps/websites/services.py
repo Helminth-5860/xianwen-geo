@@ -437,11 +437,9 @@ def create_generation_job(
         if replay is not None:
             if replay.input_digest != input_digest or replay.user_id != user.pk:
                 raise WebsiteInputError("生成内容已变化，请重新操作")
-            replay_project = (
-                WebsiteProject.objects.select_related("subject", "subject_version").get(
-                    pk=replay.project_id
-                )
-            )
+            replay_project = WebsiteProject.objects.select_related(
+                "subject", "subject_version"
+            ).get(pk=replay.project_id)
             return replay_project, replay, False
 
         existing_project = (
