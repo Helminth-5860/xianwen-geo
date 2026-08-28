@@ -111,6 +111,7 @@ urlpatterns = [
     path("api/v1/", include("apps.images.urls")),
     path("api/v1/", include("apps.videos.urls")),
     path("api/v1/", include("apps.media_inquiries.urls")),
+    path("api/v1/", include("apps.publishing.urls")),
     path("api/v1/", include("apps.operations.urls")),
     path("api/v1/test/forbidden/", ForbiddenView.as_view()),
     path("api/v1/test/missing/", MissingView.as_view()),

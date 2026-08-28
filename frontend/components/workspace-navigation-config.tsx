@@ -250,6 +250,12 @@ export const navigationConfig: readonly WorkspaceNavigationItem[] = [
         isActive: (pathname) => pathname.includes("/paid-media"),
       },
       {
+        key: "optimization-auto-publishing",
+        label: "自动发文",
+        href: "/geo/optimization/auto-publishing",
+        isActive: pathStartsWith("/geo/optimization/auto-publishing"),
+      },
+      {
         key: "optimization-articles",
         label: "文章生成",
         href: subjectRoute("/articles/new"),

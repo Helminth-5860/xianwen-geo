@@ -1,10 +1,6 @@
 "use client";
 
-import {
-  ExportOutlined,
-  InfoCircleOutlined,
-  ReloadOutlined,
-} from "@ant-design/icons";
+import { ExportOutlined, InfoCircleOutlined, ReloadOutlined } from "@ant-design/icons";
 import {
   Alert,
   Button,
@@ -181,25 +177,23 @@ export default function SourceIndexPage() {
   }, []);
 
   useEffect(() => {
-    if (subjectLoading) return;
-    if (!subjectId) {
-      setState(null);
-      setLoading(false);
-      return;
-    }
+    if (subjectLoading || !subjectId) return;
     let current = true;
-    setLoading(true);
-    setError("");
-    void getSourceIndexState(subjectId)
-      .then((result) => {
+    const fetchState = async () => {
+      await Promise.resolve();
+      if (!current) return;
+      setLoading(true);
+      setError("");
+      try {
+        const result = await getSourceIndexState(subjectId);
         if (current) setState(result);
-      })
-      .catch((reason: unknown) => {
+      } catch (reason: unknown) {
         if (current) setError(userMessage(reason));
-      })
-      .finally(() => {
+      } finally {
         if (current) setLoading(false);
-      });
+      }
+    };
+    void fetchState();
     return () => {
       current = false;
     };
@@ -245,30 +239,29 @@ export default function SourceIndexPage() {
   }, [activeScan?.id, loadState, subjectId]);
 
   useEffect(() => {
-    if (!latestResult?.id) {
-      setItems([]);
-      setItemCount(0);
-      return;
-    }
+    if (!latestResult?.id) return;
     let current = true;
-    setItemsLoading(true);
-    void getSourceIndexItems(latestResult.id, {
-      page,
-      pageSize: PAGE_SIZE,
-      sourceType: sourceType === "all" ? undefined : sourceType,
-      ordering,
-    })
-      .then((result) => {
+    const fetchItems = async () => {
+      await Promise.resolve();
+      if (!current) return;
+      setItemsLoading(true);
+      try {
+        const result = await getSourceIndexItems(latestResult.id, {
+          page,
+          pageSize: PAGE_SIZE,
+          sourceType: sourceType === "all" ? undefined : sourceType,
+          ordering,
+        });
         if (!current) return;
         setItems(result.results);
         setItemCount(result.count);
-      })
-      .catch((reason: unknown) => {
+      } catch (reason: unknown) {
         if (current) setError(userMessage(reason));
-      })
-      .finally(() => {
+      } finally {
         if (current) setItemsLoading(false);
-      });
+      }
+    };
+    void fetchItems();
     return () => {
       current = false;
     };
@@ -291,10 +284,8 @@ export default function SourceIndexPage() {
     }
   };
 
-  const distributionTotal = latestResult?.source_type_distribution.reduce(
-    (sum, row) => sum + row.count,
-    0,
-  ) ?? 0;
+  const distributionTotal =
+    latestResult?.source_type_distribution.reduce((sum, row) => sum + row.count, 0) ?? 0;
 
   const columns: TableProps<SourceIndexItem>["columns"] = useMemo(
     () => [
@@ -382,7 +373,7 @@ export default function SourceIndexPage() {
     <main className={styles.page}>
       <section className={styles.header}>
         <div>
-          <Text type="secondary">PUBLIC SOURCE DISCOVERY</Text>
+          <Text type="secondary">公开信源发现</Text>
           <Title level={2}>信源指数</Title>
           <Paragraph type="secondary">
             扫描当前主体在公开网络中可被搜索发现的信源，分析曝光规模、独立来源、媒体覆盖与信源权重。
@@ -482,7 +473,11 @@ export default function SourceIndexPage() {
 
               <section className={styles.kpiGrid} aria-label="信源核心指标">
                 <Card>
-                  <Statistic title="信源指数" value={Number(latestResult.index_score ?? 0)} precision={1} />
+                  <Statistic
+                    title="信源指数"
+                    value={Number(latestResult.index_score ?? 0)}
+                    precision={1}
+                  />
                 </Card>
                 <Card>
                   <Statistic title="公开信源" value={latestResult.public_source_count} />
@@ -505,7 +500,8 @@ export default function SourceIndexPage() {
                 <Card title="指数构成" className={styles.sectionCard}>
                   <div className={styles.factorList}>
                     {Object.entries(FACTOR_LABELS).map(([key, label]) => {
-                      const score = latestResult.factor_scores[key as keyof typeof FACTOR_LABELS] ?? 0;
+                      const score =
+                        latestResult.factor_scores[key as keyof typeof FACTOR_LABELS] ?? 0;
                       return (
                         <div className={styles.factorRow} key={key}>
                           <span>{label}</span>
@@ -572,7 +568,7 @@ export default function SourceIndexPage() {
                 />
               </Card>
 
-              <Card title="TOP 来源" className={styles.sectionCard}>
+              <Card title="重点来源" className={styles.sectionCard}>
                 <Table<TopSource>
                   rowKey={(row) => `${row.root_domain}:${row.source_type}`}
                   size="small"
@@ -680,7 +676,7 @@ export default function SourceIndexPage() {
                     <Statistic title="原始结果" value={latestResult.raw_result_count} />
                   </Col>
                   <Col xs={12} md={4}>
-                    <Statistic title="URL去重后" value={latestResult.unique_result_count} />
+                    <Statistic title="链接去重后" value={latestResult.unique_result_count} />
                   </Col>
                   <Col xs={12} md={4}>
                     <Statistic title="有效公开信源" value={latestResult.public_source_count} />
@@ -692,7 +688,10 @@ export default function SourceIndexPage() {
                     <Statistic title="查询主题" value={latestResult.query_count} />
                   </Col>
                   <Col xs={12} md={4}>
-                    <Statistic title="扫描耗时" value={formatElapsed(latestResult.elapsed_seconds)} />
+                    <Statistic
+                      title="扫描耗时"
+                      value={formatElapsed(latestResult.elapsed_seconds)}
+                    />
                   </Col>
                 </Row>
                 <Alert

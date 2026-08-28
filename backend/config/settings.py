@@ -20,8 +20,21 @@ for setting_name in dir(settings_module):
     if setting_name.isupper():
         globals()[setting_name] = getattr(settings_module, setting_name)
 
-# 官网深度检测在所有运行环境共用同一套扫描内核；网络安全策略复用 web_sources。
-INSTALLED_APPS = [*INSTALLED_APPS, "apps.website_audits", "apps.source_index"]
+# 自动发文平台必须逐个平台经过真实账号验证后才开放授权；默认全部保持关闭。
+PUBLISHING_ENABLED_PLATFORM_KEYS = tuple(
+    item.strip().lower()
+    for item in os.getenv("PUBLISHING_ENABLED_PLATFORM_KEYS", "").split(",")
+    if item.strip()
+)
+PUBLISHING_AUTH_SESSION_TTL_SECONDS = int(os.getenv("PUBLISHING_AUTH_SESSION_TTL_SECONDS", "900"))
+PUBLISHING_CREDENTIAL_ENCRYPTION_KEY = os.getenv("PUBLISHING_CREDENTIAL_ENCRYPTION_KEY", "").strip()
+PUBLISHING_WORKER_BASE_URL = os.getenv("PUBLISHING_WORKER_BASE_URL", "").strip().rstrip("/")
+PUBLISHING_WORKER_INTERNAL_SECRET = os.getenv("PUBLISHING_WORKER_INTERNAL_SECRET", "").strip()
+if PUBLISHING_AUTH_SESSION_TTL_SECONDS < 300 or PUBLISHING_AUTH_SESSION_TTL_SECONDS > 3600:
+    raise ImproperlyConfigured("PUBLISHING_AUTH_SESSION_TTL_SECONDS must be between 300 and 3600.")
+if PUBLISHING_WORKER_INTERNAL_SECRET and len(PUBLISHING_WORKER_INTERNAL_SECRET) < 32:
+    raise ImproperlyConfigured("PUBLISHING_WORKER_INTERNAL_SECRET must be at least 32 characters.")
+
 WEBSITE_AUDIT_MAX_PAGES = int(os.getenv("WEBSITE_AUDIT_MAX_PAGES", "200"))
 WEBSITE_AUDIT_MAX_SITEMAPS = int(os.getenv("WEBSITE_AUDIT_MAX_SITEMAPS", "20"))
 WEBSITE_AUDIT_MAX_RESPONSE_BYTES = int(
@@ -31,15 +44,15 @@ WEBSITE_AUDIT_MAX_RESPONSE_BYTES = int(
 # not a fresh timeout for every URL. Keep single requests much shorter so one slow
 # origin cannot consume the full customer-facing scan budget by itself.
 WEBSITE_AUDIT_TOTAL_TIMEOUT_SECONDS = int(os.getenv("WEBSITE_AUDIT_TOTAL_TIMEOUT_SECONDS", "75"))
-WEBSITE_AUDIT_REQUEST_TIMEOUT_SECONDS = int(
-    os.getenv("WEBSITE_AUDIT_REQUEST_TIMEOUT_SECONDS", "8")
-)
+WEBSITE_AUDIT_REQUEST_TIMEOUT_SECONDS = int(os.getenv("WEBSITE_AUDIT_REQUEST_TIMEOUT_SECONDS", "8"))
 WEBSITE_AUDIT_TEXT_SAMPLE_CHARACTERS = int(
     os.getenv("WEBSITE_AUDIT_TEXT_SAMPLE_CHARACTERS", "100000")
 )
 WEBSITE_AUDIT_USER_AGENT = os.getenv("WEBSITE_AUDIT_USER_AGENT", "XianwenWebsiteAudit/1.0").strip()
 
-WEBSITE_AUDIT_BROWSER_ENABLED = os.getenv("WEBSITE_AUDIT_BROWSER_ENABLED", "false").strip().lower() in {
+WEBSITE_AUDIT_BROWSER_ENABLED = os.getenv(
+    "WEBSITE_AUDIT_BROWSER_ENABLED", "false"
+).strip().lower() in {
     "1",
     "true",
     "yes",
@@ -63,21 +76,15 @@ WEBSITE_AUDIT_BROWSER_PROFILES = tuple(
 WEBSITE_AUDIT_SEMANTIC_ENABLED = os.getenv(
     "WEBSITE_AUDIT_SEMANTIC_ENABLED", "true"
 ).strip().lower() in {"1", "true", "yes", "on"}
-WEBSITE_AUDIT_SEMANTIC_MAX_PAGES = int(
-    os.getenv("WEBSITE_AUDIT_SEMANTIC_MAX_PAGES", "16")
-)
+WEBSITE_AUDIT_SEMANTIC_MAX_PAGES = int(os.getenv("WEBSITE_AUDIT_SEMANTIC_MAX_PAGES", "16"))
 WEBSITE_AUDIT_SEMANTIC_MAX_CHARS_PER_PAGE = int(
     os.getenv("WEBSITE_AUDIT_SEMANTIC_MAX_CHARS_PER_PAGE", "5000")
 )
 WEBSITE_AUDIT_SEMANTIC_MAX_TOTAL_CHARS = int(
     os.getenv("WEBSITE_AUDIT_SEMANTIC_MAX_TOTAL_CHARS", "70000")
 )
-WEBSITE_AUDIT_SEMANTIC_MAX_KEYWORDS = int(
-    os.getenv("WEBSITE_AUDIT_SEMANTIC_MAX_KEYWORDS", "50")
-)
-WEBSITE_AUDIT_SEMANTIC_MAX_QUESTIONS = int(
-    os.getenv("WEBSITE_AUDIT_SEMANTIC_MAX_QUESTIONS", "30")
-)
+WEBSITE_AUDIT_SEMANTIC_MAX_KEYWORDS = int(os.getenv("WEBSITE_AUDIT_SEMANTIC_MAX_KEYWORDS", "50"))
+WEBSITE_AUDIT_SEMANTIC_MAX_QUESTIONS = int(os.getenv("WEBSITE_AUDIT_SEMANTIC_MAX_QUESTIONS", "30"))
 
 for name in (
     "WEBSITE_AUDIT_MAX_PAGES",
@@ -125,13 +132,9 @@ if not WEBSITE_AUDIT_BROWSER_PROFILES or any(
 if WEBSITE_AUDIT_SEMANTIC_MAX_PAGES > 50:
     raise ImproperlyConfigured("WEBSITE_AUDIT_SEMANTIC_MAX_PAGES must not exceed 50.")
 if WEBSITE_AUDIT_SEMANTIC_MAX_CHARS_PER_PAGE > 20000:
-    raise ImproperlyConfigured(
-        "WEBSITE_AUDIT_SEMANTIC_MAX_CHARS_PER_PAGE must not exceed 20000."
-    )
+    raise ImproperlyConfigured("WEBSITE_AUDIT_SEMANTIC_MAX_CHARS_PER_PAGE must not exceed 20000.")
 if WEBSITE_AUDIT_SEMANTIC_MAX_TOTAL_CHARS > 200000:
-    raise ImproperlyConfigured(
-        "WEBSITE_AUDIT_SEMANTIC_MAX_TOTAL_CHARS must not exceed 200000."
-    )
+    raise ImproperlyConfigured("WEBSITE_AUDIT_SEMANTIC_MAX_TOTAL_CHARS must not exceed 200000.")
 if WEBSITE_AUDIT_SEMANTIC_MAX_KEYWORDS > 200:
     raise ImproperlyConfigured("WEBSITE_AUDIT_SEMANTIC_MAX_KEYWORDS must not exceed 200.")
 if WEBSITE_AUDIT_SEMANTIC_MAX_QUESTIONS > 100:

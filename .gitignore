@@ -16,6 +16,7 @@ backend/staticfiles/
 frontend/.next/
 frontend/coverage/
 frontend/node_modules/
+publishing-worker/node_modules/
 frontend/out/
 *.tsbuildinfo
 build/

@@ -694,6 +694,9 @@ describe("GEO 产品工作台", () => {
       "/geo/strategy",
     );
     expect(screen.getByText("执行计划")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "自动发文" }).getAttribute("href")).toBe(
+      "/geo/optimization/auto-publishing",
+    );
     expect(screen.getByRole("link", { name: "文章生成" }).getAttribute("href")).toBe(
       "/subjects/subject-1/articles/new",
     );

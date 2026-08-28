@@ -113,7 +113,9 @@ export function AutoPublishingWorkspace() {
         getSubjectArticles(subjectId, 1, 50),
       ]);
       setState(publishing);
-      const alreadyScheduled = new Set(publishing.recent_publications.map((item) => item.article_id));
+      const alreadyScheduled = new Set(
+        publishing.recent_publications.map((item) => item.article_id),
+      );
       setReadyArticles(
         articlePage.items.filter(
           (article) =>
@@ -130,12 +132,9 @@ export function AutoPublishingWorkspace() {
   }, []);
 
   useEffect(() => {
-    if (!currentSubject?.id) {
-      setState(null);
-      setReadyArticles([]);
-      return;
-    }
-    void loadState(currentSubject.id);
+    if (!currentSubject?.id) return;
+    const timer = window.setTimeout(() => void loadState(currentSubject.id), 0);
+    return () => window.clearTimeout(timer);
   }, [currentSubject?.id, loadState]);
 
   useEffect(() => {
@@ -168,9 +167,7 @@ export function AutoPublishingWorkspace() {
         ...changes,
         expected_version: state.preference.version,
       });
-      setState((current) =>
-        current ? { ...current, preference: response.preference } : current,
-      );
+      setState((current) => (current ? { ...current, preference: response.preference } : current));
       await loadState(currentSubject.id);
     } catch (reason: unknown) {
       setError(userMessage(reason));
@@ -203,7 +200,9 @@ export function AutoPublishingWorkspace() {
     if (!currentSubject?.id || !platform.account) return;
     try {
       await setPlatformAutoEnabled(currentSubject.id, platform.key, enabled);
-      messageApi.success(enabled ? `${platform.name}已恢复自动发文` : `${platform.name}已暂停自动发文`);
+      messageApi.success(
+        enabled ? `${platform.name}已恢复自动发文` : `${platform.name}已暂停自动发文`,
+      );
       await loadState(currentSubject.id);
     } catch (reason: unknown) {
       messageApi.error(userMessage(reason));
@@ -334,7 +333,11 @@ export function AutoPublishingWorkspace() {
         ) : (
           <Space orientation="vertical" size="small" style={{ width: "100%" }}>
             {readyArticles.slice(0, 10).map((article) => (
-              <Space key={article.id} wrap style={{ justifyContent: "space-between", width: "100%" }}>
+              <Space
+                key={article.id}
+                wrap
+                style={{ justifyContent: "space-between", width: "100%" }}
+              >
                 <div>
                   <Typography.Text strong>{article.title || "未命名文章"}</Typography.Text>
                   <div>
@@ -374,7 +377,7 @@ export function AutoPublishingWorkspace() {
                       <Tag color={publication.awaiting_review ? "gold" : undefined}>
                         {publication.awaiting_review
                           ? "等待确认"
-                          : publicationStatusText[publication.status] ?? "等待处理"}
+                          : (publicationStatusText[publication.status] ?? "等待处理")}
                       </Tag>
                       {publication.awaiting_review && (
                         <Button
@@ -428,7 +431,9 @@ export function AutoPublishingWorkspace() {
                 <div>
                   <h3 className={styles.platformName}>{platform.name}</h3>
                   <div className={styles.platformMeta}>
-                    {platform.auth_method === "official_api" ? "优先使用平台正式授权" : "通过安全登录窗口完成授权"}
+                    {platform.auth_method === "official_api"
+                      ? "优先使用平台正式授权"
+                      : "通过安全登录窗口完成授权"}
                   </div>
                 </div>
                 <Tag color={badge.color}>{badge.text}</Tag>
@@ -500,7 +505,9 @@ export function AutoPublishingWorkspace() {
           <Space style={{ justifyContent: "space-between", width: "100%" }}>
             <div>
               <div className={styles.settingTitle}>自动发文</div>
-              <div className={styles.settingHint}>关闭后会暂停尚未提交的平台任务；已经提交审核或已经发布的内容不会被撤回或重复发布。</div>
+              <div className={styles.settingHint}>
+                关闭后会暂停尚未提交的平台任务；已经提交审核或已经发布的内容不会被撤回或重复发布。
+              </div>
             </div>
             <Switch
               checked={preference.is_enabled}
@@ -532,7 +539,9 @@ export function AutoPublishingWorkspace() {
             <div className={styles.settingTitle}>发布策略</div>
             <Radio.Group
               value={preference.distribution_strategy}
-              onChange={(event) => void savePreference({ distribution_strategy: event.target.value })}
+              onChange={(event) =>
+                void savePreference({ distribution_strategy: event.target.value })
+              }
             >
               <Space orientation="vertical">
                 <Radio value="smart">智能分发</Radio>
@@ -540,7 +549,9 @@ export function AutoPublishingWorkspace() {
                 <Radio value="custom">自定义平台</Radio>
               </Space>
             </Radio.Group>
-            <div className={styles.settingHint}>智能分发会根据文章类型、主题和内容形态选择更适合的平台，默认不会机械铺满所有账号。</div>
+            <div className={styles.settingHint}>
+              智能分发会根据文章类型、主题和内容形态选择更适合的平台，默认不会机械铺满所有账号。
+            </div>
           </div>
 
           <div className={styles.settingBlock}>
@@ -555,7 +566,9 @@ export function AutoPublishingWorkspace() {
                 <Radio value="ai_auto">全自动配图</Radio>
               </Space>
             </Radio.Group>
-            <div className={styles.settingHint}>默认优先真实企业图片；AI 只补充概念图、封面背景、流程图等视觉素材。</div>
+            <div className={styles.settingHint}>
+              默认优先真实企业图片；AI 只补充概念图、封面背景、流程图等视觉素材。
+            </div>
           </div>
 
           <div className={styles.settingBlock}>
@@ -571,7 +584,9 @@ export function AutoPublishingWorkspace() {
                 { label: "丰富", value: "rich" },
               ]}
             />
-            <div className={styles.settingHint}>标准模式通常包含 1 张封面、2–4 张正文插图，必要时增加信息图。</div>
+            <div className={styles.settingHint}>
+              标准模式通常包含 1 张封面、2–4 张正文插图，必要时增加信息图。
+            </div>
           </div>
 
           <div className={styles.settingBlock}>
@@ -603,10 +618,18 @@ export function AutoPublishingWorkspace() {
           <div className={styles.settingBlock}>
             <div className={styles.settingTitle}>默认执行原则</div>
             <Space orientation="vertical" size={8}>
-              <Typography.Text><SafetyCertificateOutlined /> 真实企业素材优先</Typography.Text>
-              <Typography.Text><ClockCircleOutlined /> 平台自动错峰</Typography.Text>
-              <Typography.Text><PauseCircleOutlined /> 单个平台异常不会拖停其他平台</Typography.Text>
-              <Typography.Text><SendOutlined /> 只有拿到公开链接才标记“已发布”</Typography.Text>
+              <Typography.Text>
+                <SafetyCertificateOutlined /> 真实企业素材优先
+              </Typography.Text>
+              <Typography.Text>
+                <ClockCircleOutlined /> 平台自动错峰
+              </Typography.Text>
+              <Typography.Text>
+                <PauseCircleOutlined /> 单个平台异常不会拖停其他平台
+              </Typography.Text>
+              <Typography.Text>
+                <SendOutlined /> 只有拿到公开链接才标记“已发布”
+              </Typography.Text>
             </Space>
           </div>
         </div>
@@ -629,7 +652,7 @@ export function AutoPublishingWorkspace() {
                     <Tag color={publication.awaiting_review ? "gold" : undefined}>
                       {publication.awaiting_review
                         ? "等待确认"
-                        : publicationStatusText[publication.status] ?? "等待处理"}
+                        : (publicationStatusText[publication.status] ?? "等待处理")}
                     </Tag>
                     {publication.awaiting_review && (
                       <Button
@@ -645,16 +668,30 @@ export function AutoPublishingWorkspace() {
                   </Space>
                 </Space>
                 {publication.targets.map((target) => (
-                  <Space key={target.id} wrap style={{ justifyContent: "space-between", width: "100%" }}>
+                  <Space
+                    key={target.id}
+                    wrap
+                    style={{ justifyContent: "space-between", width: "100%" }}
+                  >
                     <Space>
-                      {target.status === "succeeded" ? <CheckCircleOutlined /> : <ClockCircleOutlined />}
+                      {target.status === "succeeded" ? (
+                        <CheckCircleOutlined />
+                      ) : (
+                        <ClockCircleOutlined />
+                      )}
                       <Typography.Text>{target.platform_name}</Typography.Text>
                       <Tag color={target.status === "submitted" ? "processing" : undefined}>
                         {targetStatusText[target.status] ?? "处理中"}
                       </Tag>
                     </Space>
                     {target.public_url ? (
-                      <Button size="small" type="link" href={target.public_url} target="_blank" icon={<LinkOutlined />}>
+                      <Button
+                        size="small"
+                        type="link"
+                        href={target.public_url}
+                        target="_blank"
+                        icon={<LinkOutlined />}
+                      >
                         查看文章
                       </Button>
                     ) : target.status === "submitted" ? (
@@ -679,17 +716,25 @@ export function AutoPublishingWorkspace() {
         <section className={styles.hero}>
           <div>
             <Typography.Text type="secondary">当前主体</Typography.Text>
-            <h1 className={styles.heroTitle}>{state?.subject.official_name || currentSubject.official_name || "当前主体"}</h1>
+            <h1 className={styles.heroTitle}>
+              {state?.subject.official_name || currentSubject.official_name || "当前主体"}
+            </h1>
             <p className={styles.heroDescription}>
               显问会从可发布文章中自动完成平台判断、智能配图、内容适配、错峰排期和发布。客户只需要完成平台授权，并决定是否开启自动发文。
             </p>
           </div>
           <Space>
-            <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void loadState(currentSubject.id)}>
+            <Button
+              icon={<ReloadOutlined />}
+              loading={loading}
+              onClick={() => void loadState(currentSubject.id)}
+            >
               刷新状态
             </Button>
             <Space>
-              <Typography.Text strong>{preference?.is_enabled ? "自动发文已开启" : "自动发文已关闭"}</Typography.Text>
+              <Typography.Text strong>
+                {preference?.is_enabled ? "自动发文已开启" : "自动发文已关闭"}
+              </Typography.Text>
               <Switch
                 checked={preference?.is_enabled ?? false}
                 loading={saving}
@@ -705,8 +750,20 @@ export function AutoPublishingWorkspace() {
           defaultActiveKey="overview"
           items={[
             { key: "overview", label: "运行概览", children: overview },
-            { key: "platforms", label: `平台授权 ${summary?.connected_count ?? 0}/${summary?.platform_count ?? 17}`, children: platforms },
-            { key: "settings", label: <span><SettingOutlined /> 发布设置</span>, children: settings },
+            {
+              key: "platforms",
+              label: `平台授权 ${summary?.connected_count ?? 0}/${summary?.platform_count ?? 17}`,
+              children: platforms,
+            },
+            {
+              key: "settings",
+              label: (
+                <span>
+                  <SettingOutlined /> 发布设置
+                </span>
+              ),
+              children: settings,
+            },
             { key: "records", label: "发布记录", children: records },
           ]}
         />
@@ -716,7 +773,9 @@ export function AutoPublishingWorkspace() {
         open={authModalOpen}
         title={`授权${authPlatformName}`}
         footer={[
-          <Button key="close" onClick={() => setAuthModalOpen(false)}>关闭</Button>,
+          <Button key="close" onClick={() => setAuthModalOpen(false)}>
+            关闭
+          </Button>,
           authSession?.action_url ? (
             <Button
               key="open"
@@ -743,20 +802,23 @@ export function AutoPublishingWorkspace() {
             description="如平台要求手机号、验证码或密码，请先在授权画面中点击对应输入框，再使用授权窗口下方的临时输入栏。输入内容只转发到当前隔离浏览器，不保存到显问数据库或日志。"
           />
           <Typography.Text>
-            当前状态：{
-              authSession?.status === "succeeded"
-                ? "授权成功"
-                : authSession?.status === "failed"
-                  ? "授权未完成"
-                  : authSession?.status === "expired"
-                    ? "授权已过期"
-                    : "等待完成登录"
-            }
+            当前状态：
+            {authSession?.status === "succeeded"
+              ? "授权成功"
+              : authSession?.status === "failed"
+                ? "授权未完成"
+                : authSession?.status === "expired"
+                  ? "授权已过期"
+                  : "等待完成登录"}
           </Typography.Text>
-          {authSession?.error_message && <Alert type="warning" showIcon title={authSession.error_message} />}
-          {!authSession?.action_url && authSession && !TERMINAL_AUTH_STATES.has(authSession.status) && (
-            <Alert type="warning" showIcon title="授权窗口正在准备，请稍后重试" />
+          {authSession?.error_message && (
+            <Alert type="warning" showIcon title={authSession.error_message} />
           )}
+          {!authSession?.action_url &&
+            authSession &&
+            !TERMINAL_AUTH_STATES.has(authSession.status) && (
+              <Alert type="warning" showIcon title="授权窗口正在准备，请稍后重试" />
+            )}
         </Space>
       </Modal>
     </main>

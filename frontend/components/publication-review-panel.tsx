@@ -22,24 +22,26 @@ function waitingForReview(publication: Publication) {
 
 export function PublicationReviewPanel() {
   const { currentSubject } = useSubjectWorkspace();
+  const subjectId = currentSubject?.id ?? "";
   const [state, setState] = useState<PublishingState | null>(null);
   const [approvingId, setApprovingId] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [messageApi, holder] = message.useMessage();
 
-  const load = useCallback(async () => {
-    if (!currentSubject?.id) return;
-    try {
-      setState(await getPublishingState(currentSubject.id));
-    } catch {
-      // 主工作区会展示读取错误；这里保持安静，避免重复报错。
-    }
-  }, [currentSubject?.id]);
+  const load = useCallback(() => {
+    if (!subjectId) return Promise.resolve();
+    return getPublishingState(subjectId)
+      .then(setState)
+      .catch(() => undefined);
+  }, [subjectId]);
 
   useEffect(() => {
-    void load();
+    const initialTimer = window.setTimeout(() => void load(), 0);
     const timer = window.setInterval(() => void load(), 6000);
-    return () => window.clearInterval(timer);
+    return () => {
+      window.clearTimeout(initialTimer);
+      window.clearInterval(timer);
+    };
   }, [load]);
 
   const pending = useMemo(() => {
@@ -76,7 +78,11 @@ export function PublicationReviewPanel() {
           maxWidth: "calc(100vw - 48px)",
         }}
       >
-        <Card size="small" title="待确认发布" extra={<Tag color="warning">{pending.length} 篇</Tag>}>
+        <Card
+          size="small"
+          title="待确认发布"
+          extra={<Tag color="warning">{pending.length} 篇</Tag>}
+        >
           <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
             内容、配图和平台版本已经准备完成。确认后才会真正提交到外部平台。
           </Typography.Paragraph>
