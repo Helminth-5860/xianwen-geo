@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from django.db.models import Avg, Count, Max, Min
+from django.db.models import Avg, Count, Max, Min, Q
 from rest_framework import serializers
 
 from .models import SourceIndexItem, SourceIndexScan
@@ -66,7 +66,13 @@ class SourceIndexScanDetailSerializer(SourceIndexScanSummarySerializer):
             .annotate(
                 source_count=Count("item_id", distinct=True),
                 independent_source_count=Count("item__root_domain", distinct=True),
-                best_rank=Min("rank"),
+                # Only an unbounded search position can be presented as the query's
+                # best visible position. A rank from a date slice is local to that
+                # slice and must not masquerade as a global/natural search rank.
+                best_rank=Min(
+                    "rank",
+                    filter=Q(range_start__isnull=True, range_end__isnull=True),
+                ),
             )
             .order_by("-source_count", "query")[:30]
         )
