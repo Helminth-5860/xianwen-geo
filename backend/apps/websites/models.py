@@ -55,15 +55,22 @@ class WebsiteProject(models.Model):  # noqa: DJ008
         db_table = "website_projects"
         ordering = ("-updated_at", "-id")
         indexes = [
-            models.Index(fields=("user", "status", "updated_at"), name="website_project_user_idx")
+            models.Index(
+                fields=("user", "status", "updated_at"),
+                name="website_project_user_idx",
+            )
         ]
         constraints = [
             models.CheckConstraint(
-                condition=models.Q(style_key__in=("professional", "technology", "premium")),
+                condition=models.Q(
+                    style_key__in=("professional", "technology", "premium")
+                ),
                 name="website_project_style_valid",
             ),
             models.CheckConstraint(
-                condition=models.Q(status__in=("draft", "generating", "ready", "failed")),
+                condition=models.Q(
+                    status__in=("draft", "generating", "ready", "failed")
+                ),
                 name="website_project_status_valid",
             ),
             models.CheckConstraint(
@@ -127,7 +134,9 @@ class WebsiteGenerationJob(models.Model):  # noqa: DJ008
         ]
         constraints = [
             models.CheckConstraint(
-                condition=models.Q(status__in=("queued", "running", "succeeded", "failed")),
+                condition=models.Q(
+                    status__in=("queued", "running", "succeeded", "failed")
+                ),
                 name="website_job_status_valid",
             )
         ]
