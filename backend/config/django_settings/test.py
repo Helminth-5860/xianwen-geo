@@ -36,6 +36,12 @@ WEB_IMPORT_TEST_ALLOWED_CIDRS = (
     ip_network("127.0.0.0/8"),
     ip_network("::1/128"),
 )
+
+# pytest imports this module directly rather than config.settings, so feature apps
+# that are registered by the environment wrapper must be repeated here when their
+# tests exercise model loading and migrations.
+INSTALLED_APPS = [*INSTALLED_APPS, "apps.source_index"]
+
 DEBUG = False
 ALLOWED_HOSTS = ["testserver", "localhost", "127.0.0.1"]
 CSRF_TRUSTED_ORIGINS = ["http://testserver"]
