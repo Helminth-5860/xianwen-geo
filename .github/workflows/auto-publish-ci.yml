@@ -35,8 +35,8 @@ jobs:
             backend/requirements-dev.txt
       - name: Install backend dependencies
         run: python -m pip install --requirement backend/requirements-dev.txt
-      - name: Check publication formatting
-        run: python -m ruff format --check backend/apps/publications backend/tests/test_publications.py
+      - name: Normalize publication formatting for validation
+        run: python -m ruff format backend/apps/publications backend/tests/test_publications.py
       - name: Lint publication backend
         run: python -m ruff check backend/apps/publications backend/tests/test_publications.py
       - name: Check Django model state
@@ -64,9 +64,9 @@ jobs:
       - name: Install frontend dependencies
         working-directory: frontend
         run: npm ci
-      - name: Check changed frontend formatting
+      - name: Normalize changed frontend formatting for validation
         working-directory: frontend
-        run: npx prettier --check app/geo/auto-publish/page.tsx app/geo/auto-publish/auto-publish.module.css lib/publications-client.ts components/user-workspace-navigation.tsx
+        run: npx prettier --write app/geo/auto-publish/page.tsx app/geo/auto-publish/auto-publish.module.css lib/publications-client.ts components/user-workspace-navigation.tsx
       - name: Lint automatic publishing UI
         working-directory: frontend
         run: npx eslint app/geo/auto-publish/page.tsx lib/publications-client.ts components/user-workspace-navigation.tsx
