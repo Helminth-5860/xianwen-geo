@@ -14,12 +14,14 @@ from apps.documents.storage import storage_provider
 from apps.images.models import ImageAsset, ImageDerivative
 
 from .catalog import PLATFORM_BY_KEY
-from .models import PlatformAccount, Publication, PublicationTarget
+from .models import PlatformAccount, Publication, PublicationTarget, PublishingPreference
+from .pause_control import AUTOMATION_PAUSED_CODE
 from .security import PublishingCredentialError, decrypt_secret
 from .worker_client import PublishingWorkerError, publish_to_platform
 
 
 _TRANSIENT_RETRY_SECONDS = 75
+_PLATFORM_DISABLED_CODE = "platform_disabled"
 
 
 def _target_max_retries() -> int:
@@ -167,19 +169,35 @@ def execute_target(*, target_id) -> dict[str, Any]:
             PublicationTarget.Status.PAUSED,
         }:
             return {"status": target.status}
+
+        preference_enabled = PublishingPreference.objects.filter(
+            user=target.publication.user,
+            subject=target.publication.subject,
+            is_enabled=True,
+        ).exists()
+        if not preference_enabled:
+            target.status = PublicationTarget.Status.PAUSED
+            target.safe_error_code = AUTOMATION_PAUSED_CODE
+            target.save(update_fields=("status", "safe_error_code", "updated_at"))
+            _aggregate_publication(target.publication_id)
+            return {"status": "paused"}
+
         if target.scheduled_at and target.scheduled_at > timezone.now():
             return {"status": "scheduled", "eta": target.scheduled_at}
+
         account = target.account
-        if (
-            account is None
-            or account.status != PlatformAccount.Status.CONNECTED
-            or not account.enabled_for_auto
-        ):
+        if account is None or account.status != PlatformAccount.Status.CONNECTED:
             target.status = PublicationTarget.Status.AUTH_REQUIRED
             target.safe_error_code = "authorization_required"
             target.save(update_fields=("status", "safe_error_code", "updated_at"))
             _aggregate_publication(target.publication_id)
             return {"status": "auth_required"}
+        if not account.enabled_for_auto:
+            target.status = PublicationTarget.Status.PAUSED
+            target.safe_error_code = _PLATFORM_DISABLED_CODE
+            target.save(update_fields=("status", "safe_error_code", "updated_at"))
+            _aggregate_publication(target.publication_id)
+            return {"status": "paused"}
         if target.status not in {
             PublicationTarget.Status.READY,
             PublicationTarget.Status.FAILED,
