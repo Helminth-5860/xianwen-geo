@@ -64,6 +64,17 @@ def _record_result_health(platform_key: str, data: dict[str, Any]) -> None:
         record_platform_failure(platform_key, safe_code)
 
 
+def _uncertain_publish_result(platform_key: str) -> dict[str, Any]:
+    # 发布 POST 可能已经抵达平台。结果不确定时不能盲目重放，否则可能生成重复文章。
+    record_platform_failure(platform_key, "publish_result_unconfirmed")
+    return {
+        "success": False,
+        "platformKey": platform_key,
+        "status": "action_required",
+        "safeErrorCode": "publish_result_unconfirmed",
+    }
+
+
 def start_authorization_session(*, session_id: str, platform_key: str, expires_at) -> dict[str, Any]:
     base_url, secret = _configuration()
     try:
@@ -169,17 +180,18 @@ def publish_to_platform(
             headers=_headers(secret),
             timeout=_positive_timeout("PUBLISHING_WORKER_PUBLISH_TIMEOUT_SECONDS", 120, 300),
         )
-    except httpx.TimeoutException as exc:
-        record_platform_failure(platform_key, "worker_timeout")
-        raise PublishingWorkerError("worker_timeout") from exc
-    except httpx.HTTPError as exc:
+    except httpx.ConnectError as exc:
+        # 连接建立失败时请求没有送达 Worker，可以由上层安全重试。
         record_platform_failure(platform_key, "worker_unavailable")
         raise PublishingWorkerError("worker_unavailable") from exc
+    except httpx.TimeoutException:
+        return _uncertain_publish_result(platform_key)
+    except httpx.HTTPError:
+        return _uncertain_publish_result(platform_key)
     if response.status_code == 409:
         raise PublishingWorkerError("platform_not_ready")
     if response.status_code >= 500:
-        record_platform_failure(platform_key, "worker_unavailable")
-        raise PublishingWorkerError("worker_unavailable")
+        return _uncertain_publish_result(platform_key)
     if response.status_code >= 400:
         raise PublishingWorkerError("worker_rejected_request")
     data = _decode_response(response)
