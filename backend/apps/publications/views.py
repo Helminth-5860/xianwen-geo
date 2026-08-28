@@ -5,6 +5,7 @@ from rest_framework.response import Response
 from rest_framework.status import HTTP_200_OK, HTTP_201_CREATED, HTTP_202_ACCEPTED
 from rest_framework.views import APIView
 
+from apps.articles.models import Article
 from apps.subjects.permissions import IsAvailableAuthenticatedUser
 
 from .models import PublicationJob
@@ -155,16 +156,21 @@ class SubjectPublicationJobsView(APIView):
     def post(self, request, subject_id):
         serializer = PublicationJobCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        article_id = serializer.validated_data["article_id"]
+        if not Article.objects.filter(
+            pk=article_id,
+            user=request.user,
+            subject_id=subject_id,
+        ).exists():
+            raise ValidationError({"auto_publish": ["所选文章不属于当前主体"]})
         try:
             job, created = create_publication_job(
                 user=request.user,
-                article_id=serializer.validated_data["article_id"],
+                article_id=article_id,
                 idempotency_key=request.headers.get("Idempotency-Key", ""),
             )
         except PublicationInputError as exc:
             _raise_publication_error(exc)
-        if str(job.subject_id) != str(subject_id):
-            raise ValidationError({"auto_publish": ["所选文章不属于当前主体"]})
         job = publication_job_for_user(user=request.user, job_id=job.pk)
         return Response(
             {"job": job_payload(job)},
