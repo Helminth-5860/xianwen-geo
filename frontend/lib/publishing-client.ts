@@ -54,6 +54,8 @@ export type PublishingPlatform = Readonly<{
   supports_public_publish: boolean;
   verification_state: "ready" | "validation";
   authorization_enabled: boolean;
+  runtime_status: "healthy" | "degraded" | "paused";
+  recent_failures: number;
   account: PlatformAccount | null;
 }>;
 
