@@ -1,0 +1,299 @@
+.page {
+  min-height: 100%;
+  padding: 32px 32px 128px;
+}
+
+.header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 20px;
+}
+
+.header :global(.ant-typography) {
+  margin-bottom: 0;
+}
+
+.header h2:global(.ant-typography) {
+  margin-top: 8px;
+  margin-bottom: 4px;
+}
+
+.headerSummary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border: 1px solid #d9e7ff;
+  border-radius: 999px;
+  background: #f4f8ff;
+  color: #1759b5;
+  font-weight: 600;
+}
+
+.page > :global(.ant-alert) {
+  margin-bottom: 16px;
+}
+
+.searchPanel,
+.selectionToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  border: 1px solid #e6ebf3;
+  background: #fff;
+}
+
+.searchPanel {
+  padding: 18px;
+  border-radius: 14px 14px 0 0;
+}
+
+.searchPanel :global(.ant-input-affix-wrapper) {
+  width: min(100%, 520px);
+}
+
+.selectionToolbar {
+  margin-bottom: 18px;
+  padding: 12px 18px;
+  border-top: 0;
+  border-radius: 0 0 14px 14px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.mediaCard,
+.skeletonCard {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 148px;
+  align-items: center;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid #e5eaf2;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 2px 8px rgb(15 23 42 / 4%);
+}
+
+.mediaCard {
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+.mediaCard:hover {
+  transform: translateY(-1px);
+  border-color: #b9cdf4;
+  box-shadow: 0 10px 26px rgb(15 23 42 / 8%);
+}
+
+.mediaCardSelected {
+  border-color: #1677ff;
+  background: linear-gradient(145deg, #fff 20%, #f4f8ff 100%);
+  box-shadow: 0 0 0 2px rgb(22 119 255 / 9%);
+}
+
+.cardCheckbox {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+}
+
+.logoWrap {
+  display: grid;
+  width: 58px;
+  height: 58px;
+  flex: 0 0 58px;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid #edf0f5;
+  border-radius: 13px;
+  background: #fff;
+}
+
+.logoImage {
+  display: block;
+  width: 46px;
+  height: 46px;
+  object-fit: contain;
+}
+
+.logoFallback {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+  background: linear-gradient(145deg, #edf4ff, #dceaff);
+  color: #245bb5;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.cardBody {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mediaName {
+  display: inline-flex;
+  max-width: calc(100% - 20px);
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  color: #15233d;
+  font-size: 15px;
+  font-weight: 650;
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mediaName:hover,
+.mediaName:focus-visible {
+  color: #1677ff;
+}
+
+.mediaName :global(.anticon) {
+  flex: 0 0 auto;
+  color: #8b96a8;
+  font-size: 12px;
+}
+
+.domain {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.price {
+  margin-top: 6px;
+  color: #df3b22;
+  font-size: 18px;
+}
+
+.priceCaption {
+  font-size: 12px;
+}
+
+.emptyState {
+  display: grid;
+  min-height: 320px;
+  place-items: center;
+  border: 1px solid #e5eaf2;
+  border-radius: 14px;
+  background: #fff;
+}
+
+.pagination {
+  display: flex;
+  justify-content: center;
+  padding: 28px 0 12px;
+}
+
+.pagination :global(.ant-pagination) {
+  flex-wrap: wrap;
+}
+
+.calculator {
+  position: sticky;
+  z-index: 20;
+  bottom: 18px;
+  display: flex;
+  width: min(100%, 600px);
+  align-items: center;
+  gap: 14px;
+  margin: 32px 0 0 auto;
+  padding: 14px;
+  border: 1px solid #bed3f8;
+  border-radius: 16px;
+  background: rgb(255 255 255 / 96%);
+  box-shadow: 0 16px 44px rgb(15 23 42 / 16%);
+  backdrop-filter: blur(14px);
+}
+
+.calculatorIcon {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  place-items: center;
+  border-radius: 12px;
+  background: #eaf2ff;
+  color: #1677ff;
+  font-size: 20px;
+}
+
+.calculatorSummary {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.calculatorSummary strong {
+  color: #df3b22;
+  font-size: 24px;
+  line-height: 1.25;
+}
+
+@media (max-width: 1280px) {
+  .grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 960px) {
+  .page {
+    padding: 24px 24px 112px;
+  }
+
+  .grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .page {
+    padding: 18px 14px 104px;
+  }
+
+  .header,
+  .searchPanel,
+  .selectionToolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .searchPanel :global(.ant-input-affix-wrapper) {
+    width: 100%;
+  }
+
+  .grid {
+    grid-template-columns: 1fr;
+  }
+
+  .calculator {
+    bottom: 10px;
+    flex-wrap: wrap;
+  }
+
+  .calculator :global(.ant-btn) {
+    width: 100%;
+  }
+}

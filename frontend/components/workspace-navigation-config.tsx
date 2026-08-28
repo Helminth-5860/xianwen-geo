@@ -9,6 +9,7 @@ import {
   ProfileOutlined,
   QuestionCircleOutlined,
   RadarChartOutlined,
+  ShopOutlined,
   TagsOutlined,
 } from "@ant-design/icons";
 import type { ReactNode } from "react";
@@ -239,6 +240,13 @@ export const navigationConfig: readonly WorkspaceNavigationItem[] = [
         key: "optimization-execution",
         label: "执行计划",
         disabled: true,
+      },
+      {
+        key: "optimization-paid-media",
+        label: "付费媒体",
+        icon: <ShopOutlined />,
+        href: subjectRoute("/paid-media"),
+        isActive: (pathname) => pathname.includes("/paid-media"),
       },
       {
         key: "optimization-articles",

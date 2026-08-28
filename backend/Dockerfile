@@ -19,6 +19,7 @@ FROM base AS test
 RUN pip install --no-cache-dir --requirement requirements-dev.txt
 COPY --chown=app:app backend/ .
 COPY --chown=app:app config/plan-limit-keys.json /config/plan-limit-keys.json
+COPY --chown=app:app config/paid-media-catalog.json /config/paid-media-catalog.json
 RUN sed -i 's/\r$//' /app/entrypoint.sh && chmod +x /app/entrypoint.sh
 USER app
 ENTRYPOINT ["/app/entrypoint.sh"]
@@ -50,6 +51,7 @@ RUN sed -i \
     && test -x "$PLAYWRIGHT_EXPECTED_HEADLESS"
 COPY --chown=app:app backend/ .
 COPY --chown=app:app config/plan-limit-keys.json /config/plan-limit-keys.json
+COPY --chown=app:app config/paid-media-catalog.json /config/paid-media-catalog.json
 RUN sed -i 's/\r$//' /app/entrypoint.sh && chmod +x /app/entrypoint.sh
 USER app
 ENTRYPOINT ["/app/entrypoint.sh"]
@@ -58,6 +60,7 @@ CMD ["celery", "-A", "config", "worker", "--loglevel=INFO", "--queues=browser_au
 FROM base AS production
 COPY --chown=app:app backend/ .
 COPY --chown=app:app config/plan-limit-keys.json /config/plan-limit-keys.json
+COPY --chown=app:app config/paid-media-catalog.json /config/paid-media-catalog.json
 RUN sed -i 's/\r$//' /app/entrypoint.sh && chmod +x /app/entrypoint.sh
 USER app
 EXPOSE 8000

@@ -10,6 +10,7 @@ import {
   HistoryOutlined,
   MenuOutlined,
   SettingOutlined,
+  ShopOutlined,
   TeamOutlined,
   UserOutlined,
 } from "@ant-design/icons";
@@ -67,6 +68,12 @@ const routes: ConsoleRoute[] = [
     label: "业务数据",
     icon: <DatabaseOutlined />,
     menuKeys: ["menu.admin.operations", "menu.admin.users"],
+  },
+  {
+    href: "/admin/paid-media-inquiries",
+    label: "媒体发布需求",
+    icon: <ShopOutlined />,
+    menuKeys: ["menu.admin.operations"],
   },
   {
     href: "/admin/system-status",
