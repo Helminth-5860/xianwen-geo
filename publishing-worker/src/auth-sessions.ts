@@ -215,10 +215,37 @@ export async function sessionClick(session: ManagedAuthSession, x: number, y: nu
   if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || x > 1280 || y < 0 || y > 900) {
     throw new Error("invalid_coordinates");
   }
-  // 只代理鼠标点击，用于切换“扫码登录”、刷新二维码或确认非敏感提示。
-  // 不提供键盘输入接口，因此平台密码、短信验证码等不会经过显问授权页。
   await session.page.mouse.click(Math.round(x), Math.round(y));
-  await session.page.waitForTimeout(350);
+  await session.page.waitForTimeout(250);
+}
+
+export async function sessionType(session: ManagedAuthSession, text: string) {
+  if (session.status !== "waiting_user") throw new Error("session_not_interactive");
+  if (typeof text !== "string" || text.length === 0 || text.length > 512) {
+    throw new Error("invalid_text");
+  }
+  // Sensitive input is forwarded directly to the focused platform field. It is never
+  // persisted, echoed in responses, written to logs, or attached to the auth session.
+  await session.page.keyboard.insertText(text);
+  await session.page.waitForTimeout(180);
+}
+
+export async function sessionKey(session: ManagedAuthSession, key: string) {
+  if (session.status !== "waiting_user") throw new Error("session_not_interactive");
+  const allowed = new Set([
+    "Enter",
+    "Tab",
+    "Escape",
+    "Backspace",
+    "Delete",
+    "ArrowLeft",
+    "ArrowRight",
+    "ArrowUp",
+    "ArrowDown",
+  ]);
+  if (!allowed.has(key)) throw new Error("invalid_key");
+  await session.page.keyboard.press(key);
+  await session.page.waitForTimeout(120);
 }
 
 export function internalSessionPayload(session: ManagedAuthSession) {
