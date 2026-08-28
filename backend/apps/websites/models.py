@@ -9,8 +9,24 @@ from django.db import models
 class WebsiteProject(models.Model):  # noqa: DJ008
     class Style(models.TextChoices):
         PROFESSIONAL = "professional", "专业商务"
-        TECHNOLOGY = "technology", "科技简约"
+        TECHNOLOGY = "technology", "科技未来"
         PREMIUM = "premium", "高端品牌"
+        INDUSTRIAL = "industrial", "工业制造"
+        LOCAL_SERVICE = "local_service", "本地服务"
+        AUTHORITY = "authority", "内容权威"
+
+    class Theme(models.TextChoices):
+        OCEAN = "ocean", "深海蓝"
+        OBSIDIAN = "obsidian", "曜石黑"
+        CLOUD = "cloud", "云雾灰"
+        AMETHYST = "amethyst", "紫晶"
+        JADE = "jade", "翡翠绿"
+        GOLD = "gold", "暖金"
+
+    class Density(models.TextChoices):
+        COMPACT = "compact", "简洁"
+        STANDARD = "standard", "标准"
+        RICH = "rich", "丰富"
 
     class Status(models.TextChoices):
         DRAFT = "draft", "待生成"
@@ -39,6 +55,16 @@ class WebsiteProject(models.Model):  # noqa: DJ008
         choices=Style.choices,
         default=Style.PROFESSIONAL,
     )
+    theme_key = models.CharField(
+        max_length=24,
+        choices=Theme.choices,
+        default=Theme.OCEAN,
+    )
+    density_key = models.CharField(
+        max_length=24,
+        choices=Density.choices,
+        default=Density.STANDARD,
+    )
     status = models.CharField(max_length=24, choices=Status.choices, default=Status.DRAFT)
     selected_asset_ids = models.JSONField(default=list)
     selected_document_ids = models.JSONField(default=list)
@@ -63,9 +89,26 @@ class WebsiteProject(models.Model):  # noqa: DJ008
         constraints = [
             models.CheckConstraint(
                 condition=models.Q(
-                    style_key__in=("professional", "technology", "premium")
+                    style_key__in=(
+                        "professional",
+                        "technology",
+                        "premium",
+                        "industrial",
+                        "local_service",
+                        "authority",
+                    )
                 ),
                 name="website_project_style_valid",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(
+                    theme_key__in=("ocean", "obsidian", "cloud", "amethyst", "jade", "gold")
+                ),
+                name="website_project_theme_valid",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(density_key__in=("compact", "standard", "rich")),
+                name="website_project_density_valid",
             ),
             models.CheckConstraint(
                 condition=models.Q(
