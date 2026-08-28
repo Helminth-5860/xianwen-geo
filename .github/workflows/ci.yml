@@ -4,6 +4,7 @@ on:
   pull_request:
     branches:
       - develop
+      - hotfix/XW-hunyuan-tokenhub-20260827
   push:
     branches:
       - develop
