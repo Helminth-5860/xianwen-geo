@@ -266,11 +266,7 @@ def calculate_index(items: list[dict]) -> tuple[Decimal, dict[str, float]]:
     visibility = sum(item["visibility_score"] for item in items) / len(items)
     freshness = sum(item["freshness_score"] for item in items) / len(items)
     value = (
-        exposure * 0.25
-        + diversity * 0.25
-        + authority * 0.25
-        + visibility * 0.15
-        + freshness * 0.10
+        exposure * 0.25 + diversity * 0.25 + authority * 0.25 + visibility * 0.15 + freshness * 0.10
     )
     factors = {
         "exposure": round(exposure, 2),
