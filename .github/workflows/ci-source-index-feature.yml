@@ -1,0 +1,79 @@
+name: Source Index Feature CI
+
+on:
+  push:
+    branches:
+      - integration/XW-source-index-current-20260828-v2
+  pull_request:
+    paths:
+      - "backend/apps/source_index/**"
+      - "backend/config/settings.py"
+      - "backend/config/django_settings/test.py"
+      - "backend/config/urls.py"
+      - "backend/tests/api_urls.py"
+      - "backend/tests/test_source_index.py"
+      - "frontend/lib/source-index-client.ts"
+      - "frontend/components/source-index-workspace.tsx"
+      - "frontend/components/source-index-workspace.module.css"
+      - ".env.example"
+      - ".github/workflows/ci-source-index-feature.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
+      - name: Install backend dependencies
+        run: python -m pip install --requirement backend/requirements-dev.txt
+      - name: Lint source-index changes
+        working-directory: backend
+        run: |
+          python -m ruff check apps/source_index tests/test_source_index.py config/urls.py tests/api_urls.py
+          python -m ruff format --check apps/source_index tests/test_source_index.py config/urls.py tests/api_urls.py
+      - name: Type check source-index app
+        working-directory: backend
+        run: python -m mypy apps/source_index
+      - name: Django checks and migrations
+        working-directory: backend
+        env:
+          APP_ENV: test
+        run: |
+          python manage.py check
+          python manage.py makemigrations --check --dry-run
+          python manage.py migrate --noinput
+      - name: Source-index tests
+        working-directory: backend
+        env:
+          APP_ENV: test
+        run: python -m pytest tests/test_source_index.py -q
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version-file: frontend/.nvmrc
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - working-directory: frontend
+        run: npm ci
+      - name: Type check source-index frontend contract
+        working-directory: frontend
+        run: npm run typecheck
+      - name: Production build
+        working-directory: frontend
+        run: npm run build
