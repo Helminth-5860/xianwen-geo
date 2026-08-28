@@ -127,7 +127,7 @@ describe("官网草稿预览", () => {
     );
 
     expect(screen.getByText("核心服务")).toBeTruthy();
-    expect(screen.queryByText("常见问题")).toBeNull();
+    expect(screen.queryByText("企业能力")).toBeNull();
     expect(screen.getAllByText("联系我们").length).toBeGreaterThan(0);
   });
 });
