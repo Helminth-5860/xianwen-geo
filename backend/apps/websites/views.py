@@ -4,6 +4,7 @@ from rest_framework.status import HTTP_200_OK, HTTP_202_ACCEPTED
 from rest_framework.views import APIView
 
 from apps.ai.errors import AIAdapterError
+from apps.subjects.permissions import IsAvailableAuthenticatedUser
 
 from .serializers import WebsiteGenerateSerializer
 from .services import (
@@ -17,11 +18,15 @@ from .services import (
 
 
 class SubjectWebsiteView(APIView):
+    permission_classes = [IsAvailableAuthenticatedUser]
+
     def get(self, request, subject_id):
         return Response(website_state(user=request.user, subject_id=subject_id))
 
 
 class SubjectWebsiteGenerateView(APIView):
+    permission_classes = [IsAvailableAuthenticatedUser]
+
     def post(self, request, subject_id):
         serializer = WebsiteGenerateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -31,13 +36,16 @@ class SubjectWebsiteGenerateView(APIView):
                 subject_id=subject_id,
                 style_key=serializer.validated_data["style_key"],
                 image_asset_ids=list(serializer.validated_data["image_asset_ids"]),
+                document_ids=list(serializer.validated_data["document_ids"]),
                 idempotency_key=request.headers.get("Idempotency-Key", ""),
                 request_id=getattr(request, "request_id", None),
             )
         except WebsiteInputError as exc:
             raise ValidationError({"website": [str(exc)]}) from exc
         except AIAdapterError as exc:
-            raise ValidationError({"website": ["当前内容生成服务暂不可用，请稍后再试"]}) from exc
+            raise ValidationError(
+                {"website": ["当前内容生成服务暂不可用，请稍后再试"]}
+            ) from exc
         return Response(
             {"project": project_payload(project), "job": job_payload(job)},
             status=HTTP_202_ACCEPTED if created else HTTP_200_OK,
@@ -45,6 +53,8 @@ class SubjectWebsiteGenerateView(APIView):
 
 
 class WebsiteGenerationJobView(APIView):
+    permission_classes = [IsAvailableAuthenticatedUser]
+
     def get(self, request, job_id):
         job = website_job_for_user(user=request.user, job_id=job_id)
         return Response({"job": job_payload(job), "project": project_payload(job.project)})
