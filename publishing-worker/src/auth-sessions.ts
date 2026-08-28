@@ -100,7 +100,10 @@ async function monitorSession(session: ManagedAuthSession) {
   }
   try {
     const cookies = await session.context.cookies();
-    if (cookies.some((cookie) => cookie.name === session.platform.successCookie && cookie.value)) {
+    const success = cookies.some(
+      (cookie) => session.platform.successCookies.includes(cookie.name) && Boolean(cookie.value),
+    );
+    if (success) {
       await captureCredentials(session);
     }
   } catch {
