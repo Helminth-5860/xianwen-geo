@@ -10,6 +10,12 @@ from apps.subjects.permissions import IsAvailableAuthenticatedUser
 
 from .authorization import begin_browser_authorization, sync_authorization_session
 from .models import PlatformAccount, PlatformAuthorizationSession, Publication, PublishingPreference
+from .pause_control import (
+    pause_platform_publications,
+    pause_subject_publications,
+    resume_platform_publications,
+    resume_subject_publications,
+)
 from .review import approve_publication, is_waiting_review
 from .serializers import (
     AuthorizationStartSerializer,
@@ -81,11 +87,16 @@ class SubjectPublishingPreferenceView(APIView):
                 preference.custom_platform_keys = enabled_keys
                 preference.version += 1
                 preference.save(update_fields=("custom_platform_keys", "version", "updated_at"))
-        if preference.is_enabled and preference.mode in {
-            PublishingPreference.Mode.MANAGED,
-            PublishingPreference.Mode.REVIEW,
-        }:
-            adopt_ready_articles_task.delay(str(request.user.pk), str(subject_id))
+
+        if preference.is_enabled:
+            resume_subject_publications(user_id=request.user.pk, subject_id=subject_id)
+            if preference.mode in {
+                PublishingPreference.Mode.MANAGED,
+                PublishingPreference.Mode.REVIEW,
+            }:
+                adopt_ready_articles_task.delay(str(request.user.pk), str(subject_id))
+        else:
+            pause_subject_publications(user_id=request.user.pk, subject_id=subject_id)
         return Response({"preference": preference_payload(preference)})
 
 
@@ -140,10 +151,29 @@ class SubjectPlatformAccountView(APIView):
         account.save(update_fields=("enabled_for_auto", "updated_at"))
         preference = PublishingPreference.objects.filter(user=request.user, subject=subject).first()
         _sync_custom_platform(preference, platform_key, enabled)
+
+        if enabled:
+            resume_platform_publications(
+                user_id=request.user.pk,
+                subject_id=subject_id,
+                platform_key=platform_key,
+                automation_enabled=bool(preference and preference.is_enabled),
+            )
+        else:
+            pause_platform_publications(
+                user_id=request.user.pk,
+                subject_id=subject_id,
+                platform_key=platform_key,
+            )
         return Response({"account": account_payload(account)})
 
     def delete(self, request, subject_id, platform_key):
         subject = subject_for_user(user=request.user, subject_id=subject_id)
+        pause_platform_publications(
+            user_id=request.user.pk,
+            subject_id=subject_id,
+            platform_key=platform_key,
+        )
         disconnect_platform_account(
             user=request.user,
             subject_id=subject_id,

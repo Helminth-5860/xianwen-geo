@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from django.core.cache import cache
 from django.utils import timezone
 
 from .models import PlatformAccount, PlatformAuthorizationSession
@@ -83,64 +84,79 @@ def begin_browser_authorization(*, user, subject_id, platform_key: str) -> Platf
             "updated_at",
         )
     )
+
+    # Do not depend on the browser UI staying open: the backend itself keeps polling
+    # the worker and imports the encrypted session credentials as soon as login succeeds.
+    from .tasks import sync_authorization_session_task
+
+    sync_authorization_session_task.delay(str(session.pk))
     return session
 
 
 def sync_authorization_session(session: PlatformAuthorizationSession) -> PlatformAuthorizationSession:
-    if session.status in _TERMINAL:
-        return session
-    if session.expires_at <= timezone.now():
-        session.status = PlatformAuthorizationSession.Status.EXPIRED
-        session.safe_error_code = "authorization_timeout"
-        session.completed_at = timezone.now()
-        session.save(update_fields=("status", "safe_error_code", "completed_at", "updated_at"))
-        if session.auth_method == PlatformAccount.AuthMethod.BROWSER_SESSION and session.remote_session_ref:
-            delete_authorization_session(remote_session_ref=session.remote_session_ref)
-        return session
-
-    # Official component/OAuth flows complete asynchronously through their signed callback.
-    # Polling this endpoint only reads the database state; it must never send the official
-    # authorization reference to the browser worker.
-    if session.auth_method == PlatformAccount.AuthMethod.OFFICIAL_API:
+    # Both the UI and the background task may poll the same authorization session.
+    # A short distributed cache lock prevents credentials being imported twice.
+    lock_key = f"publishing:auth-sync:{session.pk}"
+    if not cache.add(lock_key, "1", timeout=20):
         session.refresh_from_db()
         return session
-
-    if not session.remote_session_ref:
-        return session
-
     try:
-        remote = get_authorization_session(remote_session_ref=session.remote_session_ref)
-    except PublishingWorkerError as exc:
-        if exc.code == "remote_session_missing":
-            _mark_failed(session, "authorization_cancelled")
-        return session
-
-    remote_status = str(remote.get("status") or "")
-    if remote_status == "succeeded":
-        credentials = remote.get("credentials")
-        if not isinstance(credentials, dict) or not credentials:
-            _mark_failed(session, "authorization_cancelled")
-            return session
-        complete_authorization_session(
-            session=session,
-            secret_payload=credentials,
-        )
-        delete_authorization_session(remote_session_ref=session.remote_session_ref)
         session.refresh_from_db()
-        return session
-    if remote_status == "expired":
-        session.status = PlatformAuthorizationSession.Status.EXPIRED
-        session.safe_error_code = "authorization_timeout"
-        session.completed_at = timezone.now()
-        session.save(update_fields=("status", "safe_error_code", "completed_at", "updated_at"))
-        delete_authorization_session(remote_session_ref=session.remote_session_ref)
-        return session
-    if remote_status == "failed":
-        _mark_failed(session, str(remote.get("errorCode") or "platform_unavailable")[:100])
-        delete_authorization_session(remote_session_ref=session.remote_session_ref)
-        return session
+        if session.status in _TERMINAL:
+            return session
+        if session.expires_at <= timezone.now():
+            session.status = PlatformAuthorizationSession.Status.EXPIRED
+            session.safe_error_code = "authorization_timeout"
+            session.completed_at = timezone.now()
+            session.save(update_fields=("status", "safe_error_code", "completed_at", "updated_at"))
+            if session.auth_method == PlatformAccount.AuthMethod.BROWSER_SESSION and session.remote_session_ref:
+                delete_authorization_session(remote_session_ref=session.remote_session_ref)
+            return session
 
-    if session.status != PlatformAuthorizationSession.Status.WAITING_USER:
-        session.status = PlatformAuthorizationSession.Status.WAITING_USER
-        session.save(update_fields=("status", "updated_at"))
-    return session
+        # Official component/OAuth flows complete asynchronously through their signed callback.
+        # Polling this endpoint only reads the database state; it must never send the official
+        # authorization reference to the browser worker.
+        if session.auth_method == PlatformAccount.AuthMethod.OFFICIAL_API:
+            return session
+
+        if not session.remote_session_ref:
+            return session
+
+        try:
+            remote = get_authorization_session(remote_session_ref=session.remote_session_ref)
+        except PublishingWorkerError as exc:
+            if exc.code == "remote_session_missing":
+                _mark_failed(session, "authorization_cancelled")
+            return session
+
+        remote_status = str(remote.get("status") or "")
+        if remote_status == "succeeded":
+            credentials = remote.get("credentials")
+            if not isinstance(credentials, dict) or not credentials:
+                _mark_failed(session, "authorization_cancelled")
+                return session
+            complete_authorization_session(
+                session=session,
+                secret_payload=credentials,
+            )
+            delete_authorization_session(remote_session_ref=session.remote_session_ref)
+            session.refresh_from_db()
+            return session
+        if remote_status == "expired":
+            session.status = PlatformAuthorizationSession.Status.EXPIRED
+            session.safe_error_code = "authorization_timeout"
+            session.completed_at = timezone.now()
+            session.save(update_fields=("status", "safe_error_code", "completed_at", "updated_at"))
+            delete_authorization_session(remote_session_ref=session.remote_session_ref)
+            return session
+        if remote_status == "failed":
+            _mark_failed(session, str(remote.get("errorCode") or "platform_unavailable")[:100])
+            delete_authorization_session(remote_session_ref=session.remote_session_ref)
+            return session
+
+        if session.status != PlatformAuthorizationSession.Status.WAITING_USER:
+            session.status = PlatformAuthorizationSession.Status.WAITING_USER
+            session.save(update_fields=("status", "updated_at"))
+        return session
+    finally:
+        cache.delete(lock_key)

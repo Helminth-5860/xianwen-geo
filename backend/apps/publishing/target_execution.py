@@ -12,14 +12,20 @@ from django.utils import timezone
 from apps.documents.exceptions import FileStorageUnavailable
 from apps.documents.storage import storage_provider
 from apps.images.models import ImageAsset, ImageDerivative
+from apps.keywords.models import Keyword, KeywordSet
 
 from .catalog import PLATFORM_BY_KEY
-from .models import PlatformAccount, Publication, PublicationTarget
-from .security import PublishingCredentialError, decrypt_secret
+from .credentials import PlatformCredentialRuntimeUnavailable, platform_credentials
+from .models import PlatformAccount, PublicationTarget, PublishingPreference
+from .pause_control import AUTOMATION_PAUSED_CODE, PLATFORM_DISABLED_CODE
+from .platform_health import platform_circuit_open
+from .publication_state import aggregate_publication
+from .security import PublishingCredentialError
 from .worker_client import PublishingWorkerError, publish_to_platform
 
 
 _TRANSIENT_RETRY_SECONDS = 75
+_CIRCUIT_RETRY_SECONDS = 30 * 60
 
 
 def _target_max_retries() -> int:
@@ -65,6 +71,61 @@ def _simple_html(value: str) -> str:
             paragraph.append(line)
     flush()
     return "\n".join(blocks) or f"<p>{html.escape(value)}</p>"
+
+
+def _publication_tags(target: PublicationTarget) -> list[str]:
+    keyword_set = (
+        KeywordSet.objects.filter(
+            user=target.publication.user,
+            subject=target.publication.subject,
+            current_version__isnull=False,
+        )
+        .select_related("current_version")
+        .first()
+    )
+    if keyword_set is None or keyword_set.current_version_id is None:
+        return []
+
+    title = target.adapted_title.strip().lower()
+    content = _plain_text(target.adapted_content).lower()
+    candidates = list(
+        Keyword.objects.filter(keyword_set_version_id=keyword_set.current_version_id)
+        .only("text", "priority", "relevance_score", "sort_order")
+        .order_by("sort_order")[:100]
+    )
+    ranked: list[tuple[int, int, str]] = []
+    for item in candidates:
+        value = " ".join((item.text or "").strip().split())
+        if not value or len(value) > 40:
+            continue
+        normalized = value.lower()
+        score = 0
+        if normalized in title:
+            score += 8
+        if normalized in content:
+            score += 5
+        if item.priority == "high":
+            score += 2
+        elif item.priority == "medium":
+            score += 1
+        if item.relevance_score is not None and item.relevance_score >= 80:
+            score += 1
+        if normalized not in title and normalized not in content:
+            continue
+        ranked.append((score, -item.sort_order, value))
+
+    ranked.sort(reverse=True)
+    result: list[str] = []
+    seen: set[str] = set()
+    for _score, _order, value in ranked:
+        key = value.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(value)
+        if len(result) >= 8:
+            break
+    return result
 
 
 def _delivery_assets(target: PublicationTarget) -> list[dict[str, Any]]:
@@ -120,33 +181,6 @@ def _delivery_assets(target: PublicationTarget) -> list[dict[str, Any]]:
     return result
 
 
-def _aggregate_publication(publication_id) -> None:
-    with transaction.atomic():
-        publication = Publication.objects.select_for_update().get(pk=publication_id)
-        statuses = list(publication.targets.values_list("status", flat=True))
-        terminal_non_success = {
-            PublicationTarget.Status.FAILED,
-            PublicationTarget.Status.AUTH_REQUIRED,
-            PublicationTarget.Status.PAUSED,
-        }
-        if not statuses:
-            publication.status = Publication.Status.FAILED
-        elif all(value == PublicationTarget.Status.SUCCEEDED for value in statuses):
-            publication.status = Publication.Status.SUCCEEDED
-        elif any(value == PublicationTarget.Status.SUBMITTED for value in statuses):
-            publication.status = Publication.Status.RUNNING
-        elif any(value == PublicationTarget.Status.SUCCEEDED for value in statuses) and all(
-            value == PublicationTarget.Status.SUCCEEDED or value in terminal_non_success
-            for value in statuses
-        ):
-            publication.status = Publication.Status.PARTIAL
-        elif all(value in terminal_non_success for value in statuses):
-            publication.status = Publication.Status.FAILED
-        else:
-            publication.status = Publication.Status.RUNNING
-        publication.save(update_fields=("status", "updated_at"))
-
-
 def execute_target(*, target_id) -> dict[str, Any]:
     with transaction.atomic():
         target = (
@@ -167,19 +201,39 @@ def execute_target(*, target_id) -> dict[str, Any]:
             PublicationTarget.Status.PAUSED,
         }:
             return {"status": target.status}
+
+        preference_enabled = PublishingPreference.objects.filter(
+            user=target.publication.user,
+            subject=target.publication.subject,
+            is_enabled=True,
+        ).exists()
+        if not preference_enabled:
+            target.status = PublicationTarget.Status.PAUSED
+            target.safe_error_code = AUTOMATION_PAUSED_CODE
+            target.save(update_fields=("status", "safe_error_code", "updated_at"))
+            aggregate_publication(target.publication_id)
+            return {"status": "paused"}
+
         if target.scheduled_at and target.scheduled_at > timezone.now():
             return {"status": "scheduled", "eta": target.scheduled_at}
+
         account = target.account
-        if (
-            account is None
-            or account.status != PlatformAccount.Status.CONNECTED
-            or not account.enabled_for_auto
-        ):
+        if account is None or account.status != PlatformAccount.Status.CONNECTED:
             target.status = PublicationTarget.Status.AUTH_REQUIRED
             target.safe_error_code = "authorization_required"
             target.save(update_fields=("status", "safe_error_code", "updated_at"))
-            _aggregate_publication(target.publication_id)
+            aggregate_publication(target.publication_id)
             return {"status": "auth_required"}
+        if not account.enabled_for_auto:
+            target.status = PublicationTarget.Status.PAUSED
+            target.safe_error_code = PLATFORM_DISABLED_CODE
+            target.save(update_fields=("status", "safe_error_code", "updated_at"))
+            aggregate_publication(target.publication_id)
+            return {"status": "paused"}
+        if platform_circuit_open(target.platform_key):
+            # Do not open a browser or consume an attempt while a shared platform
+            # circuit is cooling down. The Celery task will return after the circuit TTL.
+            return {"status": "retry", "retry_after": _CIRCUIT_RETRY_SECONDS}
         if target.status not in {
             PublicationTarget.Status.READY,
             PublicationTarget.Status.FAILED,
@@ -202,9 +256,21 @@ def execute_target(*, target_id) -> dict[str, Any]:
         .get(pk=target_id)
     )
     try:
-        credentials = decrypt_secret(
-            target.account.secret_ciphertext if target.account else ""
+        credentials = platform_credentials(target.account)
+    except PlatformCredentialRuntimeUnavailable:
+        if target.attempts < _target_max_retries():
+            PublicationTarget.objects.filter(pk=target.pk).update(
+                status=PublicationTarget.Status.READY,
+                safe_error_code="platform_unavailable",
+            )
+            aggregate_publication(target.publication_id)
+            return {"status": "retry", "retry_after": _TRANSIENT_RETRY_SECONDS}
+        PublicationTarget.objects.filter(pk=target.pk).update(
+            status=PublicationTarget.Status.PAUSED,
+            safe_error_code="platform_unavailable",
         )
+        aggregate_publication(target.publication_id)
+        return {"status": "paused"}
     except PublishingCredentialError:
         PlatformAccount.objects.filter(pk=target.account_id).update(
             status=PlatformAccount.Status.ACTION_REQUIRED,
@@ -215,7 +281,7 @@ def execute_target(*, target_id) -> dict[str, Any]:
             status=PublicationTarget.Status.AUTH_REQUIRED,
             safe_error_code="authorization_required",
         )
-        _aggregate_publication(target.publication_id)
+        aggregate_publication(target.publication_id)
         return {"status": "auth_required"}
 
     try:
@@ -228,17 +294,18 @@ def execute_target(*, target_id) -> dict[str, Any]:
             status=PublicationTarget.Status.PAUSED,
             safe_error_code="platform_unavailable",
         )
-        _aggregate_publication(target.publication_id)
+        aggregate_publication(target.publication_id)
         return {"status": "paused"}
     if target.platform_key in {"xiaohongshu", "douyin"} and not assets:
         PublicationTarget.objects.filter(pk=target.pk).update(
             status=PublicationTarget.Status.FAILED,
             safe_error_code="media_invalid",
         )
-        _aggregate_publication(target.publication_id)
+        aggregate_publication(target.publication_id)
         return {"status": "failed"}
 
     text = _plain_text(target.adapted_content)
+    tags = _publication_tags(target)
     try:
         result = publish_to_platform(
             platform_key=target.platform_key,
@@ -247,25 +314,33 @@ def execute_target(*, target_id) -> dict[str, Any]:
             content_html=_simple_html(target.adapted_content),
             content_text=text,
             summary=text[:180],
-            tags=[],
+            tags=tags,
             assets=assets,
             credentials=credentials,
             publish_mode="public",
         )
     except PublishingWorkerError as exc:
+        if exc.code == "platform_circuit_open":
+            PublicationTarget.objects.filter(pk=target.pk).update(
+                status=PublicationTarget.Status.READY,
+                safe_error_code="platform_unavailable",
+            )
+            aggregate_publication(target.publication_id)
+            return {"status": "retry", "retry_after": _CIRCUIT_RETRY_SECONDS}
         retryable = exc.code in {"worker_timeout", "worker_unavailable"}
         if retryable and target.attempts < _target_max_retries():
             PublicationTarget.objects.filter(pk=target.pk).update(
                 status=PublicationTarget.Status.READY,
                 safe_error_code="platform_unavailable",
             )
+            aggregate_publication(target.publication_id)
             return {"status": "retry", "retry_after": _TRANSIENT_RETRY_SECONDS}
-        paused = exc.code in {"platform_not_ready", "platform_circuit_open"}
+        paused = exc.code == "platform_not_ready"
         PublicationTarget.objects.filter(pk=target.pk).update(
             status=PublicationTarget.Status.PAUSED if paused else PublicationTarget.Status.FAILED,
             safe_error_code="platform_unavailable",
         )
-        _aggregate_publication(target.publication_id)
+        aggregate_publication(target.publication_id)
         return {"status": "paused" if paused else "failed"}
 
     remote_status = str(result.get("status") or "failed")
@@ -286,7 +361,7 @@ def execute_target(*, target_id) -> dict[str, Any]:
             next_status_check_at=None,
             safe_error_code="",
         )
-        _aggregate_publication(target.publication_id)
+        aggregate_publication(target.publication_id)
         return {"status": "succeeded"}
 
     if bool(result.get("success")) and remote_status == "submitted":
@@ -298,7 +373,7 @@ def execute_target(*, target_id) -> dict[str, Any]:
             next_status_check_at=timezone.now() + timedelta(minutes=15),
             safe_error_code="",
         )
-        _aggregate_publication(target.publication_id)
+        aggregate_publication(target.publication_id)
         return {"status": "submitted"}
 
     if remote_status == "auth_required":
@@ -311,7 +386,7 @@ def execute_target(*, target_id) -> dict[str, Any]:
             status=PublicationTarget.Status.AUTH_REQUIRED,
             safe_error_code="authorization_required",
         )
-        _aggregate_publication(target.publication_id)
+        aggregate_publication(target.publication_id)
         return {"status": "auth_required"}
 
     code = str(result.get("safeErrorCode") or "platform_unavailable")[:100]
@@ -326,5 +401,5 @@ def execute_target(*, target_id) -> dict[str, Any]:
         management_url=management_url,
         safe_error_code=code,
     )
-    _aggregate_publication(target.publication_id)
+    aggregate_publication(target.publication_id)
     return {"status": status}

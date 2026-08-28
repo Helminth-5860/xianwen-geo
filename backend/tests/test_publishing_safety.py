@@ -1,21 +1,29 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
+from types import SimpleNamespace
 
 import pytest
+from cryptography.fernet import Fernet
 from django.core.cache import cache
+from django.core.exceptions import ImproperlyConfigured
+from django.test import override_settings
 from django.utils import timezone
 
 from apps.publishing.catalog import PLATFORMS, platform_payload
-from apps.publishing.models import PublicationTarget
+from apps.publishing.models import Publication, PublicationTarget
+from apps.publishing.pause_control import AUTOMATION_PAUSED_CODE, PLATFORM_DISABLED_CODE
 from apps.publishing.platform_health import (
     platform_circuit_open,
     record_platform_failure,
     record_platform_success,
 )
 from apps.publishing.review import AWAITING_REVIEW_CODE
-from apps.publishing.scheduling import _fit_window
+from apps.publishing.runtime_config import validate_runtime_configuration
+from apps.publishing.scheduling import _fit_window, _fixed_slot
+from apps.publishing.services import _smart_platform_selection
 from apps.publishing.target_execution import _target_max_retries
+from apps.publishing.tasks import _running_stale_seconds
 from apps.publishing.worker_client import _uncertain_publish_result
 
 
@@ -46,18 +54,75 @@ def test_domestic_platform_catalog_is_exactly_seventeen():
     assert len(PLATFORMS) == 17
 
 
-def test_publication_target_has_explicit_platform_review_state():
-    values = {value for value, _label in PublicationTarget.Status.choices}
-    assert "submitted" in values
+def test_publication_and_target_have_explicit_non_success_states():
+    publication_values = {value for value, _label in Publication.Status.choices}
+    target_values = {value for value, _label in PublicationTarget.Status.choices}
+    assert Publication.Status.PAUSED in publication_values
+    assert "submitted" in target_values
     assert "submitted" != PublicationTarget.Status.SUCCEEDED
 
 
-def test_review_gate_uses_distinct_non_publishable_reason():
+def test_review_and_pause_reasons_are_distinct():
     assert AWAITING_REVIEW_CODE == "awaiting_review"
-    assert AWAITING_REVIEW_CODE not in {"authorization_required", "platform_unavailable"}
+    assert AUTOMATION_PAUSED_CODE == "automation_paused"
+    assert PLATFORM_DISABLED_CODE == "platform_disabled"
+    assert len({AWAITING_REVIEW_CODE, AUTOMATION_PAUSED_CODE, PLATFORM_DISABLED_CODE}) == 3
+    assert not {
+        AWAITING_REVIEW_CODE,
+        AUTOMATION_PAUSED_CODE,
+        PLATFORM_DISABLED_CODE,
+    } & {"authorization_required", "platform_unavailable"}
 
 
-@pytest.mark.django_db
+def test_smart_distribution_prioritizes_technical_channels_and_is_bounded():
+    article = SimpleNamespace(
+        title="API 与数据库架构实践",
+        content="本文介绍系统架构、接口、数据库和部署方法。",
+        template_version=None,
+        article_type_id=None,
+        article_type=None,
+    )
+    selected = _smart_platform_selection(article, EXPECTED_PLATFORM_KEYS)
+    assert selected[0] == "csdn"
+    assert selected[1] == "juejin"
+    assert "segmentfault" in selected
+    assert len(selected) <= 8
+    assert set(selected) < EXPECTED_PLATFORM_KEYS
+
+
+def test_smart_distribution_prioritizes_visual_channels_for_product_guides():
+    article = SimpleNamespace(
+        title="企业产品选择指南与使用场景",
+        content="用清单和步骤说明产品怎么选，并展示不同使用场景。",
+        template_version=None,
+        article_type_id=None,
+        article_type=None,
+    )
+    selected = _smart_platform_selection(article, EXPECTED_PLATFORM_KEYS)
+    assert selected[0] == "xiaohongshu"
+    assert "douyin" in selected
+    assert "bilibili" in selected
+    assert len(selected) <= 8
+
+
+def test_fixed_daily_slots_spread_articles_and_leave_platform_wave_room():
+    day = date(2026, 8, 28)
+    first = _fixed_slot(day, 0, posts_per_day=2, platform_count=4)
+    second = _fixed_slot(day, 1, posts_per_day=2, platform_count=4)
+    assert first is not None and second is not None
+    assert timezone.localtime(first).time().isoformat(timespec="minutes") == "09:30"
+    assert second > first
+    # Four platforms need 105 minutes after the article start, so the second slot
+    # must be early enough for the complete wave to finish by 20:30.
+    assert timezone.localtime(second).time().isoformat(timespec="minutes") == "18:45"
+
+
+def test_single_daily_article_uses_one_slot_only():
+    slot = _fixed_slot(date(2026, 8, 28), 0, posts_per_day=1, platform_count=8)
+    assert slot is not None
+    assert timezone.localtime(slot).time().isoformat(timespec="minutes") == "09:30"
+
+
 def test_wechat_is_not_exposed_without_component_ticket(monkeypatch):
     cache.clear()
     monkeypatch.setenv("PUBLISHING_WECHAT_COMPONENT_APP_ID", "wx-component-test")
@@ -72,6 +137,7 @@ def test_wechat_is_not_exposed_without_component_ticket(monkeypatch):
     payload = {item["key"]: item for item in platform_payload({"wechat"})}
     assert payload["wechat"]["authorization_enabled"] is False
     assert payload["wechat"]["verification_state"] == "validation"
+    assert payload["wechat"]["supports_public_publish"] is False
 
 
 def test_platform_circuit_breaker_opens_and_success_resets():
@@ -97,6 +163,51 @@ def test_retry_count_is_bounded_from_environment(monkeypatch):
     assert _target_max_retries() == 10
     monkeypatch.setenv("PUBLISHING_TARGET_MAX_RETRIES", "not-a-number")
     assert _target_max_retries() == 3
+
+
+def test_running_stale_window_is_always_beyond_publish_task_limit(monkeypatch):
+    monkeypatch.setenv("PUBLISHING_RUNNING_STALE_SECONDS", "1")
+    assert _running_stale_seconds() >= 390
+    monkeypatch.setenv("PUBLISHING_RUNNING_STALE_SECONDS", "99999")
+    assert _running_stale_seconds() == 3600
+
+
+def test_production_enabled_platforms_require_dedicated_encryption_key(monkeypatch):
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("PUBLISHING_WORKER_EXPERIMENTAL_PLATFORM_KEYS", "zhihu")
+    with override_settings(
+        PUBLISHING_ENABLED_PLATFORM_KEYS=("zhihu",),
+        PUBLISHING_WORKER_BASE_URL="http://publishing-worker:8092",
+        PUBLISHING_WORKER_INTERNAL_SECRET="x" * 32,
+        PUBLISHING_CREDENTIAL_ENCRYPTION_KEY="",
+    ):
+        with pytest.raises(ImproperlyConfigured):
+            validate_runtime_configuration()
+
+
+def test_browser_platform_gate_must_match_worker_gate(monkeypatch):
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("PUBLISHING_WORKER_EXPERIMENTAL_PLATFORM_KEYS", "")
+    with override_settings(
+        PUBLISHING_ENABLED_PLATFORM_KEYS=("zhihu",),
+        PUBLISHING_WORKER_BASE_URL="http://publishing-worker:8092",
+        PUBLISHING_WORKER_INTERNAL_SECRET="x" * 32,
+        PUBLISHING_CREDENTIAL_ENCRYPTION_KEY=Fernet.generate_key().decode("ascii"),
+    ):
+        with pytest.raises(ImproperlyConfigured):
+            validate_runtime_configuration()
+
+
+def test_valid_dedicated_key_allows_enabled_platform_runtime(monkeypatch):
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("PUBLISHING_WORKER_EXPERIMENTAL_PLATFORM_KEYS", "zhihu")
+    with override_settings(
+        PUBLISHING_ENABLED_PLATFORM_KEYS=("zhihu",),
+        PUBLISHING_WORKER_BASE_URL="http://publishing-worker:8092",
+        PUBLISHING_WORKER_INTERNAL_SECRET="x" * 32,
+        PUBLISHING_CREDENTIAL_ENCRYPTION_KEY=Fernet.generate_key().decode("ascii"),
+    ):
+        validate_runtime_configuration()
 
 
 def test_late_platform_wave_rolls_to_next_day():

@@ -23,7 +23,7 @@ export type AuthCredentialPayload = Readonly<{
   }>;
 }>;
 
-type ManagedAuthSession = {
+export type ManagedAuthSession = {
   id: string;
   platform: LoginPlatform;
   viewerTokenDigest: string;
@@ -35,6 +35,7 @@ type ManagedAuthSession = {
   credentials: AuthCredentialPayload | null;
   errorCode: string;
   monitor: NodeJS.Timeout | null;
+  cleanup: NodeJS.Timeout | null;
 };
 
 const sessions = new Map<string, ManagedAuthSession>();
@@ -60,6 +61,16 @@ async function closeSessionResources(session: ManagedAuthSession) {
   } catch {
     // Browser may already be closed after a browser failure.
   }
+}
+
+function scheduleCleanup(session: ManagedAuthSession, delayMs: number) {
+  if (session.cleanup) clearTimeout(session.cleanup);
+  session.cleanup = setTimeout(() => {
+    sessions.delete(session.id);
+    session.credentials = null;
+    void closeSessionResources(session);
+  }, Math.max(5_000, delayMs));
+  session.cleanup.unref();
 }
 
 async function captureCredentials(session: ManagedAuthSession) {
@@ -89,6 +100,9 @@ async function captureCredentials(session: ManagedAuthSession) {
   };
   session.status = "succeeded";
   await closeSessionResources(session);
+  // Django polls every ~2 seconds. Keep a short grace period for retrieval, then
+  // erase captured platform credentials even if the customer closes the UI early.
+  scheduleCleanup(session, 120_000);
 }
 
 async function monitorSession(session: ManagedAuthSession) {
@@ -96,6 +110,7 @@ async function monitorSession(session: ManagedAuthSession) {
     session.status = "expired";
     session.errorCode = "authorization_timeout";
     await closeSessionResources(session);
+    scheduleCleanup(session, 60_000);
     return;
   }
   try {
@@ -110,6 +125,7 @@ async function monitorSession(session: ManagedAuthSession) {
     session.status = "failed";
     session.errorCode = "platform_unavailable";
     await closeSessionResources(session);
+    scheduleCleanup(session, 60_000);
   }
 }
 
@@ -146,8 +162,13 @@ export async function startAuthSession(input: {
     credentials: null,
     errorCode: "",
     monitor: null,
+    cleanup: null,
   };
   sessions.set(input.id, session);
+
+  // Absolute TTL cleanup is a second line of defense if neither the UI nor Django
+  // calls DELETE after a failed/abandoned authorization attempt.
+  scheduleCleanup(session, Math.max(30_000, input.expiresAt - Date.now() + 60_000));
 
   try {
     await page.goto(platform.loginUrl, { waitUntil: "domcontentloaded", timeout: 60_000 });
@@ -157,12 +178,15 @@ export async function startAuthSession(input: {
     session.status = "failed";
     session.errorCode = "platform_unavailable";
     await closeSessionResources(session);
+    scheduleCleanup(session, 60_000);
   }
 
   const base = input.publicBaseUrl.replace(/\/$/, "");
   return {
     remoteSessionRef: input.id,
-    actionUrl: `${base}/authorize/${encodeURIComponent(input.id)}?token=${encodeURIComponent(viewerToken)}`,
+    // Fragment values are not sent in HTTP requests or reverse-proxy access logs.
+    // The browser exchanges it once for an HttpOnly SameSite cookie.
+    actionUrl: `${base}/authorize/${encodeURIComponent(input.id)}#token=${encodeURIComponent(viewerToken)}`,
     status: session.status,
   };
 }
@@ -191,10 +215,37 @@ export async function sessionClick(session: ManagedAuthSession, x: number, y: nu
   if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || x > 1280 || y < 0 || y > 900) {
     throw new Error("invalid_coordinates");
   }
-  // 只代理鼠标点击，用于切换“扫码登录”、刷新二维码或确认非敏感提示。
-  // 不提供键盘输入接口，因此平台密码、短信验证码等不会经过显问授权页。
   await session.page.mouse.click(Math.round(x), Math.round(y));
-  await session.page.waitForTimeout(350);
+  await session.page.waitForTimeout(250);
+}
+
+export async function sessionType(session: ManagedAuthSession, text: string) {
+  if (session.status !== "waiting_user") throw new Error("session_not_interactive");
+  if (typeof text !== "string" || text.length === 0 || text.length > 512) {
+    throw new Error("invalid_text");
+  }
+  // Sensitive input is forwarded directly to the focused platform field. It is never
+  // persisted, echoed in responses, written to logs, or attached to the auth session.
+  await session.page.keyboard.insertText(text);
+  await session.page.waitForTimeout(180);
+}
+
+export async function sessionKey(session: ManagedAuthSession, key: string) {
+  if (session.status !== "waiting_user") throw new Error("session_not_interactive");
+  const allowed = new Set([
+    "Enter",
+    "Tab",
+    "Escape",
+    "Backspace",
+    "Delete",
+    "ArrowLeft",
+    "ArrowRight",
+    "ArrowUp",
+    "ArrowDown",
+  ]);
+  if (!allowed.has(key)) throw new Error("invalid_key");
+  await session.page.keyboard.press(key);
+  await session.page.waitForTimeout(120);
 }
 
 export function internalSessionPayload(session: ManagedAuthSession) {
@@ -211,5 +262,8 @@ export async function deleteAuthSession(id: string) {
   const session = sessions.get(id);
   if (!session) return;
   sessions.delete(id);
+  if (session.cleanup) clearTimeout(session.cleanup);
+  session.cleanup = null;
+  session.credentials = null;
   await closeSessionResources(session);
 }
