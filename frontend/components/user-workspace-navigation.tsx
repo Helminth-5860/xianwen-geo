@@ -125,6 +125,7 @@ function workspaceMenu(subjectId: string | null): MenuItem[] {
         linkedItem("optimization-strategy", "优化策略", "/geo/strategy"),
         unavailableItem("optimization-execution", "执行计划"),
         linkedItem("optimization-articles", "文章生成", articleHome),
+        linkedItem("optimization-publishing", "自动发文", "/geo/optimization/auto-publishing"),
         linkedItem("optimization-images", "图片生成", imageHome),
         linkedItem("optimization-video", "视频脚本生成", videoScriptHome),
       ],
@@ -166,6 +167,7 @@ function selectedMenuKey(pathname: string) {
   if (pathname.startsWith("/geo/knowledge-graph/websites")) return "knowledge-website";
   if (pathname.startsWith("/geo/knowledge-graph/subjects")) return "knowledge-subject";
   if (pathname.startsWith("/geo/knowledge-graph/maps")) return "knowledge-map";
+  if (pathname.startsWith("/geo/optimization/auto-publishing")) return "optimization-publishing";
   if (pathname.startsWith("/geo/strategy") || pathname.includes("/strategy")) {
     return "optimization-strategy";
   }
@@ -202,6 +204,7 @@ const menuGroupByChild: Readonly<Record<string, string>> = {
   "optimization-strategy": "optimization",
   "optimization-execution": "optimization",
   "optimization-articles": "optimization",
+  "optimization-publishing": "optimization",
   "optimization-images": "optimization",
   "optimization-video": "optimization",
   "content-library": "content",

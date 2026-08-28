@@ -1,0 +1,517 @@
+import crypto from "node:crypto";
+import http, { type IncomingMessage, type ServerResponse } from "node:http";
+import { URL } from "node:url";
+
+import {
+  deleteAuthSession,
+  getAuthSession,
+  internalSessionPayload,
+  sessionClick,
+  sessionKey,
+  sessionPreview,
+  sessionType,
+  startAuthSession,
+  viewerAuthorized,
+  type ManagedAuthSession,
+} from "./auth-sessions.js";
+import { getPublisher, publisherCapabilities } from "./publishers/index.js";
+import type { PlatformCredentials, PublicationInput, PublicationStatusInput } from "./publishers/types.js";
+
+const port = Number(process.env.PORT || "8092");
+const host = process.env.HOST || "0.0.0.0";
+const publicBaseUrl = (process.env.PUBLISHING_WORKER_PUBLIC_BASE_URL || `http://localhost:${port}`).replace(/\/$/, "");
+const internalSecret = process.env.PUBLISHING_WORKER_INTERNAL_SECRET || "";
+
+if (internalSecret.length < 32) {
+  throw new Error("PUBLISHING_WORKER_INTERNAL_SECRET must be at least 32 characters");
+}
+
+let publicUrl: URL;
+try {
+  publicUrl = new URL(publicBaseUrl);
+} catch {
+  throw new Error("PUBLISHING_WORKER_PUBLIC_BASE_URL must be an absolute URL");
+}
+if (!["http:", "https:"].includes(publicUrl.protocol) || publicUrl.username || publicUrl.password || publicUrl.search || publicUrl.hash) {
+  throw new Error("PUBLISHING_WORKER_PUBLIC_BASE_URL is invalid");
+}
+if ((process.env.APP_ENV || "").toLowerCase() === "production" && publicUrl.protocol !== "https:") {
+  throw new Error("PUBLISHING_WORKER_PUBLIC_BASE_URL must use HTTPS in production");
+}
+const publicOrigin = publicUrl.origin;
+const publicBasePath = publicUrl.pathname === "/" ? "" : publicUrl.pathname.replace(/\/$/, "");
+const secureViewerCookie = publicUrl.protocol === "https:";
+
+const json = (response: ServerResponse, status: number, payload: unknown) => {
+  response.writeHead(status, {
+    "Content-Type": "application/json; charset=utf-8",
+    "Cache-Control": "no-store",
+    "X-Content-Type-Options": "nosniff",
+  });
+  response.end(JSON.stringify(payload));
+};
+
+const text = (response: ServerResponse, status: number, body: string, contentType = "text/plain; charset=utf-8") => {
+  response.writeHead(status, {
+    "Content-Type": contentType,
+    "Cache-Control": "no-store",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
+    "Content-Security-Policy": "default-src 'self'; img-src 'self' data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; frame-ancestors 'none'",
+  });
+  response.end(body);
+};
+
+const safeSecretEqual = (provided: string) => {
+  const left = Buffer.from(internalSecret);
+  const right = Buffer.from(provided);
+  return left.length === right.length && crypto.timingSafeEqual(left, right);
+};
+
+const internalAuthorized = (request: IncomingMessage) => {
+  const header = request.headers.authorization || "";
+  if (!header.startsWith("Bearer ")) return false;
+  return safeSecretEqual(header.slice("Bearer ".length));
+};
+
+async function readJson(request: IncomingMessage, maxBytes = 64 * 1024): Promise<Record<string, unknown>> {
+  const chunks: Buffer[] = [];
+  let total = 0;
+  for await (const chunk of request) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    total += buffer.length;
+    if (total > maxBytes) throw new Error("request_too_large");
+    chunks.push(buffer);
+  }
+  if (!chunks.length) return {};
+  const parsed = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("invalid_json");
+  return parsed as Record<string, unknown>;
+}
+
+const escapeHtml = (value: string) =>
+  value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
+
+const viewerCookieName = (sessionId: string) => `xw_pub_${sessionId.replace(/[^a-zA-Z0-9]/g, "").slice(0, 20)}`;
+
+function requestCookie(request: IncomingMessage, name: string) {
+  const raw = request.headers.cookie || "";
+  for (const part of raw.split(";")) {
+    const index = part.indexOf("=");
+    if (index <= 0) continue;
+    if (part.slice(0, index).trim() !== name) continue;
+    try {
+      return decodeURIComponent(part.slice(index + 1).trim());
+    } catch {
+      return "";
+    }
+  }
+  return "";
+}
+
+function viewerRequestAuthorized(request: IncomingMessage, session: ManagedAuthSession) {
+  return viewerAuthorized(session, requestCookie(request, viewerCookieName(session.id)));
+}
+
+function sameOriginPost(request: IncomingMessage) {
+  return request.headers.origin === publicOrigin;
+}
+
+function routePath(pathname: string) {
+  if (!publicBasePath) return pathname;
+  if (pathname === publicBasePath) return "/";
+  if (pathname.startsWith(`${publicBasePath}/`)) return pathname.slice(publicBasePath.length);
+  return pathname;
+}
+
+function browserPath(path: string) {
+  return `${publicBasePath}${path}` || "/";
+}
+
+function authorizationBootstrap(sessionId: string, platformName: string) {
+  const safeId = encodeURIComponent(sessionId);
+  const exchangePath = browserPath(`/authorize/${safeId}/session`);
+  const cleanPath = browserPath(`/authorize/${safeId}`);
+  return `<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>授权${escapeHtml(platformName)}</title></head><body>
+<p>正在安全打开授权页面…</p>
+<script>
+(async()=>{
+  try{
+    const params=new URLSearchParams(location.hash.startsWith('#')?location.hash.slice(1):location.hash);
+    const token=params.get('token')||'';
+    history.replaceState(null,'',location.pathname);
+    if(!token)throw new Error('missing');
+    const response=await fetch('${exchangePath}',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({token})});
+    if(!response.ok)throw new Error('invalid');
+    location.replace('${cleanPath}');
+  }catch{document.body.innerHTML='<p>授权链接已失效，请返回显问重新授权。</p>';}
+})();
+</script></body></html>`;
+}
+
+function authorizationPage(sessionId: string, platformName: string) {
+  const safeId = encodeURIComponent(sessionId);
+  const previewPath = browserPath(`/authorize/${safeId}/preview`);
+  const clickPath = browserPath(`/authorize/${safeId}/click`);
+  const typePath = browserPath(`/authorize/${safeId}/type`);
+  const keyPath = browserPath(`/authorize/${safeId}/key`);
+  const statusPath = browserPath(`/authorize/${safeId}/status`);
+  return `<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>授权${escapeHtml(platformName)}</title>
+<style>
+body{margin:0;background:#f4f6f9;color:#111827;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif}
+main{max-width:1080px;margin:0 auto;padding:24px}
+.card{background:#fff;border:1px solid #e5e7eb;border-radius:18px;padding:22px;box-shadow:0 14px 34px rgba(15,23,42,.07)}
+h1{font-size:22px;margin:0 0 8px}.hint{color:#667085;line-height:1.7;margin-bottom:18px}
+.preview{width:100%;min-height:560px;object-fit:contain;background:#fff;border:1px solid #e5e7eb;border-radius:12px;cursor:pointer}
+.status{display:inline-flex;margin:0 0 16px;padding:6px 10px;border-radius:999px;background:#eef4ff;color:#344054;font-size:14px}
+.safe{margin-top:16px;color:#667085;font-size:13px;line-height:1.7}
+.keyboard{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:14px 0 0}.keyboard input{flex:1;min-width:260px;padding:10px 12px;border:1px solid #d0d5dd;border-radius:10px;font-size:14px}.keyboard button{padding:9px 12px;border:1px solid #d0d5dd;background:#fff;border-radius:9px;cursor:pointer}.keyboard .primary{background:#111827;color:#fff;border-color:#111827}
+</style>
+</head>
+<body><main><div class="card">
+<h1>授权${escapeHtml(platformName)}</h1>
+<p class="hint">请优先使用扫码登录。如果平台要求手机号、验证码或其他本人输入，请先点击下方平台画面中的输入框，再使用临时输入栏。输入内容只转发到当前授权浏览器，不保存到显问数据库，也不会写入日志。</p>
+<div id="status" class="status">正在等待完成登录</div>
+<img id="preview" class="preview" alt="平台授权页面" src="${previewPath}?v=0" />
+<div class="keyboard">
+  <input id="keyboardInput" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="临时输入：手机号 / 验证码 / 密码等" />
+  <button id="sendInput" class="primary" type="button">输入到平台</button>
+  <button data-key="Tab" type="button">Tab</button>
+  <button data-key="Enter" type="button">确认</button>
+  <button data-key="Backspace" type="button">退格</button>
+</div>
+<p class="safe">此授权画面只对当前一次性链接开放，并会在授权结束后失效。验证码和密码由客户本人输入；系统不保存、不回显，也不尝试绕过平台验证。</p>
+</div></main>
+<script>
+const statusEl=document.getElementById('status');
+const preview=document.getElementById('preview');
+const keyboardInput=document.getElementById('keyboardInput');
+const sendInput=document.getElementById('sendInput');
+let tick=0;
+let finished=false;
+const refreshPreview=()=>{tick+=1;preview.src='${previewPath}?v='+tick;};
+preview.addEventListener('click',async(event)=>{
+  if(finished)return;
+  const rect=preview.getBoundingClientRect();
+  const naturalW=preview.naturalWidth||1280;
+  const naturalH=preview.naturalHeight||900;
+  const renderedRatio=rect.width/rect.height;
+  const naturalRatio=naturalW/naturalH;
+  let contentW=rect.width,contentH=rect.height,offsetX=0,offsetY=0;
+  if(renderedRatio>naturalRatio){contentW=rect.height*naturalRatio;offsetX=(rect.width-contentW)/2;}
+  else{contentH=rect.width/naturalRatio;offsetY=(rect.height-contentH)/2;}
+  const px=event.clientX-rect.left-offsetX;
+  const py=event.clientY-rect.top-offsetY;
+  if(px<0||py<0||px>contentW||py>contentH)return;
+  const x=Math.max(0,Math.min(1280,px/contentW*1280));
+  const y=Math.max(0,Math.min(900,py/contentH*900));
+  try{
+    await fetch('${clickPath}',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({x,y})});
+    refreshPreview();
+  }catch{}
+});
+sendInput.addEventListener('click',async()=>{
+  if(finished)return;
+  const value=keyboardInput.value;
+  if(!value)return;
+  keyboardInput.value='';
+  try{
+    const response=await fetch('${typePath}',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:value})});
+    if(!response.ok)throw new Error('failed');
+    refreshPreview();
+  }catch{statusEl.textContent='输入未完成，请重新点击平台输入框后再试';}
+});
+keyboardInput.addEventListener('keydown',(event)=>{if(event.key==='Enter'){event.preventDefault();sendInput.click();}});
+document.querySelectorAll('[data-key]').forEach((button)=>button.addEventListener('click',async()=>{
+  if(finished)return;
+  try{
+    const response=await fetch('${keyPath}',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:button.dataset.key})});
+    if(!response.ok)throw new Error('failed');
+    refreshPreview();
+  }catch{}
+}));
+async function refresh(){
+  try{
+    const response=await fetch('${statusPath}',{cache:'no-store',credentials:'same-origin'});
+    const data=await response.json();
+    if(data.status==='succeeded'){finished=true;statusEl.textContent='授权成功，可以关闭此窗口';preview.style.opacity='.45';keyboardInput.disabled=true;sendInput.disabled=true;return;}
+    if(data.status==='expired'){finished=true;statusEl.textContent='授权已过期，请返回显问重新授权';return;}
+    if(data.status==='failed'){finished=true;statusEl.textContent='本次授权未完成，请返回显问重新尝试';return;}
+    statusEl.textContent='正在等待完成登录';
+    refreshPreview();
+    setTimeout(refresh,1800);
+  }catch{statusEl.textContent='授权页面正在重新连接';setTimeout(refresh,2500);}
+}
+setTimeout(refresh,1600);
+</script></body></html>`;
+}
+
+function validatePublishInput(body: Record<string, unknown>): PublicationInput | null {
+  const platformKey = typeof body.platform_key === "string" ? body.platform_key : "";
+  const targetId = typeof body.target_id === "string" ? body.target_id : "";
+  const title = typeof body.title === "string" ? body.title.trim() : "";
+  const contentHtml = typeof body.content_html === "string" ? body.content_html : "";
+  const contentText = typeof body.content_text === "string" ? body.content_text : "";
+  const publishMode = body.publish_mode === "draft" ? "draft" : body.publish_mode === "public" ? "public" : null;
+  const credentials = body.credentials;
+  if (!platformKey || !targetId || !title || !publishMode || !credentials || typeof credentials !== "object" || Array.isArray(credentials)) return null;
+  const tags = Array.isArray(body.tags) ? body.tags.filter((item): item is string => typeof item === "string").slice(0, 30) : [];
+  const assets = Array.isArray(body.assets)
+    ? body.assets
+        .filter((item): item is { role: "cover" | "inline" | "information"; url: string; alt?: string } => {
+          if (!item || typeof item !== "object" || Array.isArray(item)) return false;
+          const candidate = item as Record<string, unknown>;
+          return ["cover", "inline", "information"].includes(String(candidate.role)) && typeof candidate.url === "string";
+        })
+        .slice(0, 20)
+    : [];
+  return {
+    targetId,
+    title: title.slice(0, 500),
+    contentHtml,
+    contentText,
+    summary: typeof body.summary === "string" ? body.summary.slice(0, 1000) : undefined,
+    tags,
+    assets,
+    credentials: credentials as PlatformCredentials,
+    publishMode,
+  };
+}
+
+function validateStatusInput(body: Record<string, unknown>): { platformKey: string; input: PublicationStatusInput } | null {
+  const platformKey = typeof body.platform_key === "string" ? body.platform_key : "";
+  const credentials = body.credentials;
+  if (!platformKey || !credentials || typeof credentials !== "object" || Array.isArray(credentials)) return null;
+  const externalPostId = typeof body.external_post_id === "string" ? body.external_post_id.slice(0, 255) : undefined;
+  const managementUrl = typeof body.management_url === "string" ? body.management_url.slice(0, 4000) : undefined;
+  if (!externalPostId && !managementUrl) return null;
+  return {
+    platformKey,
+    input: {
+      credentials: credentials as PlatformCredentials,
+      externalPostId,
+      managementUrl,
+    },
+  };
+}
+
+const server = http.createServer(async (request, response) => {
+  const method = request.method || "GET";
+  const url = new URL(request.url || "/", publicBaseUrl);
+  const path = routePath(url.pathname);
+
+  if (method === "GET" && path === "/health") {
+    return json(response, 200, { status: "ok" });
+  }
+
+  if (method === "GET" && path === "/v1/capabilities") {
+    if (!internalAuthorized(request)) return json(response, 401, { error: "unauthorized" });
+    return json(response, 200, { publishers: publisherCapabilities() });
+  }
+
+  if (method === "POST" && path === "/v1/publish") {
+    if (!internalAuthorized(request)) return json(response, 401, { error: "unauthorized" });
+    try {
+      const body = await readJson(request, 2 * 1024 * 1024);
+      const platformKey = typeof body.platform_key === "string" ? body.platform_key : "";
+      const publisher = getPublisher(platformKey);
+      if (!publisher) return json(response, 409, { error: "platform_not_ready" });
+      const input = validatePublishInput(body);
+      if (!input) return json(response, 400, { error: "invalid_request" });
+      const result = await publisher.publish(input);
+      return json(response, 200, result);
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "publish_failed";
+      return json(response, code === "request_too_large" ? 413 : 500, { error: code });
+    }
+  }
+
+  if (method === "POST" && path === "/v1/status") {
+    if (!internalAuthorized(request)) return json(response, 401, { error: "unauthorized" });
+    try {
+      const body = await readJson(request, 128 * 1024);
+      const validated = validateStatusInput(body);
+      if (!validated) return json(response, 400, { error: "invalid_request" });
+      const publisher = getPublisher(validated.platformKey);
+      if (!publisher) return json(response, 409, { error: "platform_not_ready" });
+      if (!publisher.checkStatus) return json(response, 200, { platformKey: validated.platformKey, status: "unknown" });
+      return json(response, 200, await publisher.checkStatus(validated.input));
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "status_check_failed";
+      return json(response, code === "request_too_large" ? 413 : 500, { error: code });
+    }
+  }
+
+  if (path === "/v1/auth-sessions" && method === "POST") {
+    if (!internalAuthorized(request)) return json(response, 401, { error: "unauthorized" });
+    try {
+      const body = await readJson(request);
+      const id = typeof body.id === "string" ? body.id : "";
+      const platformKey = typeof body.platform_key === "string" ? body.platform_key : "";
+      const expiresAt = typeof body.expires_at === "string" ? Date.parse(body.expires_at) : NaN;
+      if (!id || !platformKey || !Number.isFinite(expiresAt)) return json(response, 400, { error: "invalid_request" });
+      const result = await startAuthSession({ id, platformKey, expiresAt, publicBaseUrl });
+      return json(response, 201, {
+        remote_session_ref: result.remoteSessionRef,
+        action_url: result.actionUrl,
+        status: result.status,
+      });
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "start_failed";
+      const status = code === "platform_not_ready" ? 409 : 500;
+      return json(response, status, { error: code });
+    }
+  }
+
+  const internalMatch = path.match(/^\/v1\/auth-sessions\/([^/]+)$/);
+  if (internalMatch) {
+    if (!internalAuthorized(request)) return json(response, 401, { error: "unauthorized" });
+    const id = decodeURIComponent(internalMatch[1]);
+    if (method === "GET") {
+      const session = getAuthSession(id);
+      return session ? json(response, 200, internalSessionPayload(session)) : json(response, 404, { error: "not_found" });
+    }
+    if (method === "DELETE") {
+      await deleteAuthSession(id);
+      response.writeHead(204, { "Cache-Control": "no-store" });
+      return response.end();
+    }
+  }
+
+  const exchangeMatch = path.match(/^\/authorize\/([^/]+)\/session$/);
+  if (method === "POST" && exchangeMatch) {
+    if (!sameOriginPost(request)) return json(response, 403, { error: "forbidden_origin" });
+    const id = decodeURIComponent(exchangeMatch[1]);
+    const session = getAuthSession(id);
+    if (!session) return json(response, 404, { error: "not_found" });
+    try {
+      const body = await readJson(request, 4096);
+      const token = typeof body.token === "string" ? body.token : "";
+      if (!viewerAuthorized(session, token)) return json(response, 404, { error: "not_found" });
+      const maxAge = Math.max(1, Math.ceil((session.expiresAt - Date.now()) / 1000));
+      const cookiePath = browserPath(`/authorize/${encodeURIComponent(id)}`);
+      const cookie = [
+        `${viewerCookieName(id)}=${encodeURIComponent(token)}`,
+        `Path=${cookiePath}`,
+        `Max-Age=${maxAge}`,
+        "HttpOnly",
+        "SameSite=Strict",
+        ...(secureViewerCookie ? ["Secure"] : []),
+      ].join("; ");
+      response.writeHead(204, {
+        "Cache-Control": "no-store",
+        "Set-Cookie": cookie,
+        "Referrer-Policy": "no-referrer",
+      });
+      return response.end();
+    } catch {
+      return json(response, 400, { error: "invalid_request" });
+    }
+  }
+
+  const pageMatch = path.match(/^\/authorize\/([^/]+)$/);
+  if (method === "GET" && pageMatch) {
+    const id = decodeURIComponent(pageMatch[1]);
+    const session = getAuthSession(id);
+    if (!session) return text(response, 404, "授权链接已失效");
+    if (!viewerRequestAuthorized(request, session)) {
+      return text(response, 200, authorizationBootstrap(id, session.platform.name), "text/html; charset=utf-8");
+    }
+    return text(response, 200, authorizationPage(id, session.platform.name), "text/html; charset=utf-8");
+  }
+
+  const statusMatch = path.match(/^\/authorize\/([^/]+)\/status$/);
+  if (method === "GET" && statusMatch) {
+    const id = decodeURIComponent(statusMatch[1]);
+    const session = getAuthSession(id);
+    if (!session || !viewerRequestAuthorized(request, session)) return json(response, 404, { error: "not_found" });
+    return json(response, 200, { status: session.status });
+  }
+
+  const clickMatch = path.match(/^\/authorize\/([^/]+)\/click$/);
+  if (method === "POST" && clickMatch) {
+    if (!sameOriginPost(request)) return json(response, 403, { error: "forbidden_origin" });
+    const id = decodeURIComponent(clickMatch[1]);
+    const session = getAuthSession(id);
+    if (!session || !viewerRequestAuthorized(request, session)) return json(response, 404, { error: "not_found" });
+    try {
+      const body = await readJson(request, 2048);
+      const x = typeof body.x === "number" ? body.x : NaN;
+      const y = typeof body.y === "number" ? body.y : NaN;
+      await sessionClick(session, x, y);
+      return json(response, 200, { clicked: true });
+    } catch {
+      return json(response, 400, { error: "invalid_click" });
+    }
+  }
+
+  const typeMatch = path.match(/^\/authorize\/([^/]+)\/type$/);
+  if (method === "POST" && typeMatch) {
+    if (!sameOriginPost(request)) return json(response, 403, { error: "forbidden_origin" });
+    const id = decodeURIComponent(typeMatch[1]);
+    const session = getAuthSession(id);
+    if (!session || !viewerRequestAuthorized(request, session)) return json(response, 404, { error: "not_found" });
+    try {
+      const body = await readJson(request, 4096);
+      const value = typeof body.text === "string" ? body.text : "";
+      await sessionType(session, value);
+      return json(response, 200, { typed: true });
+    } catch {
+      return json(response, 400, { error: "invalid_input" });
+    }
+  }
+
+  const keyMatch = path.match(/^\/authorize\/([^/]+)\/key$/);
+  if (method === "POST" && keyMatch) {
+    if (!sameOriginPost(request)) return json(response, 403, { error: "forbidden_origin" });
+    const id = decodeURIComponent(keyMatch[1]);
+    const session = getAuthSession(id);
+    if (!session || !viewerRequestAuthorized(request, session)) return json(response, 404, { error: "not_found" });
+    try {
+      const body = await readJson(request, 1024);
+      const key = typeof body.key === "string" ? body.key : "";
+      await sessionKey(session, key);
+      return json(response, 200, { pressed: true });
+    } catch {
+      return json(response, 400, { error: "invalid_key" });
+    }
+  }
+
+  const previewMatch = path.match(/^\/authorize\/([^/]+)\/preview$/);
+  if (method === "GET" && previewMatch) {
+    const id = decodeURIComponent(previewMatch[1]);
+    const session = getAuthSession(id);
+    if (!session || !viewerRequestAuthorized(request, session)) return text(response, 404, "授权链接已失效");
+    const image = await sessionPreview(session);
+    if (!image) return text(response, 409, "授权画面暂不可用");
+    response.writeHead(200, {
+      "Content-Type": "image/png",
+      "Cache-Control": "no-store, max-age=0",
+      "X-Content-Type-Options": "nosniff",
+      "Content-Security-Policy": "default-src 'none'",
+      "Referrer-Policy": "no-referrer",
+    });
+    return response.end(image);
+  }
+
+  return json(response, 404, { error: "not_found" });
+});
+
+server.listen(port, host, () => {
+  console.log(`xianwen publishing worker listening on ${host}:${port}`);
+});
+
+const shutdown = async () => {
+  server.close(() => process.exit(0));
+  setTimeout(() => process.exit(1), 5000).unref();
+};
+
+process.on("SIGTERM", () => void shutdown());
+process.on("SIGINT", () => void shutdown());

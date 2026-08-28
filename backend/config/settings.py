@@ -21,7 +21,27 @@ for setting_name in dir(settings_module):
         globals()[setting_name] = getattr(settings_module, setting_name)
 
 # 官网深度检测在所有运行环境共用同一套扫描内核；网络安全策略复用 web_sources。
-INSTALLED_APPS = [*INSTALLED_APPS, "apps.website_audits"]
+INSTALLED_APPS = [*INSTALLED_APPS, "apps.website_audits", "apps.publishing"]
+
+# 自动发文平台必须逐个平台经过真实账号验证后才开放授权；默认全部保持“适配验证中”。
+PUBLISHING_ENABLED_PLATFORM_KEYS = tuple(
+    item.strip().lower()
+    for item in os.getenv("PUBLISHING_ENABLED_PLATFORM_KEYS", "").split(",")
+    if item.strip()
+)
+PUBLISHING_AUTH_SESSION_TTL_SECONDS = int(os.getenv("PUBLISHING_AUTH_SESSION_TTL_SECONDS", "900"))
+PUBLISHING_CREDENTIAL_ENCRYPTION_KEY = os.getenv(
+    "PUBLISHING_CREDENTIAL_ENCRYPTION_KEY", ""
+).strip()
+PUBLISHING_WORKER_BASE_URL = os.getenv("PUBLISHING_WORKER_BASE_URL", "").strip().rstrip("/")
+PUBLISHING_WORKER_INTERNAL_SECRET = os.getenv("PUBLISHING_WORKER_INTERNAL_SECRET", "").strip()
+if PUBLISHING_AUTH_SESSION_TTL_SECONDS < 300 or PUBLISHING_AUTH_SESSION_TTL_SECONDS > 3600:
+    raise ImproperlyConfigured(
+        "PUBLISHING_AUTH_SESSION_TTL_SECONDS must be between 300 and 3600."
+    )
+if PUBLISHING_WORKER_INTERNAL_SECRET and len(PUBLISHING_WORKER_INTERNAL_SECRET) < 32:
+    raise ImproperlyConfigured("PUBLISHING_WORKER_INTERNAL_SECRET must be at least 32 characters.")
+
 WEBSITE_AUDIT_MAX_PAGES = int(os.getenv("WEBSITE_AUDIT_MAX_PAGES", "200"))
 WEBSITE_AUDIT_MAX_SITEMAPS = int(os.getenv("WEBSITE_AUDIT_MAX_SITEMAPS", "20"))
 WEBSITE_AUDIT_MAX_RESPONSE_BYTES = int(
