@@ -13,8 +13,10 @@ from apps.publishing.platform_health import (
     record_platform_failure,
     record_platform_success,
 )
+from apps.publishing.review import AWAITING_REVIEW_CODE
 from apps.publishing.scheduling import _fit_window
 from apps.publishing.target_execution import _target_max_retries
+from apps.publishing.worker_client import _uncertain_publish_result
 
 
 EXPECTED_PLATFORM_KEYS = {
@@ -50,6 +52,11 @@ def test_publication_target_has_explicit_platform_review_state():
     assert "submitted" != PublicationTarget.Status.SUCCEEDED
 
 
+def test_review_gate_uses_distinct_non_publishable_reason():
+    assert AWAITING_REVIEW_CODE == "awaiting_review"
+    assert AWAITING_REVIEW_CODE not in {"authorization_required", "platform_unavailable"}
+
+
 @pytest.mark.django_db
 def test_wechat_is_not_exposed_without_component_ticket(monkeypatch):
     cache.clear()
@@ -75,6 +82,14 @@ def test_platform_circuit_breaker_opens_and_success_resets():
 
     record_platform_success("test-platform")
     assert platform_circuit_open("test-platform") is False
+
+
+def test_uncertain_publish_result_is_not_retry_success():
+    cache.clear()
+    result = _uncertain_publish_result("test-platform")
+    assert result["success"] is False
+    assert result["status"] == "action_required"
+    assert result["safeErrorCode"] == "publish_result_unconfirmed"
 
 
 def test_retry_count_is_bounded_from_environment(monkeypatch):
