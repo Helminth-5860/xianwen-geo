@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import html
+import os
 import re
 from datetime import timedelta
 from typing import Any
 
-from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
@@ -20,6 +20,14 @@ from .worker_client import PublishingWorkerError, publish_to_platform
 
 
 _TRANSIENT_RETRY_SECONDS = 75
+
+
+def _target_max_retries() -> int:
+    try:
+        value = int(os.getenv("PUBLISHING_TARGET_MAX_RETRIES", "3"))
+    except ValueError:
+        value = 3
+    return max(1, min(10, value))
 
 
 def _plain_text(value: str) -> str:
@@ -102,7 +110,9 @@ def _delivery_assets(target: PublicationTarget) -> list[dict[str, Any]]:
             )
         result.append(
             {
-                "role": "information" if purpose == "information" else ("cover" if purpose == "cover" else "inline"),
+                "role": "information"
+                if purpose == "information"
+                else ("cover" if purpose == "cover" else "inline"),
                 "url": url,
                 "alt": target.adapted_title[:120],
             }
@@ -160,7 +170,11 @@ def execute_target(*, target_id) -> dict[str, Any]:
         if target.scheduled_at and target.scheduled_at > timezone.now():
             return {"status": "scheduled", "eta": target.scheduled_at}
         account = target.account
-        if account is None or account.status != PlatformAccount.Status.CONNECTED or not account.enabled_for_auto:
+        if (
+            account is None
+            or account.status != PlatformAccount.Status.CONNECTED
+            or not account.enabled_for_auto
+        ):
             target.status = PublicationTarget.Status.AUTH_REQUIRED
             target.safe_error_code = "authorization_required"
             target.save(update_fields=("status", "safe_error_code", "updated_at"))
@@ -188,7 +202,9 @@ def execute_target(*, target_id) -> dict[str, Any]:
         .get(pk=target_id)
     )
     try:
-        credentials = decrypt_secret(target.account.secret_ciphertext if target.account else "")
+        credentials = decrypt_secret(
+            target.account.secret_ciphertext if target.account else ""
+        )
     except PublishingCredentialError:
         PlatformAccount.objects.filter(pk=target.account_id).update(
             status=PlatformAccount.Status.ACTION_REQUIRED,
@@ -238,24 +254,28 @@ def execute_target(*, target_id) -> dict[str, Any]:
         )
     except PublishingWorkerError as exc:
         retryable = exc.code in {"worker_timeout", "worker_unavailable"}
-        max_retries = int(getattr(settings, "PUBLISHING_TARGET_MAX_RETRIES", 3))
-        if retryable and target.attempts < max_retries:
+        if retryable and target.attempts < _target_max_retries():
             PublicationTarget.objects.filter(pk=target.pk).update(
                 status=PublicationTarget.Status.READY,
                 safe_error_code="platform_unavailable",
             )
             return {"status": "retry", "retry_after": _TRANSIENT_RETRY_SECONDS}
+        paused = exc.code in {"platform_not_ready", "platform_circuit_open"}
         PublicationTarget.objects.filter(pk=target.pk).update(
-            status=PublicationTarget.Status.PAUSED if exc.code == "platform_not_ready" else PublicationTarget.Status.FAILED,
+            status=PublicationTarget.Status.PAUSED if paused else PublicationTarget.Status.FAILED,
             safe_error_code="platform_unavailable",
         )
         _aggregate_publication(target.publication_id)
-        return {"status": "failed"}
+        return {"status": "paused" if paused else "failed"}
 
     remote_status = str(result.get("status") or "failed")
     external_id = str(result.get("externalPostId") or "")[:255]
     management_url = str(result.get("managementUrl") or result.get("editUrl") or "")
-    if bool(result.get("success")) and remote_status == "published" and result.get("publicUrl"):
+    if (
+        bool(result.get("success"))
+        and remote_status == "published"
+        and result.get("publicUrl")
+    ):
         PublicationTarget.objects.filter(pk=target.pk).update(
             status=PublicationTarget.Status.SUCCEEDED,
             submitted_at=target.submitted_at or timezone.now(),
@@ -295,7 +315,6 @@ def execute_target(*, target_id) -> dict[str, Any]:
         return {"status": "auth_required"}
 
     code = str(result.get("safeErrorCode") or "platform_unavailable")[:100]
-    # 草稿成功或需要人工动作都不等于公开发布成功。
     status = (
         PublicationTarget.Status.PAUSED
         if remote_status in {"drafted", "action_required"}
