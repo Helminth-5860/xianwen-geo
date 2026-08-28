@@ -32,6 +32,7 @@ import { useSubjectWorkspace } from "@/components/subject-workspace-context";
 import { getSubjectArticles, type Article } from "@/lib/articles-client";
 import { userMessage } from "@/lib/auth-client";
 import {
+  approvePublication,
   createPublication,
   disconnectPlatform,
   getAuthorizationSession,
@@ -77,6 +78,17 @@ const targetStatusText: Record<string, string> = {
   paused: "已暂停",
 };
 
+const publicationStatusText: Record<string, string> = {
+  preparing: "正在准备",
+  queued: "等待发布",
+  running: "正在处理",
+  paused: "已暂停",
+  partial: "部分完成",
+  succeeded: "发布完成",
+  failed: "发布未完成",
+  cancelled: "已取消",
+};
+
 export function AutoPublishingWorkspace() {
   const { currentSubject, loading: subjectLoading } = useSubjectWorkspace();
   const [messageApi, messageHolder] = message.useMessage();
@@ -85,6 +97,7 @@ export function AutoPublishingWorkspace() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [queueingArticleId, setQueueingArticleId] = useState<string | null>(null);
+  const [approvingPublicationId, setApprovingPublicationId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [authSession, setAuthSession] = useState<AuthorizationSession | null>(null);
   const [authPlatformName, setAuthPlatformName] = useState("");
@@ -158,6 +171,7 @@ export function AutoPublishingWorkspace() {
       setState((current) =>
         current ? { ...current, preference: response.preference } : current,
       );
+      await loadState(currentSubject.id);
     } catch (reason: unknown) {
       setError(userMessage(reason));
     } finally {
@@ -189,6 +203,7 @@ export function AutoPublishingWorkspace() {
     if (!currentSubject?.id || !platform.account) return;
     try {
       await setPlatformAutoEnabled(currentSubject.id, platform.key, enabled);
+      messageApi.success(enabled ? `${platform.name}已恢复自动发文` : `${platform.name}已暂停自动发文`);
       await loadState(currentSubject.id);
     } catch (reason: unknown) {
       messageApi.error(userMessage(reason));
@@ -199,7 +214,7 @@ export function AutoPublishingWorkspace() {
     if (!currentSubject?.id || !platform.account) return;
     Modal.confirm({
       title: `解除${platform.name}授权？`,
-      content: "解除后不会删除已经发布的文章，但新的自动发文任务将不再使用这个账号。",
+      content: "解除后不会删除已经发布的文章；尚未提交的平台任务会暂停，后续重新授权后可继续安排。",
       okText: "解除授权",
       cancelText: "取消",
       okButtonProps: { danger: true },
@@ -219,12 +234,30 @@ export function AutoPublishingWorkspace() {
     setQueueingArticleId(article.id);
     try {
       await createPublication(currentSubject.id, { article_id: article.id });
-      messageApi.success("文章已进入自动发布流程");
+      messageApi.success(
+        state?.preference.mode === "review"
+          ? "文章正在准备，完成后会等待你确认发布"
+          : "文章已进入自动发布流程",
+      );
       await loadState(currentSubject.id);
     } catch (reason: unknown) {
       messageApi.warning(userMessage(reason));
     } finally {
       setQueueingArticleId(null);
+    }
+  };
+
+  const confirmPublication = async (publicationId: string) => {
+    if (!currentSubject?.id) return;
+    setApprovingPublicationId(publicationId);
+    try {
+      await approvePublication(publicationId);
+      messageApi.success("已确认，显问将按计划错峰发布");
+      await loadState(currentSubject.id);
+    } catch (reason: unknown) {
+      messageApi.warning(userMessage(reason));
+    } finally {
+      setApprovingPublicationId(null);
     }
   };
 
@@ -286,6 +319,15 @@ export function AutoPublishingWorkspace() {
         </div>
       </div>
 
+      {!preference?.is_enabled && (
+        <Alert
+          type="warning"
+          showIcon
+          title="自动发文当前已暂停"
+          description="尚未提交的平台任务已经暂停。重新开启后，显问会继续未完成的任务；已经提交平台审核或已经发布的内容不会重复处理。"
+        />
+      )}
+
       <Card className={styles.sectionCard} title="待发布内容">
         {!readyArticles.length ? (
           <div className={styles.emptyPlan}>当前没有等待安排的可发布文章。</div>
@@ -328,15 +370,24 @@ export function AutoPublishingWorkspace() {
                 <Space orientation="vertical" size={8} style={{ width: "100%" }}>
                   <Space wrap style={{ justifyContent: "space-between", width: "100%" }}>
                     <Typography.Text strong>{publication.title}</Typography.Text>
-                    <Tag>
-                      {publication.status === "succeeded"
-                        ? "发布完成"
-                        : publication.status === "running"
-                          ? "正在处理"
-                          : publication.status === "partial"
-                            ? "部分完成"
-                            : "等待处理"}
-                    </Tag>
+                    <Space>
+                      <Tag color={publication.awaiting_review ? "gold" : undefined}>
+                        {publication.awaiting_review
+                          ? "等待确认"
+                          : publicationStatusText[publication.status] ?? "等待处理"}
+                      </Tag>
+                      {publication.awaiting_review && (
+                        <Button
+                          size="small"
+                          type="primary"
+                          loading={approvingPublicationId === publication.id}
+                          disabled={!preference?.is_enabled}
+                          onClick={() => void confirmPublication(publication.id)}
+                        >
+                          确认发布
+                        </Button>
+                      )}
+                    </Space>
                   </Space>
                   <div className={styles.targetList}>
                     {publication.targets.map((target) => (
@@ -449,7 +500,7 @@ export function AutoPublishingWorkspace() {
           <Space style={{ justifyContent: "space-between", width: "100%" }}>
             <div>
               <div className={styles.settingTitle}>自动发文</div>
-              <div className={styles.settingHint}>关闭后只暂停新的发布任务，已经提交或发布的内容不会受影响。</div>
+              <div className={styles.settingHint}>关闭后会暂停尚未提交的平台任务；已经提交审核或已经发布的内容不会被撤回或重复发布。</div>
             </div>
             <Switch
               checked={preference.is_enabled}
@@ -473,7 +524,7 @@ export function AutoPublishingWorkspace() {
               </Space>
             </Radio.Group>
             <div className={styles.settingHint}>
-              全自动托管会在文章达到可发布状态后自动完成配图、平台适配、排期和发布；另外两种模式由你在“待发布内容”中确认。
+              全自动托管会自动接管可发布文章；审核后发布会先完成配图和平台适配，再等待你点一次“确认发布”；仅发布指定内容只处理你主动安排的文章。
             </div>
           </div>
 
@@ -489,7 +540,7 @@ export function AutoPublishingWorkspace() {
                 <Radio value="custom">自定义平台</Radio>
               </Space>
             </Radio.Group>
-            <div className={styles.settingHint}>智能分发会根据文章类型选择更适合的平台，不会机械铺满所有账号。</div>
+            <div className={styles.settingHint}>智能分发会根据文章类型、主题和内容形态选择更适合的平台，默认不会机械铺满所有账号。</div>
           </div>
 
           <div className={styles.settingBlock}>
@@ -572,7 +623,27 @@ export function AutoPublishingWorkspace() {
           {state.recent_publications.map((publication) => (
             <Card key={publication.id} size="small">
               <Space orientation="vertical" size={10} style={{ width: "100%" }}>
-                <Typography.Text strong>{publication.title}</Typography.Text>
+                <Space wrap style={{ justifyContent: "space-between", width: "100%" }}>
+                  <Typography.Text strong>{publication.title}</Typography.Text>
+                  <Space>
+                    <Tag color={publication.awaiting_review ? "gold" : undefined}>
+                      {publication.awaiting_review
+                        ? "等待确认"
+                        : publicationStatusText[publication.status] ?? "等待处理"}
+                    </Tag>
+                    {publication.awaiting_review && (
+                      <Button
+                        size="small"
+                        type="primary"
+                        loading={approvingPublicationId === publication.id}
+                        disabled={!preference?.is_enabled}
+                        onClick={() => void confirmPublication(publication.id)}
+                      >
+                        确认发布
+                      </Button>
+                    )}
+                  </Space>
+                </Space>
                 {publication.targets.map((target) => (
                   <Space key={target.id} wrap style={{ justifyContent: "space-between", width: "100%" }}>
                     <Space>
