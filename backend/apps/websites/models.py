@@ -111,9 +111,7 @@ class WebsiteProject(models.Model):  # noqa: DJ008
                 name="website_project_density_valid",
             ),
             models.CheckConstraint(
-                condition=models.Q(
-                    status__in=("draft", "generating", "ready", "failed")
-                ),
+                condition=models.Q(status__in=("draft", "generating", "ready", "failed")),
                 name="website_project_status_valid",
             ),
             models.CheckConstraint(
@@ -177,9 +175,7 @@ class WebsiteGenerationJob(models.Model):  # noqa: DJ008
         ]
         constraints = [
             models.CheckConstraint(
-                condition=models.Q(
-                    status__in=("queued", "running", "succeeded", "failed")
-                ),
+                condition=models.Q(status__in=("queued", "running", "succeeded", "failed")),
                 name="website_job_status_valid",
             )
         ]
