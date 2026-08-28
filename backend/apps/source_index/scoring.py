@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import math
 import re
+from collections import defaultdict
 from datetime import datetime, time, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -91,6 +92,11 @@ def normalize_url(url: str) -> tuple[str, str, str] | None:
     # for navigation.
     normalized = urlunsplit(("https", netloc, path, query, ""))
     return normalized, host, root_domain(host)
+
+
+def url_identity_hash(normalized_url: str) -> str:
+    """Fixed-width identity key safe for indexed uniqueness on long URLs."""
+    return hashlib.sha256(normalized_url.encode("utf-8")).hexdigest()
 
 
 def root_domain(host: str) -> str:
@@ -266,7 +272,11 @@ def calculate_index(items: list[dict]) -> tuple[Decimal, dict[str, float]]:
     visibility = sum(item["visibility_score"] for item in items) / len(items)
     freshness = sum(item["freshness_score"] for item in items) / len(items)
     value = (
-        exposure * 0.25 + diversity * 0.25 + authority * 0.25 + visibility * 0.15 + freshness * 0.10
+        exposure * 0.25
+        + diversity * 0.25
+        + authority * 0.25
+        + visibility * 0.15
+        + freshness * 0.10
     )
     factors = {
         "exposure": round(exposure, 2),
@@ -285,6 +295,21 @@ def normalized_title_signature(title: str) -> str:
     if len(normalized) < 8:
         return ""
     return hashlib.sha1(normalized.encode("utf-8")).hexdigest()
+
+
+def mark_cross_domain_reposts(items: list[dict]) -> None:
+    """Only mark a title cluster when the same signature exists on 2+ root domains."""
+    domains_by_signature: dict[str, set[str]] = defaultdict(set)
+    for item in items:
+        signature = normalized_title_signature(item.get("title", ""))
+        item["repost_cluster_id"] = signature
+        root = item.get("root_domain", "")
+        if signature and root:
+            domains_by_signature[signature].add(root)
+    for item in items:
+        signature = item.get("repost_cluster_id", "")
+        if not signature or len(domains_by_signature.get(signature, set())) < 2:
+            item["repost_cluster_id"] = ""
 
 
 def is_recent_30d(published_at) -> bool:
