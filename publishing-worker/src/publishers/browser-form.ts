@@ -112,22 +112,36 @@ async function uploadCover(page: Page, input: PublicationInput, config: BrowserP
   }
 }
 
+function platformRoot(hostname: string) {
+  const parts = hostname.toLowerCase().split(".").filter(Boolean);
+  return parts.length >= 2 ? parts.slice(-2).join(".") : hostname.toLowerCase();
+}
+
+function statusUrlAllowed(managementUrl: string, editorUrl: string) {
+  try {
+    const target = new URL(managementUrl);
+    const editor = new URL(editorUrl);
+    if (target.protocol !== "https:") return false;
+    return platformRoot(target.hostname) === platformRoot(editor.hostname);
+  } catch {
+    return false;
+  }
+}
+
 async function detectPublicUrl(page: Page, config: BrowserPublisherConfig): Promise<string | undefined> {
   for (const selector of config.publicLinkSelectors || []) {
     const locator = page.locator(selector).first();
     const href = await locator.getAttribute("href").catch(() => null);
-    if (href && /^https?:\/\//.test(href)) return href;
-  }
-  const links = page.locator('a[href^="http"]');
-  const count = Math.min(await links.count().catch(() => 0), 80);
-  for (let index = 0; index < count; index += 1) {
-    const href = await links.nth(index).getAttribute("href").catch(() => null);
-    if (!href) continue;
-    if (href.includes("login") || href.includes("edit") || href.includes("write") || href.includes("publish")) continue;
-    if (href.includes(new URL(config.editorUrl).hostname)) return href;
+    if (href && /^https:\/\//.test(href) && statusUrlAllowed(href, config.editorUrl)) return href;
   }
   const current = page.url();
-  if (!current.includes("/edit") && !current.includes("/publish") && !current.includes("/write") && !current.includes("builder")) {
+  if (
+    statusUrlAllowed(current, config.editorUrl) &&
+    !current.includes("/edit") &&
+    !current.includes("/publish") &&
+    !current.includes("/write") &&
+    !current.includes("builder")
+  ) {
     return current;
   }
   return undefined;
@@ -154,7 +168,9 @@ export class BrowserFormPublisher implements PlatformPublisher {
     if (!input.credentials.cookies?.length) {
       return { platformKey: this.platformKey, status: "auth_required", safeErrorCode: "authorization_required" };
     }
-    if (!input.managementUrl) return { platformKey: this.platformKey, status: "unknown" };
+    if (!input.managementUrl || !statusUrlAllowed(input.managementUrl, this.config.editorUrl)) {
+      return { platformKey: this.platformKey, status: "unknown", safeErrorCode: "unsafe_status_url" };
+    }
 
     const browser = await chromium.launch({
       headless: browserHeadless,
