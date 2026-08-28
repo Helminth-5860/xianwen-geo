@@ -5,8 +5,8 @@ from datetime import timedelta
 from django.utils import timezone
 
 from .models import PlatformAccount, PublicationTarget
+from .publication_state import aggregate_publication
 from .security import PublishingCredentialError, decrypt_secret
-from .target_execution import _aggregate_publication
 from .worker_client import PublishingWorkerError, check_platform_publication_status
 
 
@@ -43,7 +43,7 @@ def check_submitted_target(*, target_id) -> dict:
             safe_error_code="authorization_required",
             next_status_check_at=None,
         )
-        _aggregate_publication(target.publication_id)
+        aggregate_publication(target.publication_id)
         return {"status": "auth_required"}
     try:
         credentials = decrypt_secret(target.account.secret_ciphertext)
@@ -58,7 +58,7 @@ def check_submitted_target(*, target_id) -> dict:
             safe_error_code="authorization_required",
             next_status_check_at=None,
         )
-        _aggregate_publication(target.publication_id)
+        aggregate_publication(target.publication_id)
         return {"status": "auth_required"}
 
     try:
@@ -87,7 +87,7 @@ def check_submitted_target(*, target_id) -> dict:
             next_status_check_at=None,
             safe_error_code="",
         )
-        _aggregate_publication(target.publication_id)
+        aggregate_publication(target.publication_id)
         return {"status": "succeeded"}
     if status == "failed":
         PublicationTarget.objects.filter(pk=target.pk).update(
@@ -96,7 +96,7 @@ def check_submitted_target(*, target_id) -> dict:
             next_status_check_at=None,
             safe_error_code=str(result.get("safeErrorCode") or "content_rejected")[:100],
         )
-        _aggregate_publication(target.publication_id)
+        aggregate_publication(target.publication_id)
         return {"status": "failed"}
     if status == "auth_required":
         PlatformAccount.objects.filter(pk=target.account_id).update(
@@ -110,7 +110,7 @@ def check_submitted_target(*, target_id) -> dict:
             next_status_check_at=None,
             safe_error_code="authorization_required",
         )
-        _aggregate_publication(target.publication_id)
+        aggregate_publication(target.publication_id)
         return {"status": "auth_required"}
 
     eta = _next_check(target)
