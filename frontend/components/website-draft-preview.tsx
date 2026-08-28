@@ -5,9 +5,12 @@ import { useEffect, useState } from "react";
 
 import type {
   WebsiteContact,
+  WebsiteDensityKey,
   WebsitePage,
   WebsiteProject,
   WebsiteSection,
+  WebsiteStyleKey,
+  WebsiteThemeKey,
 } from "@/lib/websites-client";
 
 import styles from "./website-draft-preview.module.css";
@@ -23,6 +26,11 @@ type Props = Readonly<{
   project: WebsiteProject;
   subjectName: string;
   materials: WebsitePreviewImage[];
+  design?: Readonly<{
+    styleKey: WebsiteStyleKey;
+    themeKey: WebsiteThemeKey;
+    densityKey: WebsiteDensityKey;
+  }>;
 }>;
 
 const contactLabels: Readonly<Record<keyof WebsiteContact, string>> = {
@@ -33,10 +41,46 @@ const contactLabels: Readonly<Record<keyof WebsiteContact, string>> = {
   contact_phone: "联系电话",
 };
 
-function styleClass(styleKey: WebsiteProject["style_key"]) {
+function styleClass(styleKey: WebsiteStyleKey) {
   if (styleKey === "technology") return styles.technology;
   if (styleKey === "premium") return styles.premium;
-  return "";
+  if (styleKey === "industrial") return styles.industrial;
+  if (styleKey === "local_service") return styles.localService;
+  if (styleKey === "authority") return styles.authority;
+  return styles.professional;
+}
+
+function themeClass(themeKey: WebsiteThemeKey) {
+  if (themeKey === "obsidian") return styles.obsidian;
+  if (themeKey === "cloud") return styles.cloud;
+  if (themeKey === "amethyst") return styles.amethyst;
+  if (themeKey === "jade") return styles.jade;
+  if (themeKey === "gold") return styles.gold;
+  return styles.ocean;
+}
+
+function densityClass(densityKey: WebsiteDensityKey) {
+  if (densityKey === "compact") return styles.compact;
+  if (densityKey === "rich") return styles.rich;
+  return styles.standard;
+}
+
+function itemLimit(densityKey: WebsiteDensityKey) {
+  if (densityKey === "compact") return 3;
+  if (densityKey === "standard") return 6;
+  return 12;
+}
+
+function visibleSections(sections: WebsiteSection[], densityKey: WebsiteDensityKey) {
+  if (densityKey === "rich") return sections;
+  const limit = densityKey === "compact" ? 2 : 4;
+  const selected = sections.slice(0, limit);
+  const contact = sections.find((section) => section.type === "contact");
+  if (contact && !selected.includes(contact)) {
+    if (selected.length >= limit && selected.length > 0) selected[selected.length - 1] = contact;
+    else selected.push(contact);
+  }
+  return selected;
 }
 
 function SectionView({
@@ -44,19 +88,23 @@ function SectionView({
   index,
   contact,
   images,
+  densityKey,
 }: Readonly<{
   section: WebsiteSection;
   index: number;
   contact: WebsiteContact;
   images: WebsitePreviewImage[];
+  densityKey: WebsiteDensityKey;
 }>) {
+  const visibleItems = section.items.slice(0, itemLimit(densityKey));
+
   if (section.type === "faq") {
     return (
       <section className={`${styles.section} ${index % 2 ? styles.sectionAlt : ""}`}>
         {section.title && <h2 className={styles.sectionTitle}>{section.title}</h2>}
         {section.body && <p className={styles.sectionBody}>{section.body}</p>}
         <div className={styles.faqList}>
-          {section.items.map((item, itemIndex) => (
+          {visibleItems.map((item, itemIndex) => (
             <div className={styles.faqItem} key={`${item.title}-${itemIndex}`}>
               <p className={styles.faqQuestion}>{item.title}</p>
               <p className={styles.cardBody}>{item.body}</p>
@@ -98,7 +146,7 @@ function SectionView({
         {section.title && <h2 className={styles.sectionTitle}>{section.title}</h2>}
         {section.body && <p className={styles.sectionBody}>{section.body}</p>}
         <div className={styles.cards}>
-          {section.items.map((item, itemIndex) => {
+          {visibleItems.map((item, itemIndex) => {
             const image = images.length ? images[(index + itemIndex) % images.length] : null;
             return (
               <article className={styles.card} key={`${item.title}-${itemIndex}`}>
@@ -123,9 +171,9 @@ function SectionView({
     <section className={`${styles.section} ${index % 2 ? styles.sectionAlt : ""}`}>
       {section.title && <h2 className={styles.sectionTitle}>{section.title}</h2>}
       {section.body && <p className={styles.sectionBody}>{section.body}</p>}
-      {section.items.length > 0 && (
+      {visibleItems.length > 0 && (
         <div className={styles.cards}>
-          {section.items.map((item, itemIndex) => (
+          {visibleItems.map((item, itemIndex) => (
             <article className={styles.card} key={`${item.title}-${itemIndex}`}>
               <div className={styles.cardCopy}>
                 <h3 className={styles.cardTitle}>{item.title}</h3>
@@ -144,17 +192,21 @@ function PagePreview({
   project,
   subjectName,
   materials,
+  densityKey,
   onNavigate,
 }: Readonly<{
   page: WebsitePage;
   project: WebsiteProject;
   subjectName: string;
   materials: WebsitePreviewImage[];
+  densityKey: WebsiteDensityKey;
   onNavigate: (key: WebsitePage["key"]) => void;
 }>) {
   const heroIndex = page.sections.findIndex((section) => section.type === "hero");
-  const hero = page.sections[heroIndex >= 0 ? heroIndex : 0];
-  const remaining = page.sections.filter((_, index) => index !== (heroIndex >= 0 ? heroIndex : 0));
+  const primaryIndex = heroIndex >= 0 ? heroIndex : 0;
+  const hero = page.sections[primaryIndex];
+  const allRemaining = page.sections.filter((_, index) => index !== primaryIndex);
+  const remaining = visibleSections(allRemaining, densityKey);
   const heroImage = materials[0];
   const cardImages = materials.slice(1);
 
@@ -199,6 +251,7 @@ function PagePreview({
           index={index}
           contact={project.contact}
           images={cardImages}
+          densityKey={densityKey}
         />
       ))}
 
@@ -209,10 +262,13 @@ function PagePreview({
   );
 }
 
-export function WebsiteDraftPreview({ project, subjectName, materials }: Props) {
+export function WebsiteDraftPreview({ project, subjectName, materials, design }: Props) {
   const pages = project.site?.pages ?? [];
   const [device, setDevice] = useState<"电脑预览" | "手机预览">("电脑预览");
   const [activePageKey, setActivePageKey] = useState<WebsitePage["key"]>("home");
+  const styleKey = design?.styleKey ?? project.style_key;
+  const themeKey = design?.themeKey ?? project.theme_key;
+  const densityKey = design?.densityKey ?? project.density_key;
 
   useEffect(() => {
     if (pages.length && !pages.some((page) => page.key === activePageKey)) {
@@ -249,13 +305,14 @@ export function WebsiteDraftPreview({ project, subjectName, materials }: Props) 
 
       <div className={styles.frameWrap}>
         <div
-          className={`${styles.frame} ${device === "手机预览" ? styles.frameMobile : ""} ${styleClass(project.style_key)}`}
+          className={`${styles.frame} ${device === "手机预览" ? styles.frameMobile : ""} ${styleClass(styleKey)} ${themeClass(themeKey)} ${densityClass(densityKey)}`}
         >
           <PagePreview
             page={activePage}
             project={project}
             subjectName={subjectName}
             materials={materials}
+            densityKey={densityKey}
             onNavigate={setActivePageKey}
           />
         </div>
