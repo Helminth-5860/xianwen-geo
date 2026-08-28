@@ -63,7 +63,15 @@ export default function ContentLibrary({ subjectId }: Props) {
           <List
             loading={loading}
             dataSource={items}
-            locale={{ emptyText: <Empty description="内容库暂无文章" /> }}
+            locale={{
+              emptyText: (
+                <Empty description="还没有文章，生成并保存到内容库后会出现在这里。">
+                  <Button type="primary" href={`/subjects/${subjectId}/articles/new`}>
+                    生成第一篇文章
+                  </Button>
+                </Empty>
+              ),
+            }}
             renderItem={(item) => (
               <List.Item
                 actions={[

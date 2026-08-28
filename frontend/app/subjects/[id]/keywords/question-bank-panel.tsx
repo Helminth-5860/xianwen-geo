@@ -34,12 +34,17 @@ const QUESTION_PAGE_SIZE = 20;
 const jobStatusLabels: Readonly<Record<string, string>> = {
   queued: "等待生成",
   running: "正在生成",
-  retry_wait: "等待重试",
+  retry_wait: "等待再次处理",
   succeeded: "生成完成",
   failed: "生成失败",
   conflict: "内容已更新",
-  superseded: "任务已被替代",
+  superseded: "已有更新结果",
 };
+
+function questionGenerationMessage(code: string | null | undefined) {
+  if (code === "QUESTION_GENERATION_IN_PROGRESS") return "问题正在生成，请稍候。";
+  return questionGenerationErrorMessage(code);
+}
 
 type Props = Readonly<{
   subjectId: string;
@@ -105,7 +110,7 @@ export default function QuestionBankPanel({ subjectId, upstreamDirty }: Props) {
             setNotice("问题已生成，请确认后保存到问题管理");
             setError("");
           } else if (["failed", "conflict", "superseded"].includes(next.status)) {
-            setError(questionGenerationErrorMessage(next.stable_error_code));
+            setError(questionGenerationMessage(next.stable_error_code));
             setNotice("");
           }
         })
@@ -169,8 +174,8 @@ export default function QuestionBankPanel({ subjectId, upstreamDirty }: Props) {
       setError("");
       setNotice(
         next.billing.billing_mode === "free_initial"
-          ? "首次免费问题生成任务已提交"
-          : "问题重生成任务已提交，额度已冻结",
+          ? "已开始首次免费生成问题"
+          : "已开始重新生成问题，并暂时预留额度",
       );
     } catch (reason) {
       if (
@@ -181,7 +186,7 @@ export default function QuestionBankPanel({ subjectId, upstreamDirty }: Props) {
         setError("");
         setNotice("该主体已有成功问题生成，请确认消耗一次重生成额度");
       } else if (reason instanceof AuthApiError && reason.code.startsWith("QUESTION_GENERATION_")) {
-        setError(questionGenerationErrorMessage(reason.code));
+        setError(questionGenerationMessage(reason.code));
         setNotice("");
       } else {
         setError(userMessage(reason));
@@ -233,9 +238,7 @@ export default function QuestionBankPanel({ subjectId, upstreamDirty }: Props) {
           选择当前主体已确认的关键词资产，生成结果确认后保存到问题管理。
         </Typography.Text>
         <Space wrap>
-          {draft?.current_distillation_set ? (
-            <Tag color="blue">关键词资产版本 v{draft.current_distillation_set.version_no}</Tag>
-          ) : null}
+          {draft?.current_distillation_set ? <Tag color="blue">已使用当前关键词资产</Tag> : null}
           {draft?.question_limit ? <Tag>问题上限 {draft.question_limit}</Tag> : null}
           {job ? (
             <Tag color={job.status === "succeeded" ? "green" : "blue"}>
@@ -253,7 +256,7 @@ export default function QuestionBankPanel({ subjectId, upstreamDirty }: Props) {
               <Card key={asset.id} size="small">
                 <Space wrap>
                   <Checkbox
-                    aria-label={`选择关键词资产-${asset.id}`}
+                    aria-label={`选择关键词：${asset.text}`}
                     checked={selectedAssetIds.includes(asset.id)}
                     disabled={disabled || !asset.enabled}
                     onChange={(event) => toggleKeywordAsset(asset.id, event.target.checked)}
@@ -267,9 +270,14 @@ export default function QuestionBankPanel({ subjectId, upstreamDirty }: Props) {
               </Card>
             ))}
             {!keywordAssets.length ? (
-              <Typography.Text type="secondary">
-                暂无可用关键词资产，请先完成关键词蒸馏。
-              </Typography.Text>
+              <Space wrap>
+                <Typography.Text type="secondary">
+                  暂无可用关键词资产，请先完成关键词蒸馏。
+                </Typography.Text>
+                <Button size="small" href={`/subjects/${subjectId}/keywords/distill`}>
+                  去关键词蒸馏
+                </Button>
+              </Space>
             ) : null}
             {keywordAssets.length > QUESTION_PAGE_SIZE ? (
               <Pagination
@@ -340,7 +348,9 @@ export default function QuestionBankPanel({ subjectId, upstreamDirty }: Props) {
               </Card>
             ))}
             {!items.length ? (
-              <Typography.Text type="secondary">尚未生成问题。</Typography.Text>
+              <Typography.Text type="secondary">
+                尚未生成问题。请选择关键词资产后，点击上方“AI 生成问题”。
+              </Typography.Text>
             ) : null}
             {items.length > QUESTION_PAGE_SIZE ? (
               <Pagination

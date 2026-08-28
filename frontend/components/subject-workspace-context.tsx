@@ -278,7 +278,7 @@ export function SubjectWorkspaceTopbar() {
           <Spin size="small" />
         ) : subjects.length ? (
           <Select
-            aria-label="Workspace 当前主体"
+            aria-label="切换当前主体"
             value={currentSubject?.id}
             loading={switchingSubject}
             disabled={switchingSubject || subjects.length === 1}

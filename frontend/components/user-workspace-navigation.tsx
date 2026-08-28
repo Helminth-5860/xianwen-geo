@@ -122,7 +122,7 @@ function workspaceMenu(subjectId: string | null): MenuItem[] {
       icon: <FundProjectionScreenOutlined />,
       label: "优化中心",
       children: [
-        linkedItem("optimization-strategy", "优化策略", "/geo/strategy"),
+        linkedItem("optimization-strategy", "优化方案", "/geo/strategy"),
         unavailableItem("optimization-execution", "执行计划"),
         linkedItem("optimization-articles", "文章生成", articleHome),
         linkedItem("optimization-images", "图片生成", imageHome),

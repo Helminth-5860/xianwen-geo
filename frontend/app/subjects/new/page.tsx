@@ -63,10 +63,10 @@ export default function NewSubjectPage() {
       <Title level={2}>创建主体</Title>
       <Paragraph type="secondary">选择主体类型后，进入主体资料填写。</Paragraph>
 
-      {error && <Alert type="error" showIcon message={error} style={{ marginBottom: 16 }} />}
+      {error && <Alert type="error" showIcon title={error} style={{ marginBottom: 16 }} />}
 
       <Card title="主体类型" style={{ maxWidth: 720 }}>
-        <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+        <Space orientation="vertical" size="middle" style={{ width: "100%" }}>
           {types?.length ? (
             <>
               <Select
@@ -93,7 +93,7 @@ export default function NewSubjectPage() {
               </Space>
             </>
           ) : (
-            <Alert type="warning" showIcon message="暂无可用主体类型，请联系管理员" />
+            <Alert type="warning" showIcon title="当前没有可选的主体类型，请联系管理员。" />
           )}
         </Space>
       </Card>

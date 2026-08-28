@@ -5,6 +5,10 @@ import { useEffect, useState } from "react";
 
 import { userMessage } from "@/lib/auth-client";
 import { getUserSubscriptionChanges, type SubscriptionChange } from "@/lib/plans-client";
+import {
+  SUBSCRIPTION_CHANGE_STATUS_LABELS,
+  SUBSCRIPTION_CHANGE_TYPE_LABELS,
+} from "@/lib/product-copy";
 
 export function SubscriptionChangeHistory() {
   const [items, setItems] = useState<SubscriptionChange[] | null>(null);
@@ -23,17 +27,17 @@ export function SubscriptionChangeHistory() {
     <Card title="套餐变更记录">
       <List
         dataSource={items}
-        locale={{ emptyText: "暂无套餐变更记录" }}
+        locale={{ emptyText: "暂时没有套餐变更记录。申请或调整套餐后，可在这里查看进度。" }}
         renderItem={(item) => (
           <List.Item>
             <List.Item.Meta
               title={
                 <>
                   <Typography.Text>{item.target_plan_name}</Typography.Text>{" "}
-                  <Tag>{item.status}</Tag>
+                  <Tag>{SUBSCRIPTION_CHANGE_STATUS_LABELS[item.status]}</Tag>
                 </>
               }
-              description={`变更类型：${item.change_type}；生效时间：${item.effective_at}`}
+              description={`调整方式：${SUBSCRIPTION_CHANGE_TYPE_LABELS[item.change_type]}；生效时间：${new Date(item.effective_at).toLocaleString("zh-CN")}`}
             />
           </List.Item>
         )}

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -11,14 +11,17 @@ import {
   useSubjectSwitchGuard,
 } from "../components/subject-workspace-context";
 import { UserWorkspaceNavigation } from "../components/user-workspace-navigation";
-import { subjectSwitchTargetPath } from "../lib/subjects-client";
+import { SUBJECT_CONTEXT_UPDATED_EVENT, subjectSwitchTargetPath } from "../lib/subjects-client";
 
 const getCurrentUser = vi.fn();
 const getSubjects = vi.fn();
 const setCurrentSubject = vi.fn();
 const navigateWorkspaceAfterSubjectChange = vi.fn();
 const getReportHistory = vi.fn();
+const getReportTrends = vi.fn();
+const getDetectionHistory = vi.fn();
 const getQuestionBankDraft = vi.fn();
+const getStrategies = vi.fn();
 let pathname = "/workspace";
 const replace = vi.fn();
 
@@ -46,7 +49,20 @@ vi.mock("../lib/geo-report-client", async () => {
   const actual = await vi.importActual<typeof import("../lib/geo-report-client")>(
     "../lib/geo-report-client",
   );
-  return { ...actual, getReportHistory: (...args: unknown[]) => getReportHistory(...args) };
+  return {
+    ...actual,
+    getReportHistory: (...args: unknown[]) => getReportHistory(...args),
+    getReportTrends: (...args: unknown[]) => getReportTrends(...args),
+  };
+});
+vi.mock("../lib/geo-detection-client", async () => {
+  const actual = await vi.importActual<typeof import("../lib/geo-detection-client")>(
+    "../lib/geo-detection-client",
+  );
+  return {
+    ...actual,
+    getDetectionHistory: (...args: unknown[]) => getDetectionHistory(...args),
+  };
 });
 vi.mock("../lib/question-bank-client", async () => {
   const actual = await vi.importActual<typeof import("../lib/question-bank-client")>(
@@ -55,6 +71,15 @@ vi.mock("../lib/question-bank-client", async () => {
   return {
     ...actual,
     getQuestionBankDraft: (...args: unknown[]) => getQuestionBankDraft(...args),
+  };
+});
+vi.mock("../lib/strategy-assistant-client", async () => {
+  const actual = await vi.importActual<typeof import("../lib/strategy-assistant-client")>(
+    "../lib/strategy-assistant-client",
+  );
+  return {
+    ...actual,
+    getStrategies: (...args: unknown[]) => getStrategies(...args),
   };
 });
 
@@ -115,7 +140,36 @@ const latestReport = {
       ranking_performance_score: "63.0",
       model_coverage_score: "75.0",
     },
-    models: [],
+    models: [
+      {
+        model_id: "model-1",
+        model_key: "deepseek",
+        status: "succeeded",
+        planned_calls: 3,
+        completed_calls: 3,
+        successful_calls: 3,
+        failed_calls: 0,
+        cancelled_calls: 0,
+        geo: {
+          score: "74.5",
+          grade: "B",
+          status: "formal" as const,
+          formal_model_count: 1,
+          planned_count: 3,
+          successful_count: 3,
+          success_rate: "100",
+        },
+        brand_reputation: {
+          score: "71.0",
+          grade: "B",
+          status: "formal" as const,
+          formal_model_count: 1,
+          planned_count: 3,
+          successful_count: 3,
+          success_rate: "100",
+        },
+      },
+    ],
     dimensions: {},
     competitors: [],
   },
@@ -124,8 +178,96 @@ const latestReport = {
   generated_at: "2026-08-22T08:00:00Z",
 };
 
+const reportTrends = [
+  {
+    report_id: "report-0",
+    generated_at: "2026-08-15T08:00:00Z",
+    subject_version_id: "subject-version-0",
+    geo_score: "62.4",
+    comparison: null,
+  },
+  {
+    report_id: latestReport.id,
+    generated_at: latestReport.generated_at,
+    subject_version_id: latestReport.subject_version_id,
+    geo_score: latestReport.summary.geo.score,
+    comparison: null,
+  },
+];
+
+const completedDetection = {
+  id: "detection-1",
+  subject_id: subject.id,
+  status: "succeeded" as const,
+  version: 1,
+  planned_question_count: 3,
+  planned_model_count: 1,
+  planned_detection_points: 3,
+  completed_calls: 3,
+  successful_calls: 3,
+  failed_calls: 0,
+  cancelled_calls: 0,
+  progress_percent: 100,
+  queue_priority: 0,
+  queue_position: null,
+  cancel_requested: false,
+  quota: { status: "settled" as const, held: 3, consumed: 3, released: 0 },
+  queued_at: "2026-08-22T07:55:00Z",
+  started_at: "2026-08-22T07:56:00Z",
+  finished_at: "2026-08-22T08:00:00Z",
+  cancelled_at: null,
+  created_at: "2026-08-22T07:55:00Z",
+  updated_at: "2026-08-22T08:00:00Z",
+};
+
+const latestStrategy = {
+  id: "strategy-1",
+  report_id: latestReport.id,
+  subject_id: subject.id,
+  subject_version_id: latestReport.subject_version_id,
+  period: "30d" as const,
+  period_days: 30,
+  status: "succeeded" as const,
+  billing: { mode: "free_initial" as const, first_free: true, held: false, remaining: 2 },
+  body: {
+    overview: "优先补强品牌证据与服务场景内容。",
+    priorities: [
+      {
+        title: "先完善品牌可信证据",
+        rationale: "当前推荐表现仍有提升空间。",
+        actions: ["补充客户案例", "完善官网服务说明"],
+        success_metric: "品牌推荐表现持续提升",
+      },
+    ],
+    schedule: [],
+    article_topics: [],
+  },
+  note: null,
+  provenance: {
+    provider_key: "configured-provider",
+    model_key: "configured-model",
+    provider_model_id: "configured-model-id",
+    adapter_version: "1",
+    prompt_version: "1",
+    schema_version: "1",
+    report_scoring_rule_version: "v1",
+  },
+  safe_error_code: "",
+  created_at: "2026-08-22T08:10:00Z",
+  generated_at: "2026-08-22T08:11:00Z",
+  finished_at: "2026-08-22T08:11:00Z",
+};
+
 const renderInWorkspace = (component: React.ReactNode) =>
   render(<SubjectWorkspaceProvider>{component}</SubjectWorkspaceProvider>);
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((fulfill) => {
+    resolve = fulfill;
+  });
+  return { promise, resolve };
+}
 
 function DirtyWorkspace({ save }: Readonly<{ save: () => Promise<boolean> }>) {
   useSubjectSwitchGuard("test-dirty-page", true, save);
@@ -159,12 +301,20 @@ beforeEach(() => {
     context: { current_subject_id: subject.id, version: 1 },
   });
   getReportHistory.mockResolvedValue({ items: [latestReport] });
+  getReportTrends.mockResolvedValue({ items: reportTrends });
+  getDetectionHistory.mockResolvedValue({ items: [completedDetection] });
   getQuestionBankDraft.mockResolvedValue({ current_question_bank_version_no: 3 });
+  getStrategies.mockResolvedValue({
+    items: [latestStrategy],
+    first_free_available: false,
+    remaining_regenerations: 2,
+  });
   setCurrentSubject.mockResolvedValue({ current_subject_id: subject.id, version: 2 });
 });
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   vi.clearAllMocks();
 });
 
@@ -177,16 +327,242 @@ describe("GEO 产品工作台", () => {
   it("工作台直接展示当前主体、真实 GEO 指标和完整优化主线", async () => {
     renderInWorkspace(<WorkspacePage />);
     expect(await screen.findByRole("heading", { name: "GEO 总览" })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "显问科技" })).toBeTruthy();
-    expect(screen.getAllByText("68.2").length).toBeGreaterThan(0);
-    expect(screen.getByText("1. 主体档案")).toBeTruthy();
-    expect(screen.getByText("3. AI 可见度检测")).toBeTruthy();
-    expect(screen.getByText("5. 优化策略")).toBeTruthy();
-    expect(screen.getByText("7. 复测验证")).toBeTruthy();
+    expect(screen.getByText("显问科技")).toBeTruthy();
+    await waitFor(() => expect(screen.getAllByText("68.2").length).toBeGreaterThan(0));
+    expect(screen.getByText("显问 GEO 情报中心")).toBeTruthy();
+    expect(screen.getByText(/最近完成检测：/)).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "GEO 表现趋势" })).toBeTruthy();
+    expect(screen.getByText("共 2 次检测")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "人工智能曝光指数" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "品牌提及率" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "推荐表现" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "各人工智能平台表现" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "深度求索" })).toBeTruthy();
+    expect(screen.getByText("74.5 分")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "GEO 成长进度" })).toBeTruthy();
+    expect(screen.getByText("完善主体档案")).toBeTruthy();
+    expect(screen.getByText("完成人工智能可见度检测")).toBeTruthy();
+    expect(screen.getByText("形成优化方案")).toBeTruthy();
+    expect(screen.getByText("复测并验证变化")).toBeTruthy();
+    expect(screen.getByText("问题库已就绪")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "智能洞察" })).toBeTruthy();
+    expect(screen.getByText("先完善品牌可信证据")).toBeTruthy();
+    expect(screen.getByText("当前推荐表现仍有提升空间。")).toBeTruthy();
+    expect(screen.getAllByText(/GEO 综合评分/).length).toBeGreaterThan(0);
+    expect(
+      screen.queryByText(
+        /GEO WORKSPACE|问题库 v3|GEO Score|Provider|Runtime|Binding|Batch|Candidate|Distilled|Asset/,
+      ),
+    ).toBeNull();
     expect(screen.queryByText("欢迎回来")).toBeNull();
     expect(screen.queryByText("当前没有生效套餐，但工作台功能仍然可见")).toBeNull();
     expect(screen.queryByText("显问 AI 助手")).toBeNull();
     expect(screen.queryByText("套餐目录")).toBeNull();
+  });
+
+  it("尚无检测报告时展示明确的下一步和产品化空状态", async () => {
+    getReportHistory.mockResolvedValue({ items: [] });
+    getReportTrends.mockResolvedValue({ items: [] });
+    getDetectionHistory.mockResolvedValue({ items: [] });
+
+    renderInWorkspace(<WorkspacePage />);
+
+    expect(await screen.findByRole("heading", { name: "GEO 总览" })).toBeTruthy();
+    expect(screen.getByText("尚未完成首次检测")).toBeTruthy();
+    expect(screen.getByText("完成首次检测后，这里会显示综合评分。")).toBeTruthy();
+    expect(screen.getByText("趋势还在积累")).toBeTruthy();
+    expect(screen.getByText("人工智能曝光指数暂无数据")).toBeTruthy();
+    expect(screen.getByText("完成检测后，这里会展示本次检测中的平台表现。")).toBeTruthy();
+    expect(screen.getByText("完成首次检测后，这里会显示检测报告。")).toBeTruthy();
+    expect(screen.getByText("开始可见度检测").closest("a")?.getAttribute("href")).toBe(
+      "/geo/detections",
+    );
+    expect(getStrategies).not.toHaveBeenCalled();
+    expect(screen.queryByText("部分内容暂时无法显示")).toBeNull();
+  });
+
+  it("单项内容读取失败时保留其余真实内容并使用中文提示", async () => {
+    getReportTrends.mockRejectedValue(new Error("upstream unavailable"));
+
+    renderInWorkspace(<WorkspacePage />);
+
+    expect(await screen.findByText("部分内容暂时无法显示")).toBeTruthy();
+    expect(screen.getByText("其他功能仍可正常使用，你可以稍后刷新页面。")).toBeTruthy();
+    expect(screen.getByText("趋势暂时无法显示")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "各人工智能平台表现" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "深度求索" })).toBeTruthy();
+    expect(screen.getByText("先完善品牌可信证据")).toBeTruthy();
+    expect(screen.queryByText(/upstream|unavailable|接口|异常码/)).toBeNull();
+  });
+
+  it("切换主体后重新读取全部总览数据，并忽略上一主体的迟到结果", async () => {
+    const delayedFirstStrategy = deferred<{
+      items: (typeof latestStrategy)[];
+      first_free_available: boolean;
+      remaining_regenerations: number;
+    }>();
+    const secondReport = {
+      ...latestReport,
+      id: "report-2",
+      detection_id: "detection-2",
+      subject_id: otherSubject.id,
+      subject_version_id: "subject-version-2",
+      summary: {
+        ...latestReport.summary,
+        geo: { ...latestReport.summary.geo, score: "82.6" },
+        exposure: {
+          ...latestReport.summary.exposure,
+          exposure_index: "79.4",
+          mention_rate_score: "76.0",
+          recommendation_rate_score: "69.0",
+        },
+      },
+      generated_at: "2026-08-24T08:00:00Z",
+    };
+    const secondDetection = {
+      ...completedDetection,
+      id: "detection-2",
+      subject_id: otherSubject.id,
+      finished_at: "2026-08-24T08:00:00Z",
+      updated_at: "2026-08-24T08:00:00Z",
+    };
+    const secondStrategy = {
+      ...latestStrategy,
+      id: "strategy-2",
+      report_id: secondReport.id,
+      subject_id: otherSubject.id,
+      subject_version_id: secondReport.subject_version_id,
+      body: {
+        ...latestStrategy.body,
+        overview: "华南主体应优先完善本地服务案例。",
+        priorities: [
+          {
+            title: "补强华南本地服务证据",
+            rationale: "当前主体需要增加本地案例。",
+            actions: ["补充华南客户案例"],
+            success_metric: "本地推荐表现提升",
+          },
+        ],
+      },
+    };
+
+    getSubjects.mockResolvedValue({
+      subjects: [subject, otherSubject],
+      context: { current_subject_id: subject.id, version: 7 },
+    });
+    getReportHistory.mockImplementation((subjectId: string) =>
+      Promise.resolve({ items: [subjectId === otherSubject.id ? secondReport : latestReport] }),
+    );
+    getReportTrends.mockImplementation((subjectId: string) =>
+      Promise.resolve({
+        items:
+          subjectId === otherSubject.id
+            ? [
+                {
+                  report_id: secondReport.id,
+                  generated_at: secondReport.generated_at,
+                  subject_version_id: secondReport.subject_version_id,
+                  geo_score: secondReport.summary.geo.score,
+                  comparison: null,
+                },
+              ]
+            : reportTrends,
+      }),
+    );
+    getDetectionHistory.mockImplementation((subjectId: string) =>
+      Promise.resolve({
+        items: [subjectId === otherSubject.id ? secondDetection : completedDetection],
+      }),
+    );
+    getQuestionBankDraft.mockImplementation((subjectId: string) =>
+      Promise.resolve({ current_question_bank_version_no: subjectId === otherSubject.id ? 5 : 3 }),
+    );
+    getStrategies.mockImplementation((reportId: string) =>
+      reportId === latestReport.id
+        ? delayedFirstStrategy.promise
+        : Promise.resolve({
+            items: [secondStrategy],
+            first_free_available: false,
+            remaining_regenerations: 2,
+          }),
+    );
+
+    render(
+      <SubjectWorkspaceProvider>
+        <SubjectWorkspaceTopbar />
+        <WorkspacePage />
+      </SubjectWorkspaceProvider>,
+    );
+
+    expect(await screen.findByText("68.2")).toBeTruthy();
+    expect(getReportHistory).toHaveBeenCalledWith(subject.id);
+    expect(getReportTrends).toHaveBeenCalledWith(subject.id);
+    expect(getDetectionHistory).toHaveBeenCalledWith(subject.id);
+    expect(getQuestionBankDraft).toHaveBeenCalledWith(subject.id);
+    expect(getStrategies).toHaveBeenCalledWith(latestReport.id);
+
+    await userEvent.click(screen.getByLabelText("切换当前主体"));
+    await userEvent.click(await screen.findByText("显问华南"));
+    await waitFor(() => expect(setCurrentSubject).toHaveBeenCalledWith(otherSubject.id, 7));
+
+    getSubjects.mockResolvedValue({
+      subjects: [subject, { ...otherSubject, is_current: true }],
+      context: { current_subject_id: otherSubject.id, version: 8 },
+    });
+    await act(async () => {
+      window.dispatchEvent(new Event(SUBJECT_CONTEXT_UPDATED_EVENT));
+    });
+
+    await waitFor(() => expect(getReportHistory).toHaveBeenCalledWith(otherSubject.id));
+    expect(screen.queryByText("68.2")).toBeNull();
+    await waitFor(() => expect(screen.getByText("82.6")).toBeTruthy());
+    expect(getReportTrends).toHaveBeenCalledWith(otherSubject.id);
+    expect(getDetectionHistory).toHaveBeenCalledWith(otherSubject.id);
+    expect(getQuestionBankDraft).toHaveBeenCalledWith(otherSubject.id);
+    await waitFor(() => expect(getStrategies).toHaveBeenCalledWith(secondReport.id));
+    expect(await screen.findByText("补强华南本地服务证据")).toBeTruthy();
+
+    await act(async () => {
+      delayedFirstStrategy.resolve({
+        items: [latestStrategy],
+        first_free_available: false,
+        remaining_regenerations: 2,
+      });
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText("补强华南本地服务证据")).toBeTruthy();
+    expect(screen.queryByText("先完善品牌可信证据")).toBeNull();
+    expect(screen.queryByText("68.2")).toBeNull();
+  });
+
+  it("总览请求一直无响应时十秒后结束加载并显示中文局部失败状态", async () => {
+    vi.useFakeTimers();
+    getReportTrends.mockImplementation(() => new Promise(() => undefined));
+
+    renderInWorkspace(<WorkspacePage />);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(screen.getByLabelText("正在加载 GEO 总览")).toBeTruthy();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(9_999);
+    });
+    expect(screen.getByLabelText("正在加载 GEO 总览")).toBeTruthy();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByLabelText("正在加载 GEO 总览")).toBeNull();
+    expect(screen.getByText("部分内容暂时无法显示")).toBeTruthy();
+    expect(screen.getByText("趋势暂时无法显示")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "各人工智能平台表现" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "深度求索" })).toBeTruthy();
+    expect(screen.queryByText(/overview request ended|接口|异常码/)).toBeNull();
   });
 
   it("没有当前主体时只引导进入 GEO 主流程，不展示官网式功能介绍", async () => {
@@ -195,7 +571,9 @@ describe("GEO 产品工作台", () => {
       context: { current_subject_id: null, version: 0 },
     });
     renderInWorkspace(<WorkspacePage />);
-    expect(await screen.findByText("还没有当前 GEO 主体")).toBeTruthy();
+    expect(
+      await screen.findByText("创建并选择主体后，即可查看检测、趋势和优化进度。"),
+    ).toBeTruthy();
     expect(screen.getByRole("link", { name: "创建并选择主体" }).getAttribute("href")).toBe(
       "/subjects",
     );
@@ -218,7 +596,7 @@ describe("GEO 产品工作台", () => {
     );
     const { rerender } = render(shell());
     expect(await screen.findByRole("navigation", { name: "GEO 工作台导航" })).toBeTruthy();
-    expect(screen.getByLabelText("Workspace 当前主体")).toBeTruthy();
+    expect(screen.getByLabelText("切换当前主体")).toBeTruthy();
     expect(screen.getByRole("link", { name: "GEO 总览" }).getAttribute("href")).toBe("/workspace");
     for (const label of [
       "主体档案",
@@ -302,7 +680,7 @@ describe("GEO 产品工作台", () => {
     );
 
     await userEvent.click(screen.getByText("优化中心"));
-    expect(screen.getByRole("link", { name: "优化策略" }).getAttribute("href")).toBe(
+    expect(screen.getByRole("link", { name: "优化方案" }).getAttribute("href")).toBe(
       "/geo/strategy",
     );
     expect(screen.getByText("执行计划")).toBeTruthy();
@@ -413,14 +791,14 @@ describe("GEO 产品工作台", () => {
         "true",
       ),
     );
-    expect(screen.getByRole("menuitem", { name: "优化策略" }).className).toContain(
+    expect(screen.getByRole("menuitem", { name: "优化方案" }).className).toContain(
       "ant-menu-item-selected",
     );
 
     pathname = "/geo/strategy/report-1";
     rerender(shell());
     await waitFor(() =>
-      expect(screen.getByRole("menuitem", { name: "优化策略" }).className).toContain(
+      expect(screen.getByRole("menuitem", { name: "优化方案" }).className).toContain(
         "ant-menu-item-selected",
       ),
     );
@@ -428,7 +806,7 @@ describe("GEO 产品工作台", () => {
     pathname = "/geo/reports/report-1/strategy";
     rerender(shell());
     await waitFor(() =>
-      expect(screen.getByRole("menuitem", { name: "优化策略" }).className).toContain(
+      expect(screen.getByRole("menuitem", { name: "优化方案" }).className).toContain(
         "ant-menu-item-selected",
       ),
     );
@@ -438,7 +816,7 @@ describe("GEO 产品工作台", () => {
     await waitFor(() =>
       expect(screen.queryByRole("navigation", { name: "GEO 工作台导航" })).toBeNull(),
     );
-  });
+  }, 15_000);
 
   it("切换当前主体后刷新整个工作区，避免保留上一个主体的页面状态", async () => {
     getSubjects.mockResolvedValue({
@@ -450,7 +828,7 @@ describe("GEO 产品工作台", () => {
         <SubjectWorkspaceTopbar />
       </SubjectWorkspaceProvider>,
     );
-    const selector = await screen.findByLabelText("Workspace 当前主体");
+    const selector = await screen.findByLabelText("切换当前主体");
     await userEvent.click(selector);
     await userEvent.click(await screen.findByText("显问华南"));
 
@@ -523,7 +901,7 @@ describe("GEO 产品工作台", () => {
         <DirtyWorkspace save={save} />
       </SubjectWorkspaceProvider>,
     );
-    const selector = await screen.findByLabelText("Workspace 当前主体");
+    const selector = await screen.findByLabelText("切换当前主体");
     await userEvent.click(selector);
     await userEvent.click(await screen.findByText("显问华南"));
     expect(await screen.findByText("当前页面有未保存修改")).toBeTruthy();

@@ -8,6 +8,7 @@ import {
   resetPassword,
   sendSms,
   setAdminStepUpHandler,
+  userMessage,
   validateRegistrationReference,
   validationFieldMessages,
 } from "../lib/auth-client";
@@ -136,7 +137,7 @@ describe("集中认证客户端", () => {
     expect(consoleLog).not.toHaveBeenCalled();
   });
 
-  it("只从统一校验错误中提取可展示的字段中文原因", () => {
+  it("把字段校验转换为产品中文，不直接展示服务端原文", () => {
     const error = new AuthApiError(new Response(null, { status: 422 }), {
       success: false,
       error: {
@@ -153,10 +154,28 @@ describe("集中认证客户端", () => {
     });
 
     expect(validationFieldMessages(error)).toEqual({
-      password: ["这个密码太常见了。"],
-      nickname: ["请输入昵称"],
+      password: ["密码过于简单，请增加长度并组合数字、字母和符号。"],
+      nickname: ["请填写此项。"],
     });
     expect(validationFieldMessages(new Error("内部异常"))).toEqual({});
+  });
+
+  it("普通用户提示不会暴露英文错误码或服务端技术原文", () => {
+    const error = new AuthApiError(new Response(null, { status: 503 }), {
+      success: false,
+      error: {
+        code: "IMAGE_CREDENTIAL_UNAVAILABLE",
+        message: "Provider API credential unavailable: IMAGE_KEY",
+        details: {},
+      },
+      request_id: "r-secret",
+    });
+
+    expect(userMessage(error)).toBe("当前服务暂不可用，请稍后重新尝试。");
+    expect(userMessage(new Error("Request timeout at worker queue"))).toBe(
+      "当前操作未能完成，请稍后重新尝试。",
+    );
+    expect(userMessage(new Error("请输入完整的网址后继续。"))).toBe("请输入完整的网址后继续。");
   });
 
   it("密码重置使用冻结的字段名", async () => {

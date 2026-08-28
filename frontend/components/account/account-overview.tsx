@@ -16,6 +16,13 @@ import {
 
 const { Text, Title } = Typography;
 
+const accountStatusLabels: Record<AccountUser["account_status"], string> = {
+  active: "正常使用",
+  frozen: "已暂停",
+  cancel_pending: "注销处理中",
+  cancelled: "已注销",
+};
+
 export function AccountOverview() {
   const [user, setUser] = useState<AccountUser | null>(null);
   const [notifications, setNotifications] = useState<AccountNotification[]>([]);
@@ -64,7 +71,7 @@ export function AccountOverview() {
           <Space wrap>
             <Text>{user.nickname}</Text>
             <Tag color={user.account_status === "active" ? "green" : "orange"}>
-              {user.account_status === "active" ? "正常" : "禁用"}
+              {accountStatusLabels[user.account_status]}
             </Tag>
           </Space>
         </Space>
@@ -105,7 +112,10 @@ export function AccountOverview() {
             )}
           />
         ) : (
-          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无通知" />
+          <Empty
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+            description="当前没有新通知。套餐或账号状态发生变化时，我们会在这里提醒你。"
+          />
         )}
       </Card>
     </section>

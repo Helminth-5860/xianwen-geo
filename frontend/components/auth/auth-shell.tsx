@@ -29,7 +29,7 @@ export function AuthShell({
         <Text className="auth-eyebrow">{eyebrow}</Text>
         <Title id="auth-title">{title}</Title>
         <Paragraph>{description}</Paragraph>
-        <Text type="secondary">{SITE_NAME} 使用 HttpOnly 会话保护登录状态。</Text>
+        <Text type="secondary">{SITE_NAME} 会安全保护你的登录信息。</Text>
       </section>
       <Card className="auth-card" bordered={false}>
         <Space direction="vertical" size={24} className="auth-card-content">

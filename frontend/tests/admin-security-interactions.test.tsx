@@ -159,7 +159,8 @@ describe("普通登录与 challenge 内存边界", () => {
     await user.type(screen.getByLabelText("手机号或账号"), "13900139000");
     await user.type(screen.getByLabelText("密码"), "Safe-password");
     await user.click(screen.getByRole("button", { name: /登\s*录/ }));
-    expect(await screen.findByText("请使用管理员登录入口")).toBeTruthy();
+    expect(await screen.findByText("管理员账号请从管理员登录入口登录。")).toBeTruthy();
+    expect(screen.queryByText("请使用管理员登录入口")).toBeNull();
     expect(screen.getByRole("link", { name: "前往管理员安全登录" }).getAttribute("href")).toBe(
       "/admin/login",
     );
@@ -238,22 +239,33 @@ describe("角色安全策略", () => {
   });
 
   it.each([
-    ["PERMISSION_DENIED", "没有权限执行此操作", 403],
-    ["SECURITY_POLICY_VERSION_CONFLICT", "安全策略已发生变化，请刷新后重试", 409],
-    ["RATE_LIMITED", "操作过于频繁，请稍后再试", 429],
-    ["SERVICE_TEMPORARILY_UNAVAILABLE", "服务暂时不可用，请稍后再试", 503],
-  ])("显示 %s 中文错误", async (code, message, status) => {
+    ["PERMISSION_DENIED", "没有权限执行此操作", 403, "你没有权限查看或操作这项内容。"],
+    [
+      "SECURITY_POLICY_VERSION_CONFLICT",
+      "安全策略已发生变化，请刷新后重试",
+      409,
+      "内容刚刚发生变化，请刷新后再操作。",
+    ],
+    ["RATE_LIMITED", "操作过于频繁，请稍后再试", 429, "当前访问人数较多，请稍后再试。"],
+    [
+      "SERVICE_TEMPORARILY_UNAVAILABLE",
+      "服务暂时不可用，请稍后再试",
+      503,
+      "当前服务暂不可用，请稍后重新尝试。",
+    ],
+  ])("显示 %s 中文错误", async (code, backendMessage, status, expectedMessage) => {
     mocks.getRoleSecurity.mockResolvedValue(roleSecurity);
     mocks.getRoleIpAllowlist.mockResolvedValue([]);
     mocks.updateRoleSecurity.mockRejectedValueOnce(
-      error(code as string, message as string, status as number),
+      error(code as string, backendMessage as string, status as number),
     );
     const user = userEvent.setup();
     render(<RoleSecurityPage />);
     await screen.findByText("角色安全与 Step-Up 策略");
     await user.type(screen.getByLabelText("当前超级管理员密码"), "Safe-password");
     await user.click(screen.getByRole("button", { name: /保存\s*安全\s*策略/ }));
-    expect(await screen.findByText(message as string)).toBeTruthy();
+    expect(await screen.findByText(expectedMessage as string)).toBeTruthy();
+    expect(screen.queryByText(backendMessage as string)).toBeNull();
   });
 });
 
@@ -294,17 +306,33 @@ describe("superuser 安全策略", () => {
   });
 
   it.each([
-    ["PERMISSION_DENIED", "普通管理员无权访问超级管理员安全策略", 403],
-    ["SECURITY_POLICY_VERSION_CONFLICT", "安全策略版本冲突", 409],
-    ["RATE_LIMITED", "操作过于频繁，请稍后再试", 429],
-    ["SERVICE_TEMPORARILY_UNAVAILABLE", "服务暂时不可用，请稍后再试", 503],
-  ])("显示 %s 中文错误", async (code, message, status) => {
+    [
+      "PERMISSION_DENIED",
+      "普通管理员无权访问超级管理员安全策略",
+      403,
+      "你没有权限查看或操作这项内容。",
+    ],
+    [
+      "SECURITY_POLICY_VERSION_CONFLICT",
+      "安全策略版本冲突",
+      409,
+      "内容刚刚发生变化，请刷新后再操作。",
+    ],
+    ["RATE_LIMITED", "操作过于频繁，请稍后再试", 429, "当前访问人数较多，请稍后再试。"],
+    [
+      "SERVICE_TEMPORARILY_UNAVAILABLE",
+      "服务暂时不可用，请稍后再试",
+      503,
+      "当前服务暂不可用，请稍后重新尝试。",
+    ],
+  ])("显示 %s 中文错误", async (code, backendMessage, status, expectedMessage) => {
     mocks.getSuperuserSecurity.mockRejectedValueOnce(
-      error(code as string, message as string, status as number),
+      error(code as string, backendMessage as string, status as number),
     );
     mocks.getSuperuserIpAllowlist.mockResolvedValue([]);
     render(<SuperuserSecurityPage />);
-    expect(await screen.findByText(message as string)).toBeTruthy();
+    expect(await screen.findByText(expectedMessage as string)).toBeTruthy();
+    expect(screen.queryByText(backendMessage as string)).toBeNull();
   });
 });
 
@@ -323,21 +351,32 @@ describe("force logout", () => {
   });
 
   it.each([
-    ["PERMISSION_DENIED", "没有权限强制退出", 403],
-    ["SECURITY_POLICY_VERSION_CONFLICT", "管理员状态已变化", 409],
-    ["RATE_LIMITED", "操作过于频繁，请稍后再试", 429],
-    ["SERVICE_TEMPORARILY_UNAVAILABLE", "服务暂时不可用，请稍后再试", 503],
-  ])("显示 %s 中文错误", async (code, message, status) => {
+    ["PERMISSION_DENIED", "没有权限强制退出", 403, "你没有权限查看或操作这项内容。"],
+    [
+      "SECURITY_POLICY_VERSION_CONFLICT",
+      "管理员状态已变化",
+      409,
+      "内容刚刚发生变化，请刷新后再操作。",
+    ],
+    ["RATE_LIMITED", "操作过于频繁，请稍后再试", 429, "当前访问人数较多，请稍后再试。"],
+    [
+      "SERVICE_TEMPORARILY_UNAVAILABLE",
+      "服务暂时不可用，请稍后再试",
+      503,
+      "当前服务暂不可用，请稍后重新尝试。",
+    ],
+  ])("显示 %s 中文错误", async (code, backendMessage, status, expectedMessage) => {
     mocks.getAdmin.mockResolvedValue(profile);
     mocks.getRoles.mockResolvedValue({ results: [], count: 0, next: null, previous: null });
     mocks.forceLogoutAdmin.mockRejectedValueOnce(
-      error(code as string, message as string, status as number),
+      error(code as string, backendMessage as string, status as number),
     );
     const user = userEvent.setup();
     render(<AdminDetailPage />);
     await screen.findByText(/超级管理员/);
     await user.click(screen.getByRole("button", { name: "强制退出全部设备" }));
     await user.click(await screen.findByRole("button", { name: "确认执行" }));
-    expect(await screen.findByText(message as string)).toBeTruthy();
+    expect(await screen.findByText(expectedMessage as string)).toBeTruthy();
+    expect(screen.queryByText(backendMessage as string)).toBeNull();
   });
 });

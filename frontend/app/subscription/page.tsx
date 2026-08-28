@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { userMessage } from "@/lib/auth-client";
 import { SubscriptionChangeHistory } from "@/components/subscription-change-history";
 import { getCurrentSubscription, type Subscription } from "@/lib/plans-client";
+import { SUBSCRIPTION_STATUS_LABELS } from "@/lib/product-copy";
 
 export default function CurrentSubscriptionPage() {
   const [current, setCurrent] = useState<Subscription | null | undefined>();
@@ -16,25 +17,33 @@ export default function CurrentSubscriptionPage() {
       .catch((value) => setError(userMessage(value)));
   }, []);
   if (error) return <Alert type="error" showIcon message={error} />;
-  if (current === undefined) return <Spin description="正在加载当前订阅" />;
+  if (current === undefined) return <Spin description="正在加载当前套餐" />;
   return (
     <main className="auth-page">
-      <Typography.Title>我的订阅</Typography.Title>
+      <Typography.Title>我的套餐</Typography.Title>
       {!current ? (
-        <Alert type="info" showIcon message="当前尚未开通套餐" />
+        <Alert
+          type="info"
+          showIcon
+          message="当前尚未开通套餐"
+          description="选择适合的套餐后，即可使用对应的关键词、检测和内容生成能力。"
+        />
       ) : (
         <Card>
           <Descriptions column={1}>
             <Descriptions.Item label="套餐">{current.plan_name}</Descriptions.Item>
-            <Descriptions.Item label="版本">第 {current.plan_version_no} 版</Descriptions.Item>
             <Descriptions.Item label="类型">
               {current.is_trial ? "试用套餐" : "正式套餐"}
             </Descriptions.Item>
             <Descriptions.Item label="状态">
-              <Tag>{current.status}</Tag>
+              <Tag>{SUBSCRIPTION_STATUS_LABELS[current.status]}</Tag>
             </Descriptions.Item>
-            <Descriptions.Item label="开始时间">{current.starts_at}</Descriptions.Item>
-            <Descriptions.Item label="结束时间">{current.ends_at}</Descriptions.Item>
+            <Descriptions.Item label="生效时间">
+              {new Date(current.starts_at).toLocaleString("zh-CN")}
+            </Descriptions.Item>
+            <Descriptions.Item label="有效期至">
+              {new Date(current.ends_at).toLocaleString("zh-CN")}
+            </Descriptions.Item>
           </Descriptions>
         </Card>
       )}

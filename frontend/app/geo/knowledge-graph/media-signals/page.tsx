@@ -73,7 +73,7 @@ export default function MediaSignalsDirectoryPage() {
 
       <section className={styles.header}>
         <div>
-          <Text type="secondary">KNOWLEDGE GRAPH</Text>
+          <Text type="secondary">知识图谱建设</Text>
           <Title level={2}>媒体信号建设</Title>
           <Text type="secondary">全网自媒体与官方媒体资源目录</Text>
         </div>
@@ -130,7 +130,10 @@ export default function MediaSignalsDirectoryPage() {
         </section>
       ) : (
         <section className={styles.emptyState} aria-live="polite">
-          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="未找到匹配的媒体" />
+          <Empty
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+            description="未找到匹配的媒体，请更换名称或域名后再试"
+          />
         </section>
       )}
 

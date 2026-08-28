@@ -1,4 +1,9 @@
 import { publicEnvironment } from "./env";
+import {
+  safeLocalProductMessage,
+  userFacingApiError,
+  userFacingValidationMessage,
+} from "./product-copy";
 
 export type AccountUser = Readonly<{
   id: string;
@@ -41,7 +46,7 @@ export class AuthApiError extends Error {
   readonly requestId: string;
 
   constructor(response: Response, payload: ErrorEnvelope) {
-    super(payload.error.message || "请求失败，请稍后再试");
+    super(userFacingApiError({ code: payload.error.code, status: response.status }));
     this.name = "AuthApiError";
     this.code = payload.error.code;
     this.status = response.status;
@@ -63,9 +68,9 @@ export function validationFieldMessages(error: unknown): Record<string, string[]
   return Object.fromEntries(
     Object.entries(fields).flatMap(([field, issues]) => {
       const messages = (Array.isArray(issues) ? issues : [issues]).flatMap((issue) => {
-        if (!isRecord(issue) || typeof issue.message !== "string") return [];
-        const message = issue.message.trim();
-        return message ? [message] : [];
+        if (!isRecord(issue)) return [];
+        const issueCode = typeof issue.code === "string" ? issue.code : undefined;
+        return [userFacingValidationMessage(field, issueCode)];
       });
       return messages.length ? [[field, messages]] : [];
     }),
@@ -99,13 +104,13 @@ export async function readEnvelope<T>(response: Response): Promise<T> {
   try {
     payload = (await response.json()) as SuccessEnvelope<T> | ErrorEnvelope;
   } catch {
-    throw new Error("服务响应格式不正确，请稍后再试");
+    throw new Error("当前服务暂不可用，请稍后重新尝试。");
   }
   if (!response.ok || !payload.success) {
     if (!payload.success) {
       throw new AuthApiError(response, payload);
     }
-    throw new Error("请求失败，请稍后再试");
+    throw new Error("当前操作未能完成，请稍后重新尝试。");
   }
   return payload.data;
 }
@@ -337,8 +342,9 @@ export function setAdminUserTestAccount(userId: string, enabled: boolean, curren
 }
 
 export function userMessage(error: unknown): string {
-  if (error instanceof AuthApiError || error instanceof Error) {
-    return error.message;
+  if (error instanceof AuthApiError) {
+    return userFacingApiError({ code: error.code, status: error.status });
   }
-  return "请求失败，请稍后再试";
+  if (error instanceof Error) return safeLocalProductMessage(error.message);
+  return "当前操作未能完成，请稍后重新尝试。";
 }

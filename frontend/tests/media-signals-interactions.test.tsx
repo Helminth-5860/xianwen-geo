@@ -99,7 +99,7 @@ describe("媒体信号建设目录", () => {
   it("搜索无结果时给出空状态", async () => {
     render(<MediaSignalsDirectoryPage />);
     await userEvent.type(screen.getByLabelText("搜索媒体名称或域名"), "不存在的媒体域名");
-    expect(screen.getByText("未找到匹配的媒体")).toBeTruthy();
+    expect(screen.getByText("未找到匹配的媒体，请更换名称或域名后再试")).toBeTruthy();
     expect(screen.queryByLabelText("媒体目录分页")).toBeNull();
   });
 });

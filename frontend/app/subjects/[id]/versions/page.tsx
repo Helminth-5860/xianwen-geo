@@ -28,25 +28,25 @@ export default function SubjectVersionsPage() {
   }, [params.id]);
 
   if (!versions && !error) {
-    return <Spin fullscreen description={"\u6b63\u5728\u52a0\u8f7d\u6b63\u5f0f\u7248\u672c"} />;
+    return <Spin fullscreen description="正在加载资料更新记录" />;
   }
 
   return (
     <main className="page-shell">
       <Link href={`/subjects/${params.id}`}>{"\u8fd4\u56de\u4e3b\u4f53\u8be6\u60c5"}</Link>
-      <Typography.Title>{"\u6b63\u5f0f\u7248\u672c\u5386\u53f2"}</Typography.Title>
+      <Typography.Title>资料更新记录</Typography.Title>
       {error && <Alert type="error" showIcon message={error} />}
       {versions && (
         <Card>
           <List
-            locale={{ emptyText: "\u5c1a\u65e0\u6b63\u5f0f\u7248\u672c" }}
+            locale={{ emptyText: "暂无更新记录，保存主体资料后会显示在这里" }}
             dataSource={versions}
             renderItem={(version) => (
               <List.Item>
                 <List.Item.Meta
                   title={
                     <Link href={`/subjects/${params.id}/versions/${version.id}`}>
-                      {`v${version.version_no} \u00b7 ${version.official_name}`}
+                      {`第 ${version.version_no} 次保存 · ${version.official_name}`}
                     </Link>
                   }
                   description={new Date(version.created_at).toLocaleString("zh-CN")}

@@ -195,7 +195,7 @@ describe("GEO insight page responsibility split", () => {
     render(<GeoReportHistoryPage />);
 
     expect(await screen.findByText("两份报告不可正式比较")).toBeTruthy();
-    expect(screen.getByText(/检测问题集合不同；评分规则版本不同/)).toBeTruthy();
+    expect(screen.getByText(/检测问题集合不同；评分口径不同/)).toBeTruthy();
     expect(screen.queryByText("涨跌 +2.0000")).toBeNull();
   });
 

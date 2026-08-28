@@ -99,14 +99,14 @@ export function PublicationCheckWorkspace({ subjectId }: Props) {
     if (!articleId || !url.trim()) return;
     const channelId = inferredChannelId(url.trim(), channels);
     if (!channelId) {
-      setError("发布渠道配置暂不可用，请稍后重试。");
+      setError("暂时无法识别该链接所属平台，请检查链接或稍后重试。");
       return;
     }
     try {
       const parsed = new URL(url.trim());
       if (!["http:", "https:"].includes(parsed.protocol)) throw new Error();
     } catch {
-      setError("请输入完整的公开文章链接，例如 https://example.com/article。");
+      setError("请输入可公开访问的完整文章链接。");
       return;
     }
     setChecking(true);
@@ -152,6 +152,15 @@ export function PublicationCheckWorkspace({ subjectId }: Props) {
                     showIcon
                     title="当前主体还没有可用于比对的已生成文章"
                     description="请先在文章生成页面完成正文生成，再回来检测公开链接。"
+                    action={
+                      <Button
+                        size="small"
+                        type="primary"
+                        href={`/subjects/${subjectId}/articles/new`}
+                      >
+                        去生成文章
+                      </Button>
+                    }
                   />
                 ) : (
                   <Select
@@ -168,7 +177,7 @@ export function PublicationCheckWorkspace({ subjectId }: Props) {
                 <Input
                   aria-label="公开文章链接"
                   value={url}
-                  placeholder="粘贴公开文章链接，例如 https://..."
+                  placeholder="粘贴公开文章链接"
                   onChange={(event) => setUrl(event.target.value)}
                   onPressEnter={() => void submit()}
                 />
@@ -193,7 +202,7 @@ export function PublicationCheckWorkspace({ subjectId }: Props) {
             <Card title="最近检测记录">
               <List
                 dataSource={checks}
-                locale={{ emptyText: "暂无检测记录" }}
+                locale={{ emptyText: "还没有发布检测记录，粘贴公开文章链接即可开始检测。" }}
                 renderItem={(item) => (
                   <List.Item
                     actions={[

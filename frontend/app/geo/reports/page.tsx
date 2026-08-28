@@ -59,7 +59,7 @@ export default function GeoReportsIndexPage() {
     <main className="geo-dashboard">
       <section className="geo-dashboard__header">
         <div>
-          <Text type="secondary">GEO REPORT</Text>
+          <Text type="secondary">GEO 报告</Text>
           <Title level={2}>GEO 检测报告</Title>
           <Paragraph type="secondary">
             检测报告按单次检测独立展示，不混入历史对比或曝光洞察。
@@ -79,7 +79,7 @@ export default function GeoReportsIndexPage() {
         <Card>
           <Empty description="请先创建并选择当前主体">
             <Button type="primary" href="/subjects">
-              进入主体与知识
+              进入主体档案
             </Button>
           </Empty>
         </Card>

@@ -1,6 +1,6 @@
 "use client";
 
-import { Alert, Card, Empty, Space, Typography } from "antd";
+import { Alert, Button, Card, Empty, Space, Typography } from "antd";
 
 type Props = Readonly<{ subjectId: string }>;
 
@@ -10,16 +10,20 @@ export function VideoLibraryWorkspace({ subjectId }: Props) {
       <Space orientation="vertical" size="large" style={{ width: "100%" }}>
         <div>
           <Typography.Title level={2}>视频库</Typography.Title>
-          <Typography.Text type="secondary">查看当前主体的视频和视频脚本资产</Typography.Text>
+          <Typography.Text type="secondary">查看当前主体的视频内容和脚本</Typography.Text>
         </div>
         <Alert
           type="info"
           showIcon
-          title="视频资产能力尚未接入"
-          description="当前系统没有可复用的视频或视频脚本数据接口。页面不会展示示例数据；后端能力接入后，资产将在这里按当前主体隔离展示。"
+          title="如何开始"
+          description="前往视频脚本生成页创建内容，完成后可复制或保存使用。"
         />
         <Card>
-          <Empty description="当前主体暂无视频或视频脚本资产" />
+          <Empty description="当前主体还没有视频内容，可先生成视频脚本开始创作。">
+            <Button type="primary" href={`/subjects/${subjectId}/video-scripts/new`}>
+              生成视频脚本
+            </Button>
+          </Empty>
         </Card>
       </Space>
     </main>

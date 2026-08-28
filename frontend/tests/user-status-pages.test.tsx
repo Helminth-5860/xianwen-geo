@@ -30,8 +30,8 @@ describe("用户与账号状态页面", () => {
       "utf8",
     );
     expect(source).toContain("account_status");
-    expect(source).toContain("正常");
-    expect(source).toContain("禁用");
+    expect(source).toContain("正常使用");
+    expect(source).toContain("已暂停");
     expect(source).not.toContain("approval_status");
     expect(source).toContain("站内通知");
     expect(source).toContain("markNotificationRead");

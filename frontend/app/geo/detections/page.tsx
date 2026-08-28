@@ -28,6 +28,15 @@ import {
 
 const { Paragraph, Text, Title } = Typography;
 
+const detectionStatusLabels: Readonly<Record<GeoDetectionJob["status"], string>> = {
+  queued: "等待检测",
+  running: "检测中",
+  partial: "部分完成",
+  succeeded: "已完成",
+  failed: "未完成",
+  cancelled: "已取消",
+};
+
 export default function GeoDetectionIndexPage() {
   const router = useRouter();
   const { currentSubject: subject, loading: subjectLoading } = useSubjectWorkspace();
@@ -169,7 +178,7 @@ export default function GeoDetectionIndexPage() {
     <main className="geo-dashboard">
       <section className="geo-dashboard__header">
         <div>
-          <Text type="secondary">GEO DETECTION</Text>
+          <Text type="secondary">GEO 检测</Text>
           <Title level={2}>AI 可见度检测</Title>
           <Paragraph type="secondary">
             用正式问题库在已配置的 AI 模型上执行真实检测，建立品牌在生成式搜索中的可见度基线。
@@ -184,7 +193,7 @@ export default function GeoDetectionIndexPage() {
         <Card>
           <Empty description="请先创建并选择当前主体">
             <Button type="primary" href="/subjects">
-              进入主体与知识
+              进入主体档案
             </Button>
           </Empty>
         </Card>
@@ -196,7 +205,7 @@ export default function GeoDetectionIndexPage() {
               <Title level={3}>{subject.official_name || subject.subject_type.name}</Title>
             </div>
             <Space wrap>
-              {questionBank && <Tag color="blue">问题库 v{questionBank.version_no}</Tag>}
+              {questionBank && <Tag color="blue">问题库已就绪</Tag>}
               {options && <Tag>检测点余额 {options.available_detection_points}</Tag>}
             </Space>
           </section>
@@ -312,8 +321,8 @@ export default function GeoDetectionIndexPage() {
                       message={estimate.can_submit ? "检测条件已满足" : "当前条件无法提交"}
                       description={
                         estimate.can_submit
-                          ? `将执行 ${estimate.question_count} × ${estimate.model_count} 个检测调用。`
-                          : "请检查检测点余额或当前并发任务数量。"
+                          ? `将进行 ${estimate.question_count} × ${estimate.model_count} 次检测。`
+                          : "请检查检测点余额，或等待正在进行的检测结束。"
                       }
                     />
                   )}
@@ -345,7 +354,7 @@ export default function GeoDetectionIndexPage() {
 
               <Card title="最近检测">
                 {history.length === 0 ? (
-                  <Text type="secondary">暂无检测记录。</Text>
+                  <Text type="secondary">还没有检测记录，选择问题并完成检测后会显示在这里。</Text>
                 ) : (
                   <Space direction="vertical" size="small" style={{ width: "100%" }}>
                     {history.slice(0, 6).map((job) => (
@@ -357,7 +366,7 @@ export default function GeoDetectionIndexPage() {
                             ) : (
                               <ClockCircleOutlined />
                             )}
-                            <Text strong>{job.status}</Text>
+                            <Text strong>{detectionStatusLabels[job.status]}</Text>
                             <Tag>{job.planned_detection_points} 检测点</Tag>
                           </Space>
                           <Text type="secondary">

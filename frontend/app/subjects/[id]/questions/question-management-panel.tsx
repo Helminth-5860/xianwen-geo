@@ -131,7 +131,7 @@ export default function QuestionManagementPanel({ subjectId }: Readonly<{ subjec
         {version ? (
           <>
             <Space wrap>
-              <Tag color="green">正式版本 v{version.version_no}</Tag>
+              <Tag color="green">当前正式问题库</Tag>
               <Tag>问题数量 {version.item_count}</Tag>
               <Button href="/geo/detections" type="primary">
                 去主体检测
@@ -151,7 +151,7 @@ export default function QuestionManagementPanel({ subjectId }: Readonly<{ subjec
               <Typography.Text type="secondary">已选择 {selectedIds.size} 条</Typography.Text>
               <Popconfirm
                 title="确认删除所选问题？"
-                description="系统会生成不包含这些问题的新正式版本，历史检测记录不会被删除。"
+                description="系统会更新正式问题库，历史检测记录不会被删除。"
                 okText="确认删除"
                 cancelText="取消"
                 okButtonProps={{ danger: true, loading: removing }}
@@ -166,7 +166,7 @@ export default function QuestionManagementPanel({ subjectId }: Readonly<{ subjec
               <Card key={item.id} size="small">
                 <Space align="start" size="middle" style={{ width: "100%" }}>
                   <Checkbox
-                    aria-label={`选择问题-${item.id}`}
+                    aria-label={`选择问题：${item.text}`}
                     checked={selectedIds.has(item.id)}
                     disabled={removing}
                     onChange={(event) => toggleQuestion(item.id, event.target.checked)}

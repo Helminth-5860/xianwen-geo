@@ -18,6 +18,7 @@ import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { userMessage } from "@/lib/auth-client";
+import { aiModelDisplayName } from "@/lib/product-copy";
 import {
   getDetectionJob,
   getDetectionModelProgress,
@@ -37,11 +38,11 @@ const DETECTION_MAX_RETRY_INTERVAL_MS = 12000;
 const CLOCK_REFRESH_INTERVAL_MS = 5000;
 
 const statusPresentation: Record<DetectionStatus, { label: string; color: string }> = {
-  queued: { label: "排队中", color: "default" },
+  queued: { label: "等待检测", color: "default" },
   running: { label: "检测中", color: "processing" },
   partial: { label: "部分完成", color: "warning" },
   succeeded: { label: "已完成", color: "success" },
-  failed: { label: "失败", color: "error" },
+  failed: { label: "未完成", color: "error" },
   cancelled: { label: "已取消", color: "default" },
 };
 
@@ -72,7 +73,7 @@ function formatRefreshTime(timestamp: number) {
 
 function requestErrorMessage(reason: unknown, timedOut: boolean) {
   if (timedOut || (reason instanceof Error && reason.name === "AbortError")) {
-    return "请求超时，系统正在自动重试";
+    return "数据更新时间较长，系统会自动再次尝试。";
   }
   return userMessage(reason);
 }
@@ -217,9 +218,9 @@ export default function DetectionProgressPage() {
         <Alert
           type="error"
           showIcon
-          title={job ? "检测进度刷新失败，系统会自动重试" : "检测进度加载失败"}
+          title={job ? "检测进度暂未更新，系统会自动再次尝试" : "暂时无法查看检测进度"}
           description={error}
-          action={<Button onClick={retryNow}>立即重试</Button>}
+          action={<Button onClick={retryNow}>重新查看</Button>}
         />
       )}
       {job && (
@@ -229,7 +230,7 @@ export default function DetectionProgressPage() {
             <StatusTag status={job.status} />
             {lastSuccessfulRefreshAt && (
               <Typography.Text type="secondary">
-                最后刷新：{formatRefreshTime(lastSuccessfulRefreshAt)}
+                最近更新：{formatRefreshTime(lastSuccessfulRefreshAt)}
               </Typography.Text>
             )}
           </Space>
@@ -237,9 +238,9 @@ export default function DetectionProgressPage() {
             <Alert
               type="info"
               showIcon
-              title={`当前排队位置：${job.queue_position}`}
+              title={`当前等待顺序：${job.queue_position}`}
               description={
-                queueElapsed === undefined ? undefined : `已排队 ${formatElapsed(queueElapsed)}`
+                queueElapsed === undefined ? undefined : `已等待 ${formatElapsed(queueElapsed)}`
               }
             />
           )}
@@ -249,15 +250,15 @@ export default function DetectionProgressPage() {
               <Alert
                 type="warning"
                 showIcon
-                title="任务长时间未被执行器领取"
-                description="系统仍在自动检查并重试；如果状态持续不变，可能是检测执行服务暂时繁忙或异常。"
+                title="检测等待时间较长"
+                description="系统仍在自动检查；检测服务繁忙时可能需要多等一会儿。"
               />
             )}
           {job.status === "failed" && (
-            <Alert type="error" showIcon title="检测未能完成，失败调用已释放检测点" />
+            <Alert type="error" showIcon title="检测未能完成，未完成部分的检测点已退还" />
           )}
           {job.status === "partial" && (
-            <Alert type="warning" showIcon title="部分模型调用未成功，已按实际成功数量结算" />
+            <Alert type="warning" showIcon title="部分模型检测未成功，已按实际完成数量结算" />
           )}
           {job.status === "cancelled" && (
             <Alert type="warning" showIcon title="检测已取消，未消耗的检测点已释放" />
@@ -269,11 +270,11 @@ export default function DetectionProgressPage() {
               status={job.status === "failed" ? "exception" : undefined}
             />
             <Typography.Text type="secondary">
-              已终结 {job.completed_calls} / {job.planned_detection_points} 次模型调用
+              已完成 {job.completed_calls} / {job.planned_detection_points} 项检测
             </Typography.Text>
           </Card>
 
-          <Card title={`模型执行状态（共 ${job.planned_model_count} 个）`}>
+          <Card title={`各模型检测进度（共 ${job.planned_model_count} 个）`}>
             {modelsError && (
               <Alert
                 type="warning"
@@ -281,7 +282,7 @@ export default function DetectionProgressPage() {
                 title={
                   terminalDetectionStatuses.has(job.status)
                     ? "模型明细暂时未更新"
-                    : "模型明细暂时未更新，系统会自动重试"
+                    : "模型明细暂时未更新，系统会自动再次尝试"
                 }
                 description={modelsError}
                 action={
@@ -297,7 +298,7 @@ export default function DetectionProgressPage() {
                 <Col xs={24} md={12} xl={6} key={model.model_id}>
                   <Card
                     size="small"
-                    title={model.model_key}
+                    title={aiModelDisplayName(model.model_key)}
                     extra={<StatusTag status={model.status} />}
                   >
                     <Progress
@@ -306,7 +307,7 @@ export default function DetectionProgressPage() {
                       status={model.status === "failed" ? "exception" : undefined}
                     />
                     <Typography.Paragraph type="secondary" style={{ marginBottom: 4 }}>
-                      调用进度：{model.completed_calls} / {model.planned_calls}
+                      检测进度：{model.completed_calls} / {model.planned_calls}
                     </Typography.Paragraph>
                     <Typography.Text type="secondary">
                       成功 {model.successful_calls} · 失败 {model.failed_calls} · 取消{" "}
@@ -321,7 +322,7 @@ export default function DetectionProgressPage() {
           <Card title="检测点结算" extra={<Tag>{settlementLabels[job.quota.status]}</Tag>}>
             <Row gutter={16}>
               <Col xs={24} sm={8}>
-                <Statistic title="计划／冻结" value={job.quota.held} suffix="点" />
+                <Statistic title="预计／预留" value={job.quota.held} suffix="点" />
               </Col>
               <Col xs={24} sm={8}>
                 <Statistic title="实际扣除" value={job.quota.consumed} suffix="点" />

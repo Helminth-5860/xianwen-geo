@@ -302,7 +302,8 @@ describe("主体类型与动态字段真实交互", () => {
     renderWithCapabilities(<AdminSubjectTypeDetailPage />);
     const required = await screen.findAllByRole("checkbox", { name: "必填" });
     await userEvent.click(required[1]);
-    expect(await screen.findByText("Schema 已更新，请刷新后重试")).toBeTruthy();
+    expect(await screen.findByText("当前操作未能完成，请稍后重新尝试。")).toBeTruthy();
+    expect(screen.queryByText("Schema 已更新，请刷新后重试")).toBeNull();
     expect(localStorage.length).toBe(0);
     expect(sessionStorage.length).toBe(0);
     expect(consoleSpy.mock.calls.flat().join(" ")).not.toContain("13900139000");

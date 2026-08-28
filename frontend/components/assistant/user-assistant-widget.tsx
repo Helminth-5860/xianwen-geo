@@ -26,23 +26,23 @@ function guideForPath(pathname: string, subjectId: string | null): PageGuide {
     return {
       label: "关键词中心",
       description: "这里用于整理与主体相关的关键词，为后续生成问题库提供基础。",
-      next: "关键词准备好后，下一步进入问题库生成用户可能向 AI 提出的真实问题。",
+      next: "关键词准备好后，下一步进入问题库生成用户可能向人工智能提出的真实问题。",
       nextHref: subjectId ? `/subjects/${subjectId}/questions` : "/subjects",
     };
   }
   if (pathname.includes("/questions")) {
     return {
       label: "问题库",
-      description: "这里用于生成和管理用户可能向 AI 提出的真实问题。",
-      next: "问题准备好后，就可以进入 AI 可见度检测。",
+      description: "这里用于生成和管理用户可能向人工智能提出的真实问题。",
+      next: "问题准备好后，就可以进入人工智能可见度检测。",
       nextHref: "/geo/detections",
     };
   }
   if (pathname.includes("/articles")) {
     return {
-      label: "内容执行",
-      description: "这里用于根据 GEO 优化策略生成和管理内容。",
-      next: "内容优化完成后，可以进入复测验证查看前后变化。",
+      label: "文章与内容库",
+      description: "这里可以生成、编辑和保存文章，也可以查看已经保存的内容。",
+      next: "完成内容优化后，可以进入复测验证查看前后变化。",
       nextHref: "/geo/retest",
     };
   }
@@ -56,17 +56,17 @@ function guideForPath(pathname: string, subjectId: string | null): PageGuide {
   }
   if (pathname.startsWith("/geo/detections")) {
     return {
-      label: "AI 可见度检测",
-      description: "这里用于检测问题在不同 AI 模型中的曝光、提及和引用情况。",
+      label: "人工智能可见度检测",
+      description: "这里用于检测问题在不同人工智能平台中的曝光、提及和引用情况。",
       next: "检测完成后，进入 GEO 报告与洞察查看结果。",
       nextHref: "/geo/reports",
     };
   }
   if (pathname.startsWith("/geo/strategy") || pathname.includes("/strategy")) {
     return {
-      label: "优化策略",
+      label: "优化方案",
       description: "这里用于根据检测和报告结果整理 GEO 优化方向。",
-      next: "策略确认后，可以进入内容执行落实优化动作。",
+      next: "优化方案确认后，可以进入文章生成、图片生成或视频脚本生成开始优化。",
       nextHref: subjectId ? `/subjects/${subjectId}/articles/new` : "/subjects",
     };
   }
@@ -82,7 +82,7 @@ function guideForPath(pathname: string, subjectId: string | null): PageGuide {
     return {
       label: "GEO 报告与洞察",
       description: "这里用于查看检测结果、品牌表现和需要优先处理的问题。",
-      next: "看完报告后，下一步进入优化策略。",
+      next: "看完报告后，下一步进入优化方案。",
       nextHref: "/geo/strategy",
     };
   }
@@ -106,7 +106,7 @@ function localReply(question: string, guide: PageGuide): string {
   if (/下一步|接下来|然后/.test(question)) return `你现在在「${guide.label}」。${guide.next}`;
   if (/怎么|如何|干嘛|作用|功能/.test(question)) return guide.description;
   if (/为什么|不能|失败|不行|问题/.test(question)) {
-    return `先检查「${guide.label}」所需的前置步骤是否已经完成。${guide.next}`;
+    return `先确认「${guide.label}」之前的准备是否已经完成。${guide.next}`;
   }
   return `你现在在「${guide.label}」。${guide.description} ${guide.next}`;
 }
@@ -142,23 +142,23 @@ export function UserAssistantWidget() {
   return (
     <div className="xw-assistant" aria-live="polite">
       {open && (
-        <section className="xw-assistant__panel" aria-label="显问 AI 助手">
+        <section className="xw-assistant__panel" aria-label="显问智能助手">
           <header className="xw-assistant__header">
             <div className="xw-assistant__identity">
               <img
                 className="xw-assistant__brand-logo"
                 src={officialXianwenLogoDataUrl}
-                alt="显问 AI"
+                alt="显问智能助手"
               />
               <div>
-                <Typography.Text strong>显问 AI 助手</Typography.Text>
+                <Typography.Text strong>显问智能助手</Typography.Text>
                 <Typography.Text type="secondary">当前：{guide.label}</Typography.Text>
               </div>
             </div>
             <Button
               type="text"
               shape="circle"
-              aria-label="收起显问 AI 助手"
+              aria-label="收起显问智能助手"
               icon={<CloseOutlined />}
               onClick={() => setOpen(false)}
             />
@@ -175,9 +175,15 @@ export function UserAssistantWidget() {
             ))}
 
             <div className="xw-assistant__suggestions">
-              <Button size="small" onClick={() => ask("我下一步该做什么？")}>下一步该做什么？</Button>
-              <Button size="small" onClick={() => ask("这个功能怎么用？")}>这个功能怎么用？</Button>
-              <Button size="small" onClick={() => ask("为什么现在不能继续？")}>为什么不能继续？</Button>
+              <Button size="small" onClick={() => ask("我下一步该做什么？")}>
+                下一步该做什么？
+              </Button>
+              <Button size="small" onClick={() => ask("这个功能怎么用？")}>
+                这个功能怎么用？
+              </Button>
+              <Button size="small" onClick={() => ask("为什么现在不能继续？")}>
+                为什么不能继续？
+              </Button>
             </div>
 
             <Button className="xw-assistant__next" href={guide.nextHref} type="link">
@@ -213,7 +219,7 @@ export function UserAssistantWidget() {
       <Button
         className={`xw-assistant__launcher${open ? " xw-assistant__launcher--open" : ""}`}
         shape="circle"
-        aria-label={open ? "显问 AI 助手已展开" : "打开显问 AI 助手"}
+        aria-label={open ? "显问智能助手已展开" : "打开显问智能助手"}
         onClick={() => setOpen((value) => !value)}
       >
         <span className="xw-assistant__launcher-crop" aria-hidden="true">

@@ -68,7 +68,7 @@ function PlatformLogo({ name, url }: { name: string; url: string }) {
     <img
       className={styles.logoImage}
       src={sources[sourceIndex]}
-      alt={`${name} Logo`}
+      alt={`${name} 标志`}
       loading="lazy"
       referrerPolicy="no-referrer"
       onError={() => setSourceIndex((value) => value + 1)}
@@ -87,7 +87,7 @@ export default function SubjectEntityDirectoryPage() {
     <main className={styles.page}>
       <section className={styles.header}>
         <div>
-          <Text type="secondary">KNOWLEDGE GRAPH</Text>
+          <Text type="secondary">知识图谱建设</Text>
           <Title level={2}>主体实体建设</Title>
           <Text type="secondary">企业信息查询与企业名录平台</Text>
         </div>

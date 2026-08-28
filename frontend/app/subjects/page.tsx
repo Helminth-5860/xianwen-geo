@@ -116,7 +116,7 @@ export default function SubjectsPage() {
   }
 
   if (subjects?.length === 0 && !error) {
-    return <Spin fullscreen description="正在进入主体创建" />;
+    return <Spin fullscreen description="正在进入创建主体页面" />;
   }
 
   return (
@@ -140,7 +140,7 @@ export default function SubjectsPage() {
         rowKey="id"
         dataSource={subjects ?? []}
         pagination={false}
-        locale={{ emptyText: "暂无主体档案" }}
+        locale={{ emptyText: "还没有主体档案，请点击上方“显问 AI 助手”创建" }}
         columns={[
           {
             title: "主体名称",
@@ -197,7 +197,7 @@ export default function SubjectsPage() {
                   description={
                     item.is_current
                       ? "删除后会自动切换到其他可用主体；如无其他主体，将清空当前主体。"
-                      : "删除后将从主体管理中移除；已有任务和报告会安全保留。"
+                      : "删除后将从主体管理中移除，相关历史报告仍会保留。"
                   }
                   okText="确认删除"
                   cancelText="取消"

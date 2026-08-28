@@ -26,10 +26,10 @@ describe("认证页面", () => {
     expect(html).toContain("立即注册");
   });
 
-  it("忘记密码页说明旧会话失效", () => {
+  it("忘记密码页说明其他设备需要重新登录", () => {
     const html = renderToStaticMarkup(<ForgotPasswordPage />);
     expect(html).toContain("重置登录密码");
-    expect(html).toContain("所有旧登录会话都会失效");
+    expect(html).toContain("重置完成后，其他设备需要使用新密码重新登录");
     expect(html).toContain("确认新密码");
   });
 });

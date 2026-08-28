@@ -83,7 +83,7 @@ export default function GeoExposurePage() {
     <main className="geo-dashboard">
       <section className="geo-dashboard__header">
         <div>
-          <Text type="secondary">AI EXPOSURE</Text>
+          <Text type="secondary">曝光指数</Text>
           <Title level={2}>曝光指数</Title>
           <Paragraph type="secondary">
             独立查看单份检测报告的曝光潜力、提及、推荐、排名与模型覆盖表现。
@@ -99,7 +99,7 @@ export default function GeoExposurePage() {
         <Card>
           <Empty description="请先创建并选择当前主体">
             <Button type="primary" href="/subjects">
-              进入主体与知识
+              进入主体档案
             </Button>
           </Empty>
         </Card>

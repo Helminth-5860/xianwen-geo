@@ -172,11 +172,14 @@ afterEach(cleanup);
 describe("问题生成与问题管理", () => {
   it("将问题生成错误码统一转换为中文用户提示", () => {
     const cases = [
-      ["QUESTION_GENERATION_PROVIDER_UNAVAILABLE", "问题生成服务暂未启用，请联系管理员配置后再试"],
-      ["QUESTION_GENERATION_INVALID_RESPONSE", "AI 返回格式异常，请重新生成。"],
-      ["QUESTION_GENERATION_PROVIDER_ERROR", "问题生成服务暂时不可用，请稍后重试"],
-      ["QUESTION_GENERATION_INTERNAL_ERROR", "问题生成服务暂时不可用，请稍后重试"],
-      ["QUESTION_GENERATION_IN_PROGRESS", "已有问题生成任务正在处理中，请稍候"],
+      [
+        "QUESTION_GENERATION_PROVIDER_UNAVAILABLE",
+        "问题生成服务暂时不可用，请稍后重新尝试或联系管理员。",
+      ],
+      ["QUESTION_GENERATION_INVALID_RESPONSE", "AI 返回内容暂时无法识别，请重新生成。"],
+      ["QUESTION_GENERATION_PROVIDER_ERROR", "问题生成服务暂时不可用，请稍后重新尝试。"],
+      ["QUESTION_GENERATION_INTERNAL_ERROR", "问题生成服务暂时不可用，请稍后重新尝试。"],
+      ["QUESTION_GENERATION_IN_PROGRESS", "问题正在生成，请稍候。"],
     ] as const;
     for (const [code, message] of cases) expect(questionGenerationErrorMessage(code)).toBe(message);
   });
@@ -193,7 +196,7 @@ describe("问题生成与问题管理", () => {
     render(<QuestionBankPanel subjectId="subject-1" upstreamDirty={false} />);
 
     expect(await screen.findByText("选择关键词资产")).toBeTruthy();
-    await userEvent.click(screen.getByRole("checkbox", { name: "选择关键词资产-keyword-asset-2" }));
+    await userEvent.click(screen.getByRole("checkbox", { name: "选择关键词：AI 搜索优化" }));
     await userEvent.click(screen.getByRole("button", { name: "AI 生成问题" }));
 
     await waitFor(() => expect(api.createQuestionGeneration).toHaveBeenCalledTimes(1));
@@ -288,6 +291,8 @@ describe("问题生成与问题管理", () => {
     render(<QuestionManagementPanel subjectId="subject-1" />);
 
     expect(await screen.findByText("正式问题库")).toBeTruthy();
+    expect(screen.getByText("当前正式问题库")).toBeTruthy();
+    expect(screen.queryByText(/正式版本 v/)).toBeNull();
     expect(screen.getByText("用户选择品牌服务时最关心哪些因素？")).toBeTruthy();
     expect(screen.getByText("参与检测")).toBeTruthy();
     expect(screen.getByRole("link", { name: "去主体检测" }).getAttribute("href")).toBe(
@@ -341,7 +346,7 @@ describe("问题生成与问题管理", () => {
     expect(await screen.findByText("正式问题 1")).toBeTruthy();
     await userEvent.click(screen.getByRole("checkbox", { name: "全选本页问题" }));
     expect(screen.getByText("已选择 20 条")).toBeTruthy();
-    expect(screen.getByRole("checkbox", { name: "选择问题-formal-question-1" })).toHaveProperty(
+    expect(screen.getByRole("checkbox", { name: "选择问题：正式问题 1" })).toHaveProperty(
       "checked",
       true,
     );
@@ -370,7 +375,7 @@ describe("问题生成与问题管理", () => {
     await userEvent.click(screen.getByRole("button", { name: "AI 生成问题" }));
     expect(
       await screen.findByText(
-        "问题生成服务暂未启用，请联系管理员配置后再试",
+        "问题生成服务暂时不可用，请稍后重新尝试或联系管理员。",
         {},
         { timeout: 2500 },
       ),

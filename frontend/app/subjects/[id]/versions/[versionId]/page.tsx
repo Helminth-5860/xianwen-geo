@@ -8,6 +8,12 @@ import { useEffect, useState } from "react";
 import { userMessage } from "@/lib/auth-client";
 import { getSubjectVersion, type SubjectVersionDetail } from "@/lib/subjects-client";
 
+const nameRoleLabels: Readonly<Record<SubjectVersionDetail["names"][number]["role"], string>> = {
+  official_name: "主体名称",
+  alias: "常用名称",
+  english_name: "英文名称",
+};
+
 function displayValue(
   value: unknown,
   options: ReadonlyArray<{ option_key: string; label: string }>,
@@ -40,20 +46,18 @@ export default function SubjectVersionDetailPage() {
   }, [params.id, params.versionId]);
 
   if (!version && !error) {
-    return <Spin fullscreen description={"\u6b63\u5728\u52a0\u8f7d\u7248\u672c\u8be6\u60c5"} />;
+    return <Spin fullscreen description="正在加载资料记录" />;
   }
 
   return (
     <main className="page-shell">
-      <Link href={`/subjects/${params.id}/versions`}>{"\u8fd4\u56de\u7248\u672c\u5386\u53f2"}</Link>
+      <Link href={`/subjects/${params.id}/versions`}>返回资料更新记录</Link>
       {error && <Alert type="error" showIcon message={error} />}
       {version && (
         <>
-          <Typography.Title>{`v${version.version_no} \u00b7 ${version.official_name}`}</Typography.Title>
+          <Typography.Title>{`${version.official_name} · 第 ${version.version_no} 次保存`}</Typography.Title>
           <Typography.Paragraph type="secondary">
-            {
-              "\u4ee5\u4e0b\u5185\u5bb9\u4f7f\u7528\u8be5\u7248\u672c\u81ea\u5df1\u4fdd\u5b58\u7684\u51bb\u7ed3 Schema \u5c55\u793a\u3002"
-            }
+            这里展示该次保存时的主体资料，之后的修改不会影响这份记录。
           </Typography.Paragraph>
           <Card title={version.form_schema.name}>
             <Descriptions column={1} bordered>
@@ -64,33 +68,29 @@ export default function SubjectVersionDetailPage() {
               ))}
             </Descriptions>
           </Card>
-          <Card title={"\u540d\u79f0\u8bed\u4e49"} style={{ marginTop: 20 }}>
+          <Card title="主体名称" style={{ marginTop: 20 }}>
             <List
               dataSource={[...version.names]}
               renderItem={(name) => (
                 <List.Item>
-                  <Tag>{name.role}</Tag>
+                  <Tag>{nameRoleLabels[name.role]}</Tag>
                   {name.display_value}
                 </List.Item>
               )}
             />
           </Card>
-          <Card title={"\u4ea7\u54c1\u786e\u8ba4"} style={{ marginTop: 20 }}>
+          <Card title="产品与服务" style={{ marginTop: 20 }}>
             <List
-              locale={{ emptyText: "\u65e0\u4ea7\u54c1\u5019\u9009" }}
+              locale={{ emptyText: "该次保存未记录产品或服务" }}
               dataSource={[...version.products]}
               renderItem={(product) => (
                 <List.Item>
                   <Typography.Text>{product.display_value}</Typography.Text>
                   <span>
                     <Tag color={product.uniqueness_confirmed ? "green" : "default"}>
-                      {product.uniqueness_confirmed
-                        ? "\u5df2\u786e\u8ba4\u552f\u4e00"
-                        : "\u672a\u786e\u8ba4\u552f\u4e00"}
+                      {product.uniqueness_confirmed ? "名称已确认" : "名称待确认"}
                     </Tag>
-                    {product.include_in_mention && (
-                      <Tag color="blue">{"\u52a0\u5165\u63d0\u53ca\u8bcd"}</Tag>
-                    )}
+                    {product.include_in_mention && <Tag color="blue">用于品牌提及分析</Tag>}
                   </span>
                 </List.Item>
               )}

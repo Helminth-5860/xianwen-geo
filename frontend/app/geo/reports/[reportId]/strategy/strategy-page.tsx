@@ -108,7 +108,7 @@ export default function ImprovementStrategyPage({ reportId }: Readonly<{ reportI
       );
       setSelected(next);
       setNotice(
-        data.first_free_available ? "首份免费策略已提交" : "重新生成已提交，成功后扣除 1 次",
+        data.first_free_available ? "正在生成首份免费策略" : "正在重新生成策略，成功后扣除 1 次",
       );
     } catch (reason) {
       setError(userMessage(reason));
@@ -141,13 +141,13 @@ export default function ImprovementStrategyPage({ reportId }: Readonly<{ reportI
     <main className="page-shell">
       <Space orientation="vertical" size="large" style={{ width: "100%" }}>
         <Space wrap align="baseline">
-          <Typography.Title level={2}>优化策略</Typography.Title>
-          <Button href="/geo/strategy">返回优化策略</Button>
+          <Typography.Title level={2}>优化方案</Typography.Title>
+          <Button href="/geo/strategy">返回优化方案</Button>
         </Space>
         <Alert
           type="info"
           showIcon
-          title="策略是基于不可修改报告事实生成的建议，不会重新检测或评分，也不会执行任务。"
+          title="策略仅基于已生成的检测报告提供建议，不会重新检测、重新评分或自动执行。"
         />
         {error && <Alert type="error" showIcon title={error} />}
         {notice && <Alert type="success" showIcon title={notice} />}
@@ -187,19 +187,23 @@ export default function ImprovementStrategyPage({ reportId }: Readonly<{ reportI
             </Space>
             {!data?.first_free_available && (
               <Typography.Text type="secondary">
-                只有成功生成新版本才扣除次数；失败会释放冻结额度并保留全部历史结果。
+                只有成功生成新的优化方案才扣除次数；未完成不会扣除次数，并会保留全部历史结果。
               </Typography.Text>
             )}
           </Space>
         </Card>
 
-        {generating && <Spin description="AI 正在生成优化策略" />}
+        {generating && <Spin description="AI 正在生成优化方案" />}
         {selected?.status === "failed" && (
-          <Alert type="error" showIcon title="策略生成失败，请稍后重试；本次失败不会扣除次数。" />
+          <Alert
+            type="error"
+            showIcon
+            title="优化方案未能生成，请稍后重新尝试；本次不会扣除次数。"
+          />
         )}
         {selected?.status === "succeeded" && selected.body && (
           <>
-            <Card title="AI 原始策略（不可编辑）">
+            <Card title="AI 生成的优化方案">
               <Space orientation="vertical" size="large" style={{ width: "100%" }}>
                 <Typography.Paragraph>{selected.body.overview}</Typography.Paragraph>
                 <Typography.Title level={4}>优先事项</Typography.Title>
@@ -281,7 +285,7 @@ export default function ImprovementStrategyPage({ reportId }: Readonly<{ reportI
           </>
         )}
 
-        <Card title="历史策略版本">
+        <Card title="历史优化方案">
           <List
             locale={{ emptyText: "尚未生成策略" }}
             dataSource={data?.items ?? []}

@@ -94,7 +94,7 @@ describe("公开注册页", () => {
     );
   });
 
-  it("注册校验失败时直接显示后端返回的中文字段原因", async () => {
+  it("注册校验失败时显示产品化字段提示而不是服务端原文", async () => {
     vi.spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(
         jsonResponse({ success: true, data: { csrf_token: "csrf-register" }, request_id: "r1" }),
@@ -127,7 +127,10 @@ describe("公开注册页", () => {
     await user.type(screen.getByLabelText("确认密码"), "Correct-Horse-Battery-2026!");
     await user.click(screen.getByRole("button", { name: "注册并登录" }));
 
-    expect(await screen.findByText("密码：这个密码太常见了。")).toBeTruthy();
+    expect(
+      await screen.findByText("密码：密码过于简单，请增加长度并组合数字、字母和符号。"),
+    ).toBeTruthy();
+    expect(screen.queryByText("这个密码太常见了。")).toBeNull();
     expect(screen.queryByText("请求参数不正确")).toBeNull();
   });
 });

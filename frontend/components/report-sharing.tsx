@@ -4,6 +4,7 @@ import { Alert, Button, Card, Input, InputNumber, List, Space, Tag, Typography }
 import { useCallback, useEffect, useState } from "react";
 
 import { userMessage } from "@/lib/auth-client";
+import { REPORT_SHARE_STATUS_LABELS } from "@/lib/product-copy";
 import {
   closeReportShare,
   createReportShare,
@@ -64,7 +65,7 @@ export function ReportSharing({
         expected_version: brand.config?.version ?? 0,
       });
       setBrand(saved);
-      setNotice("主体默认白标已保存；后续导出与分享会冻结当时的品牌快照。");
+      setNotice("品牌展示设置已保存，新创建的报告分享将使用当前品牌信息。");
     } catch (reason) {
       setError(userMessage(reason));
     } finally {
@@ -79,7 +80,7 @@ export function ReportSharing({
       setShares((current) => [share, ...current]);
       setCreatedUrl(share.url ?? "");
       setPassword("");
-      setNotice("完整报告分享已创建。原始高熵令牌只在此 URL 中返回一次。");
+      setNotice("报告分享地址已创建。为保护报告内容，该地址只显示一次，请立即保存。");
     } catch (reason) {
       setError(userMessage(reason));
     } finally {
@@ -88,7 +89,7 @@ export function ReportSharing({
   };
 
   return (
-    <Card title="白标与完整报告分享">
+    <Card title="品牌展示与报告分享">
       <Space orientation="vertical" size="middle" style={{ width: "100%" }}>
         {error && <Alert type="error" showIcon title={error} />}
         {notice && <Alert type="success" showIcon title={notice} />}
@@ -96,8 +97,8 @@ export function ReportSharing({
           type="info"
           title={
             brand?.enabled
-              ? "当前套餐允许主体白标"
-              : "当前使用显问默认品牌；套餐未开放白标时不能隐藏显问品牌"
+              ? "当前套餐支持自定义报告品牌展示。"
+              : "当前报告使用显问品牌展示；升级对应套餐后可自定义品牌。"
           }
         />
         {brand?.enabled && (
@@ -113,7 +114,7 @@ export function ReportSharing({
               onChange={(event) => setPrimaryColor(event.target.value)}
             />
             <Button loading={busy} onClick={() => void saveBrand()}>
-              保存默认白标
+              保存品牌展示
             </Button>
           </Space>
         )}
@@ -153,7 +154,7 @@ export function ReportSharing({
         )}
         <List
           dataSource={shares}
-          locale={{ emptyText: "暂无分享" }}
+          locale={{ emptyText: "暂时没有报告分享。创建后，可在这里查看访问情况。" }}
           renderItem={(share) => (
             <List.Item
               actions={[
@@ -175,7 +176,7 @@ export function ReportSharing({
               <List.Item.Meta
                 title={
                   <Space>
-                    <Tag>{share.status}</Tag>
+                    <Tag>{REPORT_SHARE_STATUS_LABELS[share.status]}</Tag>
                     {share.password_required && <Tag color="blue">密码保护</Tag>}
                   </Space>
                 }

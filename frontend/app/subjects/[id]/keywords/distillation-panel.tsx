@@ -117,7 +117,9 @@ export default function DistillationPanel({
             setNotice("蒸馏建议已生成，请调整并明确确认");
             setError("");
           } else if (["failed", "conflict", "superseded"].includes(next.status)) {
-            setError(keywordJobErrorMessage(next.stable_error_code, "蒸馏失败，请重试"));
+            setError(
+              keywordJobErrorMessage(next.stable_error_code, "关键词蒸馏未完成，请重新尝试。"),
+            );
             setNotice("");
           }
         })
@@ -197,8 +199,8 @@ export default function DistillationPanel({
       setError("");
       setNotice(
         next.billing.billing_mode === "free_initial"
-          ? "首次免费蒸馏任务已提交"
-          : "再次蒸馏任务已提交，额度已冻结",
+          ? "已开始首次免费蒸馏"
+          : "已开始再次蒸馏，并暂时预留额度",
       );
     } catch (reason) {
       if (
@@ -289,7 +291,9 @@ export default function DistillationPanel({
           {dirty && <Tag color="orange">有未保存蒸馏调整</Tag>}
           {job ? (
             <Tag color={job.status === "succeeded" ? "green" : "blue"}>
-              {distillationJobStatusLabel[job.status]}
+              {job.status === "superseded"
+                ? "已有更新结果"
+                : distillationJobStatusLabel[job.status]}
             </Tag>
           ) : null}
         </Space>
@@ -368,7 +372,12 @@ export default function DistillationPanel({
             </Space>
           </Card>
         ) : !draft?.has_unconfirmed_result ? (
-          <Typography.Text type="secondary">当前没有待蒸馏关键词。</Typography.Text>
+          <Space wrap align="center">
+            <Typography.Text type="secondary">
+              当前没有待蒸馏关键词，请先添加或生成关键词。
+            </Typography.Text>
+            <Button href={`/subjects/${subjectId}/keywords/custom`}>去添加关键词</Button>
+          </Space>
         ) : null}
 
         {draft?.has_unconfirmed_result && mergeGroups.length ? (

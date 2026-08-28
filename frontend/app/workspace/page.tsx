@@ -2,365 +2,673 @@
 
 import {
   ArrowRightOutlined,
-  CheckCircleFilled,
   ClockCircleOutlined,
   FileSearchOutlined,
-  FileTextOutlined,
-  FundProjectionScreenOutlined,
-  RadarChartOutlined,
-  TagsOutlined,
+  SwapOutlined,
 } from "@ant-design/icons";
-import { Alert, Button, Card, ConfigProvider, Empty, Space, Spin, Tag, Typography } from "antd";
+import { Alert, Button, ConfigProvider, Empty } from "antd";
 import zhCN from "antd/locale/zh_CN";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import { useSubjectWorkspace } from "@/components/subject-workspace-context";
-import { userMessage } from "@/lib/auth-client";
-import { getReportHistory, type GeoReport } from "@/lib/geo-report-client";
+import {
+  GeoScoreRing,
+  GlassSurface,
+  InsightCard,
+  MetricStat,
+  ProgressTimeline,
+  ProviderSignal,
+  XwDataStateView,
+  xwTheme,
+  type MetricStatChange,
+  type ProgressTimelineStep,
+  type ProviderSignalFact,
+  type XwDataState,
+  type XwTone,
+} from "@/components/xw";
+import { GeoTrendChart, type GeoTrendPoint } from "@/components/xw/geo-trend-chart";
+import { getDetectionHistory, type GeoDetectionJob } from "@/lib/geo-detection-client";
+import {
+  formatChineseDateTime,
+  formatScore,
+  getComparableMetricChanges,
+  getComparableScoreChange,
+  getLatestCompletedDetectionTime,
+  getLatestStrategyInsight,
+  getProviderSignals,
+  getScoreState,
+  getTrendPoints,
+  toScore,
+  type ProviderSignalTone,
+  type ScoreStateTone,
+} from "@/lib/geo-overview";
+import {
+  getReportHistory,
+  getReportTrends,
+  type GeoReport,
+  type ReportTrend,
+} from "@/lib/geo-report-client";
 import { getQuestionBankDraft, type QuestionBankDraft } from "@/lib/question-bank-client";
+import { getStrategies, type Strategy } from "@/lib/strategy-assistant-client";
 
-const { Paragraph, Text, Title } = Typography;
+import styles from "./workspace-overview.module.css";
 
-type WorkflowItem = Readonly<{
-  title: string;
-  description: string;
-  status: string;
-  href: string;
-  icon: typeof TagsOutlined;
-  tone: "done" | "ready" | "waiting" | "attention";
+type OverviewData = Readonly<{
+  reports: GeoReport[];
+  trends: ReportTrend[];
+  detections: GeoDetectionJob[];
+  questionBank: QuestionBankDraft | null;
+  strategies: Strategy[];
 }>;
 
-const metricValue = (value: string | null | undefined) => value ?? "—";
+type OverviewErrors = Readonly<{
+  reports: boolean;
+  trends: boolean;
+  detections: boolean;
+  questionBank: boolean;
+  strategies: boolean;
+}>;
+
+type OverviewState = Readonly<{
+  scopeKey: string;
+  data: OverviewData;
+  errors: OverviewErrors;
+  strategyLoading: boolean;
+}>;
+
+const EMPTY_DATA: OverviewData = {
+  reports: [],
+  trends: [],
+  detections: [],
+  questionBank: null,
+  strategies: [],
+};
+
+const EMPTY_ERRORS: OverviewErrors = {
+  reports: false,
+  trends: false,
+  detections: false,
+  questionBank: false,
+  strategies: false,
+};
+
+const EMPTY_STATE: OverviewState = {
+  scopeKey: "",
+  data: EMPTY_DATA,
+  errors: EMPTY_ERRORS,
+  strategyLoading: false,
+};
+
+const SCORE_TONES: Record<ScoreStateTone, XwTone> = {
+  excellent: "positive",
+  good: "primary",
+  improve: "warning",
+  risk: "danger",
+  empty: "neutral",
+};
+
+const PROVIDER_TONES: Record<ProviderSignalTone, XwTone> = {
+  positive: "positive",
+  attention: "warning",
+  danger: "danger",
+  active: "primary",
+  neutral: "neutral",
+};
+
+function metricChange(value: number | null, unit: string): MetricStatChange | null {
+  if (value === null) return null;
+  return { value, unit, label: "较上次" };
+}
+
+function metricState(hasReport: boolean, failed: boolean): XwDataState {
+  if (failed) return "error";
+  return hasReport ? "ready" : "empty";
+}
+
+function withOverviewDeadline<T>(request: Promise<T>, waitMilliseconds = 10_000): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = window.setTimeout(
+      () => reject(new Error("overview request ended")),
+      waitMilliseconds,
+    );
+    request.then(
+      (value) => {
+        window.clearTimeout(timer);
+        resolve(value);
+      },
+      (reason) => {
+        window.clearTimeout(timer);
+        reject(reason);
+      },
+    );
+  });
+}
+
+function OverviewLoading() {
+  return (
+    <main className={styles.overview} aria-label="正在加载 GEO 总览" aria-busy="true">
+      <div className={styles.loadingShell}>
+        <span className={styles.loadingBlock} />
+        <span className={`${styles.loadingBlock} ${styles.loadingBlockWide}`} />
+        <span className={styles.loadingBlock} />
+        <span className={styles.loadingBlock} />
+        <span className={styles.loadingBlock} />
+      </div>
+    </main>
+  );
+}
 
 export default function WorkspacePage() {
   const { replace } = useRouter();
   const { currentSubject, loading: subjectLoading, subjects, user } = useSubjectWorkspace();
-  const [questionBank, setQuestionBank] = useState<QuestionBankDraft | null>(null);
-  const [reports, setReports] = useState<GeoReport[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [overviewState, setOverviewState] = useState<OverviewState>(EMPTY_STATE);
+
+  const subjectId = currentSubject?.id ?? "";
+  const userId = user?.id ?? "";
+  const userRole = user?.commercial_identity;
+  const userHomeRoute = user?.home_route;
+  const scopeKey = userId && subjectId ? `${userId}:${subjectId}` : "";
+  const data = overviewState.scopeKey === scopeKey ? overviewState.data : EMPTY_DATA;
+  const errors = overviewState.scopeKey === scopeKey ? overviewState.errors : EMPTY_ERRORS;
+  const strategyLoading =
+    overviewState.scopeKey === scopeKey ? overviewState.strategyLoading : false;
+  const loading = Boolean(scopeKey && overviewState.scopeKey !== scopeKey);
 
   useEffect(() => {
-    let current = true;
+    let active = true;
+
     if (subjectLoading) return () => undefined;
-    if (!user) {
+    if (!userId) {
       replace("/login");
       return () => undefined;
     }
-    if (user.commercial_identity !== "USER") {
-      replace(user.home_route);
+    if (userRole !== "USER") {
+      if (userHomeRoute) replace(userHomeRoute);
       return () => undefined;
     }
-    if (!currentSubject) return () => undefined;
-    void (async () => {
-      const [reportResult, questionResult] = await Promise.allSettled([
-        getReportHistory(currentSubject.id),
-        getQuestionBankDraft(currentSubject.id),
-      ]);
-      if (!current) return;
+    if (!subjectId) {
+      return () => undefined;
+    }
 
-      if (reportResult.status === "fulfilled") {
-        setReports(
-          [...reportResult.value.items].sort(
-            (left, right) =>
-              new Date(right.generated_at).getTime() - new Date(left.generated_at).getTime(),
-          ),
-        );
-      }
-      if (questionResult.status === "fulfilled") setQuestionBank(questionResult.value);
-    })()
-      .catch((reason) => {
-        if (!current) return;
-        setError(userMessage(reason));
-      })
-      .finally(() => {
-        if (current) setLoading(false);
+    void (async () => {
+      const [reportResult, trendResult, detectionResult, questionResult] = await Promise.allSettled(
+        [
+          withOverviewDeadline(getReportHistory(subjectId)),
+          withOverviewDeadline(getReportTrends(subjectId)),
+          withOverviewDeadline(getDetectionHistory(subjectId)),
+          withOverviewDeadline(getQuestionBankDraft(subjectId)),
+        ],
+      );
+
+      if (!active) return;
+
+      const reports =
+        reportResult.status === "fulfilled"
+          ? [...reportResult.value.items].sort(
+              (left, right) =>
+                new Date(right.generated_at).getTime() - new Date(left.generated_at).getTime(),
+            )
+          : [];
+      setOverviewState({
+        scopeKey,
+        data: {
+          reports,
+          trends: trendResult.status === "fulfilled" ? trendResult.value.items : [],
+          detections: detectionResult.status === "fulfilled" ? detectionResult.value.items : [],
+          questionBank: questionResult.status === "fulfilled" ? questionResult.value : null,
+          strategies: [],
+        },
+        errors: {
+          reports: reportResult.status === "rejected",
+          trends: trendResult.status === "rejected",
+          detections: detectionResult.status === "rejected",
+          questionBank: questionResult.status === "rejected",
+          strategies: false,
+        },
+        strategyLoading: Boolean(reports[0]),
       });
 
-    return () => {
-      current = false;
-    };
-  }, [currentSubject, replace, subjectLoading, user]);
+      if (!reports[0]) return;
 
-  const latestReport = reports[0] ?? null;
+      try {
+        const strategies = (await withOverviewDeadline(getStrategies(reports[0].id))).items;
+        if (!active) return;
+        setOverviewState((current) =>
+          current.scopeKey === scopeKey
+            ? {
+                ...current,
+                data: { ...current.data, strategies },
+                strategyLoading: false,
+              }
+            : current,
+        );
+      } catch {
+        if (!active) return;
+        setOverviewState((current) =>
+          current.scopeKey === scopeKey
+            ? {
+                ...current,
+                errors: { ...current.errors, strategies: true },
+                strategyLoading: false,
+              }
+            : current,
+        );
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [replace, scopeKey, subjectId, subjectLoading, userHomeRoute, userId, userRole]);
+
+  const latestReport = data.reports[0] ?? null;
+  const score = toScore(latestReport?.summary.geo.score);
+  const scoreState = getScoreState(score);
+  const comparableChanges = useMemo(
+    () => getComparableMetricChanges(latestReport, data.reports),
+    [data.reports, latestReport],
+  );
+  const scoreChange = getComparableScoreChange(latestReport, data.reports);
+  const latestDetectionTime = getLatestCompletedDetectionTime(data.detections);
+  const providerSignals = useMemo(() => getProviderSignals(latestReport), [latestReport]);
+  const strategyInsight = useMemo(
+    () => getLatestStrategyInsight(data.strategies),
+    [data.strategies],
+  );
+  const trendPoints = useMemo<GeoTrendPoint[]>(
+    () =>
+      getTrendPoints(data.trends, 12).map((point) => ({
+        id: point.reportId,
+        label: point.dateLabel,
+        score: point.score,
+        detail: `${formatChineseDateTime(point.generatedAt, point.dateLabel)}，综合评分 ${formatScore(
+          point.score,
+        )}`,
+      })),
+    [data.trends],
+  );
+
+  const subjectReady = Boolean(currentSubject && currentSubject.current_version_no !== null);
+  const questionReady = Boolean(data.questionBank?.current_question_bank_version_no);
   const subjectName =
     currentSubject?.official_name || currentSubject?.subject_type.name || "当前主体";
-  const questionReady = Boolean(questionBank?.current_question_bank_version_no);
+  const hasReport = latestReport !== null;
+  const anyError = Object.values(errors).some(Boolean);
 
-  const workflow = useMemo<WorkflowItem[]>(() => {
+  const progressSteps = useMemo<ProgressTimelineStep[]>(() => {
     if (!currentSubject) return [];
 
-    const subjectReady = currentSubject.current_version_no !== null;
+    let currentKey = "profile";
+    if (subjectReady) currentKey = "questions";
+    if (questionReady || hasReport) currentKey = "detection";
+    if (hasReport) currentKey = "strategy";
+    if (strategyInsight) currentKey = "content";
+    if (currentSubject.retest_required && hasReport) currentKey = "retest";
+
+    const completedKeys = new Set<string>();
+    if (subjectReady) completedKeys.add("profile");
+    if (questionReady || hasReport) completedKeys.add("questions");
+    if (hasReport) {
+      completedKeys.add("detection");
+      completedKeys.add("report");
+    }
+    if (strategyInsight) completedKeys.add("strategy");
+
+    const statusFor = (key: string) => {
+      if (key === currentKey) return "current" as const;
+      return completedKeys.has(key) ? ("completed" as const) : ("upcoming" as const);
+    };
+
     return [
       {
-        title: "1. 主体档案",
-        description: "完善品牌、产品、资料和公开来源，建立 GEO 的事实基础。",
-        status: subjectReady ? "资料已保存" : "待完善资料",
+        key: "profile",
+        title: "完善主体档案",
+        description: "补全品牌、业务、产品与公开资料，建立可信的企业画像。",
+        meta: subjectReady ? "主体资料已保存" : "等待完善主体资料",
+        status: statusFor("profile"),
         href: `/subjects/${currentSubject.id}`,
-        icon: CheckCircleFilled,
-        tone: subjectReady ? "done" : "attention",
+        actionLabel: subjectReady ? "查看主体资料" : "完善主体资料",
       },
       {
-        title: "2. 关键词与问题",
-        description: "形成关键词、蒸馏结果和用户真实问题库，作为检测输入。",
-        status: questionReady
-          ? `问题库 v${questionBank?.current_question_bank_version_no}`
-          : "待完成问题库",
+        key: "questions",
+        title: "建立关键词与问题库",
+        description: "整理用户常见搜索需求，为检测提供明确的问题范围。",
+        meta: errors.questionBank
+          ? hasReport
+            ? "已有检测报告，问题准备已完成"
+            : "问题库状态暂时无法确认"
+          : questionReady
+            ? "问题库已就绪"
+            : "等待建立问题库",
+        status: statusFor("questions"),
         href: `/subjects/${currentSubject.id}/keywords`,
-        icon: TagsOutlined,
-        tone: questionReady ? "done" : subjectReady ? "ready" : "waiting",
+        actionLabel: questionReady ? "查看关键词资产" : "开始建立关键词",
       },
       {
-        title: "3. AI 可见度检测",
-        description: "选择目标问题与 AI 模型，执行真实 GEO 检测。",
-        status: latestReport ? "已有检测结果" : questionReady ? "可以开始首次检测" : "等待问题库",
+        key: "detection",
+        title: "完成人工智能可见度检测",
+        description: "使用已确认的问题库，查看品牌在各主流平台回答中的表现。",
+        meta: hasReport ? "已有检测结果" : questionReady ? "可以开始检测" : "等待问题库",
+        status: statusFor("detection"),
         href: "/geo/detections",
-        icon: RadarChartOutlined,
-        tone: latestReport ? "done" : questionReady ? "ready" : "waiting",
+        actionLabel: hasReport ? "查看检测记录" : "开始检测",
       },
       {
-        title: "4. GEO 报告与洞察",
-        description: "查看 GEO Score、曝光、提及、推荐、模型表现和竞争结果。",
-        status: latestReport ? "最新报告可查看" : "等待检测结果",
+        key: "report",
+        title: "查看 GEO 报告",
+        description: "理解综合评分、曝光、提及、推荐和不同平台的表现差异。",
+        meta: hasReport ? "最新报告可查看" : "等待检测结果",
+        status: statusFor("report"),
         href: latestReport ? `/geo/reports/${latestReport.id}` : "/geo/reports",
-        icon: FileSearchOutlined,
-        tone: latestReport ? "ready" : "waiting",
+        actionLabel: "查看检测报告",
       },
       {
-        title: "5. 优化策略",
-        description: "基于真实检测报告生成优先级、行动计划和内容选题。",
-        status: latestReport ? "可生成或查看策略" : "等待 GEO 报告",
-        href: "/geo/strategy",
-        icon: FundProjectionScreenOutlined,
-        tone: latestReport ? "ready" : "waiting",
+        key: "strategy",
+        title: "形成优化方案",
+        description: "把报告结论转化为有优先级的优化方向和具体行动。",
+        meta: strategyInsight ? "已有优化方向" : hasReport ? "可以生成方案" : "等待检测报告",
+        status: statusFor("strategy"),
+        href: latestReport ? `/geo/strategy/${latestReport.id}` : "/geo/strategy",
+        actionLabel: strategyInsight ? "查看优化方案" : "生成优化方案",
       },
       {
-        title: "6. 内容执行",
-        description: "把 GEO 策略转成文章、渠道稿和内容资产，完成优化落地。",
-        status: latestReport ? "可进入内容工作台" : "建议先完成检测与策略",
+        key: "content",
+        title: "执行内容优化",
+        description: "围绕优化方向生成并保存文章、图片和视频脚本。",
+        meta: strategyInsight ? "可以开始内容优化" : "等待优化方案",
+        status: statusFor("content"),
         href: `/subjects/${currentSubject.id}/articles/new`,
-        icon: FileTextOutlined,
-        tone: latestReport ? "ready" : "waiting",
+        actionLabel: "进入内容优化",
       },
       {
-        title: "7. 复测验证",
-        description: "内容与主体发生变化后重新检测，验证 GEO 指标是否真实提升。",
-        status: currentSubject.retest_required
-          ? "主体变更，建议复测"
-          : latestReport
-            ? "可按需复测"
+        key: "retest",
+        title: "复测并验证变化",
+        description: "优化完成后重新检测，通过前后结果对比验证优化效果。",
+        meta: currentSubject.retest_required
+          ? "主体资料有变化，建议复测"
+          : hasReport
+            ? "完成优化后可复测"
             : "等待首次检测",
-        href: latestReport ? `/geo/reports/${latestReport.id}` : "/geo/detections",
-        icon: ClockCircleOutlined,
-        tone: currentSubject.retest_required ? "attention" : latestReport ? "ready" : "waiting",
+        status: statusFor("retest"),
+        href: "/geo/detections",
+        actionLabel: "安排复测",
       },
     ];
-  }, [currentSubject, latestReport, questionBank?.current_question_bank_version_no, questionReady]);
+  }, [
+    currentSubject,
+    errors.questionBank,
+    hasReport,
+    latestReport,
+    questionReady,
+    strategyInsight,
+    subjectReady,
+  ]);
 
   const primaryAction = useMemo(() => {
     if (!currentSubject) return { label: "创建主体", href: "/subjects" };
-    if (currentSubject.current_version_no === null)
-      return { label: "完善主体资料", href: `/subjects/${currentSubject.id}` };
-    if (!questionReady)
-      return { label: "建立关键词与问题库", href: `/subjects/${currentSubject.id}/keywords` };
-    if (!latestReport) return { label: "开始 AI 可见度检测", href: "/geo/detections" };
-    if (currentSubject.retest_required)
-      return { label: "查看报告并准备复测", href: `/geo/reports/${latestReport.id}` };
-    return { label: "查看 GEO 报告", href: `/geo/reports/${latestReport.id}` };
-  }, [currentSubject, latestReport, questionReady]);
+    if (!subjectReady) return { label: "完善主体资料", href: `/subjects/${currentSubject.id}` };
+    if (!questionReady && !latestReport)
+      return {
+        label: errors.questionBank ? "查看关键词与问题库" : "建立关键词与问题库",
+        href: `/subjects/${currentSubject.id}/keywords`,
+      };
+    if (!latestReport) return { label: "开始可见度检测", href: "/geo/detections" };
+    return { label: "查看完整报告", href: `/geo/reports/${latestReport.id}` };
+  }, [currentSubject, errors.questionBank, latestReport, questionReady, subjectReady]);
 
-  if (subjectLoading || (currentSubject && loading))
-    return <Spin fullscreen description="正在加载 GEO 总览" />;
+  if (subjectLoading || (subjectId && loading)) return <OverviewLoading />;
   if (!user) return null;
 
+  const reportState = metricState(hasReport, errors.reports);
+  const exposureValue = toScore(latestReport?.summary.exposure.exposure_index);
+  const mentionValue = toScore(latestReport?.summary.exposure.mention_rate_score);
+  const recommendationValue = toScore(latestReport?.summary.exposure.recommendation_rate_score);
+
   return (
-    <ConfigProvider locale={zhCN} theme={{ token: { colorPrimary: "#1668dc", borderRadius: 10 } }}>
-      <main className="geo-dashboard">
-        <section className="geo-dashboard__header">
-          <div>
-            <Text type="secondary">GEO WORKSPACE</Text>
-            <Title level={2}>GEO 总览</Title>
-            <Paragraph type="secondary">
-              围绕主体、检测、洞察、优化和复测持续推进，不再从一组独立工具中反复选择入口。
-            </Paragraph>
+    <ConfigProvider locale={zhCN} theme={xwTheme}>
+      <main className={styles.overview}>
+        <header className={styles.header}>
+          <div className={styles.headerCopy}>
+            <p className={styles.eyebrow}>显问 GEO 情报中心</p>
+            <h1 className={styles.title}>GEO 总览</h1>
+            <p className={styles.subjectName}>{subjectName}</p>
+            {currentSubject ? (
+              <div className={styles.metaRow}>
+                <span className={styles.metaItem}>
+                  <ClockCircleOutlined aria-hidden="true" />
+                  {errors.detections
+                    ? "最近检测时间暂时无法显示"
+                    : latestDetectionTime
+                      ? `最近完成检测：${formatChineseDateTime(latestDetectionTime)}`
+                      : "尚未完成首次检测"}
+                </span>
+                {currentSubject.retest_required ? (
+                  <span className={styles.metaItem}>主体资料有更新，建议安排复测</span>
+                ) : null}
+              </div>
+            ) : null}
           </div>
-          <Space wrap>
-            <Button href="/subjects">切换主体</Button>
+          <div className={styles.headerActions}>
+            <Button href="/subjects" icon={<SwapOutlined />}>
+              切换主体
+            </Button>
             <Button type="primary" href={primaryAction.href}>
               {primaryAction.label} <ArrowRightOutlined />
             </Button>
-          </Space>
-        </section>
+          </div>
+        </header>
 
-        {error && <Alert type="error" showIcon message={error} />}
+        {anyError ? (
+          <Alert
+            type="warning"
+            showIcon
+            message="部分内容暂时无法显示"
+            description="其他功能仍可正常使用，你可以稍后刷新页面。"
+          />
+        ) : null}
 
         {!currentSubject ? (
-          <Card className="geo-dashboard__empty">
-            <Empty
-              description={
-                <Space direction="vertical" size={4}>
-                  <Text strong>还没有当前 GEO 主体</Text>
-                  <Text type="secondary">
-                    先建立品牌或企业主体，后续关键词、检测、报告和内容都会自动围绕该主体展开。
-                  </Text>
-                </Space>
-              }
-            >
+          <section className={styles.emptySubject}>
+            <Empty description="创建并选择主体后，即可查看检测、趋势和优化进度。">
               <Button type="primary" href="/subjects">
                 创建并选择主体
               </Button>
             </Empty>
-          </Card>
+          </section>
         ) : (
           <>
-            <section className="geo-dashboard__subject-bar">
-              <div>
-                <Text type="secondary">当前主体</Text>
-                <Title level={3}>{subjectName}</Title>
+            <section className={styles.heroGrid} aria-label="核心表现">
+              <GlassSurface level="strong">
+                <GeoScoreRing
+                  value={score}
+                  change={scoreChange}
+                  label="GEO 综合评分"
+                  description="衡量品牌在主流人工智能回答中的综合表现"
+                  statusLabel={scoreState.label}
+                  statusTone={SCORE_TONES[scoreState.tone]}
+                  state={reportState}
+                  messages={{
+                    empty: "完成首次检测后，这里会显示综合评分。",
+                    error: "综合评分暂时无法显示，请稍后再试。",
+                  }}
+                />
+              </GlassSurface>
+
+              <GlassSurface level="soft" className={styles.trendSurface}>
+                <GeoTrendChart title="GEO 表现趋势" points={trendPoints} error={errors.trends} />
+              </GlassSurface>
+
+              <InsightCard
+                title="智能洞察"
+                headline={strategyInsight?.title}
+                summary={strategyInsight?.summary || strategyInsight?.overview}
+                items={(strategyInsight?.actions ?? []).slice(0, 3).map((text) => ({ text }))}
+                priorityLabel={strategyInsight ? "当前优先事项" : undefined}
+                action={
+                  latestReport
+                    ? {
+                        label: strategyInsight ? "查看完整方案" : "生成优化方案",
+                        href: `/geo/strategy/${latestReport.id}`,
+                      }
+                    : undefined
+                }
+                state={
+                  strategyLoading
+                    ? "loading"
+                    : errors.strategies
+                      ? "error"
+                      : strategyInsight
+                        ? "ready"
+                        : "empty"
+                }
+                messages={{
+                  empty: hasReport
+                    ? "检测报告已生成，可以继续形成优化方向。"
+                    : "完成检测后，这里会展示对应的优化洞察。",
+                  error: "优化洞察暂时无法显示，请稍后再试。",
+                }}
+              />
+            </section>
+
+            <section className={styles.metricGrid} aria-label="关键指标">
+              <MetricStat
+                label="人工智能曝光指数"
+                value={exposureValue}
+                precision={1}
+                status={
+                  exposureValue === null
+                    ? undefined
+                    : {
+                        label: getScoreState(exposureValue).label,
+                        tone: SCORE_TONES[getScoreState(exposureValue).tone],
+                      }
+                }
+                change={metricChange(comparableChanges.exposure, " 分")}
+                description="综合衡量当前主体在各检测平台中的可见程度"
+                state={reportState}
+              />
+              <MetricStat
+                label="品牌提及率"
+                value={mentionValue}
+                suffix="%"
+                precision={1}
+                change={metricChange(comparableChanges.mention, " 个百分点")}
+                description="在有效回答中，明确提及当前品牌的占比"
+                state={reportState}
+              />
+              <MetricStat
+                label="推荐表现"
+                value={recommendationValue}
+                suffix="%"
+                precision={1}
+                change={metricChange(comparableChanges.recommendation, " 个百分点")}
+                description="在有效回答中，主动推荐当前品牌的占比"
+                state={reportState}
+              />
+            </section>
+
+            <section className={styles.sectionGrid}>
+              <section className={styles.section} aria-labelledby="provider-heading">
+                <div className={styles.sectionHeader}>
+                  <div>
+                    <h2 className={styles.sectionTitle} id="provider-heading">
+                      各人工智能平台表现
+                    </h2>
+                    <p className={styles.sectionDescription}>
+                      查看本次检测中各平台的综合评分与完成情况。
+                    </p>
+                  </div>
+                  {latestReport ? (
+                    <Button href={`/geo/reports/${latestReport.id}`} icon={<FileSearchOutlined />}>
+                      查看详细结果
+                    </Button>
+                  ) : null}
+                </div>
+                <XwDataStateView
+                  state={errors.reports ? "error" : providerSignals.length > 0 ? "ready" : "empty"}
+                  loading="正在整理平台表现…"
+                  empty="完成检测后，这里会展示本次检测中的平台表现。"
+                  error="平台表现暂时无法显示，请稍后再试。"
+                  skeletonLines={3}
+                >
+                  <div className={styles.providerList}>
+                    {providerSignals.map((provider) => {
+                      const facts: ProviderSignalFact[] = [
+                        {
+                          label: "检测状态",
+                          value: provider.statusLabel,
+                          tone: PROVIDER_TONES[provider.statusTone],
+                        },
+                        { label: "检测结果", value: provider.callSummary },
+                      ];
+                      return (
+                        <ProviderSignal
+                          key={provider.modelId}
+                          name={provider.name}
+                          value={provider.score}
+                          valueLabel={
+                            provider.score === null
+                              ? provider.scoreText
+                              : `${provider.scoreText} 分`
+                          }
+                          facts={facts}
+                          tone={PROVIDER_TONES[provider.statusTone]}
+                        />
+                      );
+                    })}
+                  </div>
+                </XwDataStateView>
+              </section>
+
+              <section className={styles.section}>
+                <ProgressTimeline title="GEO 成长进度" steps={progressSteps} state="ready" />
+              </section>
+            </section>
+
+            <section className={styles.reportSection} aria-labelledby="recent-reports-heading">
+              <div className={styles.sectionHeader}>
+                <div>
+                  <h2 className={styles.sectionTitle} id="recent-reports-heading">
+                    最近检测报告
+                  </h2>
+                  <p className={styles.sectionDescription}>
+                    查看当前主体最近完成的检测结果与综合评分。
+                  </p>
+                </div>
+                {data.reports.length > 0 ? <Button href="/geo/reports">查看全部报告</Button> : null}
               </div>
-              <Space wrap>
-                <Tag color={currentSubject.current_version_no !== null ? "green" : "orange"}>
-                  {currentSubject.current_version_no !== null ? "可用" : "待完善"}
-                </Tag>
-                {currentSubject.retest_required && <Tag color="orange">需要复测</Tag>}
-              </Space>
+              <XwDataStateView
+                state={errors.reports ? "error" : data.reports.length > 0 ? "ready" : "empty"}
+                empty="完成首次检测后，这里会显示检测报告。"
+                error="检测报告暂时无法显示，请稍后再试。"
+              >
+                <div className={styles.reportList}>
+                  {data.reports.slice(0, 4).map((report) => (
+                    <a
+                      className={styles.reportItem}
+                      href={`/geo/reports/${report.id}`}
+                      key={report.id}
+                    >
+                      <span className={styles.reportScore}>
+                        {formatScore(report.summary.geo.score)} 分
+                      </span>
+                      <span>GEO 综合评分</span>
+                      <span className={styles.reportTime}>
+                        {formatChineseDateTime(report.generated_at)}
+                      </span>
+                    </a>
+                  ))}
+                </div>
+              </XwDataStateView>
             </section>
 
-            <section className="geo-metric-grid" aria-label="GEO 核心指标">
-              <Card>
-                <Text type="secondary">GEO Score</Text>
-                <div className="geo-metric-grid__value">
-                  {metricValue(latestReport?.summary.geo.score)}
-                </div>
-                <Text type="secondary">
-                  {latestReport
-                    ? `等级 ${latestReport.summary.geo.grade || "—"}`
-                    : "尚未完成首次检测"}
-                </Text>
-              </Card>
-              <Card>
-                <Text type="secondary">AI 曝光指数</Text>
-                <div className="geo-metric-grid__value">
-                  {metricValue(latestReport?.summary.exposure.exposure_index)}
-                </div>
-                <Text type="secondary">跨模型综合曝光表现</Text>
-              </Card>
-              <Card>
-                <Text type="secondary">品牌提及</Text>
-                <div className="geo-metric-grid__value">
-                  {metricValue(latestReport?.summary.exposure.mention_rate_score)}
-                </div>
-                <Text type="secondary">AI 回答中的品牌出现表现</Text>
-              </Card>
-              <Card>
-                <Text type="secondary">推荐表现</Text>
-                <div className="geo-metric-grid__value">
-                  {metricValue(latestReport?.summary.exposure.recommendation_rate_score)}
-                </div>
-                <Text type="secondary">AI 回答中的推荐倾向表现</Text>
-              </Card>
-            </section>
-
-            <section className="geo-dashboard__main-grid">
-              <Card title="GEO 优化主线" className="geo-workflow-card">
-                <div className="geo-workflow-list">
-                  {workflow.map((item) => {
-                    const Icon = item.icon;
-                    return (
-                      <a
-                        key={item.title}
-                        href={item.href}
-                        className={`geo-workflow-item geo-workflow-item--${item.tone}`}
-                      >
-                        <span className="geo-workflow-item__icon">
-                          <Icon />
-                        </span>
-                        <span className="geo-workflow-item__content">
-                          <Text strong>{item.title}</Text>
-                          <Text type="secondary">{item.description}</Text>
-                        </span>
-                        <span className="geo-workflow-item__status">{item.status}</span>
-                        <ArrowRightOutlined />
-                      </a>
-                    );
-                  })}
-                </div>
-              </Card>
-
-              <Space direction="vertical" size="middle" style={{ width: "100%" }}>
-                <Card title="当前优先事项">
-                  {currentSubject.retest_required ? (
-                    <Alert
-                      type="warning"
-                      showIcon
-                      message="主体资料已变化"
-                      description="现有检测结果可能已经不能完整代表当前主体，建议查看最新报告后安排复测。"
-                    />
-                  ) : !questionReady ? (
-                    <Alert
-                      type="info"
-                      showIcon
-                      message="先完成关键词与问题库"
-                      description="GEO 检测必须基于正式的问题库版本，先把用户真实问题确定下来。"
-                    />
-                  ) : !latestReport ? (
-                    <Alert
-                      type="info"
-                      showIcon
-                      message="可以开始首次 GEO 检测"
-                      description="问题库已具备，可以选择模型并执行 AI 可见度检测。"
-                    />
-                  ) : (
-                    <Alert
-                      type="success"
-                      showIcon
-                      message="已有 GEO 基线"
-                      description="继续查看报告、生成优化策略并执行内容；完成后再用复测验证变化。"
-                    />
-                  )}
-                  <Button type="primary" href={primaryAction.href} style={{ marginTop: 16 }}>
-                    {primaryAction.label}
-                  </Button>
-                </Card>
-
-                <Card title="最近 GEO 报告">
-                  {reports.length === 0 ? (
-                    <Text type="secondary">
-                      暂无检测报告。完成首次 AI 可见度检测后，这里会显示真实 GEO 数据。
-                    </Text>
-                  ) : (
-                    <Space direction="vertical" size="middle" style={{ width: "100%" }}>
-                      {reports.slice(0, 4).map((report) => (
-                        <a
-                          key={report.id}
-                          href={`/geo/reports/${report.id}`}
-                          className="geo-report-row"
-                        >
-                          <span>
-                            <Text strong>GEO Score {metricValue(report.summary.geo.score)}</Text>
-                            <Text type="secondary">
-                              {new Date(report.generated_at).toLocaleString("zh-CN")}
-                            </Text>
-                          </span>
-                          <ArrowRightOutlined />
-                        </a>
-                      ))}
-                      <Button href="/geo/reports" block>
-                        查看全部报告
-                      </Button>
-                    </Space>
-                  )}
-                </Card>
-              </Space>
-            </section>
+            {subjects.length > 1 ? (
+              <p className={styles.emptyCopy}>
+                当前账号共有 {subjects.length} 个主体，可在页面顶部切换主体。
+              </p>
+            ) : null}
           </>
-        )}
-
-        {subjects.length > 1 && (
-          <Text type="secondary" className="geo-dashboard__subject-count">
-            当前账号共有 {subjects.length} 个主体，可通过左侧“当前主体”直接切换。
-          </Text>
         )}
       </main>
     </ConfigProvider>

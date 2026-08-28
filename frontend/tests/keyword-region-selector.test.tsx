@@ -96,4 +96,18 @@ describe("KeywordRegionSelector", () => {
       },
     ]);
   });
+
+  it("主体没有服务区域时给出下一步设置指引", () => {
+    render(
+      <KeywordRegionSelector
+        mode="subject"
+        serviceRegions=""
+        value={[]}
+        onChange={() => undefined}
+      />,
+    );
+
+    expect(screen.getByText("当前主体还没有可用的服务区域")).toBeTruthy();
+    expect(screen.getByText(/请先到主体档案设置服务区域/)).toBeTruthy();
+  });
 });

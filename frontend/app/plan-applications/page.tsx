@@ -11,14 +11,9 @@ import {
   type PlanApplication,
   type PlanApplicationStatus,
 } from "@/lib/plans-client";
+import { PLAN_APPLICATION_STATUS_LABELS } from "@/lib/product-copy";
 
-const labels: Record<PlanApplicationStatus, string> = {
-  pending: "待处理",
-  contacted: "已联系",
-  closed: "已关闭",
-  cancelled: "已取消",
-  activated: "已开通",
-};
+const labels: Record<PlanApplicationStatus, string> = PLAN_APPLICATION_STATUS_LABELS;
 
 export default function PlanApplicationsPage() {
   const [items, setItems] = useState<PlanApplication[]>([]);
@@ -80,13 +75,13 @@ export default function PlanApplicationsPage() {
         rowKey="id"
         dataSource={items}
         pagination={false}
+        locale={{ emptyText: "暂时没有套餐申请。选择套餐并提交后，可在这里查看进度。" }}
         columns={[
           { title: "申请编号", dataIndex: "id" },
           {
             title: "套餐",
             render: (_, item) => String(item.public_plan_snapshot.name ?? "套餐"),
           },
-          { title: "版本", dataIndex: "requested_version_no" },
           { title: "状态", render: (_, item) => <Tag>{labels[item.status]}</Tag> },
           {
             title: "操作",

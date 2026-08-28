@@ -181,7 +181,7 @@ describe("Stage 2 image generation workspace", () => {
       "subject-1",
       expect.objectContaining({ article_id: "article-1", prompt: "推荐封面提示词" }),
     );
-    expect(await screen.findByText("图片任务：生成成功", {}, { timeout: 3000 })).toBeTruthy();
+    expect(await screen.findByText("图片生成进度：生成成功", {}, { timeout: 3000 })).toBeTruthy();
     expect(screen.getByAltText("生成图片预览")).toBeTruthy();
     await userEvent.click(screen.getByRole("button", { name: "选入当前文章" }));
     expect(imageApi.attachImage).toHaveBeenCalledWith("image-1", "article-1", 1);
@@ -249,7 +249,7 @@ describe("Stage 2 image generation workspace", () => {
     expect(
       await screen.findByText("生成结果未通过内容安全检查，额度已释放。", {}, { timeout: 3000 }),
     ).toBeTruthy();
-    expect(screen.getByRole("button", { name: "修改后重试" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "调整后重新生成" })).toBeTruthy();
   });
 
   it("supports an approved subject-library reference image", async () => {
@@ -367,7 +367,7 @@ describe("Stage 2 image generation workspace", () => {
     render(<ArticleImagesWorkspace subjectId="subject-1" />);
 
     await userEvent.click(await screen.findByRole("button", { name: /生成图片/ }));
-    expect(await screen.findByText("图片生成服务凭据尚未配置，请联系管理员。")).toBeTruthy();
+    expect(await screen.findByText("图片生成服务暂不可用，请联系管理员。")).toBeTruthy();
     expect(screen.queryByText("IMAGE_CREDENTIAL_UNAVAILABLE")).toBeNull();
   });
 
@@ -388,5 +388,16 @@ describe("Stage 2 image generation workspace", () => {
 
     await userEvent.click(within(screen.getByLabelText("主体图片库分页")).getByTitle("2"));
     await waitFor(() => expect(screen.getAllByAltText("主体图片")).toHaveLength(5));
+  });
+
+  it("guides an empty image library to the image generation page", async () => {
+    imageApi.getSubjectImages.mockResolvedValue({ results: [], quota });
+
+    render(<SubjectImageLibraryWorkspace subjectId="subject-1" />);
+
+    expect(await screen.findByText("还没有图片，生成并保存后会出现在这里。")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "生成第一张图片" }).getAttribute("href")).toBe(
+      "/subjects/subject-1/images",
+    );
   });
 });
