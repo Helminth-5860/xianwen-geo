@@ -23,13 +23,3 @@ app.conf.task_annotations = {
 }
 
 app.autodiscover_tasks()
-
-# 恢复因服务重启或瞬时队列故障而中断的自动发文任务。准备类任务可以安全补发；
-# 已进入真实平台发布动作的 RUNNING 任务不会自动重放，而由恢复任务转为“结果待确认”。
-app.conf.beat_schedule = {
-    **(app.conf.beat_schedule or {}),
-    "publishing-recover-interrupted": {
-        "task": "publishing.recover_interrupted",
-        "schedule": 300.0,
-    },
-}

@@ -601,6 +601,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "web_sources.scan_import_retries",
         "schedule": timedelta(seconds=60),
     },
+    "publishing-recover-interrupted": {
+        "task": "publishing.recover_interrupted",
+        "schedule": timedelta(seconds=300),
+    },
 }
 CELERY_TASK_ROUTES = {
     "subjects.execute_enrichment": {"queue": "ai_content"},

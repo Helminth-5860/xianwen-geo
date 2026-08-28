@@ -1,7 +1,13 @@
+from django.conf import settings
 from django.test import SimpleTestCase, override_settings
 
 from apps.publishing.catalog import PLATFORM_BY_KEY, PLATFORMS, platform_payload
-from apps.publishing.security import decrypt_secret, digest_one_time_token, encrypt_secret, issue_one_time_token
+from apps.publishing.security import (
+    decrypt_secret,
+    digest_one_time_token,
+    encrypt_secret,
+    issue_one_time_token,
+)
 
 
 class PublishingCatalogTests(SimpleTestCase):
@@ -23,10 +29,23 @@ class PublishingCatalogTests(SimpleTestCase):
         self.assertEqual(by_key["xiaohongshu"]["verification_state"], "validation")
 
 
+class PublishingCeleryConfigTests(SimpleTestCase):
+    def test_recovery_task_is_registered_in_canonical_beat_schedule(self):
+        entry = settings.CELERY_BEAT_SCHEDULE["publishing-recover-interrupted"]
+        self.assertEqual(entry["task"], "publishing.recover_interrupted")
+        self.assertEqual(entry["schedule"].total_seconds(), 300)
+
+
 class PublishingCredentialSecurityTests(SimpleTestCase):
-    @override_settings(SECRET_KEY="test-secret-key-for-publishing-encryption", PUBLISHING_CREDENTIAL_ENCRYPTION_KEY="")
+    @override_settings(
+        SECRET_KEY="test-secret-key-for-publishing-encryption",
+        PUBLISHING_CREDENTIAL_ENCRYPTION_KEY="",
+    )
     def test_credentials_are_encrypted_and_can_be_restored(self):
-        source = {"cookies": [{"name": "session", "value": "secret-cookie"}], "token": "private-token"}
+        source = {
+            "cookies": [{"name": "session", "value": "secret-cookie"}],
+            "token": "private-token",
+        }
         ciphertext = encrypt_secret(source)
         self.assertNotIn("secret-cookie", ciphertext)
         self.assertNotIn("private-token", ciphertext)
