@@ -1,4 +1,4 @@
-import { get, post, write } from "./auth-client";
+import { get, post, remove, write } from "./auth-client";
 
 export type PublishingMode = "managed" | "review" | "selected";
 export type DistributionStrategy = "smart" | "all" | "custom";
@@ -141,7 +141,7 @@ export const setPlatformAutoEnabled = (
   );
 
 export const disconnectPlatform = (subjectId: string, platformKey: string) =>
-  write<void>("DELETE", `/subjects/${subjectId}/publishing/accounts/${platformKey}`, {});
+  remove<void>(`/subjects/${subjectId}/publishing/accounts/${platformKey}`);
 
 export const createPublication = (
   subjectId: string,
