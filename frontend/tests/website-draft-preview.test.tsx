@@ -38,7 +38,11 @@ const project: WebsiteProject = {
   subject_id: "subject-1",
   subject_version_id: "version-1",
   style_key: "technology",
-  style_name: "科技简约",
+  style_name: "科技未来",
+  theme_key: "amethyst",
+  theme_name: "紫晶",
+  density_key: "standard",
+  density_name: "标准",
   status: "ready",
   selected_asset_ids: [],
   selected_document_ids: ["document-1"],
@@ -53,7 +57,13 @@ const project: WebsiteProject = {
         title: "首页",
         seo_title: "首页标题",
         seo_description: "首页说明",
-        sections: [section("hero", "专注企业增长"), section("cards", "核心服务")],
+        sections: [
+          section("hero", "专注企业增长"),
+          section("cards", "核心服务"),
+          section("text", "企业能力"),
+          section("faq", "常见问题"),
+          section("contact", "联系我们"),
+        ],
       },
       ...(["about", "services", "solutions", "faq", "contact"] as const).map((key) => ({
         key,
@@ -67,7 +77,9 @@ const project: WebsiteProject = {
         }[key],
         seo_title: `${key}标题`,
         seo_description: `${key}说明`,
-        sections: [section(key === "faq" ? "faq" : key === "contact" ? "contact" : "text", "页面内容")],
+        sections: [
+          section(key === "faq" ? "faq" : key === "contact" ? "contact" : "text", "页面内容"),
+        ],
       })),
     ],
   },
@@ -102,5 +114,20 @@ describe("官网草稿预览", () => {
     expect(screen.getByAltText("首页主视觉").getAttribute("src")).toBe(
       "https://example.test/company.webp",
     );
+  });
+
+  it("简洁模式减少展示区域但保留联系信息", () => {
+    render(
+      <WebsiteDraftPreview
+        project={project}
+        subjectName="显问科技"
+        materials={[]}
+        design={{ styleKey: "industrial", themeKey: "obsidian", densityKey: "compact" }}
+      />,
+    );
+
+    expect(screen.getByText("核心服务")).toBeTruthy();
+    expect(screen.queryByText("常见问题")).toBeNull();
+    expect(screen.getAllByText("联系我们").length).toBeGreaterThan(0);
   });
 });
