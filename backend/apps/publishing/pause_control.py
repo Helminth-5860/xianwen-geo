@@ -21,6 +21,7 @@ def pause_subject_publications(*, user_id, subject_id) -> int:
                 Publication.Status.PREPARING,
                 Publication.Status.QUEUED,
                 Publication.Status.RUNNING,
+                Publication.Status.PARTIAL,
             ),
         ).values_list("id", flat=True)
     )
@@ -31,7 +32,6 @@ def pause_subject_publications(*, user_id, subject_id) -> int:
         status__in=(
             PublicationTarget.Status.WAITING,
             PublicationTarget.Status.READY,
-            PublicationTarget.Status.FAILED,
         ),
     ).update(
         status=PublicationTarget.Status.PAUSED,
