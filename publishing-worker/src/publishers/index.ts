@@ -1,3 +1,4 @@
+import { withPublishPermit } from "../concurrency.js";
 import { BaijiahaoPublisher } from "./baijiahao.js";
 import { BROWSER_PUBLISHER_CONFIGS } from "./browser-configs.js";
 import { BrowserFormPublisher } from "./browser-form.js";
@@ -21,8 +22,21 @@ const publishers: Readonly<Record<string, PlatformPublisher>> = {
   douyin: new DouyinImagePublisher(),
 };
 
+function boundedPublisher(publisher: PlatformPublisher): PlatformPublisher {
+  return {
+    platformKey: publisher.platformKey,
+    verifiedCapabilities: publisher.verifiedCapabilities,
+    checkAuth: (credentials) => publisher.checkAuth(credentials),
+    publish: (input) => withPublishPermit(() => publisher.publish(input)),
+    ...(publisher.checkStatus
+      ? { checkStatus: (input) => publisher.checkStatus!(input) }
+      : {}),
+  };
+}
+
 export function getPublisher(platformKey: string) {
-  return publishers[platformKey] ?? null;
+  const publisher = publishers[platformKey];
+  return publisher ? boundedPublisher(publisher) : null;
 }
 
 export function publisherCapabilities() {

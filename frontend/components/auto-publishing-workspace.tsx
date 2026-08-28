@@ -438,7 +438,7 @@ export function AutoPublishingWorkspace() {
                 {connected && platform.account?.display_name
                   ? `账号：${platform.account.display_name}`
                   : platform.authorization_enabled
-                    ? "客户自己完成扫码或平台要求的验证，显问不保存账号密码。"
+                    ? "客户本人完成扫码或平台要求的验证；必要输入只在临时授权窗口转发，不保存到显问数据库。"
                     : "适配器完成真实账号验证后开放，不会把未验证能力展示成可用。"}
               </div>
 
@@ -485,8 +485,8 @@ export function AutoPublishingWorkspace() {
       <Alert
         type="info"
         showIcon
-        title="账号密码不会交给显问"
-        description="授权时由客户直接在平台页面完成扫码或平台安全验证。显问只保存加密后的授权会话；授权失效时再通知客户重新授权。"
+        title="授权信息不会被明文保存"
+        description="客户本人在安全授权窗口完成扫码或平台要求的验证。若平台要求手机号、验证码或密码，输入内容仅临时转发到当前隔离浏览器，不写入数据库或日志；登录成功后只加密保存平台会话凭证。"
       />
       {renderPlatformGroup("主流内容平台", platformGroups.mainstream)}
       {renderPlatformGroup("专业内容平台", platformGroups.professional)}
@@ -740,7 +740,7 @@ export function AutoPublishingWorkspace() {
             type="info"
             showIcon
             title="请优先使用扫码完成登录"
-            description="授权窗口只允许查看平台页面和点击切换扫码/刷新二维码，不提供账号密码或验证码输入。平台要求额外验证时，请按平台正式流程完成。"
+            description="如平台要求手机号、验证码或密码，请先在授权画面中点击对应输入框，再使用授权窗口下方的临时输入栏。输入内容只转发到当前隔离浏览器，不保存到显问数据库或日志。"
           />
           <Typography.Text>
             当前状态：{
