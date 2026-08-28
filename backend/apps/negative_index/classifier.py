@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
+from typing import Protocol
 
 from django.conf import settings
 
@@ -125,6 +126,14 @@ class CandidateAnalysis:
     event_status: str
     event_title: str
     summary: str
+
+
+class VerificationAnalysis(Protocol):
+    negative_confidence: int
+    severity: int
+    evidence_confidence: int
+    claim_type: str
+    event_status: str
 
 
 @dataclass(frozen=True)
@@ -387,33 +396,25 @@ def analyze_candidates(
     )
 
 
-def should_verify(
-    *,
-    negative_confidence: int,
-    severity: int,
-    evidence_confidence: int,
-    claim_type: str,
-    event_status: str,
-    authority: int,
-) -> bool:
-    if claim_type == NegativeEvent.ClaimType.REBUTTAL or event_status in {
+def should_verify(analysis: VerificationAnalysis, *, authority: int) -> bool:
+    if analysis.claim_type == NegativeEvent.ClaimType.REBUTTAL or analysis.event_status in {
         NegativeEvent.Status.RETRACTED,
         NegativeEvent.Status.FALSE_POSITIVE,
     }:
         return False
     if (
-        claim_type == NegativeEvent.ClaimType.OFFICIAL_FINDING
+        analysis.claim_type == NegativeEvent.ClaimType.OFFICIAL_FINDING
         and authority >= 90
-        and evidence_confidence >= 90
+        and analysis.evidence_confidence >= 90
     ):
         return False
-    uncertain_claim = claim_type in {
+    uncertain_claim = analysis.claim_type in {
         NegativeEvent.ClaimType.REPORTED_CLAIM,
         NegativeEvent.ClaimType.USER_ALLEGATION,
         NegativeEvent.ClaimType.RUMOR,
     }
     return (
-        negative_confidence >= 60
-        and severity >= 65
-        and (evidence_confidence < 82 or uncertain_claim)
+        analysis.negative_confidence >= 60
+        and analysis.severity >= 65
+        and (analysis.evidence_confidence < 82 or uncertain_claim)
     )
