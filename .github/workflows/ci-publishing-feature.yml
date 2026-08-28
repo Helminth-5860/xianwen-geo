@@ -30,11 +30,11 @@ jobs:
           python manage.py check
           python manage.py makemigrations --check --dry-run
           python manage.py migrate --noinput
-      - name: Publishing foundation tests
+      - name: Publishing foundation and safety tests
         working-directory: backend
         env:
           APP_ENV: test
-        run: python -m pytest tests/test_publishing_foundation.py -q
+        run: python -m pytest tests/test_publishing_foundation.py tests/test_publishing_safety.py -q
 
   frontend:
     runs-on: ubuntu-latest
