@@ -29,8 +29,10 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useSubjectWorkspace } from "@/components/subject-workspace-context";
+import { getSubjectArticles, type Article } from "@/lib/articles-client";
 import { userMessage } from "@/lib/auth-client";
 import {
+  createPublication,
   disconnectPlatform,
   getAuthorizationSession,
   getPublishingState,
@@ -68,6 +70,7 @@ const targetStatusText: Record<string, string> = {
   waiting: "等待发布",
   ready: "已准备",
   running: "正在发布",
+  submitted: "平台审核中",
   succeeded: "已发布",
   failed: "发布失败",
   auth_required: "需要重新授权",
@@ -78,8 +81,10 @@ export function AutoPublishingWorkspace() {
   const { currentSubject, loading: subjectLoading } = useSubjectWorkspace();
   const [messageApi, messageHolder] = message.useMessage();
   const [state, setState] = useState<PublishingState | null>(null);
+  const [readyArticles, setReadyArticles] = useState<Article[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [queueingArticleId, setQueueingArticleId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [authSession, setAuthSession] = useState<AuthorizationSession | null>(null);
   const [authPlatformName, setAuthPlatformName] = useState("");
@@ -90,7 +95,20 @@ export function AutoPublishingWorkspace() {
     setLoading(true);
     setError("");
     try {
-      setState(await getPublishingState(subjectId));
+      const [publishing, articlePage] = await Promise.all([
+        getPublishingState(subjectId),
+        getSubjectArticles(subjectId, 1, 50),
+      ]);
+      setState(publishing);
+      const alreadyScheduled = new Set(publishing.recent_publications.map((item) => item.article_id));
+      setReadyArticles(
+        articlePage.items.filter(
+          (article) =>
+            article.status === "ready" &&
+            article.moderation_status === "passed" &&
+            !alreadyScheduled.has(article.id),
+        ),
+      );
     } catch (reason: unknown) {
       setError(userMessage(reason));
     } finally {
@@ -101,6 +119,7 @@ export function AutoPublishingWorkspace() {
   useEffect(() => {
     if (!currentSubject?.id) {
       setState(null);
+      setReadyArticles([]);
       return;
     }
     void loadState(currentSubject.id);
@@ -195,6 +214,20 @@ export function AutoPublishingWorkspace() {
     });
   };
 
+  const queueArticle = async (article: Article) => {
+    if (!currentSubject?.id) return;
+    setQueueingArticleId(article.id);
+    try {
+      await createPublication(currentSubject.id, { article_id: article.id });
+      messageApi.success("文章已进入自动发布流程");
+      await loadState(currentSubject.id);
+    } catch (reason: unknown) {
+      messageApi.warning(userMessage(reason));
+    } finally {
+      setQueueingArticleId(null);
+    }
+  };
+
   const platformGroups = useMemo(() => {
     const platforms = state?.platforms ?? [];
     return {
@@ -253,6 +286,36 @@ export function AutoPublishingWorkspace() {
         </div>
       </div>
 
+      <Card className={styles.sectionCard} title="待发布内容">
+        {!readyArticles.length ? (
+          <div className={styles.emptyPlan}>当前没有等待安排的可发布文章。</div>
+        ) : (
+          <Space orientation="vertical" size="small" style={{ width: "100%" }}>
+            {readyArticles.slice(0, 10).map((article) => (
+              <Space key={article.id} wrap style={{ justifyContent: "space-between", width: "100%" }}>
+                <div>
+                  <Typography.Text strong>{article.title || "未命名文章"}</Typography.Text>
+                  <div>
+                    <Typography.Text type="secondary">
+                      已完成内容审核，可由显问自动配图、适配平台并排期发布
+                    </Typography.Text>
+                  </div>
+                </div>
+                <Button
+                  type="primary"
+                  size="small"
+                  loading={queueingArticleId === article.id}
+                  disabled={!summary?.connected_count}
+                  onClick={() => void queueArticle(article)}
+                >
+                  安排发布
+                </Button>
+              </Space>
+            ))}
+          </Space>
+        )}
+      </Card>
+
       <Card className={styles.sectionCard} title="最近发布任务">
         {!state?.recent_publications.length ? (
           <div className={styles.emptyPlan}>
@@ -265,13 +328,29 @@ export function AutoPublishingWorkspace() {
                 <Space orientation="vertical" size={8} style={{ width: "100%" }}>
                   <Space wrap style={{ justifyContent: "space-between", width: "100%" }}>
                     <Typography.Text strong>{publication.title}</Typography.Text>
-                    <Tag>{publication.status === "succeeded" ? "发布完成" : publication.status === "running" ? "正在发布" : "等待处理"}</Tag>
+                    <Tag>
+                      {publication.status === "succeeded"
+                        ? "发布完成"
+                        : publication.status === "running"
+                          ? "正在处理"
+                          : publication.status === "partial"
+                            ? "部分完成"
+                            : "等待处理"}
+                    </Tag>
                   </Space>
                   <div className={styles.targetList}>
                     {publication.targets.map((target) => (
                       <Tag
                         key={target.id}
-                        color={target.status === "succeeded" ? "success" : target.status === "failed" || target.status === "auth_required" ? "warning" : "default"}
+                        color={
+                          target.status === "succeeded"
+                            ? "success"
+                            : target.status === "submitted"
+                              ? "processing"
+                              : target.status === "failed" || target.status === "auth_required"
+                                ? "warning"
+                                : "default"
+                        }
                       >
                         {target.platform_name} · {targetStatusText[target.status] ?? "处理中"}
                       </Tag>
@@ -308,7 +387,7 @@ export function AutoPublishingWorkspace() {
                 {connected && platform.account?.display_name
                   ? `账号：${platform.account.display_name}`
                   : platform.authorization_enabled
-                    ? "客户自己完成扫码、短信或平台要求的验证，显问不保存账号密码。"
+                    ? "客户自己完成扫码或平台要求的验证，显问不保存账号密码。"
                     : "适配器完成真实账号验证后开放，不会把未验证能力展示成可用。"}
               </div>
 
@@ -356,7 +435,7 @@ export function AutoPublishingWorkspace() {
         type="info"
         showIcon
         title="账号密码不会交给显问"
-        description="授权时由客户直接在平台页面完成扫码、短信或验证码。显问只保存加密后的授权会话；授权失效时再通知客户重新授权。"
+        description="授权时由客户直接在平台页面完成扫码或平台安全验证。显问只保存加密后的授权会话；授权失效时再通知客户重新授权。"
       />
       {renderPlatformGroup("主流内容平台", platformGroups.mainstream)}
       {renderPlatformGroup("专业内容平台", platformGroups.professional)}
@@ -370,7 +449,7 @@ export function AutoPublishingWorkspace() {
           <Space style={{ justifyContent: "space-between", width: "100%" }}>
             <div>
               <div className={styles.settingTitle}>自动发文</div>
-              <div className={styles.settingHint}>关闭后只暂停新的发布任务，已经发布的内容不会受影响。</div>
+              <div className={styles.settingHint}>关闭后只暂停新的发布任务，已经提交或发布的内容不会受影响。</div>
             </div>
             <Switch
               checked={preference.is_enabled}
@@ -393,7 +472,9 @@ export function AutoPublishingWorkspace() {
                 <Radio value="selected">仅发布指定内容</Radio>
               </Space>
             </Radio.Group>
-            <div className={styles.settingHint}>推荐全自动托管：显问根据 GEO 内容机会生成、配图、排期并发布。</div>
+            <div className={styles.settingHint}>
+              全自动托管会在文章达到可发布状态后自动完成配图、平台适配、排期和发布；另外两种模式由你在“待发布内容”中确认。
+            </div>
           </div>
 
           <div className={styles.settingBlock}>
@@ -474,7 +555,7 @@ export function AutoPublishingWorkspace() {
               <Typography.Text><SafetyCertificateOutlined /> 真实企业素材优先</Typography.Text>
               <Typography.Text><ClockCircleOutlined /> 平台自动错峰</Typography.Text>
               <Typography.Text><PauseCircleOutlined /> 单个平台异常不会拖停其他平台</Typography.Text>
-              <Typography.Text><SendOutlined /> 发布成功后保存公开文章链接</Typography.Text>
+              <Typography.Text><SendOutlined /> 只有拿到公开链接才标记“已发布”</Typography.Text>
             </Space>
           </div>
         </div>
@@ -497,12 +578,16 @@ export function AutoPublishingWorkspace() {
                     <Space>
                       {target.status === "succeeded" ? <CheckCircleOutlined /> : <ClockCircleOutlined />}
                       <Typography.Text>{target.platform_name}</Typography.Text>
-                      <Tag>{targetStatusText[target.status] ?? "处理中"}</Tag>
+                      <Tag color={target.status === "submitted" ? "processing" : undefined}>
+                        {targetStatusText[target.status] ?? "处理中"}
+                      </Tag>
                     </Space>
                     {target.public_url ? (
                       <Button size="small" type="link" href={target.public_url} target="_blank" icon={<LinkOutlined />}>
                         查看文章
                       </Button>
+                    ) : target.status === "submitted" ? (
+                      <Typography.Text type="secondary">已提交平台，等待审核</Typography.Text>
                     ) : target.error_message ? (
                       <Typography.Text type="warning">{target.error_message}</Typography.Text>
                     ) : null}
@@ -583,8 +668,8 @@ export function AutoPublishingWorkspace() {
           <Alert
             type="info"
             showIcon
-            title="请直接在平台页面完成登录"
-            description="扫码、短信验证码和平台安全验证都由你本人完成。显问不会要求你填写平台账号密码。"
+            title="请优先使用扫码完成登录"
+            description="授权窗口只允许查看平台页面和点击切换扫码/刷新二维码，不提供账号密码或验证码输入。平台要求额外验证时，请按平台正式流程完成。"
           />
           <Typography.Text>
             当前状态：{
