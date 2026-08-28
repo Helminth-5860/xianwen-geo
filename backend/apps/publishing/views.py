@@ -31,6 +31,21 @@ from .services import (
 from .tasks import adopt_ready_articles_task, prepare_publication_task
 
 
+def _sync_custom_platform(preference: PublishingPreference | None, platform_key: str, enabled: bool) -> None:
+    if preference is None or preference.distribution_strategy != PublishingPreference.DistributionStrategy.CUSTOM:
+        return
+    keys = list(dict.fromkeys(preference.custom_platform_keys or []))
+    if enabled and platform_key not in keys:
+        keys.append(platform_key)
+    if not enabled:
+        keys = [item for item in keys if item != platform_key]
+    if keys == list(preference.custom_platform_keys or []):
+        return
+    preference.custom_platform_keys = keys
+    preference.version += 1
+    preference.save(update_fields=("custom_platform_keys", "version", "updated_at"))
+
+
 class SubjectPublishingStateView(APIView):
     permission_classes = [IsAvailableAuthenticatedUser]
 
@@ -52,6 +67,19 @@ class SubjectPublishingPreferenceView(APIView):
             )
         except PublishingInputError as exc:
             raise ValidationError({"publishing": [str(exc)]}) from exc
+        if preference.distribution_strategy == PublishingPreference.DistributionStrategy.CUSTOM and not preference.custom_platform_keys:
+            enabled_keys = list(
+                PlatformAccount.objects.filter(
+                    user=request.user,
+                    subject_id=subject_id,
+                    status=PlatformAccount.Status.CONNECTED,
+                    enabled_for_auto=True,
+                ).values_list("platform_key", flat=True)
+            )
+            if enabled_keys:
+                preference.custom_platform_keys = enabled_keys
+                preference.version += 1
+                preference.save(update_fields=("custom_platform_keys", "version", "updated_at"))
         if preference.is_enabled and preference.mode == PublishingPreference.Mode.MANAGED:
             adopt_ready_articles_task.delay(str(request.user.pk), str(subject_id))
         return Response({"preference": preference_payload(preference)})
@@ -103,16 +131,22 @@ class SubjectPlatformAccountView(APIView):
             subject=subject,
             platform_key=platform_key,
         )
-        account.enabled_for_auto = serializer.validated_data["enabled_for_auto"]
+        enabled = serializer.validated_data["enabled_for_auto"]
+        account.enabled_for_auto = enabled
         account.save(update_fields=("enabled_for_auto", "updated_at"))
+        preference = PublishingPreference.objects.filter(user=request.user, subject=subject).first()
+        _sync_custom_platform(preference, platform_key, enabled)
         return Response({"account": account_payload(account)})
 
     def delete(self, request, subject_id, platform_key):
+        subject = subject_for_user(user=request.user, subject_id=subject_id)
         disconnect_platform_account(
             user=request.user,
             subject_id=subject_id,
             platform_key=platform_key,
         )
+        preference = PublishingPreference.objects.filter(user=request.user, subject=subject).first()
+        _sync_custom_platform(preference, platform_key, False)
         return Response(status=HTTP_204_NO_CONTENT)
 
 
