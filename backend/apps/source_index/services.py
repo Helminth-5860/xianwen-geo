@@ -18,9 +18,10 @@ from .scoring import (
     classify_source,
     freshness_score,
     is_recent_30d,
-    normalized_title_signature,
+    mark_cross_domain_reposts,
     relevance_score,
     source_weight,
+    url_identity_hash,
     visibility_score,
 )
 
@@ -177,9 +178,12 @@ def execute_source_index_scan(scan_id) -> dict:
                     "freshness_score": freshness,
                     "source_weight": weight,
                     "matched_query_count": len(matched_queries),
-                    "repost_cluster_id": normalized_title_signature(record["title"]),
                 }
             )
+
+        # Do not label every long title as a repost. A repost cluster exists only when
+        # an equivalent normalized title is observed across at least two root domains.
+        mark_cross_domain_reposts(scored)
 
         SourceIndexScan.objects.filter(pk=scan.pk).update(stage=SourceIndexScan.Stage.SCORING)
         index_score, factor_scores = calculate_index(scored)
@@ -208,6 +212,7 @@ def execute_source_index_scan(scan_id) -> dict:
                 scan=scan,
                 original_url=item["original_url"],
                 normalized_url=item["normalized_url"],
+                normalized_url_hash=url_identity_hash(item["normalized_url"]),
                 domain=item["domain"],
                 root_domain=item["root_domain"],
                 website=item["website"],
