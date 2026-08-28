@@ -20,6 +20,7 @@ import {
 } from "antd";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { WebsiteDesignSelector } from "@/components/website-design-selector";
 import {
   useSubjectWorkspace,
 } from "@/components/subject-workspace-context";
@@ -43,38 +44,19 @@ import {
   getWebsiteDocumentUrl,
   getWebsiteJob,
   getWebsiteState,
+  updateWebsiteDesign,
+  type WebsiteDensityKey,
   type WebsiteJob,
   type WebsiteProject,
   type WebsiteState,
   type WebsiteStyleKey,
+  type WebsiteThemeKey,
 } from "@/lib/websites-client";
 
 import styles from "./website-builder-workspace.module.css";
 
 const MAX_MATERIALS = 12;
 const IMAGE_KINDS = new Set(["jpeg", "jpg", "png", "webp"]);
-
-const styleOptions: ReadonlyArray<{
-  key: WebsiteStyleKey;
-  name: string;
-  description: string;
-}> = [
-  {
-    key: "professional",
-    name: "专业商务",
-    description: "稳重清晰，适合企业服务、制造业、咨询与本地服务。",
-  },
-  {
-    key: "technology",
-    name: "科技简约",
-    description: "更轻、更现代，适合科技、软件、智能制造与数字化业务。",
-  },
-  {
-    key: "premium",
-    name: "高端品牌",
-    description: "强调品牌质感与留白，适合重视形象表达的企业。",
-  },
-];
 
 type DocumentMaterial = Readonly<{
   document: SubjectDocument;
@@ -106,6 +88,8 @@ export function WebsiteBuilderWorkspace() {
   const [images, setImages] = useState<ImageAsset[]>([]);
   const [documents, setDocuments] = useState<DocumentMaterial[]>([]);
   const [styleKey, setStyleKey] = useState<WebsiteStyleKey>("professional");
+  const [themeKey, setThemeKey] = useState<WebsiteThemeKey>("ocean");
+  const [densityKey, setDensityKey] = useState<WebsiteDensityKey>("standard");
   const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>([]);
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([]);
   const [activeJob, setActiveJob] = useState<WebsiteJob | null>(null);
@@ -115,6 +99,7 @@ export function WebsiteBuilderWorkspace() {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [generating, setGenerating] = useState(false);
+  const [savingDesign, setSavingDesign] = useState(false);
 
   const loadDocumentMaterials = useCallback(async (subjectId: string) => {
     const { documents: rows } = await getSubjectDocuments(subjectId);
@@ -147,9 +132,14 @@ export function WebsiteBuilderWorkspace() {
         setActiveJob(website.latest_job);
         if (website.project) {
           setStyleKey(website.project.style_key);
+          setThemeKey(website.project.theme_key);
+          setDensityKey(website.project.density_key);
           setSelectedAssetIds(website.project.selected_asset_ids);
           setSelectedDocumentIds(website.project.selected_document_ids);
         } else if (initializedSubjectRef.current !== subjectId) {
+          setStyleKey(website.recommendation.style_key);
+          setThemeKey(website.recommendation.theme_key);
+          setDensityKey(website.recommendation.density_key);
           const defaultDocumentIds = documentMaterials.map((item) => item.document.id);
           const remaining = Math.max(0, 6 - defaultDocumentIds.length);
           const defaultAssetIds = imageResponse.results
@@ -212,6 +202,40 @@ export function WebsiteBuilderWorkspace() {
   }, [activeJob?.id, activeJob?.status]);
 
   const selectedCount = selectedAssetIds.length + selectedDocumentIds.length;
+  const designDirty = Boolean(
+    project &&
+      (project.style_key !== styleKey ||
+        project.theme_key !== themeKey ||
+        project.density_key !== densityKey),
+  );
+
+  const selectStyle = (value: WebsiteStyleKey) => {
+    setStyleKey(value);
+    const recommendedThemes = state?.design_options.recommended_themes[value] ?? [];
+    if (recommendedThemes.length && !recommendedThemes.includes(themeKey)) {
+      setThemeKey(recommendedThemes[0]);
+    }
+  };
+
+  const saveDesign = async () => {
+    if (!currentSubject?.id || !project || !designDirty) return;
+    setSavingDesign(true);
+    setError("");
+    try {
+      const response = await updateWebsiteDesign(currentSubject.id, {
+        style_key: styleKey,
+        theme_key: themeKey,
+        density_key: densityKey,
+        expected_version: project.version,
+      });
+      setProject(response.project);
+      messageApi.success("网站设计已保存，文字内容保持不变");
+    } catch (reason: unknown) {
+      setError(userMessage(reason));
+    } finally {
+      setSavingDesign(false);
+    }
+  };
 
   const toggleAsset = (id: string) => {
     setSelectedAssetIds((current) => {
@@ -289,12 +313,16 @@ export function WebsiteBuilderWorkspace() {
     try {
       const response = await generateWebsite(currentSubject.id, {
         style_key: styleKey,
+        theme_key: themeKey,
+        density_key: densityKey,
         image_asset_ids: selectedAssetIds,
         document_ids: selectedDocumentIds,
       });
       setProject(response.project);
       setActiveJob(response.job);
       setStyleKey(response.project.style_key);
+      setThemeKey(response.project.theme_key);
+      setDensityKey(response.project.density_key);
       setSelectedAssetIds(response.project.selected_asset_ids);
       setSelectedDocumentIds(response.project.selected_document_ids);
       if (response.job.status === "failed") setGenerating(false);
@@ -383,12 +411,13 @@ export function WebsiteBuilderWorkspace() {
                 {state?.subject.official_name || currentSubject.official_name}
               </h2>
               <p className={styles.subtitle}>
-                系统会自动读取已确认的企业资料、产品与服务、关键词和检测问题。你只需要补充真实图片素材并选择网站风格。
+                系统会自动读取已确认的企业资料、产品与服务、关键词和检测问题。你可以补充真实图片素材，也可以直接使用显问推荐的网站设计。
               </p>
             </div>
             <Space wrap>
               <Tag color="blue">只使用已确认资料</Tag>
-              <Tag color="green">图片素材优先使用客户真实图片</Tag>
+              <Tag color="green">客户真实图片优先</Tag>
+              <Tag>设计可随时更换</Tag>
             </Space>
           </div>
         </section>
@@ -420,22 +449,22 @@ export function WebsiteBuilderWorkspace() {
           )}
         </Card>
 
-        <Card title="网站风格">
-          <div className={styles.styleGrid}>
-            {styleOptions.map((option) => (
-              <button
-                type="button"
-                key={option.key}
-                className={`${styles.styleButton} ${styleKey === option.key ? styles.styleButtonSelected : ""}`}
-                aria-pressed={styleKey === option.key}
-                onClick={() => setStyleKey(option.key)}
-              >
-                <span className={styles.styleName}>{option.name}</span>
-                <span className={styles.styleDescription}>{option.description}</span>
-              </button>
-            ))}
-          </div>
-        </Card>
+        {state && (
+          <WebsiteDesignSelector
+            options={state.design_options}
+            recommendation={state.recommendation}
+            styleKey={styleKey}
+            themeKey={themeKey}
+            densityKey={densityKey}
+            disabled={generating || savingDesign}
+            canSave={Boolean(project?.site && designDirty)}
+            saving={savingDesign}
+            onStyleChange={selectStyle}
+            onThemeChange={setThemeKey}
+            onDensityChange={setDensityKey}
+            onSave={() => void saveDesign()}
+          />
+        )}
 
         <Card>
           <div className={styles.materialHeader}>
@@ -549,7 +578,7 @@ export function WebsiteBuilderWorkspace() {
         <section className={styles.generatePanel}>
           <div>
             <Typography.Title level={4} style={{ margin: 0 }}>
-              {project?.site ? "重新生成官网草稿" : "生成当前主体官网"}
+              {project?.site ? "重新生成官网内容" : "生成当前主体官网"}
             </Typography.Title>
             <Typography.Text type="secondary">
               自动规划首页、关于我们、产品服务、解决方案、常见问题和联系我们，并生成 GEO 友好的中文内容。
@@ -563,7 +592,7 @@ export function WebsiteBuilderWorkspace() {
             disabled={!readiness?.can_generate || uploading || loading}
             onClick={() => void startGeneration()}
           >
-            {project?.site ? "重新生成官网" : "AI 一键生成官网"}
+            {project?.site ? "重新生成官网内容" : "AI 一键生成官网"}
           </Button>
         </section>
 
@@ -589,6 +618,7 @@ export function WebsiteBuilderWorkspace() {
             project={project}
             subjectName={state?.subject.official_name || currentSubject.official_name}
             materials={previewMaterials}
+            design={{ styleKey, themeKey, densityKey }}
           />
         )}
       </Space>
