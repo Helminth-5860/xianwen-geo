@@ -18,12 +18,14 @@ from .catalog import PLATFORM_BY_KEY
 from .credentials import PlatformCredentialRuntimeUnavailable, platform_credentials
 from .models import PlatformAccount, PublicationTarget, PublishingPreference
 from .pause_control import AUTOMATION_PAUSED_CODE, PLATFORM_DISABLED_CODE
+from .platform_health import platform_circuit_open
 from .publication_state import aggregate_publication
 from .security import PublishingCredentialError
 from .worker_client import PublishingWorkerError, publish_to_platform
 
 
 _TRANSIENT_RETRY_SECONDS = 75
+_CIRCUIT_RETRY_SECONDS = 30 * 60
 
 
 def _target_max_retries() -> int:
@@ -108,8 +110,6 @@ def _publication_tags(target: PublicationTarget) -> list[str]:
             score += 1
         if item.relevance_score is not None and item.relevance_score >= 80:
             score += 1
-        # Only emit confirmed keyword assets that have a real textual match. Priority
-        # alone is not enough; that would attach unrelated brand keywords to an article.
         if normalized not in title and normalized not in content:
             continue
         ranked.append((score, -item.sort_order, value))
@@ -230,6 +230,10 @@ def execute_target(*, target_id) -> dict[str, Any]:
             target.save(update_fields=("status", "safe_error_code", "updated_at"))
             aggregate_publication(target.publication_id)
             return {"status": "paused"}
+        if platform_circuit_open(target.platform_key):
+            # Do not open a browser or consume an attempt while a shared platform
+            # circuit is cooling down. The Celery task will return after the circuit TTL.
+            return {"status": "retry", "retry_after": _CIRCUIT_RETRY_SECONDS}
         if target.status not in {
             PublicationTarget.Status.READY,
             PublicationTarget.Status.FAILED,
@@ -316,6 +320,13 @@ def execute_target(*, target_id) -> dict[str, Any]:
             publish_mode="public",
         )
     except PublishingWorkerError as exc:
+        if exc.code == "platform_circuit_open":
+            PublicationTarget.objects.filter(pk=target.pk).update(
+                status=PublicationTarget.Status.READY,
+                safe_error_code="platform_unavailable",
+            )
+            aggregate_publication(target.publication_id)
+            return {"status": "retry", "retry_after": _CIRCUIT_RETRY_SECONDS}
         retryable = exc.code in {"worker_timeout", "worker_unavailable"}
         if retryable and target.attempts < _target_max_retries():
             PublicationTarget.objects.filter(pk=target.pk).update(
@@ -324,7 +335,7 @@ def execute_target(*, target_id) -> dict[str, Any]:
             )
             aggregate_publication(target.publication_id)
             return {"status": "retry", "retry_after": _TRANSIENT_RETRY_SECONDS}
-        paused = exc.code in {"platform_not_ready", "platform_circuit_open"}
+        paused = exc.code == "platform_not_ready"
         PublicationTarget.objects.filter(pk=target.pk).update(
             status=PublicationTarget.Status.PAUSED if paused else PublicationTarget.Status.FAILED,
             safe_error_code="platform_unavailable",
