@@ -1,0 +1,240 @@
+.page {
+  width: min(1120px, calc(100% - 56px));
+  margin: 0 auto;
+  padding: 42px 0 72px;
+  color: var(--xw-text, #172033);
+}
+
+.loading {
+  min-height: calc(100vh - 60px);
+  display: grid;
+  place-items: center;
+}
+
+.header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 20px;
+}
+
+.header h1 {
+  margin: 6px 0 8px;
+  font-size: clamp(30px, 4vw, 42px);
+  letter-spacing: -0.035em;
+}
+
+.header p {
+  margin: 0;
+}
+
+.eyebrow {
+  color: var(--xw-primary, #2468d8);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+
+.accountSummary {
+  min-width: 220px;
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--xw-border, #dfe6f0);
+  border-radius: var(--xw-radius-md, 12px);
+  background: var(--xw-surface, #ffffff);
+}
+
+.summaryAvatar {
+  flex: 0 0 auto;
+  color: #ffffff;
+  background: var(--xw-primary, #2468d8);
+  font-weight: 750;
+}
+
+.accountSummary > span:last-child {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.accountSummary strong,
+.accountSummary small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.accountSummary small {
+  color: var(--xw-text-secondary, #536178);
+}
+
+.card.ant-card {
+  border-color: var(--xw-border, #dfe6f0);
+  background: var(--xw-surface, #ffffff);
+  box-shadow: var(--xw-shadow-sm, 0 8px 24px rgb(37 61 99 / 7%));
+}
+
+.page > .card + .card,
+.securitySection,
+.securitySection > .card {
+  margin-top: 18px;
+}
+
+.card :global(.ant-alert) {
+  margin-bottom: 18px;
+}
+
+.compactForm {
+  max-width: 620px;
+}
+
+.appearanceSection {
+  padding: 4px 0 22px;
+  display: grid;
+  grid-template-columns: minmax(220px, 0.65fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 24px;
+}
+
+.appearanceSection + .appearanceSection {
+  padding-top: 22px;
+  border-top: 1px solid var(--xw-border, #dfe6f0);
+}
+
+.appearanceSection h4,
+.sessionLayout h4 {
+  margin: 0 0 5px;
+}
+
+.modeChoices {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.modeChoices :global(.ant-radio-button-wrapper) {
+  text-align: center;
+}
+
+.accentChoices {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.accentChoice {
+  min-height: 48px;
+  padding: 8px 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid var(--xw-border, #dfe6f0);
+  border-radius: 10px;
+  color: var(--xw-text, #172033);
+  background: var(--xw-surface, #ffffff);
+  cursor: pointer;
+}
+
+.accentChoice:hover,
+.accentChoice:focus-visible,
+.accentChoice[aria-pressed="true"] {
+  border-color: var(--xw-primary, #2468d8);
+  box-shadow: var(--xw-shadow-focus, 0 0 0 3px rgb(36 104 216 / 16%));
+}
+
+.accentChoice > span {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  border: 2px solid rgb(255 255 255 / 72%);
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px var(--xw-border-strong, #cad5e4);
+}
+
+.appearanceFooter {
+  padding-top: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-top: 1px solid var(--xw-border, #dfe6f0);
+}
+
+.sectionHeading {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 28px 2px 16px;
+}
+
+.sectionHeading > :global(.anticon) {
+  margin-top: 6px;
+  color: var(--xw-primary, #2468d8);
+  font-size: 22px;
+}
+
+.sectionHeading h2 {
+  margin: 0 0 4px;
+}
+
+.securityGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.securityGrid > .card {
+  height: 100%;
+}
+
+.sessionLayout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 0.7fr);
+  align-items: start;
+  gap: 36px;
+}
+
+.sessionForm {
+  width: 100%;
+}
+
+@media (max-width: 900px) {
+  .page {
+    width: min(100% - 36px, 780px);
+  }
+
+  .header,
+  .appearanceFooter {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .accountSummary {
+    width: 100%;
+  }
+
+  .appearanceSection,
+  .sessionLayout,
+  .securityGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 600px) {
+  .page {
+    width: min(100% - 28px, 560px);
+    padding-top: 24px;
+  }
+
+  .modeChoices,
+  .accentChoices {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .appearanceFooter > :global(.ant-space) {
+    width: 100%;
+  }
+}

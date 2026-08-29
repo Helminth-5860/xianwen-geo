@@ -55,6 +55,17 @@ class User(AbstractBaseUser, PermissionsMixin):
         CANCEL_PENDING = "cancel_pending", "注销冷静期"
         CANCELLED = "cancelled", "已注销"
 
+    class AppearanceMode(models.TextChoices):
+        LIGHT = "light", "浅色"
+        DARK = "dark", "深色"
+        SYSTEM = "system", "跟随系统"
+
+    class AppearanceAccent(models.TextChoices):
+        BLUE = "blue", "显问蓝"
+        GREEN = "green", "青绿色"
+        PURPLE = "purple", "紫罗兰"
+        ORANGE = "orange", "暖橙色"
+
     ACTIVE_ACCOUNT_STATUSES = frozenset(
         {
             AccountStatus.ACTIVE,
@@ -72,6 +83,16 @@ class User(AbstractBaseUser, PermissionsMixin):
     )
     phone: models.CharField = models.CharField(max_length=14, unique=True)
     nickname: models.CharField = models.CharField(max_length=50)
+    appearance_mode: models.CharField = models.CharField(
+        max_length=16,
+        choices=AppearanceMode.choices,
+        default=AppearanceMode.SYSTEM,
+    )
+    appearance_accent: models.CharField = models.CharField(
+        max_length=16,
+        choices=AppearanceAccent.choices,
+        default=AppearanceAccent.BLUE,
+    )
     account_status: models.CharField = models.CharField(
         max_length=16,
         choices=AccountStatus.choices,
@@ -111,6 +132,16 @@ class User(AbstractBaseUser, PermissionsMixin):
             models.CheckConstraint(
                 condition=models.Q(status_version__gte=1),
                 name="user_status_version_gte_1",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(appearance_mode__in=("light", "dark", "system")),
+                name="user_appearance_mode_valid",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(
+                    appearance_accent__in=("blue", "green", "purple", "orange")
+                ),
+                name="user_appearance_accent_valid",
             ),
         ]
 

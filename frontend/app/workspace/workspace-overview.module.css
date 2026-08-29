@@ -15,9 +15,9 @@
   height: 420px;
   border-radius: 40px;
   background:
-    radial-gradient(circle at 14% 12%, rgb(22 104 220 / 10%), transparent 34%),
-    radial-gradient(circle at 82% 16%, rgb(116 91 204 / 8%), transparent 28%),
-    radial-gradient(circle, rgb(71 94 132 / 10%) 0.8px, transparent 0.9px);
+    radial-gradient(circle at 14% 12%, var(--xw-body-glow), transparent 34%),
+    radial-gradient(circle at 82% 16%, var(--xw-ai-soft), transparent 28%),
+    radial-gradient(circle, var(--xw-border) 0.8px, transparent 0.9px);
   background-size:
     auto,
     auto,
@@ -183,7 +183,7 @@
   text-decoration: none;
   border: 1px solid var(--xw-border, #e1e7ef);
   border-radius: var(--xw-radius-md, 14px);
-  background: rgb(255 255 255 / 68%);
+  background: var(--xw-glass-soft);
   transition:
     transform var(--xw-motion-fast, 170ms) ease,
     border-color var(--xw-motion-fast, 170ms) ease,
@@ -193,8 +193,8 @@
 .reportItem:hover,
 .reportItem:focus-visible {
   color: inherit;
-  border-color: rgb(22 104 220 / 36%);
-  box-shadow: 0 12px 28px rgb(32 55 91 / 9%);
+  border-color: var(--xw-primary);
+  box-shadow: var(--xw-shadow-soft);
   transform: translateY(-2px);
   outline: none;
 }
@@ -232,7 +232,12 @@
   grid-column: span 4;
   min-height: 260px;
   border-radius: var(--xw-radius-lg, 18px);
-  background: linear-gradient(100deg, #edf1f6 20%, #f8fafc 45%, #edf1f6 70%);
+  background: linear-gradient(
+    100deg,
+    var(--xw-skeleton-start) 20%,
+    var(--xw-skeleton-middle) 45%,
+    var(--xw-skeleton-start) 70%
+  );
   background-size: 220% 100%;
   animation: xw-loading-sweep 1.5s ease-in-out infinite;
 }

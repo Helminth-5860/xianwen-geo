@@ -9,10 +9,12 @@ import { WORKSPACE_NAVIGATION_PREFERENCE_KEY } from "../components/workspace-nav
 
 const getCurrentUser = vi.fn();
 const getSubjects = vi.fn();
+const router = { push: vi.fn(), replace: vi.fn(), refresh: vi.fn() };
 let pathname = "/workspace";
 
 vi.mock("next/navigation", () => ({
   usePathname: () => pathname,
+  useRouter: () => router,
 }));
 vi.mock("next/link", () => ({
   default: ({ href, onClick, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => (
@@ -43,6 +45,7 @@ const account = {
   id: "user-1",
   nickname: "预览用户",
   phone_masked: "masked",
+  appearance: { mode: "light" as const, accent: "blue" as const },
   account_status: "active" as const,
   commercial_identity: "USER" as const,
   home_route: "/workspace" as const,

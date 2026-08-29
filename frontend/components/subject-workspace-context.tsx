@@ -1,6 +1,5 @@
 "use client";
 
-import { ProfileOutlined } from "@ant-design/icons";
 import { Button, Modal, Select, Space, Spin, Typography, message } from "antd";
 import { usePathname } from "next/navigation";
 import {
@@ -14,6 +13,7 @@ import {
   type ReactNode,
 } from "react";
 
+import { AccountMenu } from "@/components/account/account-menu";
 import { getCurrentUser, type AccountUser } from "@/lib/auth-client";
 import {
   getSubjects,
@@ -315,7 +315,7 @@ export function SubjectWorkspaceTopbar({
   navigationTrigger?: ReactNode;
   focusControl?: ReactNode;
 }>) {
-  const { active, currentSubject } = useSubjectWorkspace();
+  const { active, user } = useSubjectWorkspace();
   if (!active) return null;
 
   return (
@@ -327,14 +327,7 @@ export function SubjectWorkspaceTopbar({
       </div>
       <Space size="small" className="subject-workspace-topbar__actions">
         {focusControl}
-        <Button
-          className="subject-workspace-topbar__profile-link"
-          icon={<ProfileOutlined />}
-          href={currentSubject ? `/subjects/${currentSubject.id}` : "/subjects"}
-          aria-label={currentSubject ? "查看主体资料" : "创建主体"}
-        >
-          {currentSubject ? "查看主体资料" : "创建主体"}
-        </Button>
+        {user ? <AccountMenu user={user} /> : null}
       </Space>
     </header>
   );

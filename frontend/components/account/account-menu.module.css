@@ -1,0 +1,55 @@
+.trigger.ant-btn {
+  min-width: 0;
+  height: 40px;
+  padding: 4px 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--xw-text, #172033);
+}
+
+.trigger.ant-btn:hover,
+.trigger.ant-btn:focus-visible {
+  color: var(--xw-primary, #2468d8);
+  background: var(--xw-primary-soft, #eaf2ff);
+}
+
+.avatar {
+  flex: 0 0 auto;
+  color: #ffffff;
+  background: var(--xw-primary, #2468d8);
+  font-weight: 700;
+}
+
+.nickname {
+  max-width: 112px;
+  overflow: hidden;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.identity {
+  min-width: 180px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--xw-text, #172033);
+}
+
+.identity small {
+  color: var(--xw-text-secondary, #536178);
+  font-weight: 400;
+}
+
+@media (max-width: 767px) {
+  .trigger.ant-btn {
+    width: 40px;
+    padding-inline: 4px;
+    justify-content: center;
+  }
+
+  .nickname {
+    display: none;
+  }
+}

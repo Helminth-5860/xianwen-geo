@@ -1,6 +1,15 @@
 from django.urls import path
 
-from .account_views import NotificationListView, NotificationReadView
+from .account_views import (
+    AppearanceUpdateView,
+    NotificationListView,
+    NotificationReadView,
+    PasswordChangeView,
+    PhoneChangeView,
+    PhoneCodeSendView,
+    ProfileUpdateView,
+    SessionRevokeView,
+)
 from .admin_views import (
     AdminUserDetailView,
     AdminUserFreezeView,
@@ -37,6 +46,12 @@ urlpatterns = [
     path("auth/password/reset", PasswordResetView.as_view(), name="password-reset"),
     path("auth/logout", LogoutView.as_view(), name="logout"),
     path("me", MeView.as_view(), name="me"),
+    path("me/profile", ProfileUpdateView.as_view(), name="me-profile"),
+    path("me/phone/code", PhoneCodeSendView.as_view(), name="me-phone-code"),
+    path("me/phone", PhoneChangeView.as_view(), name="me-phone"),
+    path("me/password", PasswordChangeView.as_view(), name="me-password"),
+    path("me/appearance", AppearanceUpdateView.as_view(), name="me-appearance"),
+    path("me/sessions/revoke", SessionRevokeView.as_view(), name="me-sessions-revoke"),
     path("notifications", NotificationListView.as_view(), name="notification-list"),
     path(
         "notifications/<uuid:notification_id>/read",

@@ -2,13 +2,20 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   AuthApiError,
+  changeAccountPassword,
+  changeAccountPhone,
   loginWithSms,
+  logoutAccount,
   post,
   registerAccount,
   remove,
+  requestPhoneChangeCode,
   resetPassword,
+  revokeOtherSessions,
   sendSms,
   setAdminStepUpHandler,
+  updateAccountProfile,
+  updateAppearance,
   userMessage,
   validateRegistrationReference,
   validationFieldMessages,
@@ -218,6 +225,83 @@ describe("集中认证客户端", () => {
       sms_code: "438921",
       new_password: "New-Correct-Horse-2027!",
     });
+  });
+
+  it("账号设置写请求使用固定路径和字段且统一携带安全校验", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/auth/csrf")) {
+        return jsonResponse({
+          success: true,
+          data: { csrf_token: "csrf-account-settings" },
+          request_id: "csrf-request",
+        });
+      }
+      return jsonResponse({ success: true, data: {}, request_id: "write-request" });
+    });
+
+    await updateAccountProfile({ nickname: " 新昵称 " });
+    await requestPhoneChangeCode({
+      phone: "13900139000",
+      currentPassword: "Current-password-2026!",
+    });
+    await changeAccountPhone({
+      phone: "13900139000",
+      currentPassword: "Current-password-2026!",
+      code: "438921",
+    });
+    await changeAccountPassword({
+      currentPassword: "Current-password-2026!",
+      newPassword: "New-password-2027!",
+    });
+    await updateAppearance({ mode: "dark", accent: "green" });
+    await revokeOtherSessions("Current-password-2026!");
+    await logoutAccount();
+
+    const writes = fetchMock.mock.calls.filter(([, init]) => init?.method !== "GET");
+    expect(writes).toHaveLength(7);
+    expect(writes.map(([input]) => String(input))).toEqual([
+      expect.stringMatching(/\/me\/profile$/),
+      expect.stringMatching(/\/me\/phone\/code$/),
+      expect.stringMatching(/\/me\/phone$/),
+      expect.stringMatching(/\/me\/password$/),
+      expect.stringMatching(/\/me\/appearance$/),
+      expect.stringMatching(/\/me\/sessions\/revoke$/),
+      expect.stringMatching(/\/auth\/logout$/),
+    ]);
+    expect(writes.map(([, init]) => init?.method)).toEqual([
+      "PATCH",
+      "POST",
+      "PATCH",
+      "PATCH",
+      "PATCH",
+      "POST",
+      "POST",
+    ]);
+    expect(JSON.parse(String(writes[0][1]?.body))).toEqual({ nickname: "新昵称" });
+    expect(JSON.parse(String(writes[1][1]?.body))).toEqual({
+      phone: "13900139000",
+      current_password: "Current-password-2026!",
+    });
+    expect(JSON.parse(String(writes[2][1]?.body))).toEqual({
+      phone: "13900139000",
+      current_password: "Current-password-2026!",
+      code: "438921",
+    });
+    expect(JSON.parse(String(writes[3][1]?.body))).toEqual({
+      current_password: "Current-password-2026!",
+      new_password: "New-password-2027!",
+    });
+    expect(JSON.parse(String(writes[4][1]?.body))).toEqual({ mode: "dark", accent: "green" });
+    expect(JSON.parse(String(writes[5][1]?.body))).toEqual({
+      current_password: "Current-password-2026!",
+    });
+    for (const [, init] of writes) {
+      expect(init).toMatchObject({
+        credentials: "include",
+        headers: expect.objectContaining({ "X-CSRFToken": "csrf-account-settings" }),
+      });
+    }
   });
 
   it("高风险稳定错误触发一次 Step-Up 后仅重试原写请求一次", async () => {

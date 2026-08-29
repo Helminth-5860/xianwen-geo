@@ -132,6 +132,7 @@ def test_registration_consumes_code_creates_approved_active_user_and_logs_in(mon
             "brand_name": "显问 GEO",
             "logo_reference": "",
         },
+        "appearance": {"mode": "system", "accent": "blue"},
     }
     assert response.json()["request_id"] == response["X-Request-ID"]
     assert response.cookies["xianwen_session"].value != old_session_key

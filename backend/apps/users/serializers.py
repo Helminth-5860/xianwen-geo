@@ -1,3 +1,5 @@
+from collections.abc import Mapping
+
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
@@ -116,6 +118,7 @@ class CurrentUserSerializer(serializers.ModelSerializer):
     commercial_identity = serializers.SerializerMethodField()
     home_route = serializers.SerializerMethodField()
     tenant = serializers.SerializerMethodField()
+    appearance = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -127,6 +130,7 @@ class CurrentUserSerializer(serializers.ModelSerializer):
             "commercial_identity",
             "home_route",
             "tenant",
+            "appearance",
         )
 
     def get_phone_masked(self, user: User) -> str:
@@ -141,6 +145,97 @@ class CurrentUserSerializer(serializers.ModelSerializer):
     def get_tenant(self, user: User) -> dict[str, str] | None:
         tenant = user.tenant if user.tenant_id else None
         return tenant_branding(tenant)
+
+    def get_appearance(self, user: User) -> dict[str, str]:
+        return {
+            "mode": user.appearance_mode,
+            "accent": user.appearance_accent,
+        }
+
+
+class StrictAccountSerializer(serializers.Serializer):
+    def to_internal_value(self, data):
+        if isinstance(data, Mapping):
+            unknown_fields = set(data) - set(self.fields)
+            if unknown_fields:
+                raise serializers.ValidationError(
+                    {field: ["不支持该字段。"] for field in sorted(unknown_fields)}
+                )
+        return super().to_internal_value(data)
+
+
+class ProfileUpdateSerializer(StrictAccountSerializer):
+    nickname = serializers.CharField(min_length=1, max_length=50, trim_whitespace=True)
+
+    def validate_nickname(self, value: str) -> str:
+        return validate_nickname(value)
+
+
+class PhoneMutationSerializer(StrictAccountSerializer):
+    phone = serializers.CharField(max_length=32, trim_whitespace=True)
+    current_password = serializers.CharField(
+        max_length=128,
+        trim_whitespace=False,
+        write_only=True,
+        style={"input_type": "password"},
+    )
+
+    def validate_phone(self, value: str) -> str:
+        try:
+            return normalize_phone(value)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError(exc.message, code=exc.code) from exc
+
+
+class PhoneCodeSendSerializer(PhoneMutationSerializer):
+    pass
+
+
+class PhoneChangeSerializer(PhoneMutationSerializer):
+    code = serializers.RegexField(
+        r"^\d{6}$",
+        max_length=6,
+        min_length=6,
+        trim_whitespace=False,
+        write_only=True,
+    )
+
+
+class PasswordChangeSerializer(StrictAccountSerializer):
+    current_password = serializers.CharField(
+        max_length=128,
+        trim_whitespace=False,
+        write_only=True,
+        style={"input_type": "password"},
+    )
+    new_password = serializers.CharField(
+        min_length=10,
+        max_length=128,
+        trim_whitespace=False,
+        write_only=True,
+        style={"input_type": "password"},
+    )
+
+    def validate(self, attrs):
+        if attrs["current_password"] == attrs["new_password"]:
+            raise serializers.ValidationError(
+                {"new_password": ["新密码不能与当前密码相同。"]}
+            )
+        return attrs
+
+
+class AppearanceUpdateSerializer(StrictAccountSerializer):
+    mode = serializers.ChoiceField(choices=User.AppearanceMode.values)
+    accent = serializers.ChoiceField(choices=User.AppearanceAccent.values)
+
+
+class SessionRevokeSerializer(StrictAccountSerializer):
+    current_password = serializers.CharField(
+        max_length=128,
+        trim_whitespace=False,
+        write_only=True,
+        style={"input_type": "password"},
+    )
 
 
 class PaginationSerializer(serializers.Serializer):

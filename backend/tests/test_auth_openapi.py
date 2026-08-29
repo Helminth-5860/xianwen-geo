@@ -22,6 +22,12 @@ def test_openapi_exposes_only_implemented_auth_endpoints():
         "/auth/password/reset",
         "/auth/logout",
         "/me",
+        "/me/profile",
+        "/me/phone/code",
+        "/me/phone",
+        "/me/password",
+        "/me/appearance",
+        "/me/sessions/revoke",
     ):
         assert path in paths
 
@@ -45,6 +51,7 @@ def test_openapi_documents_session_csrf_and_minimum_user_data():
         "commercial_identity",
         "home_route",
         "tenant",
+        "appearance",
     }
     assert set(components["schemas"]["User"]["required"]) == {
         "id",
@@ -54,6 +61,7 @@ def test_openapi_documents_session_csrf_and_minimum_user_data():
         "commercial_identity",
         "home_route",
         "tenant",
+        "appearance",
     }
 
 
@@ -108,4 +116,56 @@ def test_openapi_documents_registration_sms_login_and_password_reset():
         "AUTH_CREDENTIALS_INVALID",
         "ACCOUNT_UNAVAILABLE",
         "VERIFICATION_CODE_INVALID",
+    } <= error_codes
+
+
+def test_openapi_documents_account_settings_contract():
+    specification = load_openapi()
+    paths = specification["paths"]
+    schemas = specification["components"]["schemas"]
+
+    assert schemas["UserAppearance"]["properties"]["mode"]["enum"] == [
+        "light",
+        "dark",
+        "system",
+    ]
+    assert schemas["UserAppearance"]["properties"]["accent"]["enum"] == [
+        "blue",
+        "green",
+        "purple",
+        "orange",
+    ]
+    assert set(schemas["PhoneCodeSendRequest"]["required"]) == {
+        "phone",
+        "current_password",
+    }
+    assert set(schemas["PhoneChangeRequest"]["required"]) == {
+        "phone",
+        "current_password",
+        "code",
+    }
+    assert set(schemas["PasswordChangeRequest"]["required"]) == {
+        "current_password",
+        "new_password",
+    }
+    assert set(schemas["AppearanceUpdateRequest"]["required"]) == {"mode", "accent"}
+    assert set(schemas["SessionRevokeRequest"]["required"]) == {"current_password"}
+
+    for path, method in {
+        "/me/profile": "patch",
+        "/me/phone/code": "post",
+        "/me/phone": "patch",
+        "/me/password": "patch",
+        "/me/appearance": "patch",
+        "/me/sessions/revoke": "post",
+    }.items():
+        assert paths[path][method]["parameters"] == [
+            {"$ref": "#/components/parameters/CsrfToken"}
+        ]
+
+    error_codes = set(schemas["ErrorCode"]["enum"])
+    assert {
+        "CURRENT_PASSWORD_INVALID",
+        "PHONE_ALREADY_IN_USE",
+        "PHONE_CHANGE_TARGET_INVALID",
     } <= error_codes

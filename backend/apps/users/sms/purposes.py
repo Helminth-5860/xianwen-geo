@@ -5,6 +5,7 @@ class SmsPurpose(StrEnum):
     REGISTER = "register"
     LOGIN = "login"
     PASSWORD_RESET = "password_reset"
+    PHONE_CHANGE = "phone_change"
     ADMIN_STEP_UP = "admin_step_up"
 
 

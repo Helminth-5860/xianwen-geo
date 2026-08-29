@@ -4,14 +4,14 @@
   overflow: hidden;
   display: grid;
   grid-template-rows: auto 1fr auto;
-  color: #172033;
+  color: var(--xw-text);
   background: linear-gradient(
     125deg,
-    #fbfdff 0%,
-    #f6faff 26%,
-    #faf9ff 52%,
-    #f7fbff 76%,
-    #fcfdff 100%
+    var(--xw-bg) 0%,
+    var(--xw-surface-subtle) 26%,
+    var(--xw-glass-ai-fallback) 52%,
+    var(--xw-bg) 76%,
+    var(--xw-surface) 100%
   );
   background-size: 180% 180%;
   animation: surfaceShift 20s ease-in-out infinite alternate;
@@ -51,6 +51,10 @@
   object-fit: contain;
 }
 
+:global(html[data-resolved-theme="dark"]) .brandLogo {
+  filter: brightness(0) invert(1);
+}
+
 .center {
   position: relative;
   z-index: 2;
@@ -72,7 +76,12 @@
   line-height: 1.14;
   font-weight: 800;
   letter-spacing: -0.045em;
-  background: linear-gradient(100deg, #08a9cc 5%, #3567ed 50%, #822ce9 95%);
+  background: linear-gradient(
+    100deg,
+    var(--xw-primary) 5%,
+    var(--xw-primary-strong) 50%,
+    var(--xw-ai) 95%
+  );
   background-size: 180% 100%;
   -webkit-background-clip: text;
   background-clip: text;
@@ -83,12 +92,12 @@
 .card {
   position: relative;
   padding: 30px 30px 26px;
-  border: 1px solid rgba(73, 90, 119, 0.075);
+  border: 1px solid var(--xw-border);
   border-radius: 22px;
-  background: rgba(255, 255, 255, 0.76);
+  background: var(--xw-glass-strong);
   box-shadow:
-    0 24px 64px rgba(46, 67, 107, 0.09),
-    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+    var(--xw-shadow-md),
+    inset 0 1px 0 var(--xw-border-subtle);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
 }
@@ -105,9 +114,9 @@
 .form :global(.ant-input-affix-wrapper),
 .form :global(.ant-input) {
   min-height: 50px;
-  border-color: rgba(91, 107, 132, 0.14);
+  border-color: var(--xw-border);
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.9);
+  background: var(--xw-surface);
   box-shadow: none;
   transition:
     border-color 180ms ease,
@@ -119,13 +128,13 @@
 .form :global(.ant-input-affix-wrapper-focused),
 .form :global(.ant-input:hover),
 .form :global(.ant-input:focus) {
-  border-color: rgba(55, 104, 244, 0.48);
-  background: #fff;
-  box-shadow: 0 0 0 3px rgba(55, 104, 244, 0.055);
+  border-color: var(--xw-primary);
+  background: var(--xw-surface-elevated);
+  box-shadow: var(--xw-shadow-focus);
 }
 
 .inputIcon {
-  color: #a2adbd;
+  color: var(--xw-text-tertiary);
   font-size: 15px;
 }
 
@@ -137,14 +146,14 @@
 
 .formMeta a,
 .registerLine a {
-  color: #416bea;
+  color: var(--xw-primary);
   font-size: 13px;
   text-decoration: none;
 }
 
 .formMeta a:hover,
 .registerLine a:hover {
-  color: #7040eb;
+  color: var(--xw-primary-strong);
 }
 
 .submit {
@@ -154,8 +163,13 @@
   font-size: 15px;
   font-weight: 700;
   letter-spacing: 0.14em;
-  background: linear-gradient(105deg, #2f72ef 0%, #4660ec 52%, #7041e8 100%);
-  box-shadow: 0 12px 25px rgba(56, 99, 228, 0.16);
+  background: linear-gradient(
+    105deg,
+    var(--xw-primary) 0%,
+    var(--xw-primary-strong) 52%,
+    var(--xw-ai) 100%
+  );
+  box-shadow: var(--xw-shadow-sm);
   transition:
     transform 180ms ease,
     box-shadow 180ms ease,
@@ -165,7 +179,7 @@
 .submit:hover {
   transform: translateY(-1px);
   filter: brightness(1.02);
-  box-shadow: 0 15px 30px rgba(56, 99, 228, 0.2);
+  box-shadow: var(--xw-shadow-md);
 }
 
 .registerLine {
@@ -173,7 +187,7 @@
   justify-content: center;
   gap: 5px;
   margin-top: 19px;
-  color: #98a2b2;
+  color: var(--xw-text-tertiary);
   font-size: 13px;
 }
 
@@ -181,7 +195,7 @@
   position: relative;
   z-index: 2;
   padding: 0 24px 24px;
-  color: #9aa4b3;
+  color: var(--xw-text-tertiary);
   font-size: 12px;
   text-align: center;
 }

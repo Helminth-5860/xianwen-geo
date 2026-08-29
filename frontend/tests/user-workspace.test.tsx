@@ -87,6 +87,7 @@ const user = {
   id: "user-1",
   nickname: "预览用户",
   phone_masked: "masked",
+  appearance: { mode: "light" as const, accent: "blue" as const },
   account_status: "active" as const,
   commercial_identity: "USER" as const,
   home_route: "/workspace" as const,

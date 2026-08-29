@@ -62,7 +62,6 @@ export default function LoginPage() {
       locale={zhCN}
       theme={{
         token: {
-          colorPrimary: "#3768f4",
           borderRadius: 12,
           controlHeightLG: 48,
           fontSize: 15,

@@ -1,5 +1,4 @@
 :root {
-  color-scheme: light;
   font-family:
     Inter,
     "PingFang SC",
@@ -8,8 +7,8 @@
     -apple-system,
     BlinkMacSystemFont,
     sans-serif;
-  background: #f4f7fb;
-  color: #172033;
+  background: var(--xw-bg);
+  color: var(--xw-text);
 }
 
 * {
@@ -23,7 +22,13 @@ body {
 }
 
 body {
-  background: radial-gradient(circle at 15% 0%, rgb(22 104 220 / 14%), transparent 38rem), #f4f7fb;
+  background:
+    radial-gradient(circle at 15% 0%, var(--xw-body-glow), transparent 38rem), var(--xw-bg);
+  color: var(--xw-text);
+}
+
+html[data-theme-ready="false"] body {
+  visibility: hidden;
 }
 
 .workspace-navigation {
@@ -35,8 +40,8 @@ body {
   align-items: center;
   gap: 16px;
   padding: 12px max(20px, calc((100% - 1120px) / 2));
-  background: rgb(255 255 255 / 92%);
-  border-bottom: 1px solid rgb(22 104 220 / 10%);
+  background: var(--xw-glass-strong);
+  border-bottom: 1px solid var(--xw-border);
   backdrop-filter: blur(16px);
 }
 
@@ -78,8 +83,8 @@ body {
 
 .workspace-grid .ant-card {
   min-height: 230px;
-  border: 1px solid rgb(22 104 220 / 10%);
-  box-shadow: 0 18px 48px rgb(41 72 126 / 8%);
+  border: 1px solid var(--xw-border);
+  box-shadow: var(--xw-shadow-md);
 }
 
 .workspace-grid .ant-btn-link {
@@ -92,12 +97,12 @@ body {
 
 .status-grid .ant-card {
   min-height: 220px;
-  border: 1px solid rgb(22 104 220 / 10%);
-  box-shadow: 0 18px 48px rgb(41 72 126 / 8%);
+  border: 1px solid var(--xw-border);
+  box-shadow: var(--xw-shadow-md);
 }
 
 .card-icon {
-  color: #1668dc;
+  color: var(--xw-primary);
   font-size: 28px;
 }
 
@@ -157,19 +162,28 @@ body {
   display: block;
   width: fit-content;
   margin-bottom: 56px;
-  color: #52627a;
+  color: var(--xw-text-secondary);
 }
 
 .auth-eyebrow {
-  color: #1668dc;
+  color: var(--xw-primary);
   font-size: 14px !important;
   font-weight: 700;
   letter-spacing: 0.14em;
 }
 
 .auth-card.ant-card {
-  border: 1px solid rgb(22 104 220 / 10%);
-  box-shadow: 0 28px 80px rgb(41 72 126 / 14%);
+  border: 1px solid var(--xw-border);
+  background: var(--xw-surface);
+  box-shadow: var(--xw-shadow-md);
+}
+
+@media print {
+  html,
+  body {
+    background: #ffffff !important;
+    color: #172033 !important;
+  }
 }
 
 .auth-card .ant-card-body {

@@ -9,6 +9,7 @@ export type AccountUser = Readonly<{
   id: string;
   nickname: string;
   phone_masked: string;
+  appearance: AccountAppearance;
   account_status: "active" | "frozen" | "cancel_pending" | "cancelled";
   commercial_identity: "SUPER_ADMIN" | "ADMIN" | "USER";
   home_route: "/admin" | "/workspace";
@@ -19,6 +20,14 @@ export type AccountUser = Readonly<{
     brand_name: string;
     logo_reference: string;
   }> | null;
+}>;
+
+export type AppearanceMode = "light" | "dark" | "system";
+export type AppearanceAccent = "blue" | "green" | "purple" | "orange";
+
+export type AccountAppearance = Readonly<{
+  mode: AppearanceMode;
+  accent: AppearanceAccent;
 }>;
 
 export type SmsPurpose = "register" | "login" | "password_reset";
@@ -293,6 +302,55 @@ export type PageData<T> = Readonly<{
 
 export function getCurrentUser() {
   return get<AccountUser>("/me");
+}
+
+export function updateAccountProfile(input: { nickname: string }) {
+  return write<AccountUser>("PATCH", "/me/profile", {
+    nickname: input.nickname.trim(),
+  });
+}
+
+export function requestPhoneChangeCode(input: { phone: string; currentPassword: string }) {
+  return post<{ sent: true; expires_in: number; resend_after: number }>("/me/phone/code", {
+    phone: input.phone,
+    current_password: input.currentPassword,
+  });
+}
+
+export function changeAccountPhone(input: {
+  phone: string;
+  currentPassword: string;
+  code: string;
+}) {
+  return write<{ changed: true; reauthentication_required: true }>("PATCH", "/me/phone", {
+    phone: input.phone,
+    current_password: input.currentPassword,
+    code: input.code,
+  });
+}
+
+export function changeAccountPassword(input: { currentPassword: string; newPassword: string }) {
+  return write<{ changed: true; reauthentication_required: true }>("PATCH", "/me/password", {
+    current_password: input.currentPassword,
+    new_password: input.newPassword,
+  });
+}
+
+export function updateAppearance(input: AccountAppearance) {
+  return write<AccountUser>("PATCH", "/me/appearance", {
+    mode: input.mode,
+    accent: input.accent,
+  });
+}
+
+export function revokeOtherSessions(currentPassword: string) {
+  return post<{ revoked: true }>("/me/sessions/revoke", {
+    current_password: currentPassword,
+  });
+}
+
+export function logoutAccount() {
+  return post<{ logged_out: true }>("/auth/logout", {});
 }
 
 export function getNotifications(page = 1) {

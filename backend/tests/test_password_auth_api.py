@@ -102,6 +102,7 @@ def test_successful_password_login_rotates_session_and_sets_browser_cookie(user)
         "commercial_identity": "USER",
         "home_route": "/workspace",
         "tenant": None,
+        "appearance": {"mode": "system", "accent": "blue"},
     }
     session_cookie = response.cookies["xianwen_session"]
     assert session_cookie.value != previous_session_key
@@ -224,6 +225,7 @@ def test_me_requires_session_and_returns_minimum_user_data(user):
         "commercial_identity",
         "home_route",
         "tenant",
+        "appearance",
     }
     assert user.phone not in response.content.decode()
 

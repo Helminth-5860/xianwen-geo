@@ -20,7 +20,6 @@ import {
   ProgressTimeline,
   ProviderSignal,
   XwDataStateView,
-  xwTheme,
   type MetricStatChange,
   type ProgressTimelineStep,
   type ProviderSignalFact,
@@ -426,7 +425,7 @@ export default function WorkspacePage() {
   const recommendationValue = toScore(latestReport?.summary.exposure.recommendation_rate_score);
 
   return (
-    <ConfigProvider locale={zhCN} theme={xwTheme}>
+    <ConfigProvider locale={zhCN}>
       <main className={styles.overview}>
         <header className={styles.header}>
           <div className={styles.headerCopy}>

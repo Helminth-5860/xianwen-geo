@@ -315,6 +315,176 @@ paths:
                 $ref: '#/components/schemas/UserEnvelope'
         '401':
           $ref: '#/components/responses/AuthRequired'
+  /me/profile:
+    patch:
+      tags: [Me]
+      summary: 修改当前普通用户昵称
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProfileUpdateRequest'
+      responses:
+        '200':
+          description: 个人资料已更新
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserEnvelope'
+        '401':
+          $ref: '#/components/responses/AuthRequired'
+        '403':
+          $ref: '#/components/responses/PermissionDenied'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+  /me/phone/code:
+    post:
+      tags: [Me]
+      summary: 向新手机号发送换绑验证码
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PhoneCodeSendRequest'
+      responses:
+        '200':
+          description: 验证码已发送
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SmsSendEnvelope'
+        '401':
+          $ref: '#/components/responses/AuthRequired'
+        '403':
+          $ref: '#/components/responses/PermissionDenied'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /me/phone:
+    patch:
+      tags: [Me]
+      summary: 验证新手机号并完成换绑
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PhoneChangeRequest'
+      responses:
+        '200':
+          description: 手机号已修改，所有会话已退出
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountCredentialChangedEnvelope'
+        '401':
+          $ref: '#/components/responses/AuthRequired'
+        '403':
+          $ref: '#/components/responses/PermissionDenied'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /me/password:
+    patch:
+      tags: [Me]
+      summary: 修改当前普通用户密码
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordChangeRequest'
+      responses:
+        '200':
+          description: 密码已修改，所有会话已退出
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountCredentialChangedEnvelope'
+        '401':
+          $ref: '#/components/responses/AuthRequired'
+        '403':
+          $ref: '#/components/responses/PermissionDenied'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /me/appearance:
+    patch:
+      tags: [Me]
+      summary: 保存当前普通用户的界面外观
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AppearanceUpdateRequest'
+      responses:
+        '200':
+          description: 外观设置已保存
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserEnvelope'
+        '401':
+          $ref: '#/components/responses/AuthRequired'
+        '403':
+          $ref: '#/components/responses/PermissionDenied'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+  /me/sessions/revoke:
+    post:
+      tags: [Me]
+      summary: 退出当前用户的其他设备
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SessionRevokeRequest'
+      responses:
+        '200':
+          description: 其他设备已退出，当前会话保持登录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionRevokeEnvelope'
+        '401':
+          $ref: '#/components/responses/AuthRequired'
+        '403':
+          $ref: '#/components/responses/PermissionDenied'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /notifications:
     get:
       tags: [Me]
@@ -4195,6 +4365,9 @@ components:
       enum:
         - AUTH_REQUIRED
         - AUTH_CREDENTIALS_INVALID
+        - CURRENT_PASSWORD_INVALID
+        - PHONE_ALREADY_IN_USE
+        - PHONE_CHANGE_TARGET_INVALID
         - ACCOUNT_UNAVAILABLE
         - ADMIN_LOGIN_REQUIRED
         - ADMIN_AUTH_CHALLENGE_INVALID
@@ -4440,7 +4613,7 @@ components:
     User:
       type: object
       required:
-        [id, phone_masked, nickname, account_status, commercial_identity, home_route, tenant]
+        [id, phone_masked, nickname, account_status, commercial_identity, home_route, tenant, appearance]
       properties:
         id: {type: string, format: uuid}
         phone_masked: {type: string}
@@ -4457,6 +4630,89 @@ components:
           oneOf:
             - $ref: '#/components/schemas/TenantBranding'
             - type: 'null'
+        appearance:
+          $ref: '#/components/schemas/UserAppearance'
+    UserAppearance:
+      type: object
+      additionalProperties: false
+      required: [mode, accent]
+      properties:
+        mode:
+          type: string
+          enum: [light, dark, system]
+        accent:
+          type: string
+          enum: [blue, green, purple, orange]
+    ProfileUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [nickname]
+      properties:
+        nickname: {type: string, minLength: 1, maxLength: 50}
+    PhoneCodeSendRequest:
+      type: object
+      additionalProperties: false
+      required: [phone, current_password]
+      properties:
+        phone: {type: string, description: 待绑定的中国大陆手机号}
+        current_password: {type: string, maxLength: 128, format: password}
+    PhoneChangeRequest:
+      type: object
+      additionalProperties: false
+      required: [phone, current_password, code]
+      properties:
+        phone: {type: string, description: 已收到验证码的新手机号}
+        current_password: {type: string, maxLength: 128, format: password}
+        code: {type: string, pattern: '^\d{6}$'}
+    PasswordChangeRequest:
+      type: object
+      additionalProperties: false
+      required: [current_password, new_password]
+      properties:
+        current_password: {type: string, maxLength: 128, format: password}
+        new_password: {type: string, minLength: 10, maxLength: 128, format: password}
+    AppearanceUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [mode, accent]
+      properties:
+        mode:
+          type: string
+          enum: [light, dark, system]
+        accent:
+          type: string
+          enum: [blue, green, purple, orange]
+    SessionRevokeRequest:
+      type: object
+      additionalProperties: false
+      required: [current_password]
+      properties:
+        current_password: {type: string, maxLength: 128, format: password}
+    AccountCredentialChangedEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: object
+              additionalProperties: false
+              required: [changed, reauthentication_required]
+              properties:
+                changed: {type: boolean, const: true}
+                reauthentication_required: {type: boolean, const: true}
+    SessionRevokeEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: object
+              additionalProperties: false
+              required: [revoked]
+              properties:
+                revoked: {type: boolean, const: true}
     TenantBranding:
       type: object
       additionalProperties: false

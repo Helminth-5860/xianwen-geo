@@ -8,7 +8,7 @@
   align-items: center;
   gap: 7px;
   margin-bottom: 20px;
-  color: #1677ff;
+  color: var(--xw-primary);
   font-size: 14px;
   font-weight: 500;
   text-decoration: none;
@@ -16,12 +16,12 @@
 
 .backLink:hover,
 .backLink:focus-visible {
-  color: #0958d9;
+  color: var(--xw-primary-strong);
 }
 
 .backLink:focus-visible {
   border-radius: 4px;
-  outline: 3px solid rgb(22 119 255 / 20%);
+  outline: 3px solid var(--xw-primary);
   outline-offset: 3px;
 }
 
@@ -49,9 +49,9 @@
   gap: 18px;
   margin-bottom: 20px;
   padding: 16px;
-  border: 1px solid #e7ebf2;
+  border: 1px solid var(--xw-border);
   border-radius: 12px;
-  background: #fff;
+  background: var(--xw-surface);
 }
 
 .searchInput {
@@ -71,12 +71,12 @@
   align-items: center;
   gap: 14px;
   padding: 18px;
-  border: 1px solid #e7ebf2;
+  border: 1px solid var(--xw-border);
   border-radius: 12px;
-  background: #fff;
-  color: #172033;
+  background: var(--xw-surface);
+  color: var(--xw-text);
   text-decoration: none;
-  box-shadow: 0 1px 2px rgb(15 23 42 / 3%);
+  box-shadow: var(--xw-shadow-sm);
   transition:
     border-color 160ms ease,
     box-shadow 160ms ease,
@@ -85,13 +85,13 @@
 
 .card:hover {
   transform: translateY(-1px);
-  border-color: #b9cdf4;
-  color: #172033;
-  box-shadow: 0 8px 22px rgb(15 23 42 / 7%);
+  border-color: var(--xw-primary);
+  color: var(--xw-text);
+  box-shadow: var(--xw-shadow-soft);
 }
 
 .card:focus-visible {
-  outline: 3px solid rgb(22 119 255 / 24%);
+  outline: 3px solid var(--xw-primary);
   outline-offset: 2px;
 }
 
@@ -102,9 +102,9 @@
   flex: 0 0 54px;
   place-items: center;
   overflow: hidden;
-  border: 1px solid #edf0f5;
+  border: 1px solid var(--xw-border-subtle);
   border-radius: 50%;
-  background: #fff;
+  background: var(--xw-surface-elevated);
 }
 
 .logoImage {
@@ -120,8 +120,8 @@
   height: 100%;
   place-items: center;
   border-radius: 50%;
-  background: #edf4ff;
-  color: #245bb5;
+  background: var(--xw-primary-soft);
+  color: var(--xw-primary-strong);
   font-size: 20px;
   font-weight: 700;
 }
@@ -151,13 +151,13 @@
 
 .nameRow :global(.anticon) {
   flex: 0 0 auto;
-  color: #8b96a8;
+  color: var(--xw-text-tertiary);
   font-size: 12px;
 }
 
 .domain {
   overflow: hidden;
-  color: #607089;
+  color: var(--xw-text-secondary);
   font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -168,7 +168,7 @@
   min-width: 0;
   align-items: center;
   gap: 4px;
-  color: #8b96a8;
+  color: var(--xw-text-tertiary);
   font-size: 12px;
 }
 
@@ -187,9 +187,9 @@
   display: grid;
   min-height: 280px;
   place-items: center;
-  border: 1px solid #e7ebf2;
+  border: 1px solid var(--xw-border);
   border-radius: 12px;
-  background: #fff;
+  background: var(--xw-surface);
 }
 
 .pagination {
