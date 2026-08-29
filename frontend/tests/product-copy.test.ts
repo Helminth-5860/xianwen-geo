@@ -25,6 +25,15 @@ describe("普通用户产品文案", () => {
     expect(safeLocalProductMessage("Provider request failed at worker queue")).toBe(
       "当前操作未能完成，请稍后重新尝试。",
     );
+    expect(userFacingApiError({ code: "COMPETITOR_LIMIT_REACHED", status: 409 })).toBe(
+      "当前主体最多设置 3 家核心竞品。",
+    );
+    expect(userFacingApiError({ code: "COMPETITOR_DUPLICATE", status: 409 })).toBe(
+      "这家竞品已设置，请勿重复添加。",
+    );
+    expect(userFacingApiError({ code: "COMPETITOR_IS_SUBJECT", status: 422 })).toBe(
+      "不能将当前主体设置为自己的竞品。",
+    );
   });
 
   it("套餐权益只展示用户能理解的已知内容", () => {

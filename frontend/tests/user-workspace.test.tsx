@@ -621,6 +621,9 @@ describe("GEO 产品工作台", () => {
     expect(screen.getByRole("link", { name: "编辑主体" }).getAttribute("href")).toBe(
       "/subjects/subject-1",
     );
+    expect(screen.getByRole("link", { name: "竞品管理" }).getAttribute("href")).toBe(
+      "/subjects/subject-1/competitors",
+    );
     expect(screen.getByRole("link", { name: "主体管理" }).getAttribute("href")).toBe("/subjects");
     await userEvent.click(screen.getByText("主体档案"));
     expect(subjectMenu.getAttribute("aria-expanded")).toBe("false");
@@ -821,6 +824,14 @@ describe("GEO 产品工作台", () => {
       ),
     );
 
+    pathname = "/subjects/subject-1/competitors";
+    rerender(shell());
+    await waitFor(() =>
+      expect(screen.getByRole("menuitem", { name: "竞品管理" }).className).toContain(
+        "ant-menu-item-selected",
+      ),
+    );
+
     pathname = "/geo/data-center/source-index";
     rerender(shell());
     await waitFor(() =>
@@ -890,6 +901,9 @@ describe("GEO 产品工作台", () => {
   });
 
   it("动态主体路由切换到同一功能的新主体，历史对象详情回到所属模块列表", () => {
+    expect(subjectSwitchTargetPath("/subjects/subject-1/competitors", "subject-2")).toBe(
+      "/subjects/subject-2/competitors",
+    );
     expect(subjectSwitchTargetPath("/subjects/subject-1/keywords", "subject-2")).toBe(
       "/subjects/subject-2/keywords",
     );

@@ -109,7 +109,12 @@ def extract_self_domains(field_values) -> set[str]:
                 visit(child)
         elif isinstance(value, str):
             for match in re.findall(r"https?://[^\s,，;；]+", value):
-                normalized = normalize_url(match.rstrip(".)）]】"))
+                try:
+                    normalized = normalize_url(match.rstrip(".)）]】"))
+                except ValueError:
+                    # Historical subject fields can contain a malformed port.
+                    # Ignore only that URL so downstream subject checks stay available.
+                    continue
                 if normalized:
                     domains.add(normalized[1])
                     domains.add(normalized[2])

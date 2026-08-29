@@ -1,0 +1,58 @@
+.summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.summaryName {
+  margin: 4px 0 0 !important;
+}
+
+.slotGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.slotCard {
+  min-height: 220px;
+  border-color: #e4eaf2;
+  box-shadow: 0 12px 34px rgb(41 72 126 / 6%);
+}
+
+.slotBody {
+  display: flex;
+  min-height: 150px;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.website {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.emptySlot {
+  display: flex;
+  min-height: 150px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  text-align: center;
+}
+
+@media (max-width: 900px) {
+  .slotGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .summary {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

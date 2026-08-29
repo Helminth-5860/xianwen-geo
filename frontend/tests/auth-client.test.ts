@@ -5,6 +5,7 @@ import {
   loginWithSms,
   post,
   registerAccount,
+  remove,
   resetPassword,
   sendSms,
   setAdminStepUpHandler,
@@ -48,6 +49,24 @@ describe("集中认证客户端", () => {
       method: "POST",
       credentials: "include",
       headers: expect.objectContaining({ "X-CSRFToken": "csrf-test-value" }),
+    });
+  });
+
+  it("移除接口返回空内容时也能正常完成", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        jsonResponse({ success: true, data: { csrf_token: "csrf-remove" }, request_id: "r1" }),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+
+    await expect(
+      remove<void>("/subjects/subject-1/competitors/competitor-1"),
+    ).resolves.toBeUndefined();
+    expect(fetchMock.mock.calls[1][1]).toMatchObject({
+      method: "DELETE",
+      credentials: "include",
+      headers: expect.objectContaining({ "X-CSRFToken": "csrf-remove" }),
     });
   });
 

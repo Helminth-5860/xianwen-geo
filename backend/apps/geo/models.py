@@ -12,6 +12,100 @@ class ProtectedDetectionQuerySet(models.QuerySet):
         raise TypeError("GEO detection history cannot be deleted.")
 
 
+class SubjectCompetitor(models.Model):  # noqa: DJ008
+    class Source(models.TextChoices):
+        MANUAL = "manual", "手动添加"
+        SMART = "smart", "智能发现"
+
+    class Status(models.TextChoices):
+        ACTIVE = "active", "使用中"
+        REMOVED = "removed", "已移除"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="subject_competitors",
+    )
+    tenant = models.ForeignKey(
+        "users.Tenant",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="subject_competitors",
+    )
+    subject = models.ForeignKey(
+        "subjects.Subject",
+        on_delete=models.PROTECT,
+        related_name="managed_competitors",
+    )
+    name = models.CharField(max_length=255)
+    normalized_name = models.CharField(max_length=255)
+    website = models.URLField(max_length=500, blank=True, default="")
+    website_domain = models.CharField(max_length=255, blank=True, default="")
+    source = models.CharField(max_length=16, choices=Source.choices, default=Source.MANUAL)
+    position = models.PositiveSmallIntegerField()
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.ACTIVE)
+    version = models.PositiveBigIntegerField(default=1)
+    removed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "subject_competitors"
+        ordering = ("subject_id", "position", "created_at", "id")
+        indexes = [
+            models.Index(
+                fields=("user", "subject", "status", "position"),
+                name="subject_comp_owner_idx",
+            ),
+            models.Index(
+                fields=("tenant", "subject", "status"),
+                name="subject_comp_tenant_idx",
+            ),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(source__in=("manual", "smart")),
+                name="subject_comp_source_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(status__in=("active", "removed")),
+                name="subject_comp_status_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(position__gte=1, position__lte=3),
+                name="subject_comp_position_range",
+            ),
+            models.CheckConstraint(
+                condition=Q(version__gte=1),
+                name="subject_comp_version_gte_1",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    Q(status="active", removed_at__isnull=True)
+                    | Q(status="removed", removed_at__isnull=False)
+                ),
+                name="subject_comp_removed_at_state",
+            ),
+            models.UniqueConstraint(
+                fields=("subject", "normalized_name"),
+                condition=Q(status="active"),
+                name="subject_comp_active_name_unique",
+            ),
+            models.UniqueConstraint(
+                fields=("subject", "website_domain"),
+                condition=Q(status="active") & ~Q(website_domain=""),
+                name="subject_comp_active_domain_unique",
+            ),
+            models.UniqueConstraint(
+                fields=("subject", "position"),
+                condition=Q(status="active"),
+                name="subject_comp_active_pos_unique",
+            ),
+        ]
+
+
 class GeoDetectionJob(models.Model):  # noqa: DJ008
     class Status(models.TextChoices):
         QUEUED = "queued", "Queued"

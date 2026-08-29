@@ -1,5 +1,10 @@
 from django.urls import path
 
+from .competitor_views import (
+    SubjectCompetitorComparisonView,
+    SubjectCompetitorDetailView,
+    SubjectCompetitorListCreateView,
+)
 from .views import (
     AssistantContextView,
     AssistantRespondView,
@@ -41,6 +46,21 @@ from .views import (
 )
 
 urlpatterns = [
+    path(
+        "subjects/<uuid:subject_id>/competitors",
+        SubjectCompetitorListCreateView.as_view(),
+        name="subject-competitor-list-create",
+    ),
+    path(
+        "subjects/<uuid:subject_id>/competitors/comparison",
+        SubjectCompetitorComparisonView.as_view(),
+        name="subject-competitor-comparison",
+    ),
+    path(
+        "subjects/<uuid:subject_id>/competitors/<uuid:competitor_id>",
+        SubjectCompetitorDetailView.as_view(),
+        name="subject-competitor-detail",
+    ),
     path("geo/models", GeoModelsView.as_view(), name="geo-models"),
     path(
         "subjects/<uuid:subject_id>/geo/detection-options",

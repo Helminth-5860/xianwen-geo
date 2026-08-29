@@ -1511,6 +1511,85 @@ paths:
       tags: [Questions]
       summary: Get immutable question bank version
       responses: {'200': {description: Version snapshot, content: {application/json: {schema: {$ref: '#/components/schemas/QuestionBankVersionEnvelope'}}}}, '404': {$ref: '#/components/responses/ResourceNotFound'}}
+  /subjects/{subjectId}/competitors:
+    parameters:
+      - $ref: '#/components/parameters/SubjectId'
+    get:
+      tags: [Subjects]
+      summary: 获取当前主体的核心竞品
+      responses:
+        '200':
+          description: 当前主体最多三家有效竞品
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SubjectCompetitorListEnvelope'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+    post:
+      tags: [Subjects]
+      summary: 为当前主体添加核心竞品
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SubjectCompetitorCreateRequest'}
+      responses:
+        '201':
+          description: 核心竞品已添加
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SubjectCompetitorEnvelope'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+        '409': {$ref: '#/components/responses/BusinessConflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /subjects/{subjectId}/competitors/{competitorId}:
+    parameters:
+      - $ref: '#/components/parameters/SubjectId'
+      - name: competitorId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    patch:
+      tags: [Subjects]
+      summary: 修改当前主体的核心竞品
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SubjectCompetitorUpdateRequest'}
+      responses:
+        '200':
+          description: 核心竞品已更新
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SubjectCompetitorEnvelope'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+        '409': {$ref: '#/components/responses/BusinessConflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+    delete:
+      tags: [Subjects]
+      summary: 将核心竞品从当前主体中移除
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      responses:
+        '204': {description: 核心竞品已移除}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+  /subjects/{subjectId}/competitors/comparison:
+    parameters:
+      - $ref: '#/components/parameters/SubjectId'
+    get:
+      tags: [GEO]
+      summary: 使用当前主体最新检测结果对比已设置竞品
+      responses:
+        '200':
+          description: 真实检测数据计算的竞品对比或明确空状态
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CompetitorComparisonEnvelope'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
   /geo/models:
     get:
       tags: [GEO]
@@ -4205,6 +4284,12 @@ components:
         - SUBJECT_REVIEW_REASON_REQUIRED
         - SUBJECT_REVIEW_PENDING
         - SUBJECT_REVIEW_REJECTED
+        - COMPETITOR_VALUES_INVALID
+        - COMPETITOR_LIMIT_REACHED
+        - COMPETITOR_DUPLICATE
+        - COMPETITOR_IS_SUBJECT
+        - COMPETITOR_VERSION_CONFLICT
+        - COMPETITOR_NOT_FOUND
         - FILE_IDEMPOTENCY_KEY_REQUIRED
         - FILE_STATE_CONFLICT
         - FILE_VERSION_CONFLICT
@@ -5119,6 +5204,141 @@ components:
         finished_at: {type: [string, 'null'], format: date-time}
     KeywordGenerationJobEnvelope:
       allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, properties: {data: {$ref: '#/components/schemas/KeywordGenerationJob'}}}]
+    SubjectCompetitorCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 255}
+        website: {type: string, maxLength: 500, default: ''}
+    SubjectCompetitorUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version]
+      anyOf:
+        - required: [name]
+        - required: [website]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 255}
+        website: {type: string, maxLength: 500, default: ''}
+        expected_version: {type: integer, minimum: 1}
+    SubjectCompetitor:
+      type: object
+      additionalProperties: false
+      required: [id, name, website, domain, source, position, version, created_at, updated_at]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        website: {type: string}
+        domain: {type: string}
+        source: {type: string, enum: [manual, smart]}
+        position: {type: integer, minimum: 1, maximum: 3}
+        version: {type: integer, minimum: 1}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    SubjectCompetitorEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: object
+              additionalProperties: false
+              required: [competitor]
+              properties:
+                competitor: {$ref: '#/components/schemas/SubjectCompetitor'}
+    SubjectCompetitorListEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: object
+              additionalProperties: false
+              required: [subject, items, count, max_count]
+              properties:
+                subject:
+                  type: object
+                  additionalProperties: false
+                  required: [id, name]
+                  properties:
+                    id: {type: string, format: uuid}
+                    name: {type: string}
+                items:
+                  type: array
+                  maxItems: 3
+                  items: {$ref: '#/components/schemas/SubjectCompetitor'}
+                count: {type: integer, minimum: 0, maximum: 3}
+                max_count: {type: integer, const: 3}
+    CompetitorComparisonMetrics:
+      type: object
+      additionalProperties: false
+      required: [mention_count, mention_rate, question_coverage_count, question_coverage_rate, shared_question_count, gap_question_count, recommendation_rate, citation_count]
+      properties:
+        mention_count: {type: [integer, 'null'], minimum: 0}
+        mention_rate: {type: [number, 'null'], minimum: 0, maximum: 100}
+        question_coverage_count: {type: [integer, 'null'], minimum: 0}
+        question_coverage_rate: {type: [number, 'null'], minimum: 0, maximum: 100}
+        shared_question_count: {type: [integer, 'null'], minimum: 0}
+        gap_question_count: {type: [integer, 'null'], minimum: 0}
+        recommendation_rate: {type: [number, 'null'], minimum: 0, maximum: 100}
+        citation_count: {type: [integer, 'null'], minimum: 0}
+    CompetitorComparisonEntity:
+      type: object
+      additionalProperties: false
+      required: [id, kind, name, website, metrics]
+      properties:
+        id: {type: string, format: uuid}
+        kind: {type: string, enum: [subject, competitor]}
+        name: {type: string}
+        website: {type: string}
+        metrics: {$ref: '#/components/schemas/CompetitorComparisonMetrics'}
+    CompetitorOpportunity:
+      type: object
+      additionalProperties: false
+      required: [question_id, question, competitor_ids, competitor_names]
+      properties:
+        question_id: {type: string, format: uuid}
+        question: {type: string}
+        competitor_ids:
+          type: array
+          uniqueItems: true
+          items: {type: string, format: uuid}
+        competitor_names:
+          type: array
+          uniqueItems: true
+          items: {type: string}
+    CompetitorComparison:
+      type: object
+      additionalProperties: false
+      required: [subject_id, subject_name, status, competitor_count, report_id, detection_id, generated_at, valid_answer_count, question_count, entities, opportunities, detail_url]
+      properties:
+        subject_id: {type: string, format: uuid}
+        subject_name: {type: string}
+        status: {type: string, enum: [no_competitors, no_detection_data, ready]}
+        competitor_count: {type: integer, minimum: 0, maximum: 3}
+        report_id: {type: [string, 'null'], format: uuid}
+        detection_id: {type: [string, 'null'], format: uuid}
+        generated_at: {type: [string, 'null'], format: date-time}
+        valid_answer_count: {type: integer, minimum: 0}
+        question_count: {type: integer, minimum: 0}
+        entities:
+          type: array
+          maxItems: 4
+          items: {$ref: '#/components/schemas/CompetitorComparisonEntity'}
+        opportunities:
+          type: array
+          items: {$ref: '#/components/schemas/CompetitorOpportunity'}
+        detail_url: {type: [string, 'null']}
+    CompetitorComparisonEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          required: [data]
+          properties:
+            data: {$ref: '#/components/schemas/CompetitorComparison'}
     GeoDetectionSelection:
       type: object
       additionalProperties: false

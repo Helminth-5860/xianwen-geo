@@ -195,6 +195,7 @@ export async function remove<T>(path: string) {
         "X-CSRFToken": csrfToken,
       },
     });
+    if (response.status === 204) return undefined as T;
     return readEnvelope<T>(response);
   });
 }

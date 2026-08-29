@@ -56,6 +56,12 @@ export const navigationConfig: readonly WorkspaceNavigationItem[] = [
         isActive: (pathname) => /^\/subjects\/[^/]+$/.test(pathname),
       },
       {
+        key: "subject-competitors",
+        label: "竞品管理",
+        href: subjectRoute("/competitors"),
+        isActive: (pathname) => /^\/subjects\/[^/]+\/competitors(?:\/|$)/.test(pathname),
+      },
+      {
         key: "subject-manage",
         label: "主体管理",
         href: "/subjects",

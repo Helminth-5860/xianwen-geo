@@ -129,6 +129,10 @@ const exactErrorMessages: Readonly<Record<string, string>> = Object.freeze({
   SUBJECT_REQUIRED_FIELDS_INCOMPLETE: "企业资料尚未填写完整，请补充必填信息。",
   SUBJECT_REVIEW_PENDING: "企业资料正在确认中，请稍候。",
   SUBJECT_REVIEW_REJECTED: "企业资料未通过确认，请根据提示修改后重新保存。",
+  COMPETITOR_LIMIT_REACHED: "当前主体最多设置 3 家核心竞品。",
+  COMPETITOR_DUPLICATE: "这家竞品已设置，请勿重复添加。",
+  COMPETITOR_IS_SUBJECT: "不能将当前主体设置为自己的竞品。",
+  COMPETITOR_NOT_FOUND: "这家竞品已被移除，请刷新页面后重试。",
 });
 
 const forbiddenTechnicalMessage =

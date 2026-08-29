@@ -3,6 +3,59 @@ from rest_framework import serializers
 from apps.admin_rbac.serializers import StrictSerializer
 
 
+class SubjectCompetitorCreateSerializer(StrictSerializer):
+    name = serializers.CharField(
+        max_length=255,
+        trim_whitespace=False,
+        error_messages={
+            "required": "请输入竞品名称。",
+            "blank": "请输入竞品名称。",
+            "max_length": "竞品名称不能超过 255 个字符。",
+        },
+    )
+    website = serializers.CharField(
+        max_length=500,
+        allow_blank=True,
+        required=False,
+        default="",
+        trim_whitespace=False,
+        error_messages={"max_length": "官方网站地址不能超过 500 个字符。"},
+    )
+
+
+class SubjectCompetitorUpdateSerializer(StrictSerializer):
+    name = serializers.CharField(
+        max_length=255,
+        required=False,
+        trim_whitespace=False,
+        error_messages={
+            "blank": "请输入竞品名称。",
+            "max_length": "竞品名称不能超过 255 个字符。",
+        },
+    )
+    website = serializers.CharField(
+        max_length=500,
+        allow_blank=True,
+        required=False,
+        trim_whitespace=False,
+        error_messages={"max_length": "官方网站地址不能超过 500 个字符。"},
+    )
+    expected_version = serializers.IntegerField(
+        min_value=1,
+        error_messages={
+            "required": "页面状态已失效，请刷新后重试。",
+            "invalid": "页面状态已失效，请刷新后重试。",
+            "min_value": "页面状态已失效，请刷新后重试。",
+        },
+    )
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        if not any(field in attrs for field in ("name", "website")):
+            raise serializers.ValidationError("请提供要修改的竞品信息。")
+        return attrs
+
+
 class GeoDetectionSelectionSerializer(StrictSerializer):
     question_ids = serializers.ListField(
         child=serializers.UUIDField(), allow_empty=False, max_length=10000

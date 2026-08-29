@@ -1,0 +1,58 @@
+.entityGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.entityCard {
+  min-height: 150px;
+  border-color: #e6ebf2;
+  box-shadow: none;
+}
+
+.entityName {
+  margin: 8px 0 16px !important;
+}
+
+.entityMetrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.entityMetric {
+  padding: 10px;
+  border-radius: 8px;
+  background: #f6f8fb;
+}
+
+.entityMetric strong,
+.entityMetric span {
+  display: block;
+}
+
+.entityMetric span {
+  margin-bottom: 4px;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.tableCard :global(.ant-card-body) {
+  overflow-x: auto;
+}
+
+.emptyCard {
+  padding: 42px 0;
+}
+
+@media (max-width: 1100px) {
+  .entityGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 680px) {
+  .entityGrid {
+    grid-template-columns: 1fr;
+  }
+}
