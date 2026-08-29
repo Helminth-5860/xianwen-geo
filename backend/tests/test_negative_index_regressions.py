@@ -3,10 +3,13 @@ from __future__ import annotations
 import inspect
 from unittest.mock import Mock, patch
 
-from django.test import SimpleTestCase, override_settings
+from django.contrib.auth import get_user_model
+from django.test import SimpleTestCase, TestCase, override_settings
 
+from apps.negative_index.models import NegativeIndexScan
 from apps.negative_index.services import _start_scan
 from apps.search_discovery.provider import BaiduSearchProvider
+from apps.subjects.models import Subject, SubjectType
 
 
 class NegativeIndexRegressionTests(SimpleTestCase):
@@ -36,3 +39,33 @@ class NegativeIndexRegressionTests(SimpleTestCase):
             end_date=None,
         )
         upstream.close.assert_called_once_with()
+
+
+class NegativeIndexDatabaseLockTests(TestCase):
+    def test_start_scan_accepts_subject_without_current_version(self):
+        user_model = get_user_model()
+        user = user_model.objects.create_user(
+            phone="13800138201",
+            password="StrongPass123!",
+            nickname="NegativeLock",
+        )
+        subject_type = SubjectType.objects.create(
+            key="company-negative-lock-regression",
+            name="企业",
+        )
+        subject = Subject.objects.create(
+            user=user,
+            subject_type=subject_type,
+            status=Subject.Status.ACTIVE,
+            draft_values={},
+            schema_version=1,
+            schema_snapshot={},
+            schema_digest="negative-lock-regression",
+        )
+        self.assertIsNone(subject.current_version_id)
+        scan = NegativeIndexScan.objects.create(user=user, subject=subject)
+
+        locked = _start_scan(scan.id)
+
+        self.assertEqual(locked.status, NegativeIndexScan.Status.RUNNING)
+        self.assertEqual(locked.subject_id, subject.id)
