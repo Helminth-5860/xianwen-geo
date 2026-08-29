@@ -108,9 +108,12 @@ def create_negative_index_scan(*, user, subject_id) -> NegativeIndexScan:
 def _start_scan(scan_id) -> NegativeIndexScan:
     with transaction.atomic():
         try:
+            # Lock only the scan row. Subject.current_version is nullable; joining it
+            # under SELECT ... FOR UPDATE causes PostgreSQL to reject the nullable side
+            # of the outer join. The version is loaded lazily after the lock boundary.
             scan = (
                 NegativeIndexScan.objects.select_for_update()
-                .select_related("subject", "subject__current_version")
+                .select_related("subject")
                 .get(pk=scan_id)
             )
         except NegativeIndexScan.DoesNotExist as exc:
