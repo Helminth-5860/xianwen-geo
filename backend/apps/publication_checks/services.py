@@ -20,7 +20,6 @@ from .models import PublicationVerificationCheck
 from .network import PublicationProbeResult, probe_publication_url
 
 _NOT_FOUND_PATTERNS = (
-    "404",
     "not found",
     "page not found",
     "页面不存在",
