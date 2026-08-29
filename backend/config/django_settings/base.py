@@ -79,6 +79,7 @@ INSTALLED_APPS = [
     "apps.documents",
     "apps.web_sources",
     "apps.website_audits",
+    "apps.publication_checks",
     "apps.source_index",
     "apps.negative_index",
     "apps.publishing",
