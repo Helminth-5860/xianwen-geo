@@ -1,0 +1,41 @@
+name: Subject Profile UI Validation
+
+on:
+  push:
+    branches:
+      - feature/XW-subject-profile-ui-upgrade-20260829
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    name: Subject profile frontend
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - name: Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version-file: frontend/.nvmrc
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Check changed page lint and formatting
+        working-directory: frontend
+        run: |
+          npx eslint 'app/subjects/[id]/page.tsx' tests/subjects-interactions.test.tsx
+          npx prettier --check 'app/subjects/[id]/page.tsx' 'app/subjects/[id]/subject-profile.module.css' tests/subjects-interactions.test.tsx
+      - name: Typecheck
+        working-directory: frontend
+        run: npm run typecheck
+      - name: Run subject profile tests
+        working-directory: frontend
+        run: npx vitest run tests/subjects-interactions.test.tsx
+      - name: Production build
+        working-directory: frontend
+        run: npm run build
