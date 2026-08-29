@@ -4,13 +4,27 @@ from django.http import Http404
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_protect
 from rest_framework.response import Response
-from rest_framework.status import HTTP_201_CREATED
+from rest_framework.status import (
+    HTTP_201_CREATED,
+    HTTP_429_TOO_MANY_REQUESTS,
+    HTTP_503_SERVICE_UNAVAILABLE,
+)
 from rest_framework.views import APIView
 
+from apps.core.error_codes import ErrorCode
+from apps.core.responses import error_response
 from apps.subjects.permissions import IsAvailableAuthenticatedUser
 from apps.subjects.subject_services import subject_for_user_or_404
+from apps.web_sources.exceptions import (
+    WebSourceRateLimited,
+    WebSourceUnavailable,
+    WebSourceUrlInvalid,
+    WebSourceUrlNotAllowed,
+)
+from apps.web_sources.url_security import canonicalize_url
 
 from .models import PublicationVerificationCheck
+from .rate_limits import enforce_publication_verification_limits
 from .serializers import (
     PublicationVerificationBulkDeleteSerializer,
     PublicationVerificationCreateSerializer,
@@ -88,12 +102,40 @@ class SubjectPublicationVerificationView(APIView):
 
     @method_decorator(csrf_protect)
     def post(self, request, subject_id):
+        subject_for_user_or_404(user=request.user, subject_id=subject_id)
         serializer = PublicationVerificationCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        url = serializer.validated_data["url"]
+
+        try:
+            target = canonicalize_url(url)
+            enforce_publication_verification_limits(
+                request=request,
+                user_id=request.user.pk,
+                subject_id=subject_id,
+                host=target.host,
+            )
+        except (WebSourceUrlInvalid, WebSourceUrlNotAllowed):
+            # The verification service records these as a safe failed check so the
+            # user can see why the supplied public URL was rejected.
+            pass
+        except WebSourceRateLimited:
+            return error_response(
+                ErrorCode.RATE_LIMITED,
+                status_code=HTTP_429_TOO_MANY_REQUESTS,
+                request=request,
+            )
+        except WebSourceUnavailable:
+            return error_response(
+                ErrorCode.SERVICE_TEMPORARILY_UNAVAILABLE,
+                status_code=HTTP_503_SERVICE_UNAVAILABLE,
+                request=request,
+            )
+
         row = create_publication_verification(
             user=request.user,
             subject_id=subject_id,
-            **serializer.validated_data,
+            url=url,
         )
         return _no_store(Response(publication_verification_payload(row), status=HTTP_201_CREATED))
 
