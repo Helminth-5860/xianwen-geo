@@ -14,7 +14,7 @@ import {
   UsergroupAddOutlined,
 } from "@ant-design/icons";
 import { Alert, Button, Empty, Select, Spin, Tag, Typography } from "antd";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { useSubjectWorkspace } from "@/components/subject-workspace-context";
 import { userMessage } from "@/lib/auth-client";
@@ -130,7 +130,7 @@ function MiniMetric({
   suffix,
   decimals = 1,
 }: Readonly<{
-  icon: React.ReactNode;
+  icon: ReactNode;
   label: string;
   value: number;
   suffix?: string;
@@ -424,12 +424,6 @@ export default function GeoExposurePage() {
                     {trendReports.length > 1 ? (
                       <>
                         <svg className={styles.trendChart} viewBox="0 0 100 100" preserveAspectRatio="none">
-                          <defs>
-                            <linearGradient id="trendFill" x1="0" x2="0" y1="0" y2="1">
-                              <stop offset="0%" stopColor="rgba(83, 108, 255, .32)" />
-                              <stop offset="100%" stopColor="rgba(83, 108, 255, 0)" />
-                            </linearGradient>
-                          </defs>
                           <line x1="8" x2="92" y1="88" y2="88" className={styles.chartAxis} />
                           <polyline points={trendPoints} className={styles.trendLineGlow} />
                           <polyline points={trendPoints} className={styles.trendLine} />
