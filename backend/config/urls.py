@@ -22,6 +22,7 @@ urlpatterns = [
     path("api/v1/", include("apps.media_inquiries.urls")),
     path("api/v1/", include("apps.websites.urls")),
     path("api/v1/", include("apps.source_index.urls")),
+    path("api/v1/", include("apps.negative_index.urls")),
     path("api/v1/", include("apps.publishing.urls")),
     path("api/v1/", include("apps.operations.urls")),
 ]

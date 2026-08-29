@@ -107,6 +107,7 @@ urlpatterns = [
     path("api/v1/", include("apps.geo.urls")),
     path("api/v1/", include("apps.web_sources.urls")),
     path("api/v1/", include("apps.source_index.urls")),
+    path("api/v1/", include("apps.negative_index.urls")),
     path("api/v1/", include("apps.articles.urls")),
     path("api/v1/", include("apps.images.urls")),
     path("api/v1/", include("apps.videos.urls")),
