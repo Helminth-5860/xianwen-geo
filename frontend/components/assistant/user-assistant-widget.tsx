@@ -5,8 +5,10 @@ import { Button, Input, Typography } from "antd";
 import { usePathname } from "next/navigation";
 import { useMemo, useState } from "react";
 
-import { officialXianwenLogoDataUrl } from "@/app/login/logo-data";
 import { useSubjectWorkspace } from "@/components/subject-workspace-context";
+
+const assistantLogoSrc = "/assistant/xianwen-ai-logo.webp";
+const assistantMascotSrc = "/assistant/xianwen-ai-mascot.webp";
 
 type PageGuide = Readonly<{
   label: string;
@@ -147,7 +149,7 @@ export function UserAssistantWidget() {
             <div className="xw-assistant__identity">
               <img
                 className="xw-assistant__brand-logo"
-                src={officialXianwenLogoDataUrl}
+                src={assistantLogoSrc}
                 alt="显问智能助手"
               />
               <div>
@@ -165,6 +167,16 @@ export function UserAssistantWidget() {
           </header>
 
           <div className="xw-assistant__body">
+            <div
+              aria-hidden="true"
+              style={{ display: "flex", justifyContent: "center", margin: "-4px 0 8px" }}
+            >
+              <img
+                src={assistantMascotSrc}
+                alt=""
+                style={{ width: 112, height: 82, objectFit: "contain" }}
+              />
+            </div>
             {messages.map((message) => (
               <div
                 key={message.id}
@@ -223,7 +235,7 @@ export function UserAssistantWidget() {
         onClick={() => setOpen((value) => !value)}
       >
         <span className="xw-assistant__launcher-crop" aria-hidden="true">
-          <img src={officialXianwenLogoDataUrl} alt="" />
+          <img src={assistantLogoSrc} alt="" />
         </span>
       </Button>
     </div>
