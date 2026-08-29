@@ -21,7 +21,7 @@ for setting_name in dir(settings_module):
         globals()[setting_name] = getattr(settings_module, setting_name)
 
 # 官网深度检测在所有运行环境共用同一套扫描内核；网络安全策略复用 web_sources。
-INSTALLED_APPS = [*INSTALLED_APPS, "apps.website_audits"]
+INSTALLED_APPS = [*INSTALLED_APPS, "apps.website_audits", "apps.publication_checks"]
 WEBSITE_AUDIT_MAX_PAGES = int(os.getenv("WEBSITE_AUDIT_MAX_PAGES", "200"))
 WEBSITE_AUDIT_MAX_SITEMAPS = int(os.getenv("WEBSITE_AUDIT_MAX_SITEMAPS", "20"))
 WEBSITE_AUDIT_MAX_RESPONSE_BYTES = int(
