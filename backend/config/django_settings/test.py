@@ -3,6 +3,8 @@ from apps.core.logging import build_logging_config
 
 from .base import *
 
+INSTALLED_APPS = [*INSTALLED_APPS, "apps.publication_checks"]
+
 APP_ENV = "test"
 SECRET_KEY = "test-only-key-never-use-in-deployment"
 SUBJECT_ENRICHMENT_PROVIDER = "mock"
