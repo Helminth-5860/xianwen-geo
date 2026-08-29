@@ -204,6 +204,7 @@ def check_platform_publication_status(
     platform_key: str,
     external_post_id: str,
     management_url: str,
+    expected_title: str,
     credentials: dict[str, Any],
 ) -> dict[str, Any]:
     base_url, secret = _configuration()
@@ -211,6 +212,7 @@ def check_platform_publication_status(
         "platform_key": platform_key,
         "external_post_id": external_post_id,
         "management_url": management_url,
+        "expected_title": expected_title,
         "credentials": credentials,
     }
     try:

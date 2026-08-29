@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import hashlib
+import os
 from datetime import timedelta
 from typing import Any
 
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -12,6 +14,7 @@ from django.utils import timezone
 from apps.articles.models import Article
 from apps.subjects.models import Subject
 
+from .capabilities import WorkerCapabilitySnapshot, worker_capability_snapshot
 from .catalog import PLATFORM_BY_KEY, platform_payload
 from .models import (
     PlatformAccount,
@@ -43,6 +46,75 @@ _VISUAL_CUES = ("产品", "指南", "体验", "案例", "清单", "步骤", "场
 def enabled_platform_keys() -> set[str]:
     configured = getattr(settings, "PUBLISHING_ENABLED_PLATFORM_KEYS", ())
     return {str(item).strip() for item in configured if str(item).strip() in PLATFORM_BY_KEY}
+
+
+def validation_platform_keys() -> set[str]:
+    return {
+        item.strip().lower()
+        for item in os.getenv("PUBLISHING_VALIDATION_PLATFORM_KEYS", "").split(",")
+        if item.strip().lower() in PLATFORM_BY_KEY
+    }
+
+
+def _internal_validation_user(user) -> bool:
+    return bool(
+        getattr(user, "is_test_account", False)
+        or getattr(user, "is_superuser", False)
+    )
+
+
+def platforms_for_user(
+    *,
+    user,
+    snapshot: WorkerCapabilitySnapshot | None = None,
+) -> list[dict[str, object]]:
+    snapshot = snapshot or worker_capability_snapshot()
+    return platform_payload(
+        enabled_platform_keys(),
+        worker_capabilities=snapshot.verified_platforms,
+        implemented_capabilities=snapshot.implemented_platforms,
+        validation_keys=validation_platform_keys(),
+        worker_available=snapshot.service_available,
+        internal_validation=_internal_validation_user(user),
+    )
+
+
+def public_ready_platform_keys(
+    *,
+    snapshot: WorkerCapabilitySnapshot | None = None,
+) -> set[str]:
+    snapshot = snapshot or worker_capability_snapshot()
+    return {
+        str(item["key"])
+        for item in platform_payload(
+            enabled_platform_keys(),
+            worker_capabilities=snapshot.verified_platforms,
+            implemented_capabilities=snapshot.implemented_platforms,
+            validation_keys=validation_platform_keys(),
+            worker_available=snapshot.service_available,
+            internal_validation=False,
+        )
+        if bool(item["can_enable_auto"])
+    }
+
+
+def platform_for_user(*, user, platform_key: str) -> dict[str, object] | None:
+    return next(
+        (
+            item
+            for item in platforms_for_user(user=user)
+            if item["key"] == platform_key
+        ),
+        None,
+    )
+
+
+def ensure_platform_auto_publish_ready(*, user, platform_key: str) -> None:
+    platform = platform_for_user(user=user, platform_key=platform_key)
+    if platform is None:
+        raise PublishingInputError("暂不支持该平台")
+    if not bool(platform["can_enable_auto"]):
+        raise PublishingInputError(str(platform["availability_message"]))
 
 
 def subject_for_user(*, user, subject_id) -> Subject:
@@ -168,8 +240,15 @@ def _safe_publish_error(code: str) -> str:
         "awaiting_review": "内容和配图已准备好，等待确认发布",
         "automation_paused": "自动发文已暂停，重新开启后会继续",
         "platform_disabled": "该平台已暂停参与自动发文",
-        "public_publish_not_verified": "该平台公开发布能力仍在验证中",
-        "platform_not_verified": "该平台公开发布能力仍在验证中",
+        "public_publish_not_verified": "该平台暂不能公开发布",
+        "platform_not_verified": "该平台暂不能公开发布",
+        "draft_control_changed": "平台保存入口发生变化，请稍后再试",
+        "draft_save_unconfirmed": "平台尚未确认草稿已保存，请在平台中检查",
+        "editor_changed": "平台编辑页面发生变化，请稍后再试",
+        "publish_control_changed": "平台发布入口发生变化，请稍后再试",
+        "platform_fields_required": "平台还需要补充发布信息，请在平台中完成",
+        "unsafe_status_url": "暂时无法安全确认发布结果，请在平台中检查",
+        "status_target_unbound": "暂时无法确认本次文章对应的平台记录，请在平台中检查",
         "publish_result_unconfirmed": "平台返回结果暂未确认，为避免重复发文已暂停此任务",
     }.get(code, "" if not code else "发布未完成，请稍后再试")
 
@@ -179,7 +258,8 @@ def publishing_state(*, user, subject_id) -> dict[str, Any]:
     preference = preference_for_subject(user=user, subject=subject)
     accounts = list(PlatformAccount.objects.filter(user=user, subject=subject))
     account_by_key = {item.platform_key: item for item in accounts}
-    platforms = platform_payload(enabled_platform_keys())
+    capability_snapshot = worker_capability_snapshot()
+    platforms = platforms_for_user(user=user, snapshot=capability_snapshot)
     for platform in platforms:
         account = account_by_key.get(str(platform["key"]))
         platform["account"] = account_payload(account) if account else None
@@ -189,7 +269,19 @@ def publishing_state(*, user, subject_id) -> dict[str, Any]:
         .select_related("article")
         .prefetch_related("targets")[:20]
     )
-    connected = sum(1 for item in accounts if item.status == PlatformAccount.Status.CONNECTED)
+    public_keys = {
+        str(item["key"])
+        for item in platforms
+        if bool(item["can_enable_auto"])
+    }
+    connected = sum(
+        1 for item in accounts if item.status == PlatformAccount.Status.CONNECTED
+    )
+    authorization_keys = {
+        str(item["key"])
+        for item in platforms
+        if bool(item["authorization_enabled"])
+    }
     account_needs_action = sum(
         1
         for item in accounts
@@ -207,6 +299,21 @@ def publishing_state(*, user, subject_id) -> dict[str, Any]:
         publication__subject=subject,
         scheduled_at__date=today,
     )
+    if not capability_snapshot.service_available:
+        availability_status = "temporarily_unavailable"
+        availability_message = "平台服务暂时不可用，新的自动发文任务已暂停"
+    elif public_keys:
+        availability_status = "available"
+        availability_message = "已有可用平台，可开启自动发文"
+    elif _internal_validation_user(user) and any(
+        bool(item["authorization_enabled"]) for item in platforms
+    ):
+        availability_status = "internal_validation"
+        availability_message = "当前可体验账号授权，自动公开发布暂未开放"
+    else:
+        availability_status = "pending"
+        availability_message = "发布平台正在逐项准备，准备完成后开放"
+
     return {
         "subject": {
             "id": str(subject.id),
@@ -215,10 +322,17 @@ def publishing_state(*, user, subject_id) -> dict[str, Any]:
         "preference": preference_payload(preference),
         "summary": {
             "platform_count": len(platforms),
+            "available_platform_count": len(public_keys),
+            "authorization_platform_count": len(authorization_keys),
+            "public_platform_count": len(public_keys),
             "connected_count": connected,
             "needs_action_count": account_needs_action + awaiting_review,
             "today_plan_count": today_targets.count(),
             "today_published_count": today_targets.filter(status=PublicationTarget.Status.SUCCEEDED).count(),
+        },
+        "availability": {
+            "status": availability_status,
+            "message": availability_message,
         },
         "platforms": platforms,
         "recent_publications": [publication_payload(item) for item in recent_publications],
@@ -237,7 +351,15 @@ def update_preference(*, user, subject_id, values: dict[str, Any]) -> Publishing
         unknown = sorted(set(custom_keys) - set(PLATFORM_BY_KEY))
         if unknown:
             raise PublishingInputError("包含暂不支持的平台")
+        unavailable = sorted(set(custom_keys) - public_ready_platform_keys())
+        if unavailable:
+            raise PublishingInputError("所选平台中包含暂不能公开发布的平台")
         values["custom_platform_keys"] = list(dict.fromkeys(custom_keys))
+    if values.get("is_enabled") is True and not _connected_platform_keys(
+        user=user,
+        subject=subject,
+    ):
+        raise PublishingInputError("请先授权并开启至少一个可公开发布的平台")
     for key, value in values.items():
         setattr(preference, key, value)
     preference.version += 1
@@ -251,8 +373,60 @@ def create_authorization_session(*, user, subject_id, platform_key: str) -> tupl
     definition = PLATFORM_BY_KEY.get(platform_key)
     if definition is None:
         raise PublishingInputError("暂不支持该平台")
-    if platform_key not in enabled_platform_keys():
-        raise PublishingInputError("该平台正在适配验证中，暂未开放授权")
+    platform = platform_for_user(user=user, platform_key=platform_key)
+    if platform is None:
+        raise PublishingInputError("暂不支持该平台")
+    if not bool(platform["authorization_enabled"]):
+        raise PublishingInputError(str(platform["availability_message"]))
+
+    # Serialize authorization starts for this user.  Without the user-row lock,
+    # requests for different platforms can each observe zero active sessions and
+    # launch a separate browser before any of the other transactions commits.
+    get_user_model().objects.select_for_update().get(pk=user.pk)
+    now = timezone.now()
+    active_statuses = (
+        PlatformAuthorizationSession.Status.CREATED,
+        PlatformAuthorizationSession.Status.STARTING,
+        PlatformAuthorizationSession.Status.WAITING_USER,
+    )
+    active_sessions = PlatformAuthorizationSession.objects.select_for_update().filter(
+        user=user,
+        status__in=active_statuses,
+    )
+    active_sessions.filter(expires_at__lte=now).update(
+        status=PlatformAuthorizationSession.Status.EXPIRED,
+        safe_error_code="authorization_timeout",
+        completed_at=now,
+        updated_at=now,
+    )
+
+    # One user must never have two live browser sessions for the same platform.
+    # Reuse is safe only inside the same subject because the resulting credential
+    # is stored on that subject's platform account.
+    existing = (
+        active_sessions.filter(platform_key=platform_key, expires_at__gt=now)
+        .order_by("-created_at")
+        .first()
+    )
+    if existing is not None:
+        if existing.subject_id != subject.id:
+            raise PublishingInputError("该平台已有授权窗口，请先完成当前授权")
+        # An empty token tells the caller that this is a reused session.  It must
+        # not ask the worker to launch another Chromium instance.
+        return existing, ""
+
+    max_active = int(getattr(settings, "PUBLISHING_AUTH_MAX_ACTIVE_SESSIONS_PER_USER", 3))
+    if active_sessions.filter(expires_at__gt=now).count() >= max_active:
+        raise PublishingInputError("当前打开的授权窗口较多，请先完成已有授权")
+
+    rate_limit = int(getattr(settings, "PUBLISHING_AUTH_START_RATE_LIMIT", 6))
+    rate_window = int(getattr(settings, "PUBLISHING_AUTH_START_RATE_WINDOW_SECONDS", 60))
+    recent_starts = PlatformAuthorizationSession.objects.filter(
+        user=user,
+        created_at__gte=now - timedelta(seconds=rate_window),
+    ).count()
+    if recent_starts >= rate_limit:
+        raise PublishingInputError("授权操作过于频繁，请稍后再试")
 
     account, _ = PlatformAccount.objects.get_or_create(
         user=user,
@@ -263,7 +437,19 @@ def create_authorization_session(*, user, subject_id, platform_key: str) -> tupl
     account.auth_method = definition.auth_method
     account.status = PlatformAccount.Status.AUTHORIZING
     account.last_error_code = ""
-    account.save(update_fields=("auth_method", "status", "last_error_code", "updated_at"))
+    if not bool(platform["can_enable_auto"]):
+        # Internal authorization and draft trials must never inherit the model's
+        # historical enabled-by-default flag.
+        account.enabled_for_auto = False
+    account.save(
+        update_fields=(
+            "auth_method",
+            "status",
+            "last_error_code",
+            "enabled_for_auto",
+            "updated_at",
+        )
+    )
 
     token, token_digest = issue_one_time_token()
     ttl = int(getattr(settings, "PUBLISHING_AUTH_SESSION_TTL_SECONDS", 900))
@@ -328,7 +514,7 @@ def disconnect_platform_account(*, user, subject_id, platform_key: str) -> None:
 
 
 def _connected_platform_keys(*, user, subject) -> set[str]:
-    enabled = enabled_platform_keys()
+    enabled = public_ready_platform_keys()
     return {
         key
         for key in PlatformAccount.objects.filter(
@@ -370,19 +556,48 @@ def _smart_platform_selection(article: Article, connected: set[str]) -> list[str
     return selected[:8]
 
 
+def _already_arranged_platform_keys(
+    *, user, subject: Subject, article: Article, digest: str, platform_keys: list[str]
+) -> set[str]:
+    """Return live targets that already represent this exact article content.
+
+    The caller holds a row lock on ``article``. That lock serializes concurrent
+    requests for the same article without adding a schema-level constraint, while
+    cancelled publications and explicitly failed targets remain eligible for a
+    deliberate retry.
+    """
+
+    return set(
+        PublicationTarget.objects.filter(
+            publication__user=user,
+            publication__subject=subject,
+            publication__article=article,
+            publication__source_content_digest=digest,
+            platform_key__in=platform_keys,
+        )
+        .exclude(publication__status=Publication.Status.CANCELLED)
+        .exclude(status=PublicationTarget.Status.FAILED)
+        .values_list("platform_key", flat=True)
+    )
+
+
 @transaction.atomic
 def create_publication(
     *, user, subject_id, article_id, platform_keys: list[str] | None = None, scheduled_at=None
 ) -> Publication:
     subject = subject_for_user(user=user, subject_id=subject_id)
+    # Locking the source article makes the duplicate check and target creation a
+    # single serialized decision for concurrent requests of the same content.
     article = get_object_or_404(
-        Article.objects.select_related("article_type", "template_version"),
+        Article.objects.select_for_update().select_related("article_type", "template_version"),
         id=article_id,
         user=user,
         subject=subject,
     )
     if article.status != Article.Status.READY or not article.title.strip() or not article.content.strip():
         raise PublishingInputError("文章需要先完成生成并达到可发布状态")
+    if article.moderation_status != Article.Moderation.PASSED:
+        raise PublishingInputError("文章需要先通过内容检查才能安排发布")
     preference = preference_for_subject(user=user, subject=subject)
     connected = _connected_platform_keys(user=user, subject=subject)
 
@@ -403,6 +618,17 @@ def create_publication(
         raise PublishingInputError("请至少授权并启用一个可发布平台")
 
     digest = hashlib.sha256(article.content.encode("utf-8")).hexdigest()
+    already_arranged = _already_arranged_platform_keys(
+        user=user,
+        subject=subject,
+        article=article,
+        digest=digest,
+        platform_keys=selected,
+    )
+    selected = [key for key in selected if key not in already_arranged]
+    if not selected:
+        raise PublishingInputError("这篇文章已在所选平台安排过，请勿重复提交")
+
     publication = Publication.objects.create(
         user=user,
         subject=subject,

@@ -2,7 +2,9 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { chromium, type BrowserContext, type Page } from "playwright";
+import type { Page } from "playwright";
+
+import { createPublisherBrowserContext } from "./browser-context.js";
 
 import type {
   PlatformCredentials,
@@ -21,23 +23,7 @@ const experimental = () =>
       .map((item) => item.trim().toLowerCase())
       .filter(Boolean),
   ).has("toutiao");
-const headless = (process.env.PUBLISHING_WORKER_BROWSER_HEADLESS || "true").toLowerCase() !== "false";
 const editorUrl = "https://mp.toutiao.com/profile_v4/graphic/publish";
-
-function storedCookies(credentials: PlatformCredentials) {
-  return (credentials.cookies || [])
-    .filter((item) => item.name && item.domain)
-    .map((item) => ({
-      name: item.name,
-      value: item.value,
-      domain: item.domain,
-      path: item.path || "/",
-      ...(typeof item.expires === "number" && item.expires > 0 ? { expires: item.expires } : {}),
-      ...(typeof item.httpOnly === "boolean" ? { httpOnly: item.httpOnly } : {}),
-      ...(typeof item.secure === "boolean" ? { secure: item.secure } : {}),
-      ...(item.sameSite ? { sameSite: item.sameSite } : {}),
-    }));
-}
 
 async function downloadAsset(asset: PublicationAsset) {
   const response = await fetch(asset.url, { redirect: "follow" });
@@ -131,21 +117,131 @@ async function uploadCover(page: Page, cover: PublicationAsset) {
   }
 }
 
-function safeToutiaoUrl(value: string) {
+function normalizedText(value: string) {
+  return value.replace(/<[^>]+>/g, " ").replace(/&nbsp;/gi, " ").replace(/\s+/g, "").trim();
+}
+
+export function isSafeToutiaoManagementUrl(value: string) {
   try {
     const url = new URL(value);
-    return url.protocol === "https:" && (url.hostname === "mp.toutiao.com" || url.hostname.endsWith(".toutiao.com"));
+    return url.protocol === "https:"
+      && url.hostname === "mp.toutiao.com"
+      && url.pathname.startsWith("/profile_v4/");
   } catch {
     return false;
   }
 }
 
-async function newContext(credentials: PlatformCredentials) {
-  const browser = await chromium.launch({ headless, args: ["--disable-dev-shm-usage", "--no-sandbox"] });
-  const context = await browser.newContext({ viewport: { width: 1360, height: 900 }, locale: "zh-CN" });
-  const values = storedCookies(credentials);
-  if (values.length) await context.addCookies(values);
-  return { browser, context };
+export function toutiaoPublicArticleId(value: string) {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:" || !["toutiao.com", "www.toutiao.com"].includes(url.hostname)) return "";
+    return url.pathname.match(/^\/(?:article|group)\/(\d+)\/?$/)?.[1]
+      || url.pathname.match(/^\/[ia](\d+)\/?$/)?.[1]
+      || "";
+  } catch {
+    return "";
+  }
+}
+
+export function isBoundToutiaoPublicUrl(
+  value: string,
+  expectedExternalId: string | undefined,
+  expectedTitle: string | undefined,
+  contextText: string,
+) {
+  const articleId = toutiaoPublicArticleId(value);
+  if (!articleId) return false;
+  if (expectedExternalId && articleId !== expectedExternalId) return false;
+  if (expectedTitle && !normalizedText(contextText).includes(normalizedText(expectedTitle))) return false;
+  return Boolean(expectedExternalId || expectedTitle);
+}
+
+function toutiaoManagementArticleId(value: string) {
+  if (!isSafeToutiaoManagementUrl(value)) return "";
+  const url = new URL(value);
+  return url.searchParams.get("id")
+    || url.searchParams.get("group_id")
+    || url.searchParams.get("article_id")
+    || url.pathname.match(/\/(\d{6,})(?:\/|$)/)?.[1]
+    || "";
+}
+
+function isToutiaoAuthOrRiskPage(url: string, body = "") {
+  const marker = `${url} ${body}`.toLowerCase();
+  return ["login", "passport", "captcha", "verify", "challenge", "安全验证", "访问异常", "请完成验证"].some(
+    (value) => marker.includes(value),
+  );
+}
+
+async function editorMatches(page: Page, expectedTitle: string, expectedContent: string) {
+  const title = page.locator('textarea[placeholder*="标题"], textarea').first();
+  const editor = page.locator('div[contenteditable="true"]').first();
+  if (!(await title.isVisible({ timeout: 3_000 }).catch(() => false))) return false;
+  if (!(await editor.isVisible({ timeout: 3_000 }).catch(() => false))) return false;
+  const actualTitle = await title.inputValue().catch(() => "");
+  const actualContent = await editor.innerText().catch(() => "");
+  const expectedSnippet = normalizedText(expectedContent).slice(0, 48);
+  return normalizedText(actualTitle) === normalizedText(expectedTitle.slice(0, 30))
+    && Boolean(expectedSnippet)
+    && normalizedText(actualContent).includes(expectedSnippet);
+}
+
+async function saveDraft(page: Page) {
+  const beforeUrl = page.url();
+  const control = page.locator(
+    'button:has-text("保存草稿"), button:has-text("存草稿"), [role="button"]:has-text("保存草稿")',
+  ).first();
+  if (!(await control.isVisible({ timeout: 3_000 }).catch(() => false))) return false;
+  if (await control.isDisabled().catch(() => true)) return false;
+  await control.click();
+  await page.waitForTimeout(1_200);
+  const text = (await page.locator("body").innerText().catch(() => "")).slice(-20_000);
+  const explicitSuccess = ["保存成功", "已保存", "草稿已保存"].some((value) => text.includes(value));
+  const changedToDraft = page.url() !== beforeUrl
+    && isSafeToutiaoManagementUrl(page.url())
+    && Boolean(toutiaoManagementArticleId(page.url()));
+  return explicitSuccess || changedToDraft;
+}
+
+async function saveAndReloadDraft(page: Page, expectedTitle: string, expectedContent: string) {
+  if (!(await saveDraft(page))) return false;
+  const savedUrl = page.url();
+  if (!isSafeToutiaoManagementUrl(savedUrl) || !toutiaoManagementArticleId(savedUrl)) return false;
+  await page.reload({ waitUntil: "domcontentloaded", timeout: 60_000 });
+  await page.waitForTimeout(1_200);
+  const body = (await page.locator("body").innerText().catch(() => "")).slice(0, 80_000);
+  if (isToutiaoAuthOrRiskPage(page.url(), body) || !isSafeToutiaoManagementUrl(page.url())) return false;
+  return editorMatches(page, expectedTitle, expectedContent);
+}
+
+async function boundPublicLink(
+  page: Page,
+  expectedExternalId: string | undefined,
+  expectedTitle: string | undefined,
+) {
+  const links = page.locator('a[href*="toutiao.com/article"], a[href*="toutiao.com/group"], a[href*="toutiao.com/i"]');
+  const count = Math.min(await links.count().catch(() => 0), 30);
+  for (let index = 0; index < count; index += 1) {
+    const link = links.nth(index);
+    const href = await link.getAttribute("href").catch(() => null);
+    if (!href) continue;
+    const resolved = (() => {
+      try { return new URL(href, page.url()).toString(); } catch { return ""; }
+    })();
+    const contextText = await link.evaluate((element) => element.closest("article,li,tr,[class*='item'],[class*='card']")?.textContent || element.textContent || "").catch(() => "");
+    if (isBoundToutiaoPublicUrl(resolved, expectedExternalId, expectedTitle, contextText)) return resolved;
+  }
+  return "";
+}
+
+async function confirmPublicSubmission(page: Page) {
+  const dialog = page.locator('[role="dialog"], .byte-modal, .semi-modal').filter({ hasText: /发布|确认/ }).last();
+  if (!(await dialog.isVisible({ timeout: 2_000 }).catch(() => false))) return;
+  const confirm = dialog.locator('button:has-text("确认发布"), button:has-text("确认"), button:has-text("发布")').last();
+  if (await confirm.isVisible({ timeout: 1_000 }).catch(() => false)) {
+    if (!(await confirm.isDisabled().catch(() => true))) await confirm.click();
+  }
 }
 
 export class ToutiaoPublisher implements PlatformPublisher {
@@ -155,37 +251,64 @@ export class ToutiaoPublisher implements PlatformPublisher {
   readonly verifiedCapabilities = ["auth"] as const;
 
   async checkAuth(credentials: PlatformCredentials) {
-    return {
-      ok: Boolean(credentials.cookies?.some((item) => ["sessionid", "sid_tt"].includes(item.name) && item.value)),
-    };
+    if (!credentials.cookies?.length && !credentials.origins?.length) return { ok: false };
+    const { browser, context } = await createPublisherBrowserContext(credentials);
+    try {
+      const page = await context.newPage();
+      await page.goto(editorUrl, { waitUntil: "domcontentloaded", timeout: 45_000 });
+      await page.waitForTimeout(1_200);
+      const pageText = (await page.locator("body").innerText().catch(() => "")).slice(0, 50_000);
+      if (isToutiaoAuthOrRiskPage(page.url(), pageText) || !isSafeToutiaoManagementUrl(page.url())) return { ok: false };
+      const editorReady = await page.locator('textarea[placeholder*="标题"], div[contenteditable="true"]').first()
+        .isVisible({ timeout: 5_000 }).catch(() => false);
+      return { ok: editorReady };
+    } catch {
+      return { ok: false };
+    } finally {
+      await context.close().catch(() => undefined);
+      await browser.close().catch(() => undefined);
+    }
   }
 
   async checkStatus(input: PublicationStatusInput): Promise<PublicationStatusResult> {
     if (!experimental()) return { platformKey: this.platformKey, status: "unknown" };
-    if (!input.credentials.cookies?.length) {
+    if (!input.credentials.cookies?.length && !input.credentials.origins?.length) {
       return { platformKey: this.platformKey, status: "auth_required", safeErrorCode: "authorization_required" };
     }
-    if (!input.managementUrl || !safeToutiaoUrl(input.managementUrl)) {
-      return { platformKey: this.platformKey, status: "unknown" };
+    if (!input.managementUrl || !isSafeToutiaoManagementUrl(input.managementUrl)) {
+      return { platformKey: this.platformKey, status: "unknown", safeErrorCode: "unsafe_status_url" };
     }
-    const { browser, context } = await newContext(input.credentials);
+    const { browser, context } = await createPublisherBrowserContext(input.credentials);
     try {
       const page = await context.newPage();
       await page.goto(input.managementUrl, { waitUntil: "domcontentloaded", timeout: 60_000 });
       await page.waitForTimeout(1200);
-      if (page.url().toLowerCase().includes("login")) {
+      const body = (await page.locator("body").innerText().catch(() => "")).slice(-40_000);
+      if (isToutiaoAuthOrRiskPage(page.url(), body)) {
         return { platformKey: this.platformKey, status: "auth_required", safeErrorCode: "authorization_required" };
       }
-      const body = (await page.locator("body").innerText().catch(() => "")).slice(-40_000);
-      if (["审核不通过", "发布失败", "已驳回", "未通过"].some((value) => body.includes(value))) {
-        return { platformKey: this.platformKey, status: "failed", managementUrl: page.url(), safeErrorCode: "content_rejected" };
+      if (!isSafeToutiaoManagementUrl(page.url())) {
+        return { platformKey: this.platformKey, status: "unknown", safeErrorCode: "unsafe_status_url" };
       }
-      const publicLink = page.locator('a[href*="toutiao.com/article"], a[href*="www.toutiao.com/article"]').first();
-      const href = await publicLink.getAttribute("href").catch(() => null);
-      if (href && /^https:\/\//.test(href)) {
+      const managementId = toutiaoManagementArticleId(page.url()) || toutiaoManagementArticleId(input.managementUrl);
+      if (input.externalPostId && managementId && input.externalPostId !== managementId) {
+        return { platformKey: this.platformKey, status: "unknown", managementUrl: page.url(), safeErrorCode: "publish_result_unconfirmed" };
+      }
+      const titleBound = Boolean(input.expectedTitle?.trim())
+        && normalizedText(body).includes(normalizedText(input.expectedTitle || ""));
+      if (["审核不通过", "发布失败", "已驳回", "未通过"].some((value) => body.includes(value))) {
+        return titleBound || Boolean(input.externalPostId && managementId === input.externalPostId)
+          ? { platformKey: this.platformKey, status: "failed", managementUrl: page.url(), safeErrorCode: "content_rejected" }
+          : { platformKey: this.platformKey, status: "unknown", managementUrl: page.url() };
+      }
+      const href = await boundPublicLink(page, input.externalPostId || managementId || undefined, input.expectedTitle);
+      if (href) {
         return { platformKey: this.platformKey, status: "published", publicUrl: href, managementUrl: page.url() };
       }
-      if (["审核中", "待审核", "处理中", "已发布"].some((value) => body.includes(value))) {
+      if (
+        ["审核中", "待审核", "处理中", "已发布"].some((value) => body.includes(value))
+        && (titleBound || Boolean(input.externalPostId && managementId === input.externalPostId))
+      ) {
         return { platformKey: this.platformKey, status: "submitted", managementUrl: page.url() };
       }
       return { platformKey: this.platformKey, status: "unknown", managementUrl: page.url() };
@@ -201,16 +324,17 @@ export class ToutiaoPublisher implements PlatformPublisher {
     if (!experimental()) {
       return { success: false, platformKey: this.platformKey, status: "action_required", safeErrorCode: "platform_not_verified" };
     }
-    if (!input.credentials.cookies?.length) {
+    if (!input.credentials.cookies?.length && !input.credentials.origins?.length) {
       return { success: false, platformKey: this.platformKey, status: "auth_required", safeErrorCode: "authorization_required" };
     }
 
-    const { browser, context } = await newContext(input.credentials);
+    const { browser, context } = await createPublisherBrowserContext(input.credentials);
     try {
       const page = await context.newPage();
       await page.goto(editorUrl, { waitUntil: "domcontentloaded", timeout: 60_000 });
       await page.waitForTimeout(1800);
-      if (page.url().toLowerCase().includes("login")) {
+      const initialBody = (await page.locator("body").innerText().catch(() => "")).slice(0, 50_000);
+      if (isToutiaoAuthOrRiskPage(page.url(), initialBody) || !isSafeToutiaoManagementUrl(page.url())) {
         return { success: false, platformKey: this.platformKey, status: "auth_required", safeErrorCode: "authorization_required" };
       }
 
@@ -239,12 +363,26 @@ export class ToutiaoPublisher implements PlatformPublisher {
         element.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText" }));
       }, finalHtml);
       await page.waitForTimeout(800);
+      if (!(await editorMatches(page, input.title, input.contentText))) {
+        return { success: false, platformKey: this.platformKey, status: "action_required", managementUrl: page.url(), safeErrorCode: "editor_changed" };
+      }
 
       const cover = input.assets.find((item) => item.role === "cover");
       if (cover) await uploadCover(page, cover).catch(() => false);
 
+      if (!(await saveAndReloadDraft(page, input.title, input.contentText))) {
+        return {
+          success: false,
+          platformKey: this.platformKey,
+          status: "action_required",
+          managementUrl: page.url(),
+          safeErrorCode: "draft_save_unconfirmed",
+        };
+      }
+      const savedDraftId = toutiaoManagementArticleId(page.url()) || undefined;
       if (input.publishMode === "draft") {
-        return { success: true, platformKey: this.platformKey, status: "drafted", editUrl: page.url(), managementUrl: page.url() };
+        const externalPostId = savedDraftId;
+        return { success: true, platformKey: this.platformKey, status: "drafted", externalPostId, editUrl: page.url(), managementUrl: page.url() };
       }
 
       const publish = page.locator('button:has-text("预览并发布"), button:has-text("发布")').last();
@@ -252,18 +390,26 @@ export class ToutiaoPublisher implements PlatformPublisher {
         return { success: false, platformKey: this.platformKey, status: "action_required", managementUrl: page.url(), safeErrorCode: "publish_control_changed" };
       }
       await publish.click();
+      await confirmPublicSubmission(page);
       await page.waitForTimeout(8000);
       const body = (await page.locator("body").innerText().catch(() => "")).slice(-40_000);
+      if (isToutiaoAuthOrRiskPage(page.url(), body)) {
+        return { success: false, platformKey: this.platformKey, status: "action_required", safeErrorCode: "publish_result_unconfirmed" };
+      }
       if (["发布失败", "提交失败", "不符合", "审核不通过"].some((value) => body.includes(value))) {
         return { success: false, platformKey: this.platformKey, status: "failed", managementUrl: page.url(), safeErrorCode: "content_rejected" };
       }
-      const publicLink = page.locator('a[href*="toutiao.com/article"], a[href*="www.toutiao.com/article"]').first();
-      const href = await publicLink.getAttribute("href").catch(() => null);
-      if (href && /^https:\/\//.test(href)) {
-        return { success: true, platformKey: this.platformKey, status: "published", publicUrl: href, managementUrl: page.url() };
+      const managementId = toutiaoManagementArticleId(page.url()) || savedDraftId;
+      const href = await boundPublicLink(page, managementId, input.title);
+      if (href) {
+        return { success: true, platformKey: this.platformKey, status: "published", externalPostId: toutiaoPublicArticleId(href), publicUrl: href, managementUrl: isSafeToutiaoManagementUrl(page.url()) ? page.url() : undefined };
       }
-      if (["发布成功", "提交成功", "审核中", "待审核", "处理中"].some((value) => body.includes(value))) {
-        return { success: true, platformKey: this.platformKey, status: "submitted", managementUrl: page.url() };
+      if (
+        ["发布成功", "提交成功", "审核中", "待审核", "处理中"].some((value) => body.includes(value))
+        && normalizedText(body).includes(normalizedText(input.title))
+        && isSafeToutiaoManagementUrl(page.url())
+      ) {
+        return { success: true, platformKey: this.platformKey, status: "submitted", externalPostId: managementId, managementUrl: page.url() };
       }
       return { success: false, platformKey: this.platformKey, status: "action_required", managementUrl: page.url(), safeErrorCode: "publish_result_unconfirmed" };
     } catch (error) {

@@ -21,6 +21,14 @@ _TERMINAL = {
 }
 
 
+def _safe_remote_label(value: object, *, max_length: int = 255) -> str:
+    """Keep worker-provided account labels bounded and free of control whitespace."""
+
+    if not isinstance(value, str):
+        return ""
+    return " ".join(value.replace("\x00", "").split())[:max_length]
+
+
 def _mark_failed(session: PlatformAuthorizationSession, code: str) -> None:
     session.status = PlatformAuthorizationSession.Status.FAILED
     session.safe_error_code = code
@@ -40,11 +48,16 @@ def begin_browser_authorization(*, user, subject_id, platform_key: str) -> Platf
     The historical function name is kept for API compatibility; official-API platforms
     are routed to their formal OAuth/component flow rather than the browser worker.
     """
-    session, _unused_one_time_token = create_authorization_session(
+    session, one_time_token = create_authorization_session(
         user=user,
         subject_id=subject_id,
         platform_key=platform_key,
     )
+
+    # Repeated clicks reuse the live database session.  Only the request that
+    # received the newly issued token is allowed to launch a worker browser.
+    if not one_time_token:
+        return session
 
     if session.auth_method == PlatformAccount.AuthMethod.OFFICIAL_API:
         if platform_key != "wechat":
@@ -138,6 +151,8 @@ def sync_authorization_session(session: PlatformAuthorizationSession) -> Platfor
             complete_authorization_session(
                 session=session,
                 secret_payload=credentials,
+                display_name=_safe_remote_label(remote.get("displayName")),
+                external_account_id=_safe_remote_label(remote.get("externalAccountId")),
             )
             delete_authorization_session(remote_session_ref=session.remote_session_ref)
             session.refresh_from_db()

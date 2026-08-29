@@ -51,8 +51,30 @@ export type PublishingPlatform = Readonly<{
   supports_inline_images: boolean;
   supports_tags: boolean;
   supports_scheduling: boolean;
+  authorization_verified?: boolean;
+  authorization_validation_available?: boolean;
+  supports_draft?: boolean;
+  image_upload_verified?: boolean;
+  draft_validation_available?: boolean;
+  image_upload_validation_available?: boolean;
   supports_public_publish: boolean;
-  verification_state: "ready" | "validation";
+  can_enable_auto?: boolean;
+  verification_state:
+    | "ready"
+    | "draft"
+    | "authorization"
+    | "internal"
+    | "validation"
+    | "unavailable";
+  availability_stage?:
+    | "closed"
+    | "authorization_ready"
+    | "draft_ready"
+    | "internal_validation"
+    | "draft_validation"
+    | "public_ready"
+    | "temporarily_unavailable";
+  availability_message?: string;
   authorization_enabled: boolean;
   runtime_status: "healthy" | "degraded" | "paused";
   recent_failures: number;
@@ -107,10 +129,17 @@ export type PublishingState = Readonly<{
   preference: PublishingPreference;
   summary: Readonly<{
     platform_count: number;
+    available_platform_count?: number;
+    authorization_platform_count?: number;
+    public_platform_count?: number;
     connected_count: number;
     needs_action_count: number;
     today_plan_count: number;
     today_published_count: number;
+  }>;
+  availability?: Readonly<{
+    status: "available" | "internal_validation" | "pending" | "temporarily_unavailable";
+    message: string;
   }>;
   platforms: PublishingPlatform[];
   recent_publications: Publication[];

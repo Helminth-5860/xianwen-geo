@@ -14,13 +14,44 @@ import {
   viewerAuthorized,
   type ManagedAuthSession,
 } from "./auth-sessions.js";
-import { getPublisher, publisherCapabilities } from "./publishers/index.js";
-import type { PlatformCredentials, PublicationInput, PublicationStatusInput } from "./publishers/types.js";
+import {
+  getPublisher,
+  publisherCapabilities,
+  publisherHasVerifiedCapability,
+  validateCapabilityConfiguration,
+} from "./publishers/index.js";
+import type { PlatformCredentials, PublicationInput, PublicationResult, PublicationStatusInput } from "./publishers/types.js";
 
 const port = Number(process.env.PORT || "8092");
 const host = process.env.HOST || "0.0.0.0";
 const publicBaseUrl = (process.env.PUBLISHING_WORKER_PUBLIC_BASE_URL || `http://localhost:${port}`).replace(/\/$/, "");
 const internalSecret = process.env.PUBLISHING_WORKER_INTERNAL_SECRET || "";
+
+validateCapabilityConfiguration();
+
+const inFlightPublishes = new Map<string, Promise<PublicationResult>>();
+const recentPublishResults = new Map<string, { expiresAt: number; result: PublicationResult }>();
+
+async function publishOnce(key: string, operation: () => Promise<PublicationResult>) {
+  const cached = recentPublishResults.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.result;
+  if (cached) recentPublishResults.delete(key);
+  const existing = inFlightPublishes.get(key);
+  if (existing) return existing;
+  const pending = operation();
+  inFlightPublishes.set(key, pending);
+  try {
+    const result = await pending;
+    recentPublishResults.set(key, { expiresAt: Date.now() + 10 * 60_000, result });
+    if (recentPublishResults.size > 1_000) {
+      const oldest = recentPublishResults.keys().next().value as string | undefined;
+      if (oldest) recentPublishResults.delete(oldest);
+    }
+    return result;
+  } finally {
+    inFlightPublishes.delete(key);
+  }
+}
 
 if (internalSecret.length < 32) {
   throw new Error("PUBLISHING_WORKER_INTERNAL_SECRET must be at least 32 characters");
@@ -183,7 +214,7 @@ h1{font-size:22px;margin:0 0 8px}.hint{color:#667085;line-height:1.7;margin-bott
 <div class="keyboard">
   <input id="keyboardInput" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="临时输入：手机号 / 验证码 / 密码等" />
   <button id="sendInput" class="primary" type="button">输入到平台</button>
-  <button data-key="Tab" type="button">Tab</button>
+  <button data-key="Tab" type="button">切换输入框</button>
   <button data-key="Enter" type="button">确认</button>
   <button data-key="Backspace" type="button">退格</button>
 </div>
@@ -291,6 +322,9 @@ function validateStatusInput(body: Record<string, unknown>): { platformKey: stri
   if (!platformKey || !credentials || typeof credentials !== "object" || Array.isArray(credentials)) return null;
   const externalPostId = typeof body.external_post_id === "string" ? body.external_post_id.slice(0, 255) : undefined;
   const managementUrl = typeof body.management_url === "string" ? body.management_url.slice(0, 4000) : undefined;
+  const expectedTitle = typeof body.expected_title === "string"
+    ? body.expected_title.trim().slice(0, 500)
+    : undefined;
   if (!externalPostId && !managementUrl) return null;
   return {
     platformKey,
@@ -298,6 +332,7 @@ function validateStatusInput(body: Record<string, unknown>): { platformKey: stri
       credentials: credentials as PlatformCredentials,
       externalPostId,
       managementUrl,
+      expectedTitle,
     },
   };
 }
@@ -325,7 +360,17 @@ const server = http.createServer(async (request, response) => {
       if (!publisher) return json(response, 409, { error: "platform_not_ready" });
       const input = validatePublishInput(body);
       if (!input) return json(response, 400, { error: "invalid_request" });
-      const result = await publisher.publish(input);
+      // The HTTP publishing endpoint is the production execution boundary. A
+      // caller cannot turn an internally tested adapter into a public publisher
+      // by setting publish_mode itself; public delivery opens only after the
+      // platform has passed real-account acceptance and the verified gate is set.
+      if (
+        input.publishMode === "public" &&
+        !publisherHasVerifiedCapability(platformKey, "public_publish")
+      ) {
+        return json(response, 409, { error: "platform_not_ready" });
+      }
+      const result = await publishOnce(`${platformKey}:${input.targetId}`, () => publisher.publish(input));
       return json(response, 200, result);
     } catch (error) {
       const code = error instanceof Error ? error.message : "publish_failed";

@@ -9,6 +9,28 @@ import type {
 
 type WechatResponse = Record<string, unknown> & { errcode?: number; errmsg?: string };
 
+type WechatPublishState = "published" | "pending" | "failed" | "unknown";
+
+export function classifyWechatPublishStatus(value: unknown): WechatPublishState {
+  if (value === 0) return "published";
+  if (value === 1) return "pending";
+  // 微信的状态码 4 也是失败态，不能继续显示为“处理中”。
+  if ([2, 3, 4, 5, 6].includes(Number(value))) return "failed";
+  return "unknown";
+}
+
+export function isSafeWechatArticleUrl(value: string | undefined) {
+  if (!value) return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:"
+      && url.hostname === "mp.weixin.qq.com"
+      && (url.pathname === "/s" || url.pathname.startsWith("/s/"));
+  } catch {
+    return false;
+  }
+}
+
 async function jsonRequest(url: string, init?: RequestInit): Promise<WechatResponse> {
   const response = await fetch(url, init);
   if (!response.ok) throw new Error("platform_unavailable");
@@ -29,6 +51,20 @@ async function accessToken(credentials: PlatformCredentials) {
   const token = typeof data.access_token === "string" ? data.access_token : "";
   if (!token) throw new Error("authorization_required");
   return token;
+}
+
+async function hasDraftApiPermission(token: string) {
+  try {
+    const result = await jsonRequest(
+      `https://api.weixin.qq.com/cgi-bin/draft/count?access_token=${encodeURIComponent(token)}`,
+      { method: "GET" },
+    );
+    // 只在接口明确返回草稿总数时判定可用。仅拿到 access_token 不代表公众号
+    // 已具备草稿/发布接口权限，不能因此误报“已授权”。
+    return Number.isInteger(result.total_count) && Number(result.total_count) >= 0;
+  } catch {
+    return false;
+  }
 }
 
 async function fetchImage(url: string) {
@@ -102,8 +138,8 @@ export class WechatPublisher implements PlatformPublisher {
 
   async checkAuth(credentials: PlatformCredentials) {
     try {
-      await accessToken(credentials);
-      return { ok: true };
+      const token = await accessToken(credentials);
+      return { ok: await hasDraftApiPermission(token) };
     } catch {
       return { ok: false };
     }
@@ -117,16 +153,19 @@ export class WechatPublisher implements PlatformPublisher {
       const token = await accessToken(input.credentials);
       const status = await getPublishStatus(token, input.externalPostId);
       const publishStatus = typeof status.publish_status === "number" ? status.publish_status : -1;
-      if (publishStatus === 0) {
+      const state = classifyWechatPublishStatus(publishStatus);
+      if (state === "published") {
         const publicUrl = publicArticleUrl(status);
-        return publicUrl
+        return isSafeWechatArticleUrl(publicUrl)
           ? { platformKey: this.platformKey, status: "published", publicUrl }
           : { platformKey: this.platformKey, status: "submitted" };
       }
-      if ([2, 3, 5, 6].includes(publishStatus)) {
+      if (state === "failed") {
         return { platformKey: this.platformKey, status: "failed", safeErrorCode: "content_rejected" };
       }
-      return { platformKey: this.platformKey, status: "submitted" };
+      return state === "pending"
+        ? { platformKey: this.platformKey, status: "submitted" }
+        : { platformKey: this.platformKey, status: "unknown" };
     } catch (error) {
       const code = error instanceof Error ? error.message : "platform_unavailable";
       if (code === "authorization_required") {
@@ -201,14 +240,15 @@ export class WechatPublisher implements PlatformPublisher {
         await new Promise((resolve) => setTimeout(resolve, 1800));
         const status = await getPublishStatus(token, publishId);
         const publishStatus = typeof status.publish_status === "number" ? status.publish_status : -1;
-        if (publishStatus === 0) {
+        const state = classifyWechatPublishStatus(publishStatus);
+        if (state === "published") {
           const publicUrl = publicArticleUrl(status);
-          if (publicUrl) {
+          if (isSafeWechatArticleUrl(publicUrl)) {
             return { success: true, platformKey: this.platformKey, status: "published", externalPostId: publishId, publicUrl };
           }
           return { success: true, platformKey: this.platformKey, status: "submitted", externalPostId: publishId };
         }
-        if ([2, 3, 5, 6].includes(publishStatus)) {
+        if (state === "failed") {
           return { success: false, platformKey: this.platformKey, status: "failed", externalPostId: publishId, safeErrorCode: "content_rejected" };
         }
       }

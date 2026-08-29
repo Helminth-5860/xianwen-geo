@@ -1,0 +1,174 @@
+{
+  "cases": [
+    {
+      "id": "wechat-draft",
+      "platform": "wechat",
+      "sessionFile": "sessions/wechat.json",
+      "publishMode": "draft",
+      "title": "显问自动发文验收草稿",
+      "contentText": "这是一篇仅用于真实账号验收的草稿，不会在未确认时公开发布。",
+      "tags": ["显问", "验收"],
+      "assets": [{ "role": "cover", "url": "https://static.example.com/xianwen-acceptance-cover.jpg", "alt": "验收封面" }]
+    },
+    {
+      "id": "toutiao-draft",
+      "platform": "toutiao",
+      "sessionFile": "sessions/toutiao.json",
+      "publishMode": "draft",
+      "title": "显问自动发文验收草稿",
+      "contentText": "这是一篇仅用于真实账号验收的草稿，不会在未确认时公开发布。",
+      "tags": ["显问", "验收"],
+      "assets": []
+    },
+    {
+      "id": "baijiahao-draft",
+      "platform": "baijiahao",
+      "sessionFile": "sessions/baijiahao.json",
+      "publishMode": "draft",
+      "title": "显问自动发文验收草稿",
+      "contentText": "这是一篇仅用于真实账号验收的草稿，不会在未确认时公开发布。",
+      "tags": ["显问", "验收"],
+      "assets": []
+    },
+    {
+      "id": "zhihu-draft",
+      "platform": "zhihu",
+      "sessionFile": "sessions/zhihu.json",
+      "publishMode": "draft",
+      "title": "显问自动发文验收草稿",
+      "contentText": "这是一篇仅用于真实账号验收的草稿，不会在未确认时公开发布。",
+      "tags": ["显问", "验收"],
+      "assets": []
+    },
+    {
+      "id": "xiaohongshu-draft",
+      "platform": "xiaohongshu",
+      "sessionFile": "sessions/xiaohongshu.json",
+      "publishMode": "draft",
+      "title": "显问自动发文验收草稿",
+      "contentText": "这是一篇仅用于真实账号验收的草稿，不会在未确认时公开发布。",
+      "tags": ["显问", "验收"],
+      "assets": [{ "role": "cover", "url": "https://static.example.com/xianwen-acceptance-cover.jpg", "alt": "验收封面" }]
+    },
+    {
+      "id": "weibo-draft",
+      "platform": "weibo",
+      "sessionFile": "sessions/weibo.json",
+      "publishMode": "draft",
+      "title": "显问自动发文验收草稿",
+      "contentText": "这是一篇仅用于真实账号验收的草稿，不会在未确认时公开发布。",
+      "tags": ["显问", "验收"],
+      "assets": []
+    },
+    {
+      "id": "bilibili-draft",
+      "platform": "bilibili",
+      "sessionFile": "sessions/bilibili.json",
+      "publishMode": "draft",
+      "title": "显问自动发文验收草稿",
+      "contentText": "这是一篇仅用于真实账号验收的草稿，不会在未确认时公开发布。",
+      "tags": ["显问", "验收"],
+      "assets": []
+    },
+    {
+      "id": "douyin-draft",
+      "platform": "douyin",
+      "sessionFile": "sessions/douyin.json",
+      "publishMode": "draft",
+      "title": "显问自动发文验收草稿",
+      "contentText": "这是一篇仅用于真实账号验收的草稿，不会在未确认时公开发布。",
+      "tags": ["显问", "验收"],
+      "assets": [{ "role": "cover", "url": "https://static.example.com/xianwen-acceptance-cover.jpg", "alt": "验收封面" }]
+    },
+    {
+      "id": "qq-draft",
+      "platform": "qq",
+      "sessionFile": "sessions/qq.json",
+      "publishMode": "draft",
+      "title": "显问自动发文验收草稿",
+      "contentText": "这是一篇仅用于真实账号验收的草稿，不会在未确认时公开发布。",
+      "tags": ["显问", "验收"],
+      "assets": []
+    },
+    {
+      "id": "sohu-draft",
+      "platform": "sohu",
+      "sessionFile": "sessions/sohu.json",
+      "publishMode": "draft",
+      "title": "显问自动发文验收草稿",
+      "contentText": "这是一篇仅用于真实账号验收的草稿，不会在未确认时公开发布。",
+      "tags": ["显问", "验收"],
+      "assets": []
+    },
+    {
+      "id": "csdn-draft",
+      "platform": "csdn",
+      "sessionFile": "sessions/csdn.json",
+      "publishMode": "draft",
+      "title": "显问自动发文验收草稿",
+      "contentText": "这是一篇仅用于真实账号验收的草稿，不会在未确认时公开发布。",
+      "tags": ["显问", "验收"],
+      "assets": []
+    },
+    {
+      "id": "juejin-draft",
+      "platform": "juejin",
+      "sessionFile": "sessions/juejin.json",
+      "publishMode": "draft",
+      "title": "显问自动发文验收草稿",
+      "contentText": "这是一篇仅用于真实账号验收的草稿，不会在未确认时公开发布。",
+      "tags": ["显问", "验收"],
+      "assets": []
+    },
+    {
+      "id": "cnblogs-draft",
+      "platform": "cnblogs",
+      "sessionFile": "sessions/cnblogs.json",
+      "publishMode": "draft",
+      "title": "显问自动发文验收草稿",
+      "contentText": "这是一篇仅用于真实账号验收的草稿，不会在未确认时公开发布。",
+      "tags": ["显问", "验收"],
+      "assets": []
+    },
+    {
+      "id": "oschina-draft",
+      "platform": "oschina",
+      "sessionFile": "sessions/oschina.json",
+      "publishMode": "draft",
+      "title": "显问自动发文验收草稿",
+      "contentText": "这是一篇仅用于真实账号验收的草稿，不会在未确认时公开发布。",
+      "tags": ["显问", "验收"],
+      "assets": []
+    },
+    {
+      "id": "segmentfault-draft",
+      "platform": "segmentfault",
+      "sessionFile": "sessions/segmentfault.json",
+      "publishMode": "draft",
+      "title": "显问自动发文验收草稿",
+      "contentText": "这是一篇仅用于真实账号验收的草稿，不会在未确认时公开发布。",
+      "tags": ["显问", "验收"],
+      "assets": []
+    },
+    {
+      "id": "jianshu-draft",
+      "platform": "jianshu",
+      "sessionFile": "sessions/jianshu.json",
+      "publishMode": "draft",
+      "title": "显问自动发文验收草稿",
+      "contentText": "这是一篇仅用于真实账号验收的草稿，不会在未确认时公开发布。",
+      "tags": ["显问", "验收"],
+      "assets": []
+    },
+    {
+      "id": "douban-draft",
+      "platform": "douban",
+      "sessionFile": "sessions/douban.json",
+      "publishMode": "draft",
+      "title": "显问自动发文验收草稿",
+      "contentText": "这是一篇仅用于真实账号验收的草稿，不会在未确认时公开发布。",
+      "tags": ["显问", "验收"],
+      "assets": []
+    }
+  ]
+}

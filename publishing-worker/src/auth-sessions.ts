@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
 
 import { LOGIN_PLATFORMS, type LoginPlatform } from "./platforms.js";
+import { getPublisher } from "./publishers/index.js";
 
 export type AuthSessionStatus =
   | "starting"
@@ -21,6 +22,13 @@ export type AuthCredentialPayload = Readonly<{
     secure: boolean;
     sameSite: "Strict" | "Lax" | "None";
   }>;
+  origins: Array<{
+    origin: string;
+    localStorage: Array<{
+      name: string;
+      value: string;
+    }>;
+  }>;
 }>;
 
 export type ManagedAuthSession = {
@@ -33,7 +41,10 @@ export type ManagedAuthSession = {
   context: BrowserContext;
   page: Page;
   credentials: AuthCredentialPayload | null;
+  displayName: string;
+  externalAccountId: string;
   errorCode: string;
+  authCheckInFlight: boolean;
   monitor: NodeJS.Timeout | null;
   cleanup: NodeJS.Timeout | null;
 };
@@ -74,7 +85,8 @@ function scheduleCleanup(session: ManagedAuthSession, delayMs: number) {
 }
 
 async function captureCredentials(session: ManagedAuthSession) {
-  const allCookies = await session.context.cookies();
+  const storageState = await session.context.storageState();
+  const allCookies = storageState.cookies;
   const allowedDomains = new Set(
     [new URL(session.platform.loginUrl).hostname, ...session.platform.cookieDomains].map((value) =>
       value.replace(/^\./, ""),
@@ -86,7 +98,17 @@ async function captureCredentials(session: ManagedAuthSession) {
       (allowed) => domain === allowed || domain.endsWith(`.${allowed}`) || allowed.endsWith(`.${domain}`),
     );
   });
-  session.credentials = {
+  const origins = storageState.origins.filter((item) => {
+    try {
+      const hostname = new URL(item.origin).hostname.replace(/^\./, "");
+      return [...allowedDomains].some(
+        (allowed) => hostname === allowed || hostname.endsWith(`.${allowed}`) || allowed.endsWith(`.${hostname}`),
+      );
+    } catch {
+      return false;
+    }
+  });
+  const credentials: AuthCredentialPayload = {
     cookies: cookies.map((cookie) => ({
       name: cookie.name,
       value: cookie.value,
@@ -97,15 +119,28 @@ async function captureCredentials(session: ManagedAuthSession) {
       secure: cookie.secure,
       sameSite: cookie.sameSite,
     })),
+    origins: origins.map((item) => ({
+      origin: item.origin,
+      localStorage: item.localStorage.map((entry) => ({ name: entry.name, value: entry.value })),
+    })),
   };
+  const publisher = getPublisher(session.platform.key);
+  if (!publisher) throw new Error("platform_not_ready");
+  const verified = await publisher.checkAuth(credentials);
+  if (!verified.ok) return false;
+  session.credentials = credentials;
+  session.displayName = verified.displayName || "";
+  session.externalAccountId = verified.externalAccountId || "";
   session.status = "succeeded";
   await closeSessionResources(session);
   // Django polls every ~2 seconds. Keep a short grace period for retrieval, then
   // erase captured platform credentials even if the customer closes the UI early.
   scheduleCleanup(session, 120_000);
+  return true;
 }
 
 async function monitorSession(session: ManagedAuthSession) {
+  if (session.authCheckInFlight) return;
   if (Date.now() >= session.expiresAt) {
     session.status = "expired";
     session.errorCode = "authorization_timeout";
@@ -119,7 +154,9 @@ async function monitorSession(session: ManagedAuthSession) {
       (cookie) => session.platform.successCookies.includes(cookie.name) && Boolean(cookie.value),
     );
     if (success) {
-      await captureCredentials(session);
+      session.authCheckInFlight = true;
+      const captured = await captureCredentials(session);
+      if (!captured && session.status === "waiting_user") session.authCheckInFlight = false;
     }
   } catch {
     session.status = "failed";
@@ -160,7 +197,10 @@ export async function startAuthSession(input: {
     context,
     page,
     credentials: null,
+    displayName: "",
+    externalAccountId: "",
     errorCode: "",
+    authCheckInFlight: false,
     monitor: null,
     cleanup: null,
   };
@@ -255,6 +295,8 @@ export function internalSessionPayload(session: ManagedAuthSession) {
     status: session.status,
     errorCode: session.errorCode,
     credentials: session.status === "succeeded" ? session.credentials : null,
+    displayName: session.status === "succeeded" ? session.displayName : "",
+    externalAccountId: session.status === "succeeded" ? session.externalAccountId : "",
   };
 }
 

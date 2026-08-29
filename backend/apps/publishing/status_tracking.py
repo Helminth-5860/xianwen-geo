@@ -75,6 +75,7 @@ def check_submitted_target(*, target_id) -> dict:
             platform_key=target.platform_key,
             external_post_id=target.external_post_id,
             management_url=target.management_url,
+            expected_title=target.adapted_title,
             credentials=credentials,
         )
     except PublishingWorkerError:

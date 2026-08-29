@@ -9,8 +9,17 @@ export type StoredCookie = Readonly<{
   sameSite?: "Strict" | "Lax" | "None";
 }>;
 
+export type StoredOrigin = Readonly<{
+  origin: string;
+  localStorage: ReadonlyArray<Readonly<{
+    name: string;
+    value: string;
+  }>>;
+}>;
+
 export type PlatformCredentials = Readonly<{
   cookies?: StoredCookie[];
+  origins?: StoredOrigin[];
   access_token?: string;
   refresh_token?: string;
   app_id?: string;
@@ -50,6 +59,7 @@ export type PublicationStatusInput = Readonly<{
   credentials: PlatformCredentials;
   externalPostId?: string;
   managementUrl?: string;
+  expectedTitle?: string;
 }>;
 
 export type PublicationStatusResult = Readonly<{

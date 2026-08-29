@@ -29,6 +29,7 @@ from .services import (
     auth_session_payload,
     create_publication,
     disconnect_platform_account,
+    ensure_platform_auto_publish_ready,
     preference_payload,
     publication_payload,
     publishing_state,
@@ -147,6 +148,14 @@ class SubjectPlatformAccountView(APIView):
             platform_key=platform_key,
         )
         enabled = serializer.validated_data["enabled_for_auto"]
+        if enabled:
+            try:
+                ensure_platform_auto_publish_ready(
+                    user=request.user,
+                    platform_key=platform_key,
+                )
+            except PublishingInputError as exc:
+                raise ValidationError({"publishing": [str(exc)]}) from exc
         account.enabled_for_auto = enabled
         account.save(update_fields=("enabled_for_auto", "updated_at"))
         preference = PublishingPreference.objects.filter(user=request.user, subject=subject).first()

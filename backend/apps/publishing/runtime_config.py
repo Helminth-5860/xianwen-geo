@@ -6,7 +6,6 @@ from cryptography.fernet import Fernet
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 
-
 _PLATFORM_KEYS = {
     "wechat",
     "toutiao",
@@ -37,12 +36,26 @@ def _worker_experimental_keys() -> set[str]:
     }
 
 
+def _validation_platform_keys() -> set[str]:
+    return {
+        item.strip().lower()
+        for item in os.getenv("PUBLISHING_VALIDATION_PLATFORM_KEYS", "").split(",")
+        if item.strip()
+    }
+
+
 def validate_runtime_configuration() -> None:
     configured = set(getattr(settings, "PUBLISHING_ENABLED_PLATFORM_KEYS", ()) or ())
+    validation = _validation_platform_keys()
     unknown = configured - _PLATFORM_KEYS
     if unknown:
         raise ImproperlyConfigured(
             "PUBLISHING_ENABLED_PLATFORM_KEYS contains unsupported platform keys."
+        )
+    unknown_validation = validation - _PLATFORM_KEYS
+    if unknown_validation:
+        raise ImproperlyConfigured(
+            "PUBLISHING_VALIDATION_PLATFORM_KEYS contains unsupported platform keys."
         )
 
     encryption_key = str(
@@ -56,7 +69,7 @@ def validate_runtime_configuration() -> None:
                 "PUBLISHING_CREDENTIAL_ENCRYPTION_KEY must be a valid Fernet key."
             ) from exc
 
-    if not configured:
+    if not configured and not validation:
         return
 
     worker_base_url = str(getattr(settings, "PUBLISHING_WORKER_BASE_URL", "") or "").strip()
@@ -72,7 +85,10 @@ def validate_runtime_configuration() -> None:
             "PUBLISHING_WORKER_INTERNAL_SECRET is required before enabling publishing platforms."
         )
 
-    browser_enabled = configured & _BROWSER_PLATFORM_KEYS
+    # Both public rollout and internal acceptance exercise the same browser
+    # automation worker. Requiring the worker-side gate for both prevents a
+    # validation-only platform from being exposed by a Django-only setting.
+    browser_enabled = (configured | validation) & _BROWSER_PLATFORM_KEYS
     worker_enabled = _worker_experimental_keys()
     missing_worker_gate = browser_enabled - worker_enabled
     if missing_worker_gate:

@@ -1,113 +1,27 @@
+import { BILIBILI_PUBLISHER_CONFIG } from "./bilibili.js";
 import type { BrowserPublisherConfig } from "./browser-form.js";
+import { CNBLOGS_PUBLISHER_CONFIG } from "./cnblogs.js";
+import { CSDN_PUBLISHER_CONFIG } from "./csdn.js";
+import { DOUBAN_PUBLISHER_CONFIG } from "./douban.js";
+import { JIANSHU_PUBLISHER_CONFIG } from "./jianshu.js";
+import { JUEJIN_PUBLISHER_CONFIG } from "./juejin.js";
+import { OSCHINA_PUBLISHER_CONFIG } from "./oschina.js";
+import { QQ_PUBLISHER_CONFIG } from "./qq.js";
+import { SEGMENTFAULT_PUBLISHER_CONFIG } from "./segmentfault.js";
+import { SOHU_PUBLISHER_CONFIG } from "./sohu.js";
+import { WEIBO_PUBLISHER_CONFIG } from "./weibo.js";
 
-// 候选配置用于真实账号验收，不代表已验证。选择器优先使用平台可读属性，避免依赖混淆 class。
+// 这些平台使用各自独立的配置与类；仍须逐个平台通过真实账号验收后才能加入运行时开关。
 export const BROWSER_PUBLISHER_CONFIGS: Readonly<Record<string, BrowserPublisherConfig>> = {
-  toutiao: {
-    platformKey: "toutiao",
-    editorUrl: "https://mp.toutiao.com/profile_v4/graphic/publish",
-    titleSelectors: ['textarea', 'textarea[placeholder*="标题"]'],
-    contentSelectors: ['div[contenteditable="true"]'],
-    coverInputSelectors: ['input[type="file"]'],
-    publishSelectors: ['button:has-text("预览并发布")', 'button:has-text("发布")'],
-    successTexts: ["发布成功", "提交成功"],
-    reviewTexts: ["审核中", "待审核"],
-    failureTexts: ["发布失败", "提交失败", "不符合", "审核不通过"],
-  },
-  weibo: {
-    platformKey: "weibo",
-    editorUrl: "https://card.weibo.com/article/v5/editor#/draft",
-    titleSelectors: ['textarea[placeholder="请输入标题"]', 'textarea[placeholder*="标题"]'],
-    contentSelectors: [".tiptap.ProseMirror", '[contenteditable="true"]'],
-    publishSelectors: ['button:has-text("下一步")', 'button:has-text("发布")'],
-    successTexts: ["发布成功", "提交成功", "已发布", "创建成功"],
-    reviewTexts: ["审核中"],
-  },
-  cnblogs: {
-    platformKey: "cnblogs",
-    editorUrl: "https://i.cnblogs.com/posts/edit",
-    titleSelectors: ['input[placeholder*="标题"]', 'input[name*="title"]', "#Editor_Edit_txbTitle"],
-    contentSelectors: ['textarea[placeholder*="正文"]', "textarea", '[contenteditable="true"]'],
-    publishSelectors: ['button:has-text("发布")', 'input[value*="发布"]'],
-    successTexts: ["发布成功", "保存成功"],
-  },
-  segmentfault: {
-    platformKey: "segmentfault",
-    editorUrl: "https://segmentfault.com/write",
-    titleSelectors: ['input[placeholder*="标题"]', 'textarea[placeholder*="标题"]', 'input[name="title"]'],
-    contentSelectors: ['textarea', '[contenteditable="true"]'],
-    publishSelectors: ['button:has-text("发布")', 'button:has-text("提交")'],
-    successTexts: ["发布成功", "提交成功"],
-    reviewTexts: ["审核中"],
-  },
-  jianshu: {
-    platformKey: "jianshu",
-    editorUrl: "https://www.jianshu.com/writer#/",
-    titleSelectors: ['input[placeholder*="标题"]', 'textarea[placeholder*="标题"]', 'input[name*="title"]'],
-    contentSelectors: ['textarea', '[contenteditable="true"]'],
-    publishSelectors: ['button:has-text("发布")', 'a:has-text("发布")'],
-    successTexts: ["发布成功", "已发布"],
-  },
-  douban: {
-    platformKey: "douban",
-    editorUrl: "https://www.douban.com/note/create",
-    titleSelectors: ['input[name="note_title"]', 'input[placeholder*="标题"]'],
-    contentSelectors: ['textarea[name="note_text"]', "textarea", '[contenteditable="true"]'],
-    publishSelectors: ['input[value*="发表"]', 'button:has-text("发表")', 'button:has-text("发布")'],
-    successTexts: ["发表成功", "发布成功"],
-  },
-  csdn: {
-    platformKey: "csdn",
-    editorUrl: "https://mp.csdn.net/mp_blog/creation/editor",
-    titleSelectors: ['input[placeholder*="标题"]', 'textarea[placeholder*="标题"]'],
-    contentSelectors: ['textarea', '.CodeMirror textarea', '[contenteditable="true"]'],
-    publishSelectors: ['button:has-text("发布文章")', 'button:has-text("发布")'],
-    successTexts: ["发布成功", "文章发布成功"],
-    reviewTexts: ["审核中"],
-  },
-  juejin: {
-    platformKey: "juejin",
-    editorUrl: "https://juejin.cn/editor/drafts/new?v=2",
-    titleSelectors: ['input[placeholder*="标题"]', 'textarea[placeholder*="标题"]'],
-    contentSelectors: ['textarea', '.CodeMirror textarea', '[contenteditable="true"]'],
-    publishSelectors: ['button:has-text("发布")'],
-    successTexts: ["发布成功"],
-    reviewTexts: ["审核中"],
-  },
-  bilibili: {
-    platformKey: "bilibili",
-    editorUrl: "https://member.bilibili.com/platform/upload/text/edit",
-    titleSelectors: ['input[placeholder*="标题"]', 'textarea[placeholder*="标题"]'],
-    contentSelectors: ['[contenteditable="true"]', "textarea"],
-    coverInputSelectors: ['input[type="file"]'],
-    publishSelectors: ['button:has-text("发布")', 'button:has-text("提交")'],
-    successTexts: ["发布成功", "提交成功"],
-    reviewTexts: ["审核中", "审核"],
-  },
-  qq: {
-    platformKey: "qq",
-    editorUrl: "https://om.qq.com/",
-    titleSelectors: ['input[placeholder*="标题"]', 'textarea[placeholder*="标题"]'],
-    contentSelectors: ['[contenteditable="true"]', "textarea"],
-    publishSelectors: ['button:has-text("发布")', 'button:has-text("提交")'],
-    successTexts: ["发布成功", "提交成功"],
-    reviewTexts: ["审核中", "审核"],
-  },
-  sohu: {
-    platformKey: "sohu",
-    editorUrl: "https://mp.sohu.com/",
-    titleSelectors: ['input[placeholder*="标题"]', 'textarea[placeholder*="标题"]'],
-    contentSelectors: ['[contenteditable="true"]', "textarea"],
-    publishSelectors: ['button:has-text("发布")', 'button:has-text("提交")'],
-    successTexts: ["发布成功", "提交成功"],
-    reviewTexts: ["审核中", "待审核"],
-  },
-  oschina: {
-    platformKey: "oschina",
-    editorUrl: "https://my.oschina.net/",
-    titleSelectors: ['input[placeholder*="标题"]', 'textarea[placeholder*="标题"]'],
-    contentSelectors: ['[contenteditable="true"]', "textarea"],
-    publishSelectors: ['button:has-text("发布")', 'button:has-text("提交")'],
-    successTexts: ["发布成功", "提交成功"],
-    reviewTexts: ["审核中"],
-  },
+  weibo: WEIBO_PUBLISHER_CONFIG,
+  bilibili: BILIBILI_PUBLISHER_CONFIG,
+  qq: QQ_PUBLISHER_CONFIG,
+  sohu: SOHU_PUBLISHER_CONFIG,
+  csdn: CSDN_PUBLISHER_CONFIG,
+  juejin: JUEJIN_PUBLISHER_CONFIG,
+  cnblogs: CNBLOGS_PUBLISHER_CONFIG,
+  oschina: OSCHINA_PUBLISHER_CONFIG,
+  segmentfault: SEGMENTFAULT_PUBLISHER_CONFIG,
+  jianshu: JIANSHU_PUBLISHER_CONFIG,
+  douban: DOUBAN_PUBLISHER_CONFIG,
 };

@@ -15,12 +15,14 @@ from apps.images.models import ImageAsset, ImageDerivative
 from apps.keywords.models import Keyword, KeywordSet
 
 from .catalog import PLATFORM_BY_KEY
+from .capabilities import worker_capability_snapshot
 from .credentials import PlatformCredentialRuntimeUnavailable, platform_credentials
 from .models import PlatformAccount, PublicationTarget, PublishingPreference
 from .pause_control import AUTOMATION_PAUSED_CODE, PLATFORM_DISABLED_CODE
 from .platform_health import platform_circuit_open
 from .publication_state import aggregate_publication
 from .security import PublishingCredentialError
+from .services import public_ready_platform_keys
 from .worker_client import PublishingWorkerError, publish_to_platform
 
 
@@ -182,6 +184,15 @@ def _delivery_assets(target: PublicationTarget) -> list[dict[str, Any]]:
 
 
 def execute_target(*, target_id) -> dict[str, Any]:
+    # Capability discovery happens before the row lock. A worker health request may
+    # take several seconds on a cold cache and must never keep a publication row
+    # locked while waiting on the network.
+    capability_snapshot = worker_capability_snapshot()
+    public_platforms = (
+        public_ready_platform_keys(snapshot=capability_snapshot)
+        if capability_snapshot.service_available
+        else set()
+    )
     with transaction.atomic():
         target = (
             PublicationTarget.objects.select_for_update()
@@ -216,6 +227,17 @@ def execute_target(*, target_id) -> dict[str, Any]:
 
         if target.scheduled_at and target.scheduled_at > timezone.now():
             return {"status": "scheduled", "eta": target.scheduled_at}
+
+        if not capability_snapshot.service_available:
+            # No attempt is consumed: the task can safely retry after the worker's
+            # capability endpoint recovers, without opening a browser or posting.
+            return {"status": "retry", "retry_after": _TRANSIENT_RETRY_SECONDS}
+        if target.platform_key not in public_platforms:
+            target.status = PublicationTarget.Status.PAUSED
+            target.safe_error_code = "public_publish_not_verified"
+            target.save(update_fields=("status", "safe_error_code", "updated_at"))
+            aggregate_publication(target.publication_id)
+            return {"status": "paused"}
 
         account = target.account
         if account is None or account.status != PlatformAccount.Status.CONNECTED:

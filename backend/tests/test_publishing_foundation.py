@@ -19,14 +19,31 @@ class PublishingCatalogTests(SimpleTestCase):
         self.assertNotIn("devto", PLATFORM_BY_KEY)
         self.assertNotIn("hashnode", PLATFORM_BY_KEY)
 
-    def test_only_explicitly_enabled_and_runtime_ready_platforms_are_open(self):
-        payload = platform_payload({"wechat", "zhihu"})
+    def test_environment_gate_alone_does_not_open_platform_capabilities(self):
+        payload = platform_payload(
+            {"wechat", "zhihu"},
+            worker_available=True,
+        )
         by_key = {item["key"]: item for item in payload}
         # 微信还要求第三方平台 component_verify_ticket 有效；测试环境没有票据，所以保持关闭。
         self.assertFalse(by_key["wechat"]["authorization_enabled"])
-        self.assertTrue(by_key["zhihu"]["authorization_enabled"])
+        self.assertFalse(by_key["zhihu"]["authorization_enabled"])
+        self.assertFalse(by_key["zhihu"]["supports_public_publish"])
         self.assertFalse(by_key["xiaohongshu"]["authorization_enabled"])
         self.assertEqual(by_key["xiaohongshu"]["verification_state"], "validation")
+
+    def test_verified_worker_capabilities_open_only_declared_functions(self):
+        payload = platform_payload(
+            {"zhihu"},
+            worker_capabilities={"zhihu": frozenset({"auth", "draft"})},
+            worker_available=True,
+        )
+        zhihu = next(item for item in payload if item["key"] == "zhihu")
+        self.assertTrue(zhihu["authorization_enabled"])
+        self.assertTrue(zhihu["supports_draft"])
+        self.assertFalse(zhihu["supports_public_publish"])
+        self.assertFalse(zhihu["can_enable_auto"])
+        self.assertEqual(zhihu["availability_stage"], "draft_ready")
 
 
 class PublishingCeleryConfigTests(SimpleTestCase):

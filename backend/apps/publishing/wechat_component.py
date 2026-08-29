@@ -13,13 +13,15 @@ from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 
 import httpx
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from django.conf import settings
+from django.core import signing
 from django.core.cache import cache
 from django.db import transaction
 from django.http import HttpRequest, HttpResponse
 from django.utils import timezone
+from django.utils.decorators import method_decorator
 from django.views import View
 from django.views.decorators.csrf import csrf_exempt
-from django.utils.decorators import method_decorator
 
 from .models import PlatformAccount, PlatformAuthorizationSession
 from .security import PublishingCredentialError, decrypt_secret, encrypt_secret
@@ -28,6 +30,9 @@ from .services import PublishingInputError, complete_authorization_session
 
 class WechatComponentUnavailable(RuntimeError):
     pass
+
+
+_CALLBACK_STATE_SALT = "publishing.wechat-component.callback"
 
 
 @dataclass(frozen=True)
@@ -190,10 +195,36 @@ def pre_auth_code() -> str:
     return value
 
 
+def _callback_state(session_id) -> str:
+    return signing.dumps(
+        {"session_id": str(session_id)},
+        salt=_CALLBACK_STATE_SALT,
+        compress=True,
+    )
+
+
+def _session_id_from_callback_state(state: str) -> uuid.UUID:
+    try:
+        ttl = int(getattr(settings, "PUBLISHING_AUTH_SESSION_TTL_SECONDS", 900))
+    except (TypeError, ValueError):
+        ttl = 900
+    try:
+        payload = signing.loads(
+            state,
+            salt=_CALLBACK_STATE_SALT,
+            max_age=max(60, min(ttl, 3600)),
+        )
+        if not isinstance(payload, dict):
+            raise ValueError("invalid payload")
+        return uuid.UUID(str(payload.get("session_id") or ""))
+    except (signing.BadSignature, TypeError, ValueError) as exc:
+        raise WechatComponentUnavailable("authorization_state_invalid") from exc
+
+
 def _redirect_for_session(config: WechatComponentConfig, session_id) -> str:
     parsed = urlsplit(config.redirect_url)
     query = dict(parse_qsl(parsed.query, keep_blank_values=True))
-    query["session_id"] = str(session_id)
+    query["state"] = _callback_state(session_id)
     return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, urlencode(query), parsed.fragment))
 
 
@@ -393,14 +424,14 @@ class WechatComponentCallbackView(View):
     http_method_names = ["get"]
 
     def get(self, request: HttpRequest):
-        session_id = request.GET.get("session_id", "")
+        state = request.GET.get("state", "")
         auth_code = request.GET.get("auth_code", "")
-        if not session_id or not auth_code:
+        if not state or not auth_code:
             return HttpResponse("授权信息不完整，请返回显问重新授权。", status=400, content_type="text/plain; charset=utf-8")
         try:
-            session_uuid = uuid.UUID(session_id)
+            session_uuid = _session_id_from_callback_state(state)
             complete_wechat_authorization(session_id=session_uuid, authorization_code=auth_code)
-        except (ValueError, WechatComponentUnavailable, PublishingInputError):
+        except (WechatComponentUnavailable, PublishingInputError):
             return HttpResponse("本次授权未完成，请返回显问重新尝试。", status=400, content_type="text/plain; charset=utf-8")
         return HttpResponse(
             "<!doctype html><html lang='zh-CN'><meta charset='utf-8'><title>授权成功</title>"

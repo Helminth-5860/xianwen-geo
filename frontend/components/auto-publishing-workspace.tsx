@@ -54,8 +54,23 @@ const TERMINAL_AUTH_STATES = new Set<AuthorizationSession["status"]>([
 ]);
 
 const platformStatus = (platform: PublishingPlatform) => {
+  if (platform.availability_stage === "temporarily_unavailable") {
+    return { color: "warning", text: "暂时不可用" } as const;
+  }
+  if (platform.availability_stage === "draft_validation") {
+    return { color: "processing", text: "草稿体验" } as const;
+  }
+  if (platform.availability_stage === "draft_ready") {
+    return { color: "success", text: "可保存草稿" } as const;
+  }
+  if (platform.availability_stage === "authorization_ready") {
+    return { color: "success", text: "可授权" } as const;
+  }
+  if (platform.availability_stage === "internal_validation" && platform.authorization_enabled) {
+    return { color: "processing", text: "体验中" } as const;
+  }
   if (!platform.authorization_enabled) {
-    return { color: "default", text: "适配验证中" } as const;
+    return { color: "default", text: "暂未开放" } as const;
   }
   const status = platform.account?.status;
   if (status === "connected") return { color: "success", text: "已授权" } as const;
@@ -301,7 +316,7 @@ export function AutoPublishingWorkspace() {
         <div className={styles.summaryCard}>
           <Typography.Text type="secondary">已授权平台</Typography.Text>
           <div className={styles.summaryValue}>
-            {summary?.connected_count ?? 0} / {summary?.platform_count ?? 17}
+            {summary?.connected_count ?? 0} / {summary?.authorization_platform_count ?? 0}
           </div>
         </div>
         <div className={styles.summaryCard}>
@@ -327,6 +342,18 @@ export function AutoPublishingWorkspace() {
         />
       )}
 
+      {state?.availability && state.availability.status !== "available" && (
+        <Alert
+          type={
+            state.availability.status === "temporarily_unavailable"
+              ? "warning"
+              : "info"
+          }
+          showIcon
+          title={state.availability.message}
+        />
+      )}
+
       <Card className={styles.sectionCard} title="待发布内容">
         {!readyArticles.length ? (
           <div className={styles.emptyPlan}>当前没有等待安排的可发布文章。</div>
@@ -342,7 +369,7 @@ export function AutoPublishingWorkspace() {
                   <Typography.Text strong>{article.title || "未命名文章"}</Typography.Text>
                   <div>
                     <Typography.Text type="secondary">
-                      已完成内容审核，可由显问自动配图、适配平台并排期发布
+                      已完成内容审核，可由显问自动配图、调整内容并排期发布
                     </Typography.Text>
                   </div>
                 </div>
@@ -425,6 +452,18 @@ export function AutoPublishingWorkspace() {
         {platforms.map((platform) => {
           const badge = platformStatus(platform);
           const connected = platform.account?.status === "connected";
+          const authorizationAvailable = Boolean(
+            platform.authorization_verified || platform.authorization_validation_available,
+          );
+          const draftAvailable = Boolean(
+            platform.supports_draft || platform.draft_validation_available,
+          );
+          const publicPublishAvailable = Boolean(
+            platform.can_enable_auto ?? platform.supports_public_publish,
+          );
+          const imageUploadAvailable = Boolean(
+            platform.image_upload_verified || platform.image_upload_validation_available,
+          );
           return (
             <div className={styles.platformCard} key={platform.key}>
               <div className={styles.platformHeader}>
@@ -443,9 +482,28 @@ export function AutoPublishingWorkspace() {
                 {connected && platform.account?.display_name
                   ? `账号：${platform.account.display_name}`
                   : platform.authorization_enabled
-                    ? "客户本人完成扫码或平台要求的验证；必要输入只在临时授权窗口转发，不保存到显问数据库。"
-                    : "适配器完成真实账号验证后开放，不会把未验证能力展示成可用。"}
+                    ? platform.availability_message ||
+                      "客户本人完成扫码或平台要求的确认；必要输入只用于本次授权，不会保存。"
+                    : platform.availability_message ||
+                      "平台准备完成后即可授权。"}
               </div>
+
+              <Space size={[4, 4]} wrap>
+                <Tag color={authorizationAvailable ? "blue" : undefined}>
+                  {authorizationAvailable ? "账号授权可用" : "账号授权未开放"}
+                </Tag>
+                <Tag color={draftAvailable ? "blue" : undefined}>
+                  {draftAvailable ? "草稿保存可用" : "草稿保存未开放"}
+                </Tag>
+                <Tag color={publicPublishAvailable ? "green" : undefined}>
+                  {publicPublishAvailable ? "自动公开发布可用" : "自动公开发布未开放"}
+                </Tag>
+                {(platform.supports_cover || platform.supports_inline_images) && (
+                  <Tag color={imageUploadAvailable ? "blue" : undefined}>
+                    {imageUploadAvailable ? "图片发布可用" : "图片发布未开放"}
+                  </Tag>
+                )}
+              </Space>
 
               <div className={styles.platformActions}>
                 {connected ? (
@@ -453,9 +511,17 @@ export function AutoPublishingWorkspace() {
                     <Switch
                       size="small"
                       checked={platform.account?.enabled_for_auto ?? false}
+                      disabled={
+                        !(platform.can_enable_auto ?? platform.supports_public_publish) &&
+                        !(platform.account?.enabled_for_auto ?? false)
+                      }
                       onChange={(checked) => void togglePlatform(platform, checked)}
                     />
-                    <Typography.Text type="secondary">参与自动发文</Typography.Text>
+                    <Typography.Text type="secondary">
+                      {platform.can_enable_auto ?? platform.supports_public_publish
+                        ? "参与自动发文"
+                        : "公开发布尚未开放"}
+                    </Typography.Text>
                   </Space>
                 ) : (
                   <Typography.Text type="secondary">
@@ -490,9 +556,17 @@ export function AutoPublishingWorkspace() {
       <Alert
         type="info"
         showIcon
-        title="授权信息不会被明文保存"
-        description="客户本人在安全授权窗口完成扫码或平台要求的验证。若平台要求手机号、验证码或密码，输入内容仅临时转发到当前隔离浏览器，不写入数据库或日志；登录成功后只加密保存平台会话凭证。"
+        title="授权信息会被安全保护"
+        description="客户本人在安全授权窗口完成扫码或平台要求的确认。若平台要求手机号、验证码或密码，输入内容只用于本次授权，不会保存；授权成功后，会加密保存维持平台登录所需的会话信息，用于你已同意的发文。"
       />
+      {state?.availability && (
+        <Alert
+          type={state.availability.status === "available" ? "success" : "info"}
+          showIcon
+          title={state.availability.message}
+          description="平台会按照实际可用情况逐个开放；账号授权、草稿保存和自动公开发布会分别显示。"
+        />
+      )}
       {renderPlatformGroup("主流内容平台", platformGroups.mainstream)}
       {renderPlatformGroup("专业内容平台", platformGroups.professional)}
     </Space>
@@ -512,6 +586,9 @@ export function AutoPublishingWorkspace() {
             <Switch
               checked={preference.is_enabled}
               loading={saving}
+              disabled={
+                !preference.is_enabled && !(summary?.public_platform_count ?? 0)
+              }
               onChange={(checked) => void savePreference({ is_enabled: checked })}
             />
           </Space>
@@ -531,7 +608,7 @@ export function AutoPublishingWorkspace() {
               </Space>
             </Radio.Group>
             <div className={styles.settingHint}>
-              全自动托管会自动接管可发布文章；审核后发布会先完成配图和平台适配，再等待你点一次“确认发布”；仅发布指定内容只处理你主动安排的文章。
+              全自动托管会自动接管可发布文章；审核后发布会先完成配图和内容调整，再等待你点一次“确认发布”；仅发布指定内容只处理你主动安排的文章。
             </div>
           </div>
 
@@ -567,7 +644,7 @@ export function AutoPublishingWorkspace() {
               </Space>
             </Radio.Group>
             <div className={styles.settingHint}>
-              默认优先真实企业图片；AI 只补充概念图、封面背景、流程图等视觉素材。
+              默认优先真实企业图片；智能生成只补充概念图、封面背景、流程图等视觉素材。
             </div>
           </div>
 
@@ -720,7 +797,7 @@ export function AutoPublishingWorkspace() {
               {state?.subject.official_name || currentSubject.official_name || "当前主体"}
             </h1>
             <p className={styles.heroDescription}>
-              显问会从可发布文章中自动完成平台判断、智能配图、内容适配、错峰排期和发布。客户只需要完成平台授权，并决定是否开启自动发文。
+              显问会从可发布文章中自动完成平台判断、智能配图、内容调整、错峰排期和发布。客户只需要完成平台授权，并决定是否开启自动发文。
             </p>
           </div>
           <Space>
@@ -738,6 +815,9 @@ export function AutoPublishingWorkspace() {
               <Switch
                 checked={preference?.is_enabled ?? false}
                 loading={saving}
+                disabled={
+                  !preference?.is_enabled && !(summary?.public_platform_count ?? 0)
+                }
                 onChange={(checked) => void savePreference({ is_enabled: checked })}
               />
             </Space>
@@ -799,7 +879,7 @@ export function AutoPublishingWorkspace() {
             type="info"
             showIcon
             title="请优先使用扫码完成登录"
-            description="如平台要求手机号、验证码或密码，请先在授权画面中点击对应输入框，再使用授权窗口下方的临时输入栏。输入内容只转发到当前隔离浏览器，不保存到显问数据库或日志。"
+            description="如平台要求手机号、验证码或密码，请先在授权画面中点击对应输入框，再使用授权窗口下方的临时输入栏。输入内容只用于本次授权，不会保存。"
           />
           <Typography.Text>
             当前状态：
