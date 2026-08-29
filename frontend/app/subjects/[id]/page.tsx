@@ -779,7 +779,7 @@ function SubjectDetailContent() {
               <Typography.Paragraph className={styles.heroDescription}>
                 {readOnly
                   ? "查看已保存的企业经营、品牌与公开资料。"
-                  : "填写真实经营资料，建立清晰的企业档案，为后续 GEO 分析、内容生成和品牌建设提供可靠基础。"}
+                  : "填写真实经营资料，建立清晰的企业档案，统一管理企业身份、业务、品牌与公开信息。"}
               </Typography.Paragraph>
             </div>
             <div className={styles.statuses}>
@@ -984,7 +984,7 @@ function SubjectDetailContent() {
                   {subject.current_version_no === null ? "创建企业主体档案" : "保存主体资料修改"}
                 </span>
                 <span className={styles.actionDescription}>
-                  保存后资料立即生效，但不会自动进入关键词配置或启动 GEO 工作。
+                  保存后资料立即生效，你可以继续留在本页完善企业档案。
                 </span>
               </div>
               <div className={styles.actionButtons}>
