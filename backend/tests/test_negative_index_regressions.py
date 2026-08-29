@@ -49,10 +49,7 @@ class NegativeIndexDatabaseLockTests(TestCase):
             password="StrongPass123!",
             nickname="NegativeLock",
         )
-        subject_type = SubjectType.objects.create(
-            key="company-negative-lock-regression",
-            name="企业",
-        )
+        subject_type = SubjectType.objects.get(key="enterprise")
         subject = Subject.objects.create(
             user=user,
             subject_type=subject_type,
