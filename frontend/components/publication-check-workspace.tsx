@@ -143,7 +143,7 @@ function chainState(
     if (!item.http_status) return "waiting";
     return item.http_status >= 200 && item.http_status < 300 ? "passed" : "failed";
   }
-  return item.status === "published" ? "passed" : "failed";
+  return "failed";
 }
 
 export function PublicationCheckWorkspace({ subjectId }: Props) {
