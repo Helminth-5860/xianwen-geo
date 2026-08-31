@@ -4,7 +4,7 @@ from math import ceil
 from django.db.models import Q
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_protect
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.response import Response
 from rest_framework.status import HTTP_200_OK
 from rest_framework.views import APIView
@@ -16,6 +16,11 @@ from apps.admin_rbac.security import (
     AdminReauthFailed,
     AdminReauthRateLimited,
     AdminSecurityUnavailable,
+)
+from apps.admin_rbac.sensitive_audit_models import SensitiveAuditLog
+from apps.admin_rbac.sensitive_audit_services import (
+    record_sensitive_risk_action,
+    sensitive_audit_was_recorded,
 )
 from apps.core.error_codes import ErrorCode
 from apps.core.responses import error_response
@@ -77,6 +82,20 @@ def _page(queryset, serializer, request):
 def quota_error_response(exc, request):
     code = ErrorCode(exc.code)
     return error_response(code, status_code=QUOTA_ERROR_STATUS[exc.code], request=request)
+
+
+def _record_failed_adjustment(request, *, action_key, account_id, payload, reason):
+    if sensitive_audit_was_recorded(request):
+        return
+    record_sensitive_risk_action(
+        request=request,
+        action_key=action_key,
+        target_id=account_id,
+        outcome=SensitiveAuditLog.Outcome.FAILURE,
+        actor=request.user,
+        payload=payload,
+        failure_reason=reason,
+    )
 
 
 class CurrentQuotaAccountsView(APIView):
@@ -156,13 +175,23 @@ class AdminQuotaAdjustmentView(APIView):
         expected_version = payload.pop("expected_version")
         confirmed = payload.pop("confirmed", False)
         current_password = payload.pop("current_password", "")
+        action_key, ledger_action = action_map[action]
         raw_key = request.headers.get("Idempotency-Key", "")
         if not IDEMPOTENCY_KEY_PATTERN.fullmatch(raw_key):
             return error_response(
                 ErrorCode.IDEMPOTENCY_KEY_REQUIRED, status_code=422, request=request
             )
-        account = scoped_account_or_404(request.user, request.admin_context, account_id)
-        action_key, ledger_action = action_map[action]
+        try:
+            account = scoped_account_or_404(request.user, request.admin_context, account_id)
+        except (NotFound, PermissionDenied):
+            _record_failed_adjustment(
+                request,
+                action_key=action_key,
+                account_id=account_id,
+                payload=payload,
+                reason="QUOTA_SCOPE_DENIED",
+            )
+            raise
         digests = derive_idempotency_digests(
             raw_key,
             operation=ledger_action,
@@ -181,6 +210,13 @@ class AdminQuotaAdjustmentView(APIView):
                     existing, account=account, action=ledger_action, digests=digests
                 )
             except QuotaIdempotencyConflict as exc:
+                _record_failed_adjustment(
+                    request,
+                    action_key=action_key,
+                    account_id=account_id,
+                    payload=payload,
+                    reason=exc.code,
+                )
                 return quota_error_response(exc, request)
             return Response(
                 {
@@ -210,6 +246,13 @@ class AdminQuotaAdjustmentView(APIView):
                 current_password=current_password,
             )
         except QuotaError as exc:
+            _record_failed_adjustment(
+                request,
+                action_key=action_key,
+                account_id=account_id,
+                payload=payload,
+                reason=exc.code,
+            )
             return quota_error_response(exc, request)
         except (
             RiskError,
@@ -217,5 +260,14 @@ class AdminQuotaAdjustmentView(APIView):
             AdminReauthRateLimited,
             AdminSecurityUnavailable,
         ) as exc:
+            stable_code = getattr(exc, "code", exc.__class__.__name__.upper())
+            if stable_code != "RISK_CONFIRMATION_REQUIRED":
+                _record_failed_adjustment(
+                    request,
+                    action_key=action_key,
+                    account_id=account_id,
+                    payload=payload,
+                    reason=stable_code,
+                )
             return risk_error_response(exc, request)
         return Response(result.data, status=HTTP_200_OK)
