@@ -6,7 +6,7 @@ from django.db import models
 from django.utils import timezone
 
 from apps.core.request_ids import validate_request_id
-from apps.users.models import LoginEvent, User
+from apps.users.models import User
 from apps.users.services import client_ip_address, request_user_agent
 
 from .sensitive_audit_models import SensitiveAuditLog
@@ -77,18 +77,6 @@ def _user_snapshot(user: User | None) -> dict[str, Any]:
         "tenant_id": tenant.pk if tenant else None,
         "tenant_name": tenant.display_name if tenant else "",
     }
-
-
-def _latest_login_ip(user: User | None):
-    if user is None:
-        return None
-    event = (
-        LoginEvent.objects.filter(user=user, success=True)
-        .only("ip_address")
-        .order_by("-created_at", "-id")
-        .first()
-    )
-    return event.ip_address if event else None
 
 
 def _quota_evidence(
@@ -192,7 +180,10 @@ def record_sensitive_risk_action(
         or payload.get("unavailable_reason")
         or ""
     )[:500]
+    operation_ip = client_ip_address(request) or None
 
+    # 管理员会话在 security.validate_admin_session() 中绑定登录时的 IP 指纹；
+    # 能执行到敏感动作时，当前请求 IP 就是该管理会话的登录 IP。
     log = SensitiveAuditLog.objects.create(
         action_key=action_key,
         outcome=outcome,
@@ -212,8 +203,8 @@ def record_sensitive_risk_action(
         quota_after=evidence["quota_after"],
         ledger_entry_id=evidence["ledger_entry_id"],
         request_id=request_id,
-        operation_ip=client_ip_address(request) or None,
-        login_ip_snapshot=_latest_login_ip(actor),
+        operation_ip=operation_ip,
+        login_ip_snapshot=operation_ip,
         user_agent=request_user_agent(request),
         safe_reason=reason,
         failure_reason=failure_reason[:128],
