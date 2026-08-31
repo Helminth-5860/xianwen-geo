@@ -25,7 +25,14 @@ class Migration(migrations.Migration):
                     models.CharField(db_index=True, default="sensitive_action", max_length=50),
                 ),
                 ("action_key", models.CharField(db_index=True, max_length=100)),
-                ("outcome", models.CharField(db_index=True, max_length=16)),
+                (
+                    "outcome",
+                    models.CharField(
+                        choices=[("success", "成功"), ("failure", "失败")],
+                        db_index=True,
+                        max_length=16,
+                    ),
+                ),
                 ("channel", models.CharField(default="admin_console", max_length=32)),
                 ("actor_name_snapshot", models.CharField(blank=True, max_length=50)),
                 ("actor_role_snapshot", models.CharField(blank=True, max_length=100)),
