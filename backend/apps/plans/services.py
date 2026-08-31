@@ -448,7 +448,7 @@ def create_plan_version(
             raise PlanVersionStateConflict("来源版本不存在或不可复制。")
     elif plan.current_published_version_id:
         source = PlanVersion.objects.select_for_update().get(pk=plan.current_published_version_id)
-    valid_days = source.valid_days if source else 30
+    valid_days = 365
     queue_priority = source.queue_priority if source else 100
     try:
         version = PlanVersion.objects.create(

@@ -107,7 +107,14 @@ class ModelPermissionInputSerializer(StrictSerializer):
 
 
 class PlanVersionUpdatePayloadSerializer(StrictSerializer):
-    valid_days = serializers.IntegerField(min_value=1, max_value=3650)
+    valid_days = serializers.IntegerField(
+        min_value=365,
+        max_value=365,
+        error_messages={
+            "min_value": "所有套餐统一为一年有效。",
+            "max_value": "所有套餐统一为一年有效。",
+        },
+    )
     queue_priority = serializers.IntegerField(min_value=0, max_value=1000)
     limits = LimitValueSerializer(many=True, allow_empty=False)
     model_permissions = ModelPermissionInputSerializer(many=True, allow_empty=False)

@@ -113,7 +113,7 @@ export default function PlanVersionPage() {
               }));
               await updatePlanVersion(version.id, {
                 expected_version: version.version,
-                valid_days: values.valid_days,
+                valid_days: 365,
                 queue_priority: values.queue_priority,
                 limits,
                 model_permissions,
@@ -125,8 +125,13 @@ export default function PlanVersionPage() {
             }
           }}
         >
-          <Form.Item name="valid_days" label="有效天数" rules={[{ required: true }]}>
-            <InputNumber min={1} max={3650} />
+          <Form.Item
+            name="valid_days"
+            label="套餐有效期"
+            extra="所有套餐统一为一年有效。"
+            rules={[{ required: true }]}
+          >
+            <InputNumber min={365} max={365} disabled addonAfter="天" />
           </Form.Item>
           <Form.Item name="queue_priority" label="队列优先级">
             <InputNumber min={0} max={1000} />

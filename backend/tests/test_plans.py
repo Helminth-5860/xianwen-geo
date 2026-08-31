@@ -225,6 +225,7 @@ def test_single_draft_version_number_and_optimistic_lock():
     assert draft.version_no == 1
     with pytest.raises(PlanDraftAlreadyExists):
         make_draft(user, plan)
+    assert draft.valid_days == 365
     with pytest.raises(PlanVersionConflict):
         update_plan_version(
             version_id=draft.pk,
@@ -235,6 +236,25 @@ def test_single_draft_version_number_and_optimistic_lock():
             limits=[],
             model_permissions=[],
         )
+
+
+def test_plan_version_api_payload_requires_one_year():
+    from apps.plans.serializers import PlanVersionUpdatePayloadSerializer
+
+    payload = {
+        "valid_days": 30,
+        "queue_priority": 100,
+        "limits": [{"key": "geo_detection_runs", "value": 1}],
+        "model_permissions": [
+            {"model_key": "deepseek", "sort_order": 0, "selected_by_default": True}
+        ],
+    }
+    serializer = PlanVersionUpdatePayloadSerializer(data=payload)
+    assert not serializer.is_valid()
+    assert "valid_days" in serializer.errors
+    payload["valid_days"] = 365
+    serializer = PlanVersionUpdatePayloadSerializer(data=payload)
+    assert serializer.is_valid(), serializer.errors
 
 
 @pytest.mark.django_db
