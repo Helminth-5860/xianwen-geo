@@ -41,6 +41,14 @@ class NegativeIndexScan(models.Model):  # noqa: DJ008
         on_delete=models.PROTECT,
         related_name="negative_index_scans",
     )
+    quota_hold = models.OneToOneField(
+        "quotas.QuotaHoldGroup",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="negative_index_scan",
+    )
+    request_id = models.UUIDField(null=True, blank=True)
     status = models.CharField(
         max_length=20,
         choices=Status.choices,

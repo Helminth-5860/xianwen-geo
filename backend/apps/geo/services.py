@@ -10,7 +10,7 @@ from decimal import Decimal
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import transaction
-from django.db.models import Q, Sum
+from django.db.models import Q
 from django.http import Http404
 from django.utils import timezone
 
@@ -23,8 +23,13 @@ from apps.ai.runtime import get_runtime_snapshot
 from apps.plans.models import Subscription
 from apps.plans.subscription_services import effective_entitlement_snapshot
 from apps.questions.bank_models import Question, QuestionBankWorkspace
-from apps.quotas.models import QuotaAccount
-from apps.quotas.services import consume_hold, freeze_quota, release_hold
+from apps.quotas.services import (
+    available_quota,
+    consume_hold,
+    freeze_quota,
+    quota_account_for_subscription,
+    release_hold,
+)
 from apps.subjects.models import Subject
 from apps.subjects.subject_services import subject_for_user_or_404
 
@@ -220,38 +225,19 @@ def _current_detection_inputs(*, user, subject: Subject):
 
 
 def _detection_account(subscription: Subscription):
-    account = (
-        QuotaAccount.objects.filter(
+    try:
+        return quota_account_for_subscription(
             subscription=subscription,
-            quota_type="detection_points",
-            subject__isnull=True,
-            available__gt=0,
+            quota_type="geo_detection_runs",
+            legacy_quota_type="detection_points",
         )
-        .order_by("batch_type", "spendable_until", "created_at", "id")
-        .first()
-    )
-    if account is None:
-        account = (
-            QuotaAccount.objects.filter(
-                subscription=subscription,
-                quota_type="detection_points",
-                subject__isnull=True,
-            )
-            .order_by("batch_type", "created_at", "id")
-            .first()
-        )
-    if account is None:
-        raise GeoDetectionInputConflict
-    return account
+    except Exception as exc:
+        raise GeoDetectionInputConflict from exc
 
 
-def _available_detection_points(subscription: Subscription) -> int:
-    total = QuotaAccount.objects.filter(
-        subscription=subscription,
-        quota_type="detection_points",
-        subject__isnull=True,
-    ).aggregate(total=Sum("available"))["total"]
-    return int(total or 0)
+def _available_detection_runs(subscription: Subscription) -> int:
+    account = _detection_account(subscription)
+    return available_quota(subscription=subscription, quota_type=account.quota_type)
 
 
 def _selection(
@@ -363,7 +349,7 @@ def detection_options(*, user, subject_id) -> dict:
         "models": available_models_for_subscription(subscription),
         "max_models_per_detection": _int_limit(limits, "max_models_per_detection"),
         "allow_user_model_selection": bool(limits.get("allow_user_model_selection", True)),
-        "available_detection_points": _available_detection_points(subscription),
+        "available_detection_runs": _available_detection_runs(subscription),
         "active_detection_jobs": active,
         "concurrent_detection_jobs": concurrency,
         "can_start_job": active < concurrency,
@@ -383,17 +369,17 @@ def estimate_detection(*, user, subject_id, question_ids, model_ids, mode="new")
         model_ids=model_ids,
         lock=False,
     )
-    available = _available_detection_points(subscription)
+    available = _available_detection_runs(subscription)
     active = GeoDetectionJob.objects.filter(user=user, status__in=ACTIVE_JOB_STATUSES).count()
     concurrency = _int_limit(selected["limits"], "concurrent_detection_jobs")
     return {
         "question_count": len(selected["questions"]),
         "model_count": len(selected["models"]),
-        "required_detection_points": selected["required"],
-        "available_detection_points": available,
+        "required_detection_runs": 1,
+        "available_detection_runs": available,
         "active_detection_jobs": active,
         "concurrent_detection_jobs": concurrency,
-        "can_submit": selected["required"] <= available and active < concurrency,
+        "can_submit": available >= 1 and active < concurrency,
     }
 
 
@@ -462,9 +448,10 @@ def create_detection_job(
         raise GeoDetectionConcurrencyLimit
     job_id = uuid.uuid4()
     account = _detection_account(subscription)
+    held_amount = selected["required"] if account.quota_type == "detection_points" else 1
     hold = freeze_quota(
         account_id=account.pk,
-        amount=selected["required"],
+        amount=held_amount,
         business_type="geo_detection",
         business_id=job_id,
         idempotency_key=f"geo-detection-freeze-{job_id}",
@@ -620,6 +607,7 @@ def job_payload(job: GeoDetectionJob) -> dict:
         "quota": {
             "status": hold.status if hold else "settled",
             "held": hold.requested_amount if hold else 0,
+            "quota_type": hold.quota_type if hold else "geo_detection_runs",
             "consumed": hold.consumed_amount if hold else 0,
             "released": hold.released_amount if hold else 0,
         },
@@ -698,22 +686,17 @@ def remove_detection_from_history(*, user, subject_id, detection_id):
 def _settle_point(call: ModelCall, *, action: str) -> None:
     if call.settlement_status != ModelCall.Settlement.PENDING:
         return
-    key = f"geo-detection-{action}-{call.pk}"
-    if action == "consume":
-        consume_hold(
+    if call.job.quota_hold.quota_type == "detection_points":
+        key = f"geo-detection-{action}-{call.pk}"
+        (consume_hold if action == "consume" else release_hold)(
             hold_id=call.job.quota_hold_id,
             amount=1,
             idempotency_key=key,
             request_id=call.job.request_id,
         )
+    if action == "consume":
         call.settlement_status = ModelCall.Settlement.CONSUMED
     else:
-        release_hold(
-            hold_id=call.job.quota_hold_id,
-            amount=1,
-            idempotency_key=key,
-            request_id=call.job.request_id,
-        )
         call.settlement_status = ModelCall.Settlement.RELEASED
 
 
@@ -782,6 +765,16 @@ def _refresh_job_locked(job: GeoDetectionJob) -> None:
         else:
             job.status = GeoDetectionJob.Status.FAILED
         job.finished_at = now
+        hold = job.quota_hold
+        if hold.quota_type == "geo_detection_runs" and hold.status != hold.Status.SETTLED:
+            settle = consume_hold if job.successful_calls > 0 else release_hold
+            settlement_action = "consume" if job.successful_calls > 0 else "release"
+            settle(
+                hold_id=hold.pk,
+                amount=1,
+                idempotency_key=f"geo-detection-run-{settlement_action}-{job.pk}",
+                request_id=job.request_id,
+            )
     job.version += 1
     job.save(
         update_fields=(

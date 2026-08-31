@@ -6,7 +6,7 @@ import { userMessage } from "@/lib/auth-client";
 import { getPlans, type Plan } from "@/lib/plans-client";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
 
-const statusLabel = { draft: "草稿", published: "已上架", offline: "已下架", archived: "已归档" };
+const statusLabel = { draft: "草稿", published: "销售中", offline: "已停售", archived: "已归档" };
 export default function AdminPlansPage() {
   const [plans, setPlans] = useState<Plan[]>([]);
   const [status, setStatus] = useState("");
@@ -73,16 +73,43 @@ export default function AdminPlansPage() {
             emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无套餐" />,
           }}
           columns={[
-            { title: "套餐名称", dataIndex: "name" },
+            {
+              title: "套餐名称",
+              render: (_, plan) => (
+                <Space>
+                  <span>{plan.name}</span>
+                  {plan.is_recommended ? <Tag color="purple">推荐</Tag> : null}
+                </Space>
+              ),
+            },
             {
               title: "套餐价格",
               render: (_, plan) =>
                 plan.price_display_mode === "fixed" ? `¥${plan.display_price}` : "联系开通",
             },
-            { title: "套餐说明", dataIndex: "description", ellipsis: true },
-            { title: "功能权限", render: () => "进入详情查看" },
-            { title: "使用额度", render: () => "进入详情查看" },
-            { title: "状态", render: (_, plan) => <Tag>{statusLabel[plan.status]}</Tag> },
+            {
+              title: "当前版本",
+              render: (_, plan) =>
+                plan.current_published_version
+                  ? `第 ${plan.current_published_version.version_no} 版`
+                  : "尚未发布",
+            },
+            {
+              title: "生效状态",
+              render: (_, plan) => (
+                <Tag color={plan.current_published_version_id ? "green" : "default"}>
+                  {plan.current_published_version_id ? "已生效" : "未生效"}
+                </Tag>
+              ),
+            },
+            {
+              title: "销售状态",
+              render: (_, plan) => <Tag>{statusLabel[plan.status]}</Tag>,
+            },
+            {
+              title: "订阅客户",
+              render: (_, plan) => `${plan.current_subscription_count ?? 0} 位`,
+            },
             {
               title: "操作",
               render: (_, plan) => <Link href={`/admin/plans/${plan.id}`}>管理</Link>,

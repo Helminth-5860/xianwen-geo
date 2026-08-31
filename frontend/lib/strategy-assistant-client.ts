@@ -86,7 +86,7 @@ export type AssistantMessage = Readonly<{ role: "user" | "assistant"; content: s
 export type AssistantReply = Readonly<{
   answer: string;
   suggested_actions: ReadonlyArray<{ label: string; route: string }>;
-  remaining_messages: number;
+  remaining_messages: number | null;
   usage_event_id: string;
   history_persisted: false;
 }>;

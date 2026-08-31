@@ -1,0 +1,64 @@
+from django.db import migrations, models
+
+
+class Migration(migrations.Migration):
+    dependencies = [("quotas", "0014_backfill_video_credit_accounts")]
+
+    operations = [
+        migrations.RemoveConstraint(
+            model_name="quotaledgerentry",
+            name="quota_ledger_hold_by_action",
+        ),
+        migrations.AlterField(
+            model_name="quotaledgerentry",
+            name="action",
+            field=models.CharField(
+                choices=[
+                    ("initialize", "初始化"),
+                    ("storage_capacity_reconcile", "存储容量收敛"),
+                    ("freeze", "冻结"),
+                    ("consume", "扣除"),
+                    ("release", "返还"),
+                    ("grant", "赠送"),
+                    ("compensate", "补偿"),
+                    ("refund", "返还"),
+                    ("manual_deduct", "人工扣减"),
+                    ("plan_change_forfeit", "套餐变更清零"),
+                    ("plan_change_transfer_out", "套餐变更转出"),
+                    ("plan_change_transfer_in", "套餐变更转入"),
+                    ("cycle_forfeit", "Cycle forfeit"),
+                    ("cycle_late_release_forfeit", "Late cycle release forfeit"),
+                    ("expiry_forfeit", "Expiry forfeit"),
+                    ("expiry_late_release_forfeit", "Late expiry release forfeit"),
+                ],
+                max_length=32,
+            ),
+        ),
+        migrations.AddConstraint(
+            model_name="quotaledgerentry",
+            constraint=models.CheckConstraint(
+                condition=(
+                    models.Q(action__in=("freeze", "consume", "release"), hold__isnull=False)
+                    | models.Q(
+                        action__in=(
+                            "initialize",
+                            "storage_capacity_reconcile",
+                            "grant",
+                            "compensate",
+                            "refund",
+                            "manual_deduct",
+                            "plan_change_forfeit",
+                            "plan_change_transfer_out",
+                            "plan_change_transfer_in",
+                            "cycle_forfeit",
+                            "cycle_late_release_forfeit",
+                            "expiry_forfeit",
+                            "expiry_late_release_forfeit",
+                        ),
+                        hold__isnull=True,
+                    )
+                ),
+                name="quota_ledger_hold_by_action",
+            ),
+        ),
+    ]

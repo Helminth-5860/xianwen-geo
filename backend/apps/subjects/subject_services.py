@@ -19,8 +19,7 @@ from .schema_snapshots import (
     merge_and_validate_values,
 )
 
-SUBJECT_ACTIVE_LIMIT_KEY = "subject_active_limit"
-SUBJECT_ACTIVE_LIMIT_MAXIMUM = 1_000_000
+WORKSPACE_SUBJECT_LIMIT = 1
 
 
 class SubjectBusinessError(Exception):
@@ -124,20 +123,12 @@ def active_subject_for_user(user: User) -> Subject | None:
 
 
 def _limit_from_snapshot(snapshot: Any) -> int:
+    # A workspace always owns exactly one active subject. This is a product
+    # invariant rather than a commercial entitlement, so plan snapshots no
+    # longer carry or control a subject count.
     if not isinstance(snapshot, dict):
         raise SubjectEntitlementIntegrityError
-    limits = snapshot.get("limits")
-    if not isinstance(limits, dict):
-        raise SubjectEntitlementIntegrityError
-    value = limits.get(SUBJECT_ACTIVE_LIMIT_KEY)
-    if (
-        isinstance(value, bool)
-        or not isinstance(value, int)
-        or value < 0
-        or value > SUBJECT_ACTIVE_LIMIT_MAXIMUM
-    ):
-        raise SubjectEntitlementIntegrityError
-    return value
+    return WORKSPACE_SUBJECT_LIMIT
 
 
 def subject_limit_preview(*, user: User, target_snapshot: Any) -> SubjectLimitPreview:

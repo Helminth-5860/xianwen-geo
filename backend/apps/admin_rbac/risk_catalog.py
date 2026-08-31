@@ -3,7 +3,7 @@ from dataclasses import dataclass
 CONFIRM = "confirm"
 PASSWORD = "password"
 MODE_STRENGTH = {CONFIRM: 1, PASSWORD: 2}
-CATALOG_VERSION = 8
+CATALOG_VERSION = 9
 
 
 @dataclass(frozen=True)
@@ -320,6 +320,16 @@ RISK_ACTION_CATALOG = (
         "quota.compensate",
     ),
     RiskActionDefinition(
+        "quota.refund",
+        "额度返还",
+        "quotas",
+        "quota_account",
+        (CONFIRM,),
+        CONFIRM,
+        CONFIRM,
+        "quota.refund",
+    ),
+    RiskActionDefinition(
         "quota.manual_deduct",
         "\u989d\u5ea6\u4eba\u5de5\u6263\u51cf",
         "quotas",
@@ -356,6 +366,7 @@ SMS_STEP_UP_REQUIRED_ACTIONS = frozenset(
         "user.freeze",
         "quota.grant",
         "quota.compensate",
+        "quota.refund",
         "quota.manual_deduct",
         "subject_risk.catalog.publish",
     }

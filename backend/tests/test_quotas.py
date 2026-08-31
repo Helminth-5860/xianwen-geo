@@ -1,4 +1,5 @@
 import uuid
+from copy import deepcopy
 from datetime import timedelta
 from unittest.mock import patch
 
@@ -83,14 +84,58 @@ def fund(account, admin, *, amount=5):
     return account
 
 
+def add_customer_quota(subscription, admin, *, quota_type, amount):
+    snapshot = deepcopy(subscription.entitlement_snapshot)
+    snapshot.setdefault("limits", {})[quota_type] = amount
+    type(subscription).objects.filter(pk=subscription.pk).update(entitlement_snapshot=snapshot)
+    subscription.refresh_from_db()
+    initialize_subscription_accounts(
+        subscription=subscription,
+        request_id=uuid.uuid4(),
+        actor=admin,
+    )
+    account = QuotaAccount.objects.get(
+        subscription=subscription,
+        quota_type=quota_type,
+    )
+    if account.available < amount:
+        grant_amount = amount - account.available
+        reason = "测试补充自然单位额度"
+        digests = derive_idempotency_digests(
+            f"test-natural-quota-{account.pk}",
+            operation="grant",
+            user_id=account.user_id,
+            account_id=account.pk,
+            business_type="quota_adjustment",
+            business_id=account.pk,
+            request_payload={"amount": grant_amount, "reason": reason},
+        )
+        adjust_quota_account(
+            requester=admin,
+            admin_context=resolve_admin_context(admin),
+            account_id=account.pk,
+            expected_version=account.version,
+            action=QuotaLedgerEntry.Action.GRANT,
+            amount=grant_amount,
+            reason=reason,
+            digests=digests,
+            request_id=uuid.uuid4(),
+        )
+        account.refresh_from_db()
+    return account
+
+
 @pytest.mark.django_db
 def test_subscription_initializes_all_current_accounts_even_zero():
     _, _, subscription = provision()
     accounts = QuotaAccount.objects.filter(subscription=subscription)
-    assert set(accounts.values_list("quota_type", flat=True)) == {
-        item.key for item in CURRENT_ACCOUNT_DEFINITIONS
+    expected_types = {
+        item.key
+        for item in CURRENT_ACCOUNT_DEFINITIONS
+        if item.source_limit_key in subscription.entitlement_snapshot["limits"]
     }
-    assert accounts.count() == len(CURRENT_ACCOUNT_DEFINITIONS)
+    assert set(accounts.values_list("quota_type", flat=True)) == expected_types
+    assert accounts.count() == len(expected_types)
     for account in accounts:
         assert account.ledger_sequence == 1
         assert account.last_ledger_entry.sequence == 1
@@ -125,7 +170,7 @@ def test_snapshot_rejects_unknown_or_missing_catalog_key():
         snapshot_quota_values({"limits": {"unknown": 1}})
 
 
-def test_pre_video_immutable_snapshot_gets_only_fail_closed_video_default():
+def test_immutable_snapshot_keeps_only_quota_keys_present_at_publish_time():
     limits = {item.source_limit_key: 0 for item in CURRENT_ACCOUNT_DEFINITIONS}
     limits.pop("video_credits")
     limits.update(
@@ -142,10 +187,9 @@ def test_pre_video_immutable_snapshot_gets_only_fail_closed_video_default():
 
     values = snapshot_quota_values({"limits": limits})
 
-    assert values["video_credits"] == 0
+    assert "video_credits" not in values
     limits.pop("image_credits")
-    with pytest.raises(ValueError):
-        snapshot_quota_values({"limits": limits})
+    assert "image_credits" not in snapshot_quota_values({"limits": limits})
 
 
 @pytest.mark.django_db
@@ -161,7 +205,7 @@ def test_initialization_is_idempotent():
 @pytest.mark.django_db
 def test_freeze_consume_release_and_replay():
     admin, _, subscription = provision()
-    account = QuotaAccount.objects.get(subscription=subscription, quota_type="detection_points")
+    account = QuotaAccount.objects.get(subscription=subscription, quota_type="geo_detection_runs")
     account = fund(account, admin)
     amount = min(account.available, 2)
     hold = freeze_quota(
@@ -201,7 +245,12 @@ def test_freeze_consume_release_and_replay():
 @pytest.mark.django_db
 def test_video_seconds_use_existing_freeze_consume_release_ledger():
     admin, _, subscription = provision()
-    account = QuotaAccount.objects.get(subscription=subscription, quota_type="video_credits")
+    account = add_customer_quota(
+        subscription,
+        admin,
+        quota_type="video_credits",
+        amount=0,
+    )
     account = fund(account, admin, amount=10)
     business_id = uuid.uuid4()
 
@@ -240,7 +289,7 @@ def test_video_seconds_use_existing_freeze_consume_release_ledger():
 @pytest.mark.django_db
 def test_different_idempotency_key_cannot_duplicate_business_hold():
     admin, _, subscription = provision()
-    account = QuotaAccount.objects.get(subscription=subscription, quota_type="detection_points")
+    account = QuotaAccount.objects.get(subscription=subscription, quota_type="geo_detection_runs")
     business_id = uuid.uuid4()
     account = fund(account, admin)
     freeze_quota(
@@ -265,7 +314,7 @@ def test_different_idempotency_key_cannot_duplicate_business_hold():
 @pytest.mark.django_db
 def test_existing_hold_can_settle_after_subscription_terminated():
     admin, _, subscription = provision()
-    account = QuotaAccount.objects.get(subscription=subscription, quota_type="detection_points")
+    account = QuotaAccount.objects.get(subscription=subscription, quota_type="geo_detection_runs")
     account = fund(account, admin)
     hold = freeze_quota(
         account_id=account.pk,
@@ -296,7 +345,7 @@ def test_existing_hold_can_settle_after_subscription_terminated():
 @pytest.mark.django_db
 def test_existing_hold_can_consume_after_subscription_time_window_ends():
     admin, _, subscription = provision()
-    account = QuotaAccount.objects.get(subscription=subscription, quota_type="detection_points")
+    account = QuotaAccount.objects.get(subscription=subscription, quota_type="geo_detection_runs")
     account = fund(account, admin)
     hold = freeze_quota(
         account_id=account.pk,
@@ -323,7 +372,7 @@ def test_existing_hold_can_consume_after_subscription_time_window_ends():
 @pytest.mark.django_db
 def test_manual_deduct_does_not_reduce_frozen_and_grants_do_not_change_entitlement():
     admin, _, subscription = provision()
-    account = QuotaAccount.objects.get(subscription=subscription, quota_type="detection_points")
+    account = QuotaAccount.objects.get(subscription=subscription, quota_type="geo_detection_runs")
     initial_entitlement = account.entitlement_amount
     context = resolve_admin_context(admin)
     for index, action in enumerate(("grant", "compensate", "manual_deduct"), start=1):
@@ -357,7 +406,7 @@ def test_manual_deduct_does_not_reduce_frozen_and_grants_do_not_change_entitleme
 @pytest.mark.django_db
 def test_user_quota_apis_do_not_leak_business_or_idempotency_fields():
     admin, user, subscription = provision()
-    account = QuotaAccount.objects.get(subscription=subscription, quota_type="detection_points")
+    account = QuotaAccount.objects.get(subscription=subscription, quota_type="geo_detection_runs")
     account = fund(account, admin)
     freeze_quota(
         account_id=account.pk,
@@ -388,10 +437,169 @@ def test_user_quota_apis_do_not_leak_business_or_idempotency_fields():
 
 
 @pytest.mark.django_db
+def test_customer_quota_center_exposes_only_natural_unit_accounts_and_safe_ledger():
+    admin, user, subscription = provision()
+    account = add_customer_quota(
+        subscription,
+        admin,
+        quota_type="geo_detection_runs",
+        amount=5,
+    )
+    hold = freeze_quota(
+        account_id=account.pk,
+        amount=1,
+        business_type="geo_detection_job",
+        business_id=uuid.uuid4(),
+        idempotency_key="customer-center-freeze-0001",
+        request_id=uuid.uuid4(),
+    )
+    consume_hold(
+        hold_id=hold.pk,
+        amount=1,
+        idempotency_key="customer-center-consume-0001",
+        request_id=uuid.uuid4(),
+    )
+
+    client = APIClient()
+    client.force_authenticate(user)
+    accounts = client.get("/api/v1/quotas")
+    ledger = client.get("/api/v1/quota-ledger?page=1&page_size=20")
+
+    assert accounts.status_code == ledger.status_code == 200
+    rows = accounts.json()["data"]["accounts"]
+    expected_types = {item.key for item in CURRENT_ACCOUNT_DEFINITIONS if item.customer_visible}
+    assert {row["quota_type"] for row in rows} == expected_types
+    geo_row = next(row for row in rows if row["quota_type"] == "geo_detection_runs")
+    assert geo_row["display_name"] == "GEO 综合检测"
+    assert geo_row["unit_display_name"] == "次"
+    assert geo_row["total_amount"] == 5
+    assert geo_row["used_amount"] == 1
+    assert geo_row["remaining_amount"] == 4
+
+    entries = ledger.json()["data"]["results"]
+    assert entries
+    assert {entry["quota_type"] for entry in entries} <= expected_types
+    consume_entry = next(entry for entry in entries if entry["action"] == "consume")
+    assert consume_entry["action_name"] == "任务已完成"
+    assert consume_entry["change_amount"] == -1
+    serialized = str(entries)
+    for forbidden in ("business_type", "business_id", "safe_reason", "request_digest"):
+        assert forbidden not in serialized
+
+
+@pytest.mark.django_db
+def test_admin_quota_accounts_include_plan_usage_and_latest_adjustment():
+    admin, _, subscription = provision()
+    account = add_customer_quota(
+        subscription,
+        admin,
+        quota_type="geo_detection_runs",
+        amount=5,
+    )
+    hold = freeze_quota(
+        account_id=account.pk,
+        amount=2,
+        business_type="geo_detection_job",
+        business_id=uuid.uuid4(),
+        idempotency_key="admin-center-freeze-0001",
+        request_id=uuid.uuid4(),
+    )
+    consume_hold(
+        hold_id=hold.pk,
+        amount=2,
+        idempotency_key="admin-center-consume-0001",
+        request_id=uuid.uuid4(),
+    )
+    account.refresh_from_db()
+    reason = "客户退款额度返还"
+    digests = derive_idempotency_digests(
+        "admin-center-refund-0001",
+        operation="refund",
+        user_id=account.user_id,
+        account_id=account.pk,
+        business_type="quota_adjustment",
+        business_id=account.pk,
+        request_payload={"amount": 3, "reason": reason},
+    )
+    adjust_quota_account(
+        requester=admin,
+        admin_context=resolve_admin_context(admin),
+        account_id=account.pk,
+        expected_version=account.version,
+        action=QuotaLedgerEntry.Action.REFUND,
+        amount=3,
+        reason=reason,
+        digests=digests,
+        request_id=uuid.uuid4(),
+    )
+
+    response = authenticate_admin_client(APIClient(), admin).get(
+        "/api/v1/admin/quota-accounts?quota_type=geo_detection_runs"
+    )
+
+    assert response.status_code == 200
+    row = response.json()["data"]["results"][0]
+    assert row["plan_id"] == str(subscription.plan_id)
+    assert row["plan_name"] == subscription.plan.name
+    assert row["plan_version_no"] == subscription.plan_version_no
+    assert row["used_amount"] == 2
+    assert row["total_amount"] == 8
+    assert row["remaining_amount"] == 6
+    assert row["last_adjustment"]["action"] == "refund"
+    assert row["last_adjustment"]["action_name"] == "额度返还"
+    assert row["last_adjustment"]["reason"] == reason
+
+
+@pytest.mark.django_db
+def test_admin_refund_endpoint_requires_reason_and_appends_refund_ledger():
+    admin, _, subscription = provision()
+    account = add_customer_quota(
+        subscription,
+        admin,
+        quota_type="article_generations",
+        amount=2,
+    )
+    client = authenticate_admin_client(APIClient(), admin)
+    path = f"/api/v1/admin/quota-accounts/{account.pk}/adjust/refund"
+
+    invalid = client.post(
+        path,
+        {
+            "expected_version": account.version,
+            "amount": 1,
+            "reason": "",
+            "confirmed": True,
+        },
+        format="json",
+        HTTP_IDEMPOTENCY_KEY="refund-endpoint-invalid-0001",
+    )
+    assert invalid.status_code == 422
+
+    response = client.post(
+        path,
+        {
+            "expected_version": account.version,
+            "amount": 2,
+            "reason": "订单退款后返还额度",
+            "confirmed": True,
+        },
+        format="json",
+        HTTP_IDEMPOTENCY_KEY="refund-endpoint-valid-0001",
+    )
+    assert response.status_code == 200
+    account.refresh_from_db()
+    assert account.available == 4
+    entry = account.ledger_entries.latest("created_at")
+    assert entry.action == QuotaLedgerEntry.Action.REFUND
+    assert entry.safe_reason == "订单退款后返还额度"
+    assert entry.actor_id == admin.pk
+
+
+@pytest.mark.django_db
 def test_direct_adjustment_keeps_idempotency_secret_out_of_response_and_audit(caplog):
     requester, _, subscription = provision()
     User.objects.create_superuser(phone="13700137000", nickname="?????", password=PASSWORD)
-    account = QuotaAccount.objects.get(subscription=subscription, quota_type="detection_points")
+    account = QuotaAccount.objects.get(subscription=subscription, quota_type="geo_detection_runs")
     client_header_value = "repeatable-test-request"
     response = authenticate_admin_client(APIClient(), requester).post(
         f"/api/v1/admin/quota-accounts/{account.pk}/adjust/grant",
@@ -415,7 +623,12 @@ def test_direct_adjustment_keeps_idempotency_secret_out_of_response_and_audit(ca
 
 @pytest.mark.django_db
 def test_risk_catalog_uses_direct_confirmation_and_has_no_reset():
-    for key in ("quota.grant", "quota.compensate", "quota.manual_deduct"):
+    for key in (
+        "quota.grant",
+        "quota.compensate",
+        "quota.refund",
+        "quota.manual_deduct",
+    ):
         definition = RISK_ACTION_BY_KEY[key]
         action = RiskAction.objects.get(key=key)
         policy = RiskPolicy.objects.get(action=action)

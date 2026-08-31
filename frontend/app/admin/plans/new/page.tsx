@@ -12,6 +12,7 @@ type Values = {
   price_display_mode: "fixed" | "contact";
   display_price?: string;
   is_trial: boolean;
+  is_recommended: boolean;
   sort_order: number;
 };
 export default function NewPlanPage() {
@@ -24,7 +25,12 @@ export default function NewPlanPage() {
       {error && <Alert type="error" message={error} />}
       <Form<Values>
         layout="vertical"
-        initialValues={{ price_display_mode: "fixed", is_trial: false, sort_order: 0 }}
+        initialValues={{
+          price_display_mode: "fixed",
+          is_trial: false,
+          is_recommended: false,
+          sort_order: 0,
+        }}
         onFinish={async (values) => {
           try {
             const result = await createPlan({
@@ -40,13 +46,16 @@ export default function NewPlanPage() {
       >
         <Form.Item
           name="code"
-          label="稳定编码"
+          label="套餐编号"
           rules={[
             { required: true },
-            { pattern: /^[a-z][a-z0-9_-]{1,63}$/, message: "请输入小写 ASCII 稳定编码" },
+            {
+              pattern: /^[a-z][a-z0-9_-]{1,63}$/,
+              message: "请以小写字母开头，可使用数字、短横线或下划线",
+            },
           ]}
         >
-          <Input />
+          <Input aria-label="稳定编码" placeholder="例如：professional-annual" />
         </Form.Item>
         <Form.Item name="name" label="套餐名称" rules={[{ required: true }]}>
           <Input />
@@ -78,7 +87,10 @@ export default function NewPlanPage() {
         <Form.Item name="is_trial" label="试用展示" valuePropName="checked">
           <Switch />
         </Form.Item>
-        <Alert type="info" message="展示价格不是交易价格；本任务不会创建订单或收款。" />
+        <Form.Item name="is_recommended" label="设为推荐套餐" valuePropName="checked">
+          <Switch />
+        </Form.Item>
+        <Alert type="info" message="套餐创建后，请继续设置年度权益并发布版本。" />
         <Button type="primary" htmlType="submit">
           确认创建
         </Button>

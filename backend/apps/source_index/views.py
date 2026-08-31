@@ -43,7 +43,11 @@ class SourceIndexScanCreateView(APIView):
     def post(self, request, subject_id):
         try:
             with transaction.atomic():
-                scan = create_source_index_scan(user=request.user, subject_id=subject_id)
+                scan = create_source_index_scan(
+                    user=request.user,
+                    subject_id=subject_id,
+                    request_id=getattr(request, "request_id", None),
+                )
                 transaction.on_commit(
                     lambda: execute_source_index_scan_task.apply_async(
                         args=[str(scan.id)],

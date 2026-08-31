@@ -11,7 +11,7 @@ from apps.admin_rbac.models import AuditEvent, RiskAction, RiskPolicy
 from apps.admin_rbac.risk_catalog import RISK_ACTION_BY_KEY
 from apps.admin_rbac.risk_handlers import HANDLER_REGISTRY, HANDLER_SPECS
 from apps.plans.catalog import MODEL_KEYS, load_limit_catalog
-from apps.plans.models import PlanLimit, PlanLimitDefinition
+from apps.plans.models import Plan, PlanLimit, PlanLimitDefinition
 from apps.plans.services import (
     PlanDraftAlreadyExists,
     PlanImmutable,
@@ -116,6 +116,104 @@ def test_catalog_compatibility_storage_and_sync_idempotence():
     call_command("sync_plan_catalog")
     call_command("sync_plan_catalog")
     assert PlanLimitDefinition.objects.count() == len(definitions)
+
+
+@pytest.mark.django_db
+def test_standard_annual_plans_have_exact_natural_unit_entitlements():
+    call_command("sync_standard_plans", "--apply", verbosity=0)
+    expected = {
+        "free-trial": ("0.00", False, 1, 5, 3, 5, 5, 3, 1, 1, 1, 1, 3, 1, 100, 100),
+        "starter-1980": (
+            "1980.00",
+            False,
+            20,
+            10,
+            8,
+            500,
+            500,
+            100,
+            10,
+            10,
+            10,
+            10,
+            50,
+            10,
+            5000,
+            5000,
+        ),
+        "professional-6980": (
+            "6980.00",
+            True,
+            60,
+            20,
+            8,
+            3000,
+            3000,
+            300,
+            30,
+            30,
+            30,
+            30,
+            200,
+            30,
+            20000,
+            20000,
+        ),
+        "advanced-12980": (
+            "12980.00",
+            False,
+            120,
+            30,
+            8,
+            8000,
+            8000,
+            600,
+            60,
+            60,
+            60,
+            60,
+            500,
+            60,
+            50000,
+            50000,
+        ),
+    }
+    quota_keys = (
+        "geo_detection_runs",
+        "article_generations",
+        "auto_publish_count",
+        "image_generations",
+        "source_index_scans",
+        "negative_index_scans",
+        "website_audits",
+        "website_generations",
+        "video_script_generations",
+        "competitor_comparisons",
+        "keyword_generated_items",
+        "question_generated_items",
+    )
+    for code, values in expected.items():
+        plan = Plan.objects.get(code=code)
+        version = plan.current_published_version
+        assert version is not None
+        assert version.valid_days == 365
+        assert str(plan.display_price) == values[0]
+        assert plan.is_recommended is values[1]
+        limits = version.effective_config["limits"]
+        assert limits["geo_detection_runs"] == values[2]
+        assert limits["max_questions_per_detection"] == values[3]
+        assert limits["max_models_per_detection"] == values[4]
+        assert tuple(limits[key] for key in quota_keys[1:]) == values[5:]
+        assert "subject_active_limit" not in limits
+        assert "assistant_messages_per_cycle" not in limits
+        assert "detection_points" not in limits
+    version_counts = {
+        plan.code: plan.versions.count() for plan in Plan.objects.filter(code__in=expected)
+    }
+    call_command("sync_standard_plans", "--apply", verbosity=0)
+    assert {
+        plan.code: plan.versions.count() for plan in Plan.objects.filter(code__in=expected)
+    } == version_counts
 
 
 @pytest.mark.django_db
@@ -230,13 +328,13 @@ def test_copy_deep_and_informal_composite_confirmation():
 
 
 @pytest.mark.django_db
-def test_new_draft_from_pre_video_published_version_adds_only_fail_closed_video_default():
+def test_new_draft_from_historical_version_adds_missing_active_quota_defaults_only():
     user = actor()
     plan = make_plan(user, code="pre-video-plan")
     published = publish(user, make_draft(user, plan))
     PlanLimit.objects.filter(
         plan_version=published,
-        limit_key="video_credits",
+        limit_key="website_generations",
     ).delete()
     source_count = published.limits.count()
     plan.refresh_from_db()
@@ -248,8 +346,9 @@ def test_new_draft_from_pre_video_published_version_adds_only_fail_closed_video_
         source_version_id=published.pk,
     )
 
-    video_limit = draft.limits.get(limit_key="video_credits")
-    assert video_limit.integer_value == 0
+    website_limit = draft.limits.get(limit_key="website_generations")
+    assert website_limit.integer_value == 0
+    assert not draft.limits.filter(limit_key="video_credits").exists()
     assert draft.limits.count() == source_count + 1
 
 

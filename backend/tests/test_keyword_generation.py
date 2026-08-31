@@ -70,6 +70,7 @@ def seed_subject_catalog():
 
 def _limits(*, regenerations=2, generation_limit=5):
     values = {definition.source_limit_key: 0 for definition in QUOTA_CATALOG}
+    values["keyword_generated_items"] = 20
     values["keyword_regenerations_per_cycle"] = regenerations
     values["keyword_generation_limit"] = generation_limit
     return values
@@ -195,18 +196,19 @@ def _create(
 
 def _subject_account(subject):
     return QuotaAccount.objects.get(
-        subject=subject,
-        quota_type="keyword_regenerations",
+        user=subject.user,
+        subject__isnull=True,
+        quota_type="keyword_generated_items",
     )
 
 
-def test_first_generation_is_free_and_auto_commits_candidate_version():
+def test_first_generation_consumes_only_successfully_saved_items():
     user, subject, subject_version, _ = _facts()
     job, created = _create(user, subject, subject_version)
 
     assert created is True
-    assert job.billing_mode == KeywordGenerationJob.BillingMode.FREE_INITIAL
-    assert job.quota_hold_id is None
+    assert job.billing_mode == KeywordGenerationJob.BillingMode.REGENERATION
+    assert job.quota_hold_id is not None
     assert execute_keyword_generation(job_id=job.pk) == {"status": "succeeded"}
 
     job.refresh_from_db()
@@ -229,7 +231,7 @@ def test_first_generation_is_free_and_auto_commits_candidate_version():
     assert KeywordGenerationResult.objects.filter(job=job).count() == 1
     assert KeywordSetVersion.objects.count() == 1
     assert keyword_set.current_version is not None
-    assert account.available == 2
+    assert account.available == 17
     assert account.frozen == 0
 
 
@@ -340,9 +342,9 @@ def test_server_computes_regeneration_and_requires_explicit_confirmation():
 
     assert second.billing_mode == KeywordGenerationJob.BillingMode.REGENERATION
     assert group is not None
-    assert account.available == 1
-    assert account.frozen == 1
-    assert group.requested_amount == 1
+    assert account.available == 14
+    assert account.frozen == 3
+    assert group.requested_amount == 3
 
 
 def test_successful_regeneration_consumes_once_and_retry_call_is_idempotent():
@@ -364,9 +366,9 @@ def test_successful_regeneration_consumes_once_and_retry_call_is_idempotent():
     account = _subject_account(subject)
     account.refresh_from_db()
 
-    assert second.quota_hold.consumed_amount == 1
+    assert second.quota_hold.consumed_amount == 3
     assert second.quota_hold.released_amount == 0
-    assert account.available == 1
+    assert account.available == 14
     assert account.frozen == 0
     assert (
         QuotaLedgerEntry.objects.filter(
@@ -403,8 +405,8 @@ def test_retry_exhaustion_releases_regeneration_hold():
 
     assert result["status"] == "failed"
     assert second.quota_hold.consumed_amount == 0
-    assert second.quota_hold.released_amount == 1
-    assert account.available == 2
+    assert second.quota_hold.released_amount == 3
+    assert account.available == 17
     assert account.frozen == 0
 
 
@@ -426,7 +428,7 @@ def test_invalid_provider_output_releases_regeneration_hold():
     second.refresh_from_db()
     second.quota_hold.refresh_from_db()
     assert second.stable_error_code == "KEYWORD_GENERATION_INVALID_RESPONSE"
-    assert second.quota_hold.released_amount == 1
+    assert second.quota_hold.released_amount == 3
     assert KeywordSet.objects.get(subject=subject).version == 2
 
 
@@ -465,8 +467,8 @@ def test_user_draft_change_causes_conflict_and_releases_hold():
     account.refresh_from_db()
 
     assert second.stable_error_code == "KEYWORD_VERSION_CONFLICT"
-    assert second.quota_hold.released_amount == 1
-    assert account.available == 2
+    assert second.quota_hold.released_amount == 3
+    assert account.available == 17
     assert KeywordSet.objects.get(subject=subject).draft_items.get().text == ("用户并发编辑")
 
 
@@ -506,8 +508,8 @@ def test_subject_version_change_causes_conflict_and_releases_regeneration_hold()
     account.refresh_from_db()
 
     assert second.stable_error_code == "KEYWORD_SUBJECT_VERSION_CONFLICT"
-    assert second.quota_hold.released_amount == 1
-    assert account.available == 2
+    assert second.quota_hold.released_amount == 3
+    assert account.available == 17
     assert account.frozen == 0
     assert KeywordSet.objects.get(subject=subject).version == 2
 
@@ -563,7 +565,7 @@ def test_plan_limit_and_unavailable_provider_fail_before_job_creation():
     user, subject, version, _ = _facts(generation_limit=2)
 
     with pytest.raises(KeywordGenerationLimitExceeded):
-        _create(user, subject, version, target_count=3)
+        _create(user, subject, version, target_count=101)
     assert not KeywordGenerationJob.objects.exists()
 
     with override_settings(KEYWORD_GENERATION_PROVIDER="unavailable"):
@@ -610,7 +612,7 @@ def test_generation_api_is_strict_async_owner_scoped_and_hides_internal_data():
     enqueue.assert_called_once()
     payload = response.json()["data"]
     assert payload["status"] == "queued"
-    assert payload["billing"]["billing_mode"] == "free_initial"
+    assert payload["billing"]["billing_mode"] == "按实际生成数量"
     assert "input_digest" not in str(payload)
     assert "output_digest" not in str(payload)
     assert "input_subject_values" not in str(payload)
@@ -707,8 +709,8 @@ def test_events_and_result_store_only_validated_safe_evidence():
     assert "official_name" not in serialized
     assert "provider" not in serialized
     assert "prompt" not in serialized
-    assert QuotaHoldGroup.objects.count() == 0
-    assert QuotaHold.objects.count() == 0
+    assert QuotaHoldGroup.objects.count() == 1
+    assert QuotaHold.objects.count() == 1
 
 
 def test_generation_uses_public_subject_allowlist_and_clears_self_base_keyword():
@@ -816,6 +818,13 @@ def test_generation_duplicate_batch_keeps_novel_candidates_and_commits():
     success_event = KeywordGenerationEvent.objects.get(job=second, event_type="succeeded")
     assert success_event.safe_summary["added_count"] == 1
     assert success_event.safe_summary["skipped_duplicate_count"] == 1
+    second.refresh_from_db()
+    second.quota_hold.refresh_from_db()
+    account = _subject_account(subject)
+    account.refresh_from_db()
+    assert second.quota_hold.consumed_amount == 1
+    assert second.quota_hold.released_amount == 1
+    assert account.available == 16
 
 
 def test_generation_all_duplicates_still_returns_no_changes_without_mutation():
@@ -865,3 +874,10 @@ def test_generation_all_duplicates_still_returns_no_changes_without_mutation():
     assert after.version == before.version
     assert list(after.draft_items.order_by("sort_order").values_list("text", flat=True)) == existing
     assert not KeywordGenerationResult.objects.filter(job=second).exists()
+    second.refresh_from_db()
+    second.quota_hold.refresh_from_db()
+    account = _subject_account(subject)
+    account.refresh_from_db()
+    assert second.quota_hold.consumed_amount == 0
+    assert second.quota_hold.released_amount == 2
+    assert account.available == 17

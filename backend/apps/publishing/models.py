@@ -75,8 +75,13 @@ class PublishingPreference(models.Model):  # noqa: DJ008
         db_table = "publishing_preferences"
         indexes = [models.Index(fields=("user", "is_enabled"), name="publishing_pref_user_idx")]
         constraints = [
-            models.CheckConstraint(condition=Q(posts_per_day__gte=1, posts_per_day__lte=10), name="publishing_posts_day_range"),
-            models.CheckConstraint(condition=Q(version__gte=1), name="publishing_pref_version_gte_1"),
+            models.CheckConstraint(
+                condition=Q(posts_per_day__gte=1, posts_per_day__lte=10),
+                name="publishing_posts_day_range",
+            ),
+            models.CheckConstraint(
+                condition=Q(version__gte=1), name="publishing_pref_version_gte_1"
+            ),
         ]
 
 
@@ -177,7 +182,9 @@ class PlatformAuthorizationSession(models.Model):  # noqa: DJ008
         ordering = ("-created_at", "-id")
         indexes = [
             models.Index(fields=("user", "status", "created_at"), name="publishing_auth_user_idx"),
-            models.Index(fields=("platform_key", "status", "created_at"), name="publishing_auth_platform_idx"),
+            models.Index(
+                fields=("platform_key", "status", "created_at"), name="publishing_auth_platform_idx"
+            ),
         ]
 
 
@@ -193,14 +200,32 @@ class Publication(models.Model):  # noqa: DJ008
         CANCELLED = "cancelled", "已取消"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="publications")
-    subject = models.ForeignKey("subjects.Subject", on_delete=models.PROTECT, related_name="publications")
-    article = models.ForeignKey("articles.Article", on_delete=models.PROTECT, related_name="publications")
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="publications"
+    )
+    subject = models.ForeignKey(
+        "subjects.Subject", on_delete=models.PROTECT, related_name="publications"
+    )
+    article = models.ForeignKey(
+        "articles.Article", on_delete=models.PROTECT, related_name="publications"
+    )
+    quota_hold = models.OneToOneField(
+        "quotas.QuotaHoldGroup",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="publication",
+    )
+    request_id = models.UUIDField(null=True, blank=True)
     status = models.CharField(max_length=16, choices=Status.choices, default=Status.PREPARING)
     source_title = models.CharField(max_length=500)
     source_content_digest = models.CharField(max_length=64)
-    distribution_strategy = models.CharField(max_length=16, choices=PublishingPreference.DistributionStrategy.choices)
-    image_strategy = models.CharField(max_length=24, choices=PublishingPreference.ImageStrategy.choices)
+    distribution_strategy = models.CharField(
+        max_length=16, choices=PublishingPreference.DistributionStrategy.choices
+    )
+    image_strategy = models.CharField(
+        max_length=24, choices=PublishingPreference.ImageStrategy.choices
+    )
     image_plan = models.JSONField(default=dict)
     platform_plan = models.JSONField(default=list)
     scheduled_at = models.DateTimeField(null=True, blank=True)
@@ -210,7 +235,9 @@ class Publication(models.Model):  # noqa: DJ008
     class Meta:
         db_table = "publications"
         ordering = ("-created_at", "-id")
-        indexes = [models.Index(fields=("user", "subject", "status"), name="publication_user_state_idx")]
+        indexes = [
+            models.Index(fields=("user", "subject", "status"), name="publication_user_state_idx")
+        ]
 
 
 class PublicationTarget(models.Model):  # noqa: DJ008
@@ -226,7 +253,13 @@ class PublicationTarget(models.Model):  # noqa: DJ008
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     publication = models.ForeignKey(Publication, on_delete=models.PROTECT, related_name="targets")
-    account = models.ForeignKey(PlatformAccount, null=True, blank=True, on_delete=models.PROTECT, related_name="publication_targets")
+    account = models.ForeignKey(
+        PlatformAccount,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="publication_targets",
+    )
     platform_key = models.CharField(max_length=32)
     status = models.CharField(max_length=24, choices=Status.choices, default=Status.WAITING)
     adapted_title = models.CharField(max_length=500, blank=True)
@@ -248,6 +281,10 @@ class PublicationTarget(models.Model):  # noqa: DJ008
         db_table = "publication_targets"
         ordering = ("scheduled_at", "platform_key")
         constraints = [
-            models.UniqueConstraint(fields=("publication", "platform_key"), name="publication_target_platform_unique"),
+            models.UniqueConstraint(
+                fields=("publication", "platform_key"), name="publication_target_platform_unique"
+            ),
         ]
-        indexes = [models.Index(fields=("status", "scheduled_at"), name="publication_target_queue_idx")]
+        indexes = [
+            models.Index(fields=("status", "scheduled_at"), name="publication_target_queue_idx")
+        ]

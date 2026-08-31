@@ -33,8 +33,10 @@ export type Plan = Readonly<{
   display_price: string | null;
   display_currency: "CNY";
   is_trial: boolean;
+  is_recommended?: boolean;
   status: "draft" | "published" | "offline" | "archived";
   sort_order: number;
+  current_subscription_count?: number;
   current_published_version_id: string | null;
   version: number;
   draft_version?: PlanVersion | null;
@@ -63,6 +65,7 @@ export type PublicPlan = Readonly<{
   display_price: string | null;
   display_currency: "CNY";
   is_trial: boolean;
+  is_recommended?: boolean;
   valid_days: number;
   benefits: Record<string, unknown>;
   models: { model_key: ModelKey; name: string; selected_by_default: boolean }[];
@@ -120,6 +123,9 @@ export type Subscription = Readonly<{
   source_type: "application" | "trial_grant" | "plan_change";
   source_change_id?: string | null;
   is_trial: boolean;
+  plan_price_display_mode?: "fixed" | "contact";
+  plan_display_price?: string | null;
+  plan_display_currency?: "CNY";
   starts_at: string;
   ends_at: string;
   cycle_anchor_day: number;
@@ -127,6 +133,9 @@ export type Subscription = Readonly<{
   entitlement_summary: {
     valid_days: number;
     limit_keys: string[];
+    limits?: Record<string, unknown>;
+    max_models_per_detection?: number;
+    max_questions_per_detection?: number;
     enabled_model_keys: ModelKey[];
   };
   version: number;

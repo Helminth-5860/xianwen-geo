@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from collections import Counter
 from datetime import timedelta
 
@@ -9,6 +10,13 @@ from django.db.models import Q
 from django.utils import timezone
 from rest_framework.exceptions import NotFound as DRFNotFound
 
+from apps.plans.subscription_services import current_subscription
+from apps.quotas.services import (
+    consume_hold,
+    freeze_quota,
+    quota_account_for_subscription,
+    release_hold,
+)
 from apps.subjects.subject_services import subject_for_user_or_404
 from apps.web_sources.url_security import canonicalize_url
 
@@ -51,15 +59,14 @@ def recover_stale_website_audits(*, user=None, subject_id=None) -> int:
             created_at__lt=cutoff,
         )
     )
-    return stale.update(
-        status=WebsiteAudit.Status.FAILED,
-        stable_error_code="WEBSITE_AUDIT_TIMEOUT",
-        finished_at=now,
-        updated_at=now,
-    )
+    stale_ids = list(stale.values_list("id", flat=True))
+    for audit_id in stale_ids:
+        fail_website_audit(audit_id, "WEBSITE_AUDIT_TIMEOUT")
+    return len(stale_ids)
 
 
-def create_website_audit(*, user, subject_id, url: str) -> WebsiteAudit:
+@transaction.atomic
+def create_website_audit(*, user, subject_id, url: str, request_id=None) -> WebsiteAudit:
     try:
         subject = subject_for_user_or_404(user=user, subject_id=subject_id)
     except DRFNotFound as exc:
@@ -71,9 +78,27 @@ def create_website_audit(*, user, subject_id, url: str) -> WebsiteAudit:
         status__in=(WebsiteAudit.Status.QUEUED, WebsiteAudit.Status.RUNNING),
     ).exists():
         raise WebsiteAuditBusy
+    subscription = current_subscription(user)
+    if subscription is None:
+        raise WebsiteAuditBusy
+    audit_id = uuid.uuid4()
+    normalized_request_id = request_id or uuid.uuid4()
+    hold = freeze_quota(
+        account_id=quota_account_for_subscription(
+            subscription=subscription, quota_type="website_audits"
+        ).pk,
+        amount=1,
+        business_type="website_audit",
+        business_id=audit_id,
+        idempotency_key=f"website-audit-freeze-{audit_id}",
+        request_id=normalized_request_id,
+    )
     return WebsiteAudit.objects.create(
+        id=audit_id,
         user=user,
         subject=subject,
+        quota_hold=hold,
+        request_id=normalized_request_id,
         root_url=canonical.value,
         root_host=canonical.host,
         max_pages=settings.WEBSITE_AUDIT_MAX_PAGES,
@@ -101,12 +126,21 @@ def _start_audit(audit_id) -> WebsiteAudit:
 
 
 def fail_website_audit(audit_id, stable_error_code: str = "WEBSITE_AUDIT_FAILED") -> None:
-    WebsiteAudit.objects.filter(pk=audit_id).update(
-        status=WebsiteAudit.Status.FAILED,
-        stable_error_code=stable_error_code[:64],
-        finished_at=timezone.now(),
-        updated_at=timezone.now(),
-    )
+    with transaction.atomic():
+        audit = WebsiteAudit.objects.select_for_update().filter(pk=audit_id).first()
+        if audit is None or audit.status == WebsiteAudit.Status.SUCCEEDED:
+            return
+        if audit.quota_hold_id:
+            release_hold(
+                hold_id=audit.quota_hold_id,
+                amount=1,
+                idempotency_key=f"website-audit-release-{audit.pk}",
+                request_id=audit.request_id or uuid.uuid4(),
+            )
+        audit.status = WebsiteAudit.Status.FAILED
+        audit.stable_error_code = stable_error_code[:64]
+        audit.finished_at = timezone.now()
+        audit.save(update_fields=("status", "stable_error_code", "finished_at", "updated_at"))
 
 
 def execute_website_audit(audit_id) -> dict[str, int | str]:
@@ -125,12 +159,8 @@ def execute_website_audit(audit_id) -> dict[str, int | str]:
         fail_website_audit(audit.id)
         raise
 
-    internal_by_source = Counter(
-        link.source_url for link in result.links if link.is_internal
-    )
-    external_by_source = Counter(
-        link.source_url for link in result.links if not link.is_internal
-    )
+    internal_by_source = Counter(link.source_url for link in result.links if link.is_internal)
+    external_by_source = Counter(link.source_url for link in result.links if not link.is_internal)
 
     with transaction.atomic():
         locked = WebsiteAudit.objects.select_for_update().get(pk=audit.pk)
@@ -243,8 +273,7 @@ def execute_website_audit(audit_id) -> dict[str, int | str]:
                 ),
                 impact="报告仍基于已获取的真实页面、浏览器与语义证据生成，但未抓取页面不会被假定为正常。",
                 recommendation=(
-                    "如需扩大覆盖，可优化源站响应速度、Sitemap 质量与异常页面访问稳定性"
-                    "后重新检测。"
+                    "如需扩大覆盖，可优化源站响应速度、Sitemap 质量与异常页面访问稳定性后重新检测。"
                 ),
                 affected_count=max(0, len(result.discovered_urls) - fetched_count),
                 evidence={
@@ -269,6 +298,13 @@ def execute_website_audit(audit_id) -> dict[str, int | str]:
         locked.status = WebsiteAudit.Status.SUCCEEDED
         locked.finished_at = timezone.now()
         locked.stable_error_code = ""
+        if locked.quota_hold_id:
+            consume_hold(
+                hold_id=locked.quota_hold_id,
+                amount=1,
+                idempotency_key=f"website-audit-consume-{locked.pk}",
+                request_id=locked.request_id or uuid.uuid4(),
+            )
         locked.save()
 
     return {

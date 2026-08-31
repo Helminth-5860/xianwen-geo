@@ -1,7 +1,7 @@
 import uuid
 from math import ceil
 
-from django.db.models import Q
+from django.db.models import Count, Q
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_protect
 from rest_framework import serializers as drf_serializers
@@ -131,8 +131,14 @@ class AdminPlanListView(APIView):
     required_permissions_by_method = {"GET": "plans.list", "POST": "plans.create"}
 
     def get(self, request):
-        queryset = Plan.objects.exclude(code=Plan.INTERNAL_TEST_CODE).select_related(
-            "current_published_version"
+        queryset = (
+            Plan.objects.exclude(code=Plan.INTERNAL_TEST_CODE)
+            .select_related("current_published_version")
+            .annotate(
+                current_subscription_count=Count(
+                    "subscriptions", filter=Q(subscriptions__status="active")
+                )
+            )
         )
         status_value = request.query_params.get("status")
         if status_value:

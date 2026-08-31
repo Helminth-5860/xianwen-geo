@@ -14,13 +14,93 @@ class QuotaDefinition:
     accounting_mode: str = "consumable"
     minimum: int = 0
     maximum: int = MAX_QUOTA_AMOUNT
+    customer_visible: bool = True
 
 
 QUOTA_CATALOG = (
-    QuotaDefinition("detection_points", "detection_points", "point", "subscription", "none", False),
-    QuotaDefinition("article_credits", "article_credits", "article", "subscription", "none", False),
-    QuotaDefinition("image_credits", "image_credits", "image", "subscription", "none", False),
-    QuotaDefinition("video_credits", "video_credits", "second", "subscription", "none", False),
+    # Natural-unit customer quotas used by every newly issued subscription.
+    QuotaDefinition(
+        "geo_detection_runs", "geo_detection_runs", "run", "subscription", "none", False
+    ),
+    QuotaDefinition(
+        "article_generations", "article_generations", "article", "subscription", "none", False
+    ),
+    QuotaDefinition(
+        "auto_publish_count", "auto_publish_count", "article", "subscription", "none", False
+    ),
+    QuotaDefinition(
+        "image_generations", "image_generations", "image", "subscription", "none", False
+    ),
+    QuotaDefinition(
+        "source_index_scans", "source_index_scans", "run", "subscription", "none", False
+    ),
+    QuotaDefinition(
+        "negative_index_scans", "negative_index_scans", "run", "subscription", "none", False
+    ),
+    QuotaDefinition("website_audits", "website_audits", "run", "subscription", "none", False),
+    QuotaDefinition(
+        "website_generations", "website_generations", "run", "subscription", "none", False
+    ),
+    QuotaDefinition(
+        "video_script_generations",
+        "video_script_generations",
+        "item",
+        "subscription",
+        "none",
+        False,
+    ),
+    QuotaDefinition(
+        "competitor_comparisons", "competitor_comparisons", "run", "subscription", "none", False
+    ),
+    QuotaDefinition(
+        "keyword_generated_items", "keyword_generated_items", "item", "subscription", "none", False
+    ),
+    QuotaDefinition(
+        "question_generated_items",
+        "question_generated_items",
+        "item",
+        "subscription",
+        "none",
+        False,
+    ),
+    # Legacy facts remain readable and spendable by historical subscriptions, but
+    # are never surfaced as current customer entitlements.
+    QuotaDefinition(
+        "detection_points",
+        "detection_points",
+        "point",
+        "subscription",
+        "none",
+        False,
+        customer_visible=False,
+    ),
+    QuotaDefinition(
+        "article_credits",
+        "article_credits",
+        "article",
+        "subscription",
+        "none",
+        False,
+        customer_visible=False,
+    ),
+    QuotaDefinition(
+        "image_credits",
+        "image_credits",
+        "image",
+        "subscription",
+        "none",
+        False,
+        customer_visible=False,
+    ),
+    QuotaDefinition(
+        "video_credits",
+        "video_credits",
+        "second",
+        "subscription",
+        "none",
+        False,
+        customer_visible=False,
+    ),
     QuotaDefinition(
         "storage_bytes",
         "storage_bytes",
@@ -29,6 +109,7 @@ QUOTA_CATALOG = (
         "none",
         False,
         accounting_mode="capacity_absolute",
+        customer_visible=False,
     ),
     QuotaDefinition(
         "assistant_messages",
@@ -37,6 +118,7 @@ QUOTA_CATALOG = (
         "account_cycle",
         "monthly",
         False,
+        customer_visible=False,
     ),
     QuotaDefinition(
         "keyword_regenerations",
@@ -45,6 +127,7 @@ QUOTA_CATALOG = (
         "subject_cycle",
         "monthly",
         True,
+        customer_visible=False,
     ),
     QuotaDefinition(
         "distillation_regenerations",
@@ -53,6 +136,7 @@ QUOTA_CATALOG = (
         "subject_cycle",
         "monthly",
         True,
+        customer_visible=False,
     ),
     QuotaDefinition(
         "question_bank_regenerations",
@@ -61,6 +145,7 @@ QUOTA_CATALOG = (
         "subject_cycle",
         "monthly",
         True,
+        customer_visible=False,
     ),
     QuotaDefinition(
         "strategy_regenerations",
@@ -69,6 +154,7 @@ QUOTA_CATALOG = (
         "subject_cycle",
         "monthly",
         True,
+        customer_visible=False,
     ),
     QuotaDefinition(
         "outline_regenerations",
@@ -77,6 +163,7 @@ QUOTA_CATALOG = (
         "subject_cycle",
         "monthly",
         True,
+        customer_visible=False,
     ),
     QuotaDefinition(
         "local_ai_edits",
@@ -85,6 +172,7 @@ QUOTA_CATALOG = (
         "subject_cycle",
         "monthly",
         True,
+        customer_visible=False,
     ),
     QuotaDefinition(
         "quality_rechecks",
@@ -93,6 +181,7 @@ QUOTA_CATALOG = (
         "subject_cycle",
         "monthly",
         True,
+        customer_visible=False,
     ),
 )
 
@@ -123,18 +212,14 @@ def snapshot_quota_values(snapshot: dict) -> dict[str, int]:
     limits = snapshot["limits"]
     values: dict[str, int] = {}
     for definition in QUOTA_CATALOG:
-        # video_credits was added after immutable historical subscription
-        # snapshots had already been issued. Those subscriptions remain valid
-        # with a fail-closed zero entitlement until renewed or changed.
-        if (
-            definition.source_limit_key == "video_credits"
-            and definition.source_limit_key not in limits
-        ):
-            values[definition.key] = 0
-            continue
+        # Plan versions are immutable. A historical snapshot legitimately has
+        # only the quota keys that existed when it was published; newly added
+        # natural-unit quotas must therefore be absent rather than fabricated.
         if definition.source_limit_key not in limits:
-            raise ValueError("订阅权益快照缺少额度定义。")
+            continue
         values[definition.key] = validate_quota_amount(
             limits[definition.source_limit_key], definition=definition
         )
+    if not values:
+        raise ValueError("订阅权益快照没有可识别的额度配置。")
     return values

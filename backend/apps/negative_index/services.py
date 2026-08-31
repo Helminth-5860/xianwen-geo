@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time as time_module
+import uuid
 from datetime import timedelta
 
 from django.conf import settings
@@ -9,6 +10,13 @@ from django.db.models import Q
 from django.utils import timezone
 from rest_framework.exceptions import NotFound as DRFNotFound
 
+from apps.plans.subscription_services import current_subscription
+from apps.quotas.services import (
+    consume_hold,
+    freeze_quota,
+    quota_account_for_subscription,
+    release_hold,
+)
 from apps.search_discovery.provider import BaiduSearchProvider, SearchProviderError
 from apps.search_discovery.source_quality import (
     classify_source,
@@ -59,24 +67,24 @@ def recover_stale_negative_index_scans(*, user=None, subject_id=None) -> int:
         queryset = queryset.filter(user=user)
     if subject_id is not None:
         queryset = queryset.filter(subject_id=subject_id)
-    return queryset.filter(
-        Q(status=NegativeIndexScan.Status.QUEUED, created_at__lt=cutoff)
-        | Q(status=NegativeIndexScan.Status.RUNNING, started_at__lt=cutoff)
-        | Q(
-            status=NegativeIndexScan.Status.RUNNING,
-            started_at__isnull=True,
-            created_at__lt=cutoff,
-        )
-    ).update(
-        status=NegativeIndexScan.Status.FAILED,
-        stage=NegativeIndexScan.Stage.COMPLETED,
-        stable_error_code="NEGATIVE_INDEX_TIMEOUT",
-        finished_at=timezone.now(),
-        updated_at=timezone.now(),
+    stale_ids = list(
+        queryset.filter(
+            Q(status=NegativeIndexScan.Status.QUEUED, created_at__lt=cutoff)
+            | Q(status=NegativeIndexScan.Status.RUNNING, started_at__lt=cutoff)
+            | Q(
+                status=NegativeIndexScan.Status.RUNNING,
+                started_at__isnull=True,
+                created_at__lt=cutoff,
+            )
+        ).values_list("id", flat=True)
     )
+    for scan_id in stale_ids:
+        fail_negative_index_scan(scan_id, "NEGATIVE_INDEX_TIMEOUT")
+    return len(stale_ids)
 
 
-def create_negative_index_scan(*, user, subject_id) -> NegativeIndexScan:
+@transaction.atomic
+def create_negative_index_scan(*, user, subject_id, request_id=None) -> NegativeIndexScan:
     try:
         subject = subject_for_user_or_404(user=user, subject_id=subject_id)
     except DRFNotFound as exc:
@@ -90,10 +98,28 @@ def create_negative_index_scan(*, user, subject_id) -> NegativeIndexScan:
         ),
     ).exists():
         raise NegativeIndexBusy
+    subscription = current_subscription(user)
+    if subscription is None:
+        raise NegativeIndexBusy
+    scan_id = uuid.uuid4()
+    normalized_request_id = request_id or uuid.uuid4()
+    hold = freeze_quota(
+        account_id=quota_account_for_subscription(
+            subscription=subscription, quota_type="negative_index_scans"
+        ).pk,
+        amount=1,
+        business_type="negative_index_scan",
+        business_id=scan_id,
+        idempotency_key=f"negative-index-freeze-{scan_id}",
+        request_id=normalized_request_id,
+    )
     try:
         return NegativeIndexScan.objects.create(
+            id=scan_id,
             user=user,
             subject=subject,
+            quota_hold=hold,
+            request_id=normalized_request_id,
             ai_provider=getattr(
                 settings,
                 "NEGATIVE_INDEX_AI_PROVIDER",
@@ -150,13 +176,28 @@ def fail_negative_index_scan(
     scan_id,
     stable_error_code: str = "NEGATIVE_INDEX_FAILED",
 ) -> None:
-    NegativeIndexScan.objects.filter(pk=scan_id).update(
-        status=NegativeIndexScan.Status.FAILED,
-        stage=NegativeIndexScan.Stage.COMPLETED,
-        stable_error_code=stable_error_code[:100],
-        finished_at=timezone.now(),
-        updated_at=timezone.now(),
-    )
+    with transaction.atomic():
+        scan = NegativeIndexScan.objects.select_for_update().filter(pk=scan_id).first()
+        if scan is None or scan.status in {
+            NegativeIndexScan.Status.SUCCEEDED,
+            NegativeIndexScan.Status.PARTIAL,
+            NegativeIndexScan.Status.LIMIT_REACHED,
+        }:
+            return
+        if scan.quota_hold_id:
+            release_hold(
+                hold_id=scan.quota_hold_id,
+                amount=1,
+                idempotency_key=f"negative-index-release-{scan.pk}",
+                request_id=scan.request_id or uuid.uuid4(),
+            )
+        scan.status = NegativeIndexScan.Status.FAILED
+        scan.stage = NegativeIndexScan.Stage.COMPLETED
+        scan.stable_error_code = stable_error_code[:100]
+        scan.finished_at = timezone.now()
+        scan.save(
+            update_fields=("status", "stage", "stable_error_code", "finished_at", "updated_at")
+        )
 
 
 def _apply_analysis(
@@ -546,6 +587,13 @@ def _persist_result(
         locked.stable_error_code = ""
         locked.elapsed_ms = int((time_module.monotonic() - started) * 1000)
         locked.finished_at = timezone.now()
+        if locked.quota_hold_id:
+            consume_hold(
+                hold_id=locked.quota_hold_id,
+                amount=1,
+                idempotency_key=f"negative-index-consume-{locked.pk}",
+                request_id=locked.request_id or uuid.uuid4(),
+            )
         locked.save()
 
     return {

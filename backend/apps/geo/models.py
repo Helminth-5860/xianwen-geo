@@ -1579,21 +1579,13 @@ class AssistantUsageEvent(models.Model):  # noqa: DJ008
                 condition=Q(status__in=("pending", "succeeded", "failed", "refused")),
                 name="assistant_usage_status_valid",
             ),
-            models.CheckConstraint(
-                condition=Q(status="refused", quota_hold__isnull=True)
-                | (~Q(status="refused") & Q(quota_hold__isnull=False)),
-                name="assistant_usage_hold_valid",
-            ),
         ]
 
     def save(self, *args, **kwargs):
         if self._state.adding:
             if self.status == self.Status.PENDING:
                 valid_initial = (
-                    self.quota_hold_id is not None
-                    and not self.safe_error_code
-                    and not self.usage_summary
-                    and self.finished_at is None
+                    not self.safe_error_code and not self.usage_summary and self.finished_at is None
                 )
             else:
                 valid_initial = (

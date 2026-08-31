@@ -107,6 +107,7 @@ def geo_facts(monkeypatch):
         values.update(
             {
                 "detection_points": 20,
+                "geo_detection_runs": 20,
                 "max_models_per_detection": 2,
                 "max_questions_per_detection": 3,
                 "concurrent_detection_jobs": 1,
@@ -187,7 +188,7 @@ def test_estimate_and_create_freeze_immutable_snapshot_and_matrix(geo_facts):
             idempotency_key="geo-detection-idempotency-0001",
             request_id=uuid.uuid4(),
         )
-    assert estimate["required_detection_points"] == 2
+    assert estimate["required_detection_runs"] == 1
     assert created is True
     assert job.planned_detection_points == 2
     assert job.snapshot.question_bank_version_id
@@ -195,12 +196,12 @@ def test_estimate_and_create_freeze_immutable_snapshot_and_matrix(geo_facts):
     assert job.snapshot.questions.count() == 2
     assert job.model_runs.count() == 1
     assert job.model_calls.count() == 2
-    assert job.quota_hold.requested_amount == 2
+    assert job.quota_hold.requested_amount == 1
     account = QuotaAccount.objects.get(
-        subscription=subscription, quota_type="detection_points", subject__isnull=True
+        subscription=subscription, quota_type="geo_detection_runs", subject__isnull=True
     )
-    assert account.frozen == 2
-    assert account.available == 18
+    assert account.frozen == 1
+    assert account.available == 19
     with pytest.raises(TypeError):
         job.snapshot.save()
 
@@ -288,7 +289,7 @@ def test_user_concurrency_limit_is_enforced_transactionally(geo_facts):
         )
 
 
-def test_successful_call_consumes_exactly_one_point_and_persists_safe_response(geo_facts):
+def test_successful_detection_consumes_once_after_all_calls_finish(geo_facts):
     job, _ = _create(geo_facts)
     call = job.model_calls.order_by("id").first()
     assert call is not None
@@ -300,10 +301,16 @@ def test_successful_call_consumes_exactly_one_point_and_persists_safe_response(g
     assert call.status == ModelCall.Status.SUCCEEDED
     assert call.settlement_status == ModelCall.Settlement.CONSUMED
     assert call.provider_request_id == "provider-safe-123"
-    assert job.quota_hold.consumed_amount == 1
+    assert job.quota_hold.consumed_amount == 0
     assert ModelResponse.objects.get(model_call=call).raw_text.startswith("这是一个")
     duplicate = execute_model_call(call_id=call.pk, semaphore_store=_FakeSemaphoreStore())
     assert duplicate == {"status": "succeeded", "terminal_transition": False}
+    remaining_call = job.model_calls.exclude(pk=call.pk).get()
+    with patch("apps.geo.services.model_registry.resolve", return_value=_SuccessAdapter()):
+        execute_model_call(call_id=remaining_call.pk, semaphore_store=_FakeSemaphoreStore())
+    job.quota_hold.refresh_from_db()
+    assert job.quota_hold.consumed_amount == 1
+
     assert (
         QuotaLedgerEntry.objects.filter(
             hold__group=job.quota_hold,
@@ -337,6 +344,11 @@ def test_retryable_failure_reuses_same_logical_point_and_worker_retry_boundary(g
     call.refresh_from_db()
     job.quota_hold.refresh_from_db()
     assert call.attempt_count == 2
+    assert job.quota_hold.consumed_amount == 0
+    remaining_call = job.model_calls.exclude(pk=call.pk).get()
+    with patch("apps.geo.services.model_registry.resolve", return_value=_SuccessAdapter()):
+        execute_model_call(call_id=remaining_call.pk, semaphore_store=_FakeSemaphoreStore())
+    job.quota_hold.refresh_from_db()
     assert job.quota_hold.consumed_amount == 1
 
 
@@ -351,6 +363,8 @@ def test_pause_before_attempt_fails_closed_and_releases_point(geo_facts):
     runtime.save(update_fields=("paused", "pause_reason", "version", "updated_at"))
     result = execute_model_call(call_id=call.pk, semaphore_store=_FakeSemaphoreStore())
     assert result == {"status": "failed", "terminal_transition": True}
+    remaining_call = job.model_calls.exclude(pk=call.pk).get()
+    execute_model_call(call_id=remaining_call.pk, semaphore_store=_FakeSemaphoreStore())
     call.refresh_from_db()
     job.quota_hold.refresh_from_db()
     assert call.stable_error_code == "GEO_DETECTION_MODEL_PAUSED_OR_DISABLED"
@@ -366,7 +380,7 @@ def test_user_cancel_only_cancels_unstarted_calls_and_releases_remaining_points(
     assert job.status == GeoDetectionJob.Status.CANCELLED
     assert set(job.model_calls.values_list("status", flat=True)) == {ModelCall.Status.CANCELLED}
     job.quota_hold.refresh_from_db()
-    assert job.quota_hold.released_amount == job.planned_detection_points
+    assert job.quota_hold.released_amount == 1
     assert job.quota_hold.consumed_amount == 0
 
 
@@ -447,8 +461,9 @@ def test_progress_apis_restore_owned_job_and_quota_settlement(geo_facts):
     assert detail.status_code == 200
     assert detail.json()["data"]["progress_percent"] == 0
     assert detail.json()["data"]["quota"] == {
+        "quota_type": "geo_detection_runs",
         "status": "open",
-        "held": 2,
+        "held": 1,
         "consumed": 0,
         "released": 0,
     }
@@ -474,7 +489,13 @@ def test_progress_apis_restore_owned_job_and_quota_settlement(geo_facts):
             "completed_calls": 2,
             "cancelled_calls": 2,
             "progress_percent": 100,
-            "quota": {"status": "settled", "held": 2, "consumed": 0, "released": 2},
+            "quota": {
+                "quota_type": "geo_detection_runs",
+                "status": "settled",
+                "held": 1,
+                "consumed": 0,
+                "released": 1,
+            },
         }
         == terminal.json()["data"]
     )

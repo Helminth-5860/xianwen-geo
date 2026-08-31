@@ -20,6 +20,7 @@ export type GeoDetectionJob = Readonly<{
   queue_position: number | null;
   cancel_requested: boolean;
   quota: {
+    quota_type: "geo_detection_runs" | "detection_points";
     status: "open" | "partially_settled" | "settled";
     held: number;
     consumed: number;
@@ -51,8 +52,8 @@ export type GeoModelProgress = Readonly<{
 export type GeoDetectionEstimate = Readonly<{
   question_count: number;
   model_count: number;
-  required_detection_points: number;
-  available_detection_points: number;
+  required_detection_runs: number;
+  available_detection_runs: number;
   active_detection_jobs: number;
   concurrent_detection_jobs: number;
   can_submit: boolean;

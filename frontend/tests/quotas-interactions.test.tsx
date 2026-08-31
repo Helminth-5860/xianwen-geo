@@ -79,7 +79,7 @@ afterEach(() => {
 });
 
 describe("quota administrator interactions", () => {
-  it("shows three actions only with quotas.adjust and submits an in-memory idempotency key", async () => {
+  it("shows four adjustment actions only with quotas.adjust and submits an in-memory idempotency key", async () => {
     const context = {
       permission_keys: ["quotas.list", "quotas.adjust"],
       menu_keys: ["menu.admin.quotas"],
@@ -90,6 +90,7 @@ describe("quota administrator interactions", () => {
       </AdminCapabilityContext.Provider>,
     );
     expect(await screen.findByText("\u6d4b\u8bd5\u7528\u6237")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "返还额度" })).toBeTruthy();
     await userEvent.click(screen.getByRole("button", { name: "增加额度" }));
     await userEvent.type(screen.getByLabelText("\u8c03\u6574\u6570\u91cf"), "3");
     await userEvent.type(
@@ -126,7 +127,7 @@ describe("quota administrator interactions", () => {
         "\u5f53\u524d\u8d26\u53f7\u6ca1\u6709\u989d\u5ea6\u8c03\u6574\u6743\u9650",
       ),
     ).toBeTruthy();
-    for (const name of ["增加额度", "补充额度", "扣减额度"]) {
+    for (const name of ["增加额度", "补发额度", "扣减额度", "返还额度"]) {
       expect(screen.queryByRole("button", { name })).toBeNull();
     }
     expect(adjustQuotaAccount).not.toHaveBeenCalled();

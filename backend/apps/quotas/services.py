@@ -260,6 +260,41 @@ def _snapshot_values(subscription: Subscription) -> dict[str, int]:
         raise QuotaSnapshotInvalid from exc
 
 
+def quota_account_for_subscription(
+    *, subscription: Subscription, quota_type: str, legacy_quota_type: str | None = None
+) -> QuotaAccount:
+    """Return the current spendable account without mutating historical facts."""
+
+    def first_account(key: str):
+        return (
+            QuotaAccount.objects.filter(
+                subscription=subscription,
+                quota_type=key,
+                subject__isnull=True,
+            )
+            .order_by("batch_type", "spendable_until", "created_at", "id")
+            .first()
+        )
+
+    account = first_account(quota_type)
+    if account is None and legacy_quota_type:
+        account = first_account(legacy_quota_type)
+    if account is None:
+        raise QuotaStateConflict
+    return account
+
+
+def available_quota(*, subscription: Subscription, quota_type: str) -> int:
+    return int(
+        QuotaAccount.objects.filter(
+            subscription=subscription,
+            quota_type=quota_type,
+            subject__isnull=True,
+        ).aggregate(total=Sum("available"))["total"]
+        or 0
+    )
+
+
 def storage_usage_bytes(user_id) -> int:
     from apps.documents.models import FileStorageAllocation
 
@@ -422,6 +457,8 @@ def initialize_subscription_accounts(*, subscription: Subscription, request_id, 
     values = _snapshot_values(locked)
     accounts = []
     for definition in CURRENT_ACCOUNT_DEFINITIONS:
+        if definition.key not in values:
+            continue
         cycle_started_at = cycle_ends_at = None
         if definition.scope == QuotaAccount.Scope.ACCOUNT_CYCLE:
             cycle_started_at, cycle_ends_at = _first_cycle_window(locked)
@@ -711,6 +748,7 @@ def adjust_quota_account(
     allowed = {
         QuotaLedgerEntry.Action.GRANT,
         QuotaLedgerEntry.Action.COMPENSATE,
+        QuotaLedgerEntry.Action.REFUND,
         QuotaLedgerEntry.Action.MANUAL_DEDUCT,
     }
     if action not in allowed:

@@ -293,7 +293,7 @@ class GeoDetectionCreateView(APIView):
             "detection_id": str(job.pk),
             "status": job.status,
             "planned_detection_points": job.planned_detection_points,
-            "quota_hold": job.planned_detection_points,
+            "quota_hold": job.quota_hold.requested_amount,
             "status_url": f"/api/v1/geo/detections/{job.pk}",
             "replayed": not created,
         }

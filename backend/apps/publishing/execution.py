@@ -16,7 +16,13 @@ from apps.articles.tasks import execute_generation_job_task
 from apps.documents.exceptions import FileStorageUnavailable
 from apps.documents.storage import storage_provider
 from apps.images.exceptions import ImageBusinessError, ImageInputInvalid, ImageRuntimeUnavailable
-from apps.images.models import ImageAsset, ImageDerivative, ImageGenerationJob, ImageSizePreset, ImageStylePreset
+from apps.images.models import (
+    ImageAsset,
+    ImageDerivative,
+    ImageGenerationJob,
+    ImageSizePreset,
+    ImageStylePreset,
+)
 from apps.images.services import create_derivative, create_image_job
 from apps.images.tasks import execute_image_job_task
 
@@ -25,7 +31,6 @@ from .image_planning import build_image_plan
 from .models import PlatformAccount, Publication, PublicationTarget, PublishingPreference
 from .security import PublishingCredentialError, decrypt_secret
 from .worker_client import PublishingWorkerError, publish_to_platform
-
 
 _PREPARATION_RETRY_SECONDS = 4
 _TRANSIENT_RETRY_SECONDS = 75
@@ -132,8 +137,13 @@ def _publication(publication_id) -> Publication:
 def _pick_preset(role: str):
     sizes = list(ImageSizePreset.objects.filter(status="active").order_by("sort_order", "key"))
     styles = list(ImageStylePreset.objects.filter(status="active").order_by("sort_order", "key"))
-    size = next((item for item in sizes if not item.applicable_roles or role in item.applicable_roles), None)
-    style = next((item for item in styles if not item.applicable_roles or role in item.applicable_roles), None)
+    size = next(
+        (item for item in sizes if not item.applicable_roles or role in item.applicable_roles), None
+    )
+    style = next(
+        (item for item in styles if not item.applicable_roles or role in item.applicable_roles),
+        None,
+    )
     return size, style
 
 
@@ -156,7 +166,9 @@ def _supplement_prompt(*, article_title: str, purpose: str, index: int) -> str:
     )
 
 
-def _ensure_image_supplements(publication: Publication, plan: dict[str, Any]) -> tuple[dict[str, Any], bool]:
+def _ensure_image_supplements(
+    publication: Publication, plan: dict[str, Any]
+) -> tuple[dict[str, Any], bool]:
     missing = list(plan.get("missing_assets") or [])
     if not missing or not plan.get("allow_ai_supplement"):
         return plan, True
@@ -164,7 +176,15 @@ def _ensure_image_supplements(publication: Publication, plan: dict[str, Any]) ->
     previous_ids = [str(item) for item in plan.get("supplement_job_ids") or []]
     if previous_ids:
         jobs = list(ImageGenerationJob.objects.filter(pk__in=previous_ids))
-        if any(job.status in {ImageGenerationJob.Status.QUEUED, ImageGenerationJob.Status.RUNNING, ImageGenerationJob.Status.RETRY_WAIT} for job in jobs):
+        if any(
+            job.status
+            in {
+                ImageGenerationJob.Status.QUEUED,
+                ImageGenerationJob.Status.RUNNING,
+                ImageGenerationJob.Status.RETRY_WAIT,
+            }
+            for job in jobs
+        ):
             return plan, False
         rebuilt = build_image_plan(
             user=publication.user,
@@ -183,7 +203,11 @@ def _ensure_image_supplements(publication: Publication, plan: dict[str, Any]) ->
     for missing_group in missing:
         purpose = str(missing_group.get("purpose") or "inline")
         count = max(0, min(6, int(missing_group.get("count") or 0)))
-        role = ImageGenerationJob.Role.COVER if purpose == "cover" else ImageGenerationJob.Role.ILLUSTRATION
+        role = (
+            ImageGenerationJob.Role.COVER
+            if purpose == "cover"
+            else ImageGenerationJob.Role.ILLUSTRATION
+        )
         size, style = _pick_preset(role)
         if size is None or style is None:
             continue
@@ -194,7 +218,9 @@ def _ensure_image_supplements(publication: Publication, plan: dict[str, Any]) ->
                     subject_id=publication.subject_id,
                     article_id=publication.article_id,
                     role=role,
-                    prompt=_supplement_prompt(article_title=publication.source_title, purpose=purpose, index=index),
+                    prompt=_supplement_prompt(
+                        article_title=publication.source_title, purpose=purpose, index=index
+                    ),
                     size_preset_id=size.pk,
                     style_preset_id=style.pk,
                     reference_asset_id=None,
@@ -219,8 +245,14 @@ def _ensure_image_supplements(publication: Publication, plan: dict[str, Any]) ->
 
 def _ensure_adaptations(publication: Publication) -> tuple[dict[str, ChannelAdaptation], bool]:
     targets = list(publication.targets.all())
-    keys = [target.platform_key for target in targets if target.status != PublicationTarget.Status.AUTH_REQUIRED]
-    channels = {item.key: item for item in PublishingChannel.objects.filter(key__in=keys, enabled=True)}
+    keys = [
+        target.platform_key
+        for target in targets
+        if target.status != PublicationTarget.Status.AUTH_REQUIRED
+    ]
+    channels = {
+        item.key: item for item in PublishingChannel.objects.filter(key__in=keys, enabled=True)
+    }
     if not channels:
         return {}, True
 
@@ -262,7 +294,10 @@ def _ready_adaptations(publication: Publication) -> tuple[dict[str, ChannelAdapt
     latest: dict[str, ChannelAdaptation] = {}
     for row in rows:
         latest.setdefault(row.channel.key, row)
-    pending = any(row.status in {ChannelAdaptation.Status.QUEUED, ChannelAdaptation.Status.RUNNING} for row in latest.values())
+    pending = any(
+        row.status in {ChannelAdaptation.Status.QUEUED, ChannelAdaptation.Status.RUNNING}
+        for row in latest.values()
+    )
     return latest, not pending
 
 
@@ -297,10 +332,14 @@ def _cover_derivative(publication: Publication, platform_key: str, asset_id: str
     return str(row.pk)
 
 
-def _assign_target_payloads(publication: Publication, image_plan: dict[str, Any], adaptations: dict[str, ChannelAdaptation]) -> None:
+def _assign_target_payloads(
+    publication: Publication, image_plan: dict[str, Any], adaptations: dict[str, ChannelAdaptation]
+) -> None:
     selected_assets = list(image_plan.get("selected_assets") or [])
     with transaction.atomic():
-        targets = list(PublicationTarget.objects.select_for_update().filter(publication=publication))
+        targets = list(
+            PublicationTarget.objects.select_for_update().filter(publication=publication)
+        )
         for target in targets:
             if target.status == PublicationTarget.Status.AUTH_REQUIRED:
                 continue
@@ -334,7 +373,16 @@ def _assign_target_payloads(publication: Publication, image_plan: dict[str, Any]
             }
             target.status = PublicationTarget.Status.READY
             target.safe_error_code = ""
-            target.save(update_fields=("adapted_title", "adapted_content", "media_payload", "status", "safe_error_code", "updated_at"))
+            target.save(
+                update_fields=(
+                    "adapted_title",
+                    "adapted_content",
+                    "media_payload",
+                    "status",
+                    "safe_error_code",
+                    "updated_at",
+                )
+            )
 
         publication.image_plan = image_plan
         publication.status = Publication.Status.QUEUED
@@ -343,7 +391,11 @@ def _assign_target_payloads(publication: Publication, image_plan: dict[str, Any]
 
 def prepare_publication(*, publication_id) -> dict[str, Any]:
     publication = _publication(publication_id)
-    if publication.status in {Publication.Status.CANCELLED, Publication.Status.SUCCEEDED, Publication.Status.FAILED}:
+    if publication.status in {
+        Publication.Status.CANCELLED,
+        Publication.Status.SUCCEEDED,
+        Publication.Status.FAILED,
+    }:
         return {"status": publication.status}
 
     if publication.status != Publication.Status.PREPARING:
@@ -355,7 +407,9 @@ def prepare_publication(*, publication_id) -> dict[str, Any]:
         subject=publication.subject,
         article=publication.article,
         strategy=publication.image_strategy,
-        density=str(publication.image_plan.get("density") or PublishingPreference.ImageDensity.STANDARD),
+        density=str(
+            publication.image_plan.get("density") or PublishingPreference.ImageDensity.STANDARD
+        ),
     )
     previous = publication.image_plan if isinstance(publication.image_plan, dict) else {}
     if previous.get("supplement_job_ids"):
@@ -440,7 +494,9 @@ def _delivery_assets(target: PublicationTarget) -> list[dict[str, Any]]:
             url = _download_url_for_asset(asset)
         result.append(
             {
-                "role": "information" if purpose == "information" else ("cover" if purpose == "cover" else "inline"),
+                "role": "information"
+                if purpose == "information"
+                else ("cover" if purpose == "cover" else "inline"),
                 "url": url,
                 "alt": target.adapted_title[:120],
             }
@@ -449,42 +505,22 @@ def _delivery_assets(target: PublicationTarget) -> list[dict[str, Any]]:
 
 
 def _aggregate_publication(publication_id) -> None:
-    with transaction.atomic():
-        publication = Publication.objects.select_for_update().get(pk=publication_id)
-        statuses = list(publication.targets.values_list("status", flat=True))
-        if not statuses:
-            publication.status = Publication.Status.FAILED
-        elif all(value == PublicationTarget.Status.SUCCEEDED for value in statuses):
-            publication.status = Publication.Status.SUCCEEDED
-        elif any(value == PublicationTarget.Status.SUCCEEDED for value in statuses) and all(
-            value in {
-                PublicationTarget.Status.SUCCEEDED,
-                PublicationTarget.Status.FAILED,
-                PublicationTarget.Status.AUTH_REQUIRED,
-                PublicationTarget.Status.PAUSED,
-            }
-            for value in statuses
-        ):
-            publication.status = Publication.Status.PARTIAL
-        elif all(
-            value in {
-                PublicationTarget.Status.FAILED,
-                PublicationTarget.Status.AUTH_REQUIRED,
-                PublicationTarget.Status.PAUSED,
-            }
-            for value in statuses
-        ):
-            publication.status = Publication.Status.FAILED
-        else:
-            publication.status = Publication.Status.RUNNING
-        publication.save(update_fields=("status", "updated_at"))
+    from .publication_state import aggregate_publication
+
+    aggregate_publication(publication_id)
 
 
 def execute_target(*, target_id) -> dict[str, Any]:
     with transaction.atomic():
         target = (
             PublicationTarget.objects.select_for_update()
-            .select_related("publication", "publication__user", "publication__subject", "publication__article", "account")
+            .select_related(
+                "publication",
+                "publication__user",
+                "publication__subject",
+                "publication__article",
+                "account",
+            )
             .get(pk=target_id)
         )
         if target.status in {
@@ -496,23 +532,34 @@ def execute_target(*, target_id) -> dict[str, Any]:
         if target.scheduled_at and target.scheduled_at > timezone.now() + timedelta(seconds=2):
             return {"status": "scheduled", "eta": target.scheduled_at}
         account = target.account
-        if account is None or account.status != PlatformAccount.Status.CONNECTED or not account.enabled_for_auto:
+        if (
+            account is None
+            or account.status != PlatformAccount.Status.CONNECTED
+            or not account.enabled_for_auto
+        ):
             target.status = PublicationTarget.Status.AUTH_REQUIRED
             target.safe_error_code = "authorization_required"
             target.save(update_fields=("status", "safe_error_code", "updated_at"))
             _aggregate_publication(target.publication_id)
             return {"status": "auth_required"}
-        if target.status not in {PublicationTarget.Status.READY, PublicationTarget.Status.FAILED, PublicationTarget.Status.WAITING}:
+        if target.status not in {
+            PublicationTarget.Status.READY,
+            PublicationTarget.Status.FAILED,
+            PublicationTarget.Status.WAITING,
+        }:
             return {"status": target.status}
         target.status = PublicationTarget.Status.RUNNING
         target.attempts += 1
         target.safe_error_code = ""
         target.save(update_fields=("status", "attempts", "safe_error_code", "updated_at"))
 
-    target = (
-        PublicationTarget.objects.select_related("publication", "publication__user", "publication__subject", "publication__article", "account")
-        .get(pk=target_id)
-    )
+    target = PublicationTarget.objects.select_related(
+        "publication",
+        "publication__user",
+        "publication__subject",
+        "publication__article",
+        "account",
+    ).get(pk=target_id)
     try:
         credentials = decrypt_secret(target.account.secret_ciphertext if target.account else "")
     except PublishingCredentialError:
@@ -574,9 +621,13 @@ def execute_target(*, target_id) -> dict[str, Any]:
                 safe_error_code="platform_unavailable",
             )
             return {"status": "retry", "retry_after": _TRANSIENT_RETRY_SECONDS}
-        code = "platform_unavailable" if exc.code != "platform_not_ready" else "platform_unavailable"
+        code = (
+            "platform_unavailable" if exc.code != "platform_not_ready" else "platform_unavailable"
+        )
         PublicationTarget.objects.filter(pk=target.pk).update(
-            status=PublicationTarget.Status.PAUSED if exc.code == "platform_not_ready" else PublicationTarget.Status.FAILED,
+            status=PublicationTarget.Status.PAUSED
+            if exc.code == "platform_not_ready"
+            else PublicationTarget.Status.FAILED,
             safe_error_code=code,
         )
         _aggregate_publication(target.publication_id)
@@ -609,7 +660,11 @@ def execute_target(*, target_id) -> dict[str, Any]:
 
     code = str(result.get("safeErrorCode") or "platform_unavailable")[:100]
     # 草稿成功不等于自动公开发布成功；不能用“已发布”误导客户。
-    status = PublicationTarget.Status.PAUSED if remote_status in {"drafted", "action_required"} else PublicationTarget.Status.FAILED
+    status = (
+        PublicationTarget.Status.PAUSED
+        if remote_status in {"drafted", "action_required"}
+        else PublicationTarget.Status.FAILED
+    )
     PublicationTarget.objects.filter(pk=target.pk).update(status=status, safe_error_code=code)
     _aggregate_publication(target.publication_id)
     return {"status": status}

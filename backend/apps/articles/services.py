@@ -30,6 +30,7 @@ from apps.quotas.services import (
     consume_hold,
     freeze_quota,
     get_or_create_subject_cycle_account,
+    quota_account_for_subscription,
     release_hold,
 )
 from apps.subjects.models import Subject
@@ -124,18 +125,14 @@ def _subscription(user):
 
 
 def _article_account(subscription):
-    account = (
-        QuotaAccount.objects.filter(
+    try:
+        return quota_account_for_subscription(
             subscription=subscription,
-            subject__isnull=True,
-            quota_type="article_credits",
+            quota_type="article_generations",
+            legacy_quota_type="article_credits",
         )
-        .order_by("id")
-        .first()
-    )
-    if account is None:
-        raise ContentError("PLAN_REQUIRED")
-    return account
+    except Exception:
+        raise ContentError("PLAN_REQUIRED") from None
 
 
 def _runtime():
@@ -1096,7 +1093,7 @@ def job_payload(job: ArticleGenerationJob) -> dict[str, Any]:
         "status": job.status,
         "billing": {
             "quota_type": (
-                "article_credits"
+                "article_generations"
                 if job.operation in {"body", "full_optimize", "channel_adapt"}
                 else {
                     "outline": "outline_regenerations",

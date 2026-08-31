@@ -14,6 +14,8 @@ const getAdminSubscriptions = vi.fn();
 const getAdminSubscription = vi.fn();
 const terminateSubscription = vi.fn();
 const grantTrialSubscription = vi.fn();
+const getCurrentQuotaAccounts = vi.fn();
+const getUserQuotaLedger = vi.fn();
 
 vi.mock("next/navigation", () => ({
   useParams: () => ({ id: "subscription-1" }),
@@ -28,6 +30,14 @@ vi.mock("../lib/plans-client", async () => {
     getAdminSubscription: (...args: unknown[]) => getAdminSubscription(...args),
     grantTrialSubscription: (...args: unknown[]) => grantTrialSubscription(...args),
     terminateSubscription: (...args: unknown[]) => terminateSubscription(...args),
+  };
+});
+vi.mock("../lib/quota-client", async () => {
+  const actual = await vi.importActual<typeof import("../lib/quota-client")>("../lib/quota-client");
+  return {
+    ...actual,
+    getCurrentQuotaAccounts: (...args: unknown[]) => getCurrentQuotaAccounts(...args),
+    getUserQuotaLedger: (...args: unknown[]) => getUserQuotaLedger(...args),
   };
 });
 
@@ -94,6 +104,11 @@ beforeEach(() => {
     status: "terminated",
     version: 2,
   });
+  getCurrentQuotaAccounts.mockResolvedValue({ accounts: [] });
+  getUserQuotaLedger.mockResolvedValue({
+    results: [],
+    pagination: { page: 1, page_size: 20, count: 0, total_pages: 0 },
+  });
 });
 afterEach(() => {
   cleanup();
@@ -111,6 +126,67 @@ describe("订阅页面真实交互", () => {
     getCurrentSubscription.mockResolvedValue({ current: null });
     render(<CurrentSubscriptionPage />);
     expect(await screen.findByText("当前尚未开通套餐")).toBeTruthy();
+  });
+
+  it("客户只看到自然额度、检测限制与真实使用记录", async () => {
+    getCurrentSubscription.mockResolvedValue({
+      current: {
+        ...subscription,
+        plan_code: "professional-6980",
+        plan_name: "专业版",
+        ends_at: "2027-08-01T00:00:00Z",
+      },
+    });
+    getCurrentQuotaAccounts.mockResolvedValue({
+      accounts: [
+        {
+          quota_type: "geo_detection_runs",
+          display_name: "GEO 检测",
+          unit: "run",
+          scope: "subscription",
+          entitlement_amount: 60,
+          available: 42,
+          frozen: 0,
+        },
+        {
+          quota_type: "assistant_messages",
+          display_name: "AI 助手消息",
+          unit: "message",
+          scope: "account_cycle",
+          entitlement_amount: 100,
+          available: 99,
+          frozen: 0,
+        },
+      ],
+    });
+    getUserQuotaLedger.mockResolvedValue({
+      results: [
+        {
+          id: "ledger-1",
+          quota_type: "geo_detection_runs",
+          action: "consume",
+          available_before: 43,
+          available_delta: -1,
+          available_after: 42,
+          frozen_delta: -1,
+          frozen_after: 0,
+          description: "完成一次正式检测",
+          related_object: "品牌检测",
+          created_at: "2026-08-31T13:20:00Z",
+        },
+      ],
+      pagination: { page: 1, page_size: 20, count: 1, total_pages: 1 },
+    });
+
+    render(<CurrentSubscriptionPage />);
+    expect(await screen.findByText("¥6,980")).toBeTruthy();
+    expect(await screen.findByText("18 / 60 次")).toBeTruthy();
+    expect(screen.getByText("剩余 42 次")).toBeTruthy();
+    expect(screen.getByText("单次最多 20 个问题 × 8 个模型")).toBeTruthy();
+    expect(screen.getByText("完成一次正式检测")).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(
+      /assistant_messages|AI 助手消息|detection_points/,
+    );
   });
 
   it("管理员列表筛选并进入数据范围内详情", async () => {

@@ -391,7 +391,7 @@ function SubjectDetectionPage({ subject }: Readonly<{ subject: SubjectSummary }>
         </div>
         <Space wrap>
           {questionBank && <Tag color="blue">问题库已就绪</Tag>}
-          {options && <Tag>检测点余额 {options.available_detection_points}</Tag>}
+          {options && <Tag>检测剩余 {options.available_detection_runs} 次</Tag>}
         </Space>
       </section>
 
@@ -547,18 +547,15 @@ function SubjectDetectionPage({ subject }: Readonly<{ subject: SubjectSummary }>
                   <Text strong>{selectedModels.length}</Text>
                 </span>
                 <span>
-                  <Text type="secondary">预计检测点</Text>
-                  <Text strong>
-                    {estimate?.required_detection_points ??
-                      selectedQuestions.length * selectedModels.length}
-                  </Text>
+                  <Text type="secondary">本次使用</Text>
+                  <Text strong>{estimate?.required_detection_runs ?? 1} 次</Text>
                 </span>
                 <span>
-                  <Text type="secondary">可用检测点</Text>
+                  <Text type="secondary">当前剩余</Text>
                   <Text strong>
-                    {estimate?.available_detection_points ??
-                      options?.available_detection_points ??
-                      "—"}
+                    {estimate?.available_detection_runs ??
+                      options?.available_detection_runs ??
+                      "—"} 次
                   </Text>
                 </span>
               </div>
@@ -569,8 +566,8 @@ function SubjectDetectionPage({ subject }: Readonly<{ subject: SubjectSummary }>
                   message={estimate.can_submit ? "检测条件已满足" : "当前条件无法提交"}
                   description={
                     estimate.can_submit
-                      ? `将进行 ${estimate.question_count} × ${estimate.model_count} 次检测。`
-                      : "请检查检测点余额，或等待正在进行的检测结束。"
+                      ? `本次将使用1次GEO检测额度，共执行 ${estimate.question_count} 个问题 × ${estimate.model_count} 个模型。`
+                      : "请检查检测次数余额，或等待正在进行的检测结束。"
                   }
                 />
               )}
@@ -667,7 +664,7 @@ function SubjectDetectionPage({ subject }: Readonly<{ subject: SubjectSummary }>
                           </Tag>
                           <Text>{job.planned_question_count} 个问题</Text>
                           <Text>{job.planned_model_count} 个模型</Text>
-                          <Text>{job.planned_detection_points} 个检测点</Text>
+                          <Text>{job.planned_question_count} 个问题 × {job.planned_model_count} 个模型</Text>
                         </Space>
                         <Text type="secondary">
                           完成进度 {job.progress_percent}% ·{" "}

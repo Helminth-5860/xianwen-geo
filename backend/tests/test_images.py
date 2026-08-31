@@ -85,7 +85,7 @@ def image_facts(monkeypatch):
 
     def image_limits(*args, **kwargs):
         values = original_limits(*args, **kwargs)
-        values["image_credits"] = 5
+        values["image_generations"] = 5
         return values
 
     monkeypatch.setattr(keyword_tests, "_limits", image_limits)
@@ -189,7 +189,7 @@ def _create_job(user, subject, *, key=None, reference_asset_id=None):
 
 def test_text_to_image_persists_private_asset_then_consumes_once(image_facts):
     user, subject, subscription, runtime, credential, binding = image_facts
-    account = QuotaAccount.objects.get(subscription=subscription, quota_type="image_credits")
+    account = QuotaAccount.objects.get(subscription=subscription, quota_type="image_generations")
     initial = account.available
     adapter = StubImageAdapter()
     with patch("apps.images.services.model_registry.resolve", return_value=adapter):
@@ -301,7 +301,7 @@ def test_reference_image_uses_private_bytes_as_data_uri(image_facts):
 )
 def test_terminal_provider_and_moderation_failure_release_quota(image_facts, category, code):
     user, subject, subscription, _, _, _ = image_facts
-    account = QuotaAccount.objects.get(subscription=subscription, quota_type="image_credits")
+    account = QuotaAccount.objects.get(subscription=subscription, quota_type="image_generations")
     initial = account.available
     adapter = StubImageAdapter(error=AIAdapterError(category, stable_code=code, retryable=False))
     with patch("apps.images.services.model_registry.resolve", return_value=adapter):
@@ -330,7 +330,7 @@ def test_provider_429_is_bounded_and_releases_after_retry_exhaustion(image_facts
         ImageGenerationJob.objects.filter(pk=job.pk).update(next_attempt_at=timezone.now())
         assert execute_image_job(job_id=job.pk)["status"] == "failed"
     job.refresh_from_db()
-    account = QuotaAccount.objects.get(subscription=subscription, quota_type="image_credits")
+    account = QuotaAccount.objects.get(subscription=subscription, quota_type="image_generations")
     assert len(adapter.requests) == 2
     assert job.attempt_count == 2 and job.quota_hold.released_amount == 1
     assert account.frozen == 0
@@ -351,14 +351,14 @@ def test_storage_failure_releases_and_creates_no_available_asset(image_facts):
         job, _ = _create_job(user, subject)
         assert execute_image_job(job_id=job.pk)["status"] == "failed"
     job.refresh_from_db()
-    account = QuotaAccount.objects.get(subscription=subscription, quota_type="image_credits")
+    account = QuotaAccount.objects.get(subscription=subscription, quota_type="image_generations")
     assert job.quota_hold.released_amount == 1 and account.frozen == 0
     assert not ImageAsset.objects.filter(generation_job=job).exists()
 
 
 def test_runtime_and_credential_missing_fail_closed_before_hold(image_facts):
     user, subject, subscription, runtime, _, binding = image_facts
-    account = QuotaAccount.objects.get(subscription=subscription, quota_type="image_credits")
+    account = QuotaAccount.objects.get(subscription=subscription, quota_type="image_generations")
     initial = account.available
     runtime.enabled = False
     runtime.version += 1
@@ -412,7 +412,7 @@ def test_ownership_free_derivative_and_private_zip(image_facts):
 
 def test_ai_reference_processing_uses_generation_job_and_bills_only_on_delivery(image_facts):
     user, subject, subscription, _, _, _ = image_facts
-    account = QuotaAccount.objects.get(subscription=subscription, quota_type="image_credits")
+    account = QuotaAccount.objects.get(subscription=subscription, quota_type="image_generations")
     initial = account.available
     adapter = StubImageAdapter()
     with patch("apps.images.services.model_registry.resolve", return_value=adapter):
@@ -639,7 +639,7 @@ def test_image_api_requires_owner_and_rejects_unsafe_reference_url(image_facts):
         "style_preset_id": str(ImageStylePreset.objects.first().pk),
         "reference_url": "http://127.0.0.1/private.png",
     }
-    account = QuotaAccount.objects.get(subscription=subscription, quota_type="image_credits")
+    account = QuotaAccount.objects.get(subscription=subscription, quota_type="image_generations")
     initial = account.available
     with override_settings(WEB_IMPORT_TEST_ALLOWED_CIDRS=()):
         rejected = client.post(

@@ -48,6 +48,7 @@ const job = (
   queue_position: null,
   cancel_requested: false,
   quota: {
+    quota_type: "geo_detection_runs",
     status: status === "running" ? "partially_settled" : "settled",
     held: 16,
     consumed: 12,

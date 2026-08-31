@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from typing import Any
 
 from django.db import IntegrityError, transaction
-from django.db.models import Sum
 from django.utils import timezone
 
 from apps.ai.content import StructuredContentPayload
@@ -15,9 +14,6 @@ from apps.ai.contracts import AIAdapterRequest, AIModelCapability
 from apps.ai.errors import AIAdapterError
 from apps.ai.registry import model_registry
 from apps.ai.runtime import get_runtime_snapshot
-from apps.quotas.exceptions import QuotaStateConflict
-from apps.quotas.models import QuotaAccount
-from apps.quotas.services import consume_hold, freeze_quota, release_hold
 from apps.subjects.models import Subject, SubjectContext
 from apps.users.models import User
 
@@ -101,7 +97,7 @@ SECURITY_PATTERNS = (
 class AssistantReply:
     answer: str
     suggested_actions: list[dict[str, str]]
-    remaining_messages: int
+    remaining_messages: int | None
     usage_event_id: str
 
 
@@ -197,25 +193,6 @@ def _assistant_context(*, user: User, subject: Subject) -> dict[str, Any]:
     }
 
 
-def _assistant_account(*, subscription) -> QuotaAccount:
-    now = timezone.now()
-    account = (
-        QuotaAccount.objects.select_for_update()
-        .filter(
-            subscription=subscription,
-            subject__isnull=True,
-            quota_type="assistant_messages",
-            cycle_started_at__lte=now,
-            cycle_ends_at__gt=now,
-        )
-        .order_by("batch_type", "spendable_until", "created_at", "id")
-        .first()
-    )
-    if account is None:
-        raise QuotaStateConflict
-    return account
-
-
 def _create_usage_event(
     *, user_id, subject_id, messages, idempotency_key, request_id
 ) -> tuple[AssistantUsageEvent, dict[str, Any], object]:
@@ -262,16 +239,7 @@ def _create_usage_event(
                 raise AssistantIdempotencyConflict
             raise AssistantReplay
         authorized_context = _assistant_context(user=user, subject=subject)
-        account = _assistant_account(subscription=subscription)
         event_id = uuid.uuid4()
-        hold = freeze_quota(
-            account_id=account.pk,
-            amount=1,
-            business_type="assistant_response",
-            business_id=event_id,
-            idempotency_key=f"assistant-freeze-{event_id}",
-            request_id=request_id,
-        )
         try:
             event = AssistantUsageEvent.objects.create(
                 id=event_id,
@@ -279,7 +247,7 @@ def _create_usage_event(
                 subject=subject,
                 subject_version=subject_version,
                 subscription=subscription,
-                quota_hold=hold,
+                quota_hold=None,
                 provider_key=runtime.provider_key,
                 model_key=runtime.model_key,
                 provider_model_id=runtime.provider_model_id,
@@ -346,12 +314,6 @@ def _finish_failure(event_id, code: str) -> None:
         event = AssistantUsageEvent.objects.select_for_update().get(pk=event_id)
         if event.status != AssistantUsageEvent.Status.PENDING:
             return
-        release_hold(
-            hold_id=event.quota_hold_id,
-            amount=1,
-            idempotency_key=f"assistant-release-{event.pk}",
-            request_id=event.request_id,
-        )
         event.status = AssistantUsageEvent.Status.FAILED
         event.safe_error_code = code
         event.finished_at = timezone.now()
@@ -402,12 +364,6 @@ def respond_to_assistant(
         locked = AssistantUsageEvent.objects.select_for_update().get(pk=event.pk)
         if locked.status != AssistantUsageEvent.Status.PENDING:
             raise AssistantReplay
-        consume_hold(
-            hold_id=locked.quota_hold_id,
-            amount=1,
-            idempotency_key=f"assistant-consume-{locked.pk}",
-            request_id=locked.request_id,
-        )
         locked.status = AssistantUsageEvent.Status.SUCCEEDED
         locked.usage_summary = {
             "input_tokens": response.usage.input_tokens,
@@ -417,14 +373,6 @@ def respond_to_assistant(
         }
         locked.finished_at = timezone.now()
         locked.save(update_fields=("status", "usage_summary", "finished_at", "updated_at"))
-        now = timezone.now()
-        remaining = QuotaAccount.objects.filter(
-            subscription=locked.subscription,
-            subject__isnull=True,
-            quota_type="assistant_messages",
-            cycle_started_at__lte=now,
-            cycle_ends_at__gt=now,
-        ).aggregate(total=Sum("available"))["total"]
     return AssistantReply(
         answer=answer,
         suggested_actions=_actions(
@@ -432,7 +380,7 @@ def respond_to_assistant(
             subject_id=event.subject_id,
             keys=action_keys,
         ),
-        remaining_messages=int(remaining or 0),
+        remaining_messages=None,
         usage_event_id=str(event.pk),
     )
 
@@ -448,15 +396,6 @@ def assistant_context_payload(*, user) -> dict[str, Any]:
     subject = context.current_subject
     if subject is None:
         return {"current_subject": None, "remaining_messages": None}
-    subscription = _effective_subscription(user=user)
-    now = timezone.now()
-    remaining = QuotaAccount.objects.filter(
-        subscription=subscription,
-        subject__isnull=True,
-        quota_type="assistant_messages",
-        cycle_started_at__lte=now,
-        cycle_ends_at__gt=now,
-    ).aggregate(total=Sum("available"))["total"]
     return {
         "current_subject": {
             "id": str(subject.pk),
@@ -464,7 +403,7 @@ def assistant_context_payload(*, user) -> dict[str, Any]:
             "name": subject.current_version.official_name if subject.current_version else "",
             "context_version": context.version,
         },
-        "remaining_messages": int(remaining) if remaining is not None else None,
+        "remaining_messages": None,
         "history_persisted": False,
         "provider_key": "deepseek",
     }

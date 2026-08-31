@@ -70,6 +70,7 @@ def _limits(
 ):
     values = {definition.source_limit_key: 0 for definition in QUOTA_CATALOG}
     values["distillation_regenerations_per_cycle"] = distillation_regenerations
+    values["question_generated_items"] = question_limit * (question_regenerations + 1)
     values["keyword_generation_limit"] = 10
     values["question_bank_limit"] = question_limit
     values["question_bank_regenerations_per_cycle"] = question_regenerations
@@ -530,13 +531,9 @@ def test_distillation_api_async_draft_confirm_owner_scope_and_safe_payloads():
     )
     pending_draft = client.get(f"/api/v1/subjects/{subject.pk}/distillations/draft")
     pending_draft_data = pending_draft.json()["data"]
-    assert pending_draft_data["current_keyword_set_version"]["id"] == str(
-        next_keyword_version.pk
-    )
+    assert pending_draft_data["current_keyword_set_version"]["id"] == str(next_keyword_version.pk)
     assert pending_draft_data["pending_item_count"] == 1
-    assert [item["text"] for item in pending_draft_data["pending_items"]] == [
-        "新增待蒸馏词"
-    ]
+    assert [item["text"] for item in pending_draft_data["pending_items"]] == ["新增待蒸馏词"]
     assert pending_draft_data["has_unconfirmed_result"] is False
     current = client.get(f"/api/v1/subjects/{subject.pk}/distillations/current")
     assert current.status_code == 200 and current.json()["data"]["version_no"] == 1

@@ -30,7 +30,12 @@ from apps.documents.models import DocumentVersion
 from apps.documents.storage import storage_provider
 from apps.plans.subscription_services import current_subscription
 from apps.quotas.models import QuotaAccount
-from apps.quotas.services import consume_hold, freeze_quota, release_hold
+from apps.quotas.services import (
+    consume_hold,
+    freeze_quota,
+    quota_account_for_subscription,
+    release_hold,
+)
 from apps.subjects.models import Subject
 from apps.web_sources.exceptions import WebSourceError
 from apps.web_sources.http_transport import fetch_binary_url
@@ -126,13 +131,12 @@ def _article(user, article_id, subject, *, lock=False) -> Article | None:
 
 def _image_account(subscription) -> QuotaAccount:
     try:
-        return QuotaAccount.objects.get(
+        return quota_account_for_subscription(
             subscription=subscription,
-            quota_type="image_credits",
-            batch_type=QuotaAccount.BatchType.PRIMARY,
-            cycle_started_at__isnull=True,
+            quota_type="image_generations",
+            legacy_quota_type="image_credits",
         )
-    except QuotaAccount.DoesNotExist as exc:
+    except Exception as exc:
         raise ImageBusinessError("IMAGE_QUOTA_ACCOUNT_UNAVAILABLE") from exc
 
 
@@ -1172,7 +1176,7 @@ def quota_summary(user) -> dict[str, int | bool]:
         return {"available": 0, "frozen": 0, "consumed": 0, "unlimited": False}
     account = QuotaAccount.objects.filter(
         subscription=subscription,
-        quota_type="image_credits",
+        quota_type__in=("image_generations", "image_credits"),
         batch_type=QuotaAccount.BatchType.PRIMARY,
         cycle_started_at__isnull=True,
     ).first()

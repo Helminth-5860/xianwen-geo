@@ -165,7 +165,7 @@ export type DetectionOptions = Readonly<{
   models: GeoModelOption[];
   max_questions_per_detection: number;
   max_models_per_detection: number;
-  available_detection_points: number;
+  available_detection_runs: number;
   can_start_job: boolean;
 }>;
 

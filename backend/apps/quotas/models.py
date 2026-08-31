@@ -352,6 +352,7 @@ class QuotaLedgerEntry(models.Model):  # noqa: DJ008
         RELEASE = "release", "返还"
         GRANT = "grant", "赠送"
         COMPENSATE = "compensate", "补偿"
+        REFUND = "refund", "返还"
         MANUAL_DEDUCT = "manual_deduct", "人工扣减"
         PLAN_CHANGE_FORFEIT = "plan_change_forfeit", "套餐变更清零"
         PLAN_CHANGE_TRANSFER_OUT = "plan_change_transfer_out", "套餐变更转出"
@@ -442,6 +443,7 @@ class QuotaLedgerEntry(models.Model):  # noqa: DJ008
                                 "storage_capacity_reconcile",
                                 "grant",
                                 "compensate",
+                                "refund",
                                 "manual_deduct",
                                 "plan_change_forfeit",
                                 "plan_change_transfer_out",

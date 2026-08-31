@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import uuid
 from datetime import timedelta
 from typing import Any
 
@@ -12,6 +13,8 @@ from django.shortcuts import get_object_or_404
 from django.utils import timezone
 
 from apps.articles.models import Article
+from apps.plans.subscription_services import current_subscription
+from apps.quotas.services import freeze_quota, quota_account_for_subscription
 from apps.subjects.models import Subject
 
 from .capabilities import WorkerCapabilitySnapshot, worker_capability_snapshot
@@ -33,13 +36,34 @@ class PublishingInputError(ValueError):
 _SMART_BY_ARTICLE_TYPE: dict[str, tuple[str, ...]] = {
     "brand_story": ("wechat", "baijiahao", "toutiao", "sohu", "zhihu", "weibo", "qq"),
     "industry_insight": ("zhihu", "wechat", "baijiahao", "toutiao", "sohu", "qq", "weibo"),
-    "product_guide": ("xiaohongshu", "wechat", "baijiahao", "toutiao", "zhihu", "douyin", "bilibili", "weibo"),
+    "product_guide": (
+        "xiaohongshu",
+        "wechat",
+        "baijiahao",
+        "toutiao",
+        "zhihu",
+        "douyin",
+        "bilibili",
+        "weibo",
+    ),
     "faq_article": ("zhihu", "baijiahao", "wechat", "toutiao", "sohu"),
 }
 _SMART_DEFAULT = ("zhihu", "wechat", "baijiahao", "toutiao", "sohu", "qq", "weibo")
 _SMART_TECH = ("csdn", "juejin", "cnblogs", "segmentfault", "oschina", "zhihu", "bilibili")
 _SMART_VISUAL = ("xiaohongshu", "douyin", "bilibili", "weibo", "toutiao")
-_TECH_CUES = ("api", "代码", "开发", "技术", "架构", "算法", "数据库", "模型", "接口", "部署", "系统设计")
+_TECH_CUES = (
+    "api",
+    "代码",
+    "开发",
+    "技术",
+    "架构",
+    "算法",
+    "数据库",
+    "模型",
+    "接口",
+    "部署",
+    "系统设计",
+)
 _VISUAL_CUES = ("产品", "指南", "体验", "案例", "清单", "步骤", "场景", "对比", "怎么选", "推荐")
 
 
@@ -57,10 +81,7 @@ def validation_platform_keys() -> set[str]:
 
 
 def _internal_validation_user(user) -> bool:
-    return bool(
-        getattr(user, "is_test_account", False)
-        or getattr(user, "is_superuser", False)
-    )
+    return bool(getattr(user, "is_test_account", False) or getattr(user, "is_superuser", False))
 
 
 def platforms_for_user(
@@ -100,11 +121,7 @@ def public_ready_platform_keys(
 
 def platform_for_user(*, user, platform_key: str) -> dict[str, object] | None:
     return next(
-        (
-            item
-            for item in platforms_for_user(user=user)
-            if item["key"] == platform_key
-        ),
+        (item for item in platforms_for_user(user=user) if item["key"] == platform_key),
         None,
     )
 
@@ -118,7 +135,9 @@ def ensure_platform_auto_publish_ready(*, user, platform_key: str) -> None:
 
 
 def subject_for_user(*, user, subject_id) -> Subject:
-    return get_object_or_404(Subject.objects.select_related("current_version"), id=subject_id, user=user)
+    return get_object_or_404(
+        Subject.objects.select_related("current_version"), id=subject_id, user=user
+    )
 
 
 def preference_for_subject(*, user, subject: Subject) -> PublishingPreference:
@@ -163,14 +182,19 @@ def account_payload(account: PlatformAccount) -> dict[str, Any]:
         "status": account.status,
         "display_name": account.display_name,
         "enabled_for_auto": account.enabled_for_auto,
-        "session_expires_at": account.session_expires_at.isoformat() if account.session_expires_at else None,
+        "session_expires_at": account.session_expires_at.isoformat()
+        if account.session_expires_at
+        else None,
         "last_checked_at": account.last_checked_at.isoformat() if account.last_checked_at else None,
-        "needs_action": account.status in {PlatformAccount.Status.EXPIRED, PlatformAccount.Status.ACTION_REQUIRED},
+        "needs_action": account.status
+        in {PlatformAccount.Status.EXPIRED, PlatformAccount.Status.ACTION_REQUIRED},
         "updated_at": account.updated_at.isoformat(),
     }
 
 
-def auth_session_payload(session: PlatformAuthorizationSession, *, one_time_token: str | None = None) -> dict[str, Any]:
+def auth_session_payload(
+    session: PlatformAuthorizationSession, *, one_time_token: str | None = None
+) -> dict[str, Any]:
     payload = {
         "id": str(session.id),
         "platform_key": session.platform_key,
@@ -269,30 +293,27 @@ def publishing_state(*, user, subject_id) -> dict[str, Any]:
         .select_related("article")
         .prefetch_related("targets")[:20]
     )
-    public_keys = {
-        str(item["key"])
-        for item in platforms
-        if bool(item["can_enable_auto"])
-    }
-    connected = sum(
-        1 for item in accounts if item.status == PlatformAccount.Status.CONNECTED
-    )
+    public_keys = {str(item["key"]) for item in platforms if bool(item["can_enable_auto"])}
+    connected = sum(1 for item in accounts if item.status == PlatformAccount.Status.CONNECTED)
     authorization_keys = {
-        str(item["key"])
-        for item in platforms
-        if bool(item["authorization_enabled"])
+        str(item["key"]) for item in platforms if bool(item["authorization_enabled"])
     }
     account_needs_action = sum(
         1
         for item in accounts
         if item.status in {PlatformAccount.Status.EXPIRED, PlatformAccount.Status.ACTION_REQUIRED}
     )
-    awaiting_review = PublicationTarget.objects.filter(
-        publication__user=user,
-        publication__subject=subject,
-        status=PublicationTarget.Status.PAUSED,
-        safe_error_code="awaiting_review",
-    ).values("publication_id").distinct().count()
+    awaiting_review = (
+        PublicationTarget.objects.filter(
+            publication__user=user,
+            publication__subject=subject,
+            status=PublicationTarget.Status.PAUSED,
+            safe_error_code="awaiting_review",
+        )
+        .values("publication_id")
+        .distinct()
+        .count()
+    )
     today = timezone.localdate()
     today_targets = PublicationTarget.objects.filter(
         publication__user=user,
@@ -317,7 +338,9 @@ def publishing_state(*, user, subject_id) -> dict[str, Any]:
     return {
         "subject": {
             "id": str(subject.id),
-            "official_name": subject.current_version.official_name if subject.current_version else "当前主体",
+            "official_name": subject.current_version.official_name
+            if subject.current_version
+            else "当前主体",
         },
         "preference": preference_payload(preference),
         "summary": {
@@ -328,7 +351,9 @@ def publishing_state(*, user, subject_id) -> dict[str, Any]:
             "connected_count": connected,
             "needs_action_count": account_needs_action + awaiting_review,
             "today_plan_count": today_targets.count(),
-            "today_published_count": today_targets.filter(status=PublicationTarget.Status.SUCCEEDED).count(),
+            "today_published_count": today_targets.filter(
+                status=PublicationTarget.Status.SUCCEEDED
+            ).count(),
         },
         "availability": {
             "status": availability_status,
@@ -368,7 +393,9 @@ def update_preference(*, user, subject_id, values: dict[str, Any]) -> Publishing
 
 
 @transaction.atomic
-def create_authorization_session(*, user, subject_id, platform_key: str) -> tuple[PlatformAuthorizationSession, str]:
+def create_authorization_session(
+    *, user, subject_id, platform_key: str
+) -> tuple[PlatformAuthorizationSession, str]:
     subject = subject_for_user(user=user, subject_id=subject_id)
     definition = PLATFORM_BY_KEY.get(platform_key)
     if definition is None:
@@ -501,7 +528,9 @@ def complete_authorization_session(
 @transaction.atomic
 def disconnect_platform_account(*, user, subject_id, platform_key: str) -> None:
     subject = subject_for_user(user=user, subject_id=subject_id)
-    account = get_object_or_404(PlatformAccount, user=user, subject=subject, platform_key=platform_key)
+    account = get_object_or_404(
+        PlatformAccount, user=user, subject=subject, platform_key=platform_key
+    )
     account.secret_ciphertext = ""
     account.external_account_id = ""
     account.display_name = ""
@@ -535,10 +564,14 @@ def _smart_platform_selection(article: Article, connected: set[str]) -> list[str
             if key in PLATFORM_BY_KEY and key not in ordered:
                 ordered.append(key)
 
-    recommended = list(article.template_version.recommended_channel_keys) if article.template_version else []
+    recommended = (
+        list(article.template_version.recommended_channel_keys) if article.template_version else []
+    )
     extend(key for key in recommended if key != "website")
 
-    article_type_key = article.article_type.key if article.article_type_id and article.article_type else ""
+    article_type_key = (
+        article.article_type.key if article.article_type_id and article.article_type else ""
+    )
     extend(_SMART_BY_ARTICLE_TYPE.get(article_type_key, ()))
 
     sample = f"{article.title}\n{article.content[:5000]}".lower()
@@ -583,7 +616,13 @@ def _already_arranged_platform_keys(
 
 @transaction.atomic
 def create_publication(
-    *, user, subject_id, article_id, platform_keys: list[str] | None = None, scheduled_at=None
+    *,
+    user,
+    subject_id,
+    article_id,
+    platform_keys: list[str] | None = None,
+    scheduled_at=None,
+    request_id=None,
 ) -> Publication:
     subject = subject_for_user(user=user, subject_id=subject_id)
     # Locking the source article makes the duplicate check and target creation a
@@ -594,7 +633,11 @@ def create_publication(
         user=user,
         subject=subject,
     )
-    if article.status != Article.Status.READY or not article.title.strip() or not article.content.strip():
+    if (
+        article.status != Article.Status.READY
+        or not article.title.strip()
+        or not article.content.strip()
+    ):
         raise PublishingInputError("文章需要先完成生成并达到可发布状态")
     if article.moderation_status != Article.Moderation.PASSED:
         raise PublishingInputError("文章需要先通过内容检查才能安排发布")
@@ -629,10 +672,28 @@ def create_publication(
     if not selected:
         raise PublishingInputError("这篇文章已在所选平台安排过，请勿重复提交")
 
+    subscription = current_subscription(user)
+    if subscription is None:
+        raise PublishingInputError("当前操作需要有效套餐")
+    publication_id = uuid.uuid4()
+    normalized_request_id = request_id or uuid.uuid4()
+    hold = freeze_quota(
+        account_id=quota_account_for_subscription(
+            subscription=subscription, quota_type="auto_publish_count"
+        ).pk,
+        amount=1,
+        business_type="auto_publish",
+        business_id=publication_id,
+        idempotency_key=f"auto-publish-freeze-{publication_id}",
+        request_id=normalized_request_id,
+    )
     publication = Publication.objects.create(
+        id=publication_id,
         user=user,
         subject=subject,
         article=article,
+        quota_hold=hold,
+        request_id=normalized_request_id,
         status=Publication.Status.QUEUED,
         source_title=article.title,
         source_content_digest=digest,
@@ -641,15 +702,19 @@ def create_publication(
         image_plan={
             "strategy": preference.image_strategy,
             "density": preference.image_density,
-            "customer_assets_first": preference.image_strategy != PublishingPreference.ImageStrategy.AI_AUTO,
-            "allow_ai_supplement": preference.image_strategy != PublishingPreference.ImageStrategy.CUSTOMER_ONLY,
+            "customer_assets_first": preference.image_strategy
+            != PublishingPreference.ImageStrategy.AI_AUTO,
+            "allow_ai_supplement": preference.image_strategy
+            != PublishingPreference.ImageStrategy.CUSTOMER_ONLY,
         },
         platform_plan=selected,
         scheduled_at=scheduled_at,
     )
     accounts = {
         item.platform_key: item
-        for item in PlatformAccount.objects.filter(user=user, subject=subject, platform_key__in=selected)
+        for item in PlatformAccount.objects.filter(
+            user=user, subject=subject, platform_key__in=selected
+        )
     }
     for index, key in enumerate(selected):
         account = accounts.get(key)

@@ -88,7 +88,6 @@ def _internal_test_snapshot(generated_at) -> dict:
         "valid_days": INTERNAL_TEST_VALID_DAYS,
         "queue_priority": 100,
         "limits": {
-            "subject_active_limit": 1_000_000,
             "allow_user_model_selection": True,
             "max_models_per_detection": len(MODEL_KEYS),
             "max_questions_per_detection": 1_000_000,
@@ -97,6 +96,18 @@ def _internal_test_snapshot(generated_at) -> dict:
             "article_credits": INTERNAL_TEST_MAX_QUOTA,
             "image_credits": INTERNAL_TEST_MAX_QUOTA,
             "video_credits": INTERNAL_TEST_MAX_QUOTA,
+            "geo_detection_runs": INTERNAL_TEST_MAX_QUOTA,
+            "article_generations": INTERNAL_TEST_MAX_QUOTA,
+            "auto_publish_count": INTERNAL_TEST_MAX_QUOTA,
+            "image_generations": INTERNAL_TEST_MAX_QUOTA,
+            "source_index_scans": INTERNAL_TEST_MAX_QUOTA,
+            "negative_index_scans": INTERNAL_TEST_MAX_QUOTA,
+            "website_audits": INTERNAL_TEST_MAX_QUOTA,
+            "website_generations": INTERNAL_TEST_MAX_QUOTA,
+            "video_script_generations": INTERNAL_TEST_MAX_QUOTA,
+            "competitor_comparisons": INTERNAL_TEST_MAX_QUOTA,
+            "keyword_generated_items": INTERNAL_TEST_MAX_QUOTA,
+            "question_generated_items": INTERNAL_TEST_MAX_QUOTA,
             "keyword_generation_limit": 1_000_000,
             "question_bank_limit": 1_000_000,
             "keyword_regenerations_per_cycle": INTERNAL_TEST_MAX_QUOTA,
@@ -483,8 +494,23 @@ def current_subscription(user: User, *, now=None):
         .prefetch_related("events")
         .first()
     )
-    if subscription is not None or not user.is_test_account:
+    if subscription is not None:
+        if user.is_test_account:
+            from apps.quotas.models import QuotaAccount
+            from apps.quotas.services import initialize_subscription_accounts
+
+            if not QuotaAccount.objects.filter(
+                subscription=subscription,
+                quota_type="geo_detection_runs",
+                subject__isnull=True,
+            ).exists():
+                initialize_subscription_accounts(
+                    subscription=subscription,
+                    request_id=uuid.uuid4(),
+                )
         return subscription
+    if not user.is_test_account:
+        return None
     return ensure_internal_test_subscription(user=user, now=moment)
 
 

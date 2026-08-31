@@ -105,7 +105,13 @@ const detection = (index: number): GeoDetectionJob => ({
   queue_priority: 10,
   queue_position: null,
   cancel_requested: false,
-  quota: { status: "settled", held: 24, consumed: 24, released: 0 },
+  quota: {
+    quota_type: "geo_detection_runs",
+    status: "settled",
+    held: 1,
+    consumed: 1,
+    released: 0,
+  },
   queued_at: `2026-08-${String(index + 1).padStart(2, "0")}T00:00:00Z`,
   started_at: `2026-08-${String(index + 1).padStart(2, "0")}T00:00:01Z`,
   finished_at: `2026-08-${String(index + 1).padStart(2, "0")}T00:01:00Z`,
@@ -162,7 +168,7 @@ describe("GeoDetectionIndexPage", () => {
       })),
       max_questions_per_detection: 100,
       max_models_per_detection: 8,
-      available_detection_points: 1000,
+      available_detection_runs: 1000,
       can_start_job: true,
     });
     getCurrentQuestionBank.mockResolvedValue({

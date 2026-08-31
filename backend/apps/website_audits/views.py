@@ -33,6 +33,7 @@ class WebsiteAuditCreateView(APIView):
                     user=request.user,
                     subject_id=subject_id,
                     url=serializer.validated_data["url"],
+                    request_id=getattr(request, "request_id", None),
                 )
                 transaction.on_commit(
                     lambda: execute_website_audit_task.apply_async(

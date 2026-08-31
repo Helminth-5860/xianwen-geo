@@ -257,9 +257,7 @@ def test_worker_capability_snapshot_keeps_implemented_and_verified_separate(monk
     snapshot = worker_capability_snapshot(force_refresh=True)
     assert snapshot.service_available is True
     assert snapshot.verified_for("zhihu") == frozenset({"auth", "draft"})
-    assert snapshot.implemented_for("zhihu") == frozenset(
-        {"auth", "draft", "public_publish"}
-    )
+    assert snapshot.implemented_for("zhihu") == frozenset({"auth", "draft", "public_publish"})
     clear_worker_capability_cache()
 
 
@@ -453,6 +451,7 @@ def test_same_article_cannot_be_arranged_twice_for_the_same_live_platform(monkey
         phone="13900000001",
         nickname="重复发布保护测试",
         password="test-password",
+        is_test_account=True,
     )
     subject_type = SubjectType.objects.create(key="publishing-test", name="发布测试")
     subject = Subject.objects.create(

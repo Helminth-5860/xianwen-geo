@@ -88,6 +88,7 @@ QUOTA_HANDLER_SPECS = {
     for action_key, action in {
         "quota.grant": "grant",
         "quota.compensate": "compensate",
+        "quota.refund": "refund",
         "quota.manual_deduct": "manual_deduct",
     }.items()
 }

@@ -70,32 +70,54 @@ export function publicPlanBenefitLines(benefits: Readonly<Record<string, unknown
     return typeof value === "number" && Number.isFinite(value) ? value : undefined;
   };
   const lines: string[] = [];
-  const subjects = numberValue("subject_active_limit");
   const models = numberValue("max_models_per_detection");
   const questions = numberValue("max_questions_per_detection");
-  const detections = numberValue("detection_points");
-  const articles = numberValue("article_credits");
-  const images = numberValue("image_credits");
-  const videos = numberValue("video_credits");
-  const storage = numberValue("storage_bytes");
+  const detections = numberValue("geo_detection_runs") ?? numberValue("detection_points");
+  const articles = numberValue("article_generations") ?? numberValue("article_credits");
+  const images = numberValue("image_generations") ?? numberValue("image_credits");
+  const quotaLines = [
+    [detections, "次 GEO 检测"],
+    [articles, "篇 AI 文章"],
+    [numberValue("auto_publish_count"), "篇自动发文"],
+    [images, "张 AI 图片"],
+    [numberValue("source_index_scans"), "次信源扫描"],
+    [numberValue("negative_index_scans"), "次负面信息扫描"],
+    [numberValue("website_audits"), "次官网检测"],
+    [numberValue("website_generations"), "次官网生成"],
+    [numberValue("video_script_generations"), "篇视频脚本"],
+    [numberValue("competitor_comparisons"), "次竞品对比"],
+    [numberValue("keyword_generated_items"), "条智能关键词"],
+    [numberValue("question_generated_items"), "条 AI 问题"],
+  ] as const;
 
-  if (subjects !== undefined) lines.push(`最多管理 ${subjects} 个主体`);
-  if (models !== undefined) lines.push(`单次检测最多覆盖 ${models} 个 AI 平台`);
-  if (questions !== undefined) lines.push(`单次检测最多选择 ${questions} 个问题`);
-  if (detections !== undefined) lines.push(`${detections} 个检测点数`);
-  if (articles !== undefined) lines.push(`${articles} 次文章生成`);
-  if (images !== undefined) lines.push(`${images} 次图片生成`);
-  if (videos !== undefined) lines.push(`${videos} 秒视频生成`);
-  if (storage !== undefined) {
-    const gigabytes = storage / 1024 ** 3;
-    lines.push(
-      `${gigabytes >= 1 ? `${Number(gigabytes.toFixed(1))} GB` : `${Math.round(storage / 1024 ** 2)} MB`} 资料空间`,
-    );
+  if (questions !== undefined && models !== undefined) {
+    lines.push(`单次检测最多 ${questions} 个问题 × ${models} 个模型`);
+  } else {
+    if (questions !== undefined) lines.push(`单次检测最多选择 ${questions} 个问题`);
+    if (models !== undefined) lines.push(`单次检测最多选择 ${models} 个模型`);
+  }
+  for (const [amount, label] of quotaLines) {
+    if (amount !== undefined) lines.push(`${amount} ${label}`);
   }
   if (benefits.white_label_enabled === true) lines.push("支持自定义品牌展示");
   if (benefits.report_export_enabled === true) lines.push("支持导出报告");
   if (benefits.report_share_enabled === true) lines.push("支持分享报告");
   return lines;
+}
+
+export function publicPlanCoreBenefitLines(benefits: Readonly<Record<string, unknown>>) {
+  const all = publicPlanBenefitLines(benefits);
+  const coreNames = [
+    "GEO 检测",
+    "单次检测",
+    "AI 文章",
+    "智能关键词",
+    "AI 问题",
+    "AI 图片",
+    "信源扫描",
+    "负面信息扫描",
+  ];
+  return all.filter((line) => coreNames.some((name) => line.includes(name)));
 }
 
 type UserFacingProblem = Readonly<{

@@ -1,6 +1,19 @@
 "use client";
 
-import { Alert, Button, Card, Empty, Input, List, Modal, Space, Spin, Tag, Typography } from "antd";
+import {
+  Alert,
+  Button,
+  Card,
+  Collapse,
+  Empty,
+  Input,
+  List,
+  Modal,
+  Space,
+  Spin,
+  Tag,
+  Typography,
+} from "antd";
 import { useEffect, useRef, useState } from "react";
 import { AuthApiError, getCurrentUser, userMessage } from "@/lib/auth-client";
 import {
@@ -9,7 +22,11 @@ import {
   type PlanApplication,
   type PublicPlan,
 } from "@/lib/plans-client";
-import { PLAN_APPLICATION_STATUS_LABELS, publicPlanBenefitLines } from "@/lib/product-copy";
+import {
+  PLAN_APPLICATION_STATUS_LABELS,
+  publicPlanBenefitLines,
+  publicPlanCoreBenefitLines,
+} from "@/lib/product-copy";
 
 export function PlanCatalog() {
   const [plans, setPlans] = useState<PublicPlan[] | null>(null);
@@ -73,39 +90,79 @@ export function PlanCatalog() {
         可用套餐
       </Typography.Title>
       <List
-        grid={{ gutter: 16, xs: 1, md: 2, lg: 3 }}
+        grid={{ gutter: 16, xs: 1, md: 2, xl: 4 }}
         dataSource={plans}
-        renderItem={(plan) => (
-          <List.Item>
-            <Card title={plan.name}>
-              <Typography.Paragraph>{plan.description}</Typography.Paragraph>
-              <Typography.Title level={3}>
-                {plan.price_display_mode === "fixed" ? `¥${plan.display_price}` : "联系开通"}
-              </Typography.Title>
-              <Space wrap>
-                <Tag>{plan.valid_days} 天</Tag>
-                <Tag color={plan.supports_formal_composite ? "green" : "orange"}>
-                  {plan.supports_formal_composite ? "支持正式综合分" : "不支持正式综合分"}
-                </Tag>
-              </Space>
-              <Typography.Paragraph>
-                支持的 AI 平台：{plan.models.map((item) => item.name).join("、")}
-              </Typography.Paragraph>
-              {plan.is_trial ? (
-                <Alert type="info" message="提交申请后，我们会联系你确认试用开通事宜。" />
-              ) : authenticated ? (
-                <Button type="primary" onClick={() => openApplication(plan)}>
-                  申请开通
-                </Button>
-              ) : (
-                <Button href="/login?next=%2F">登录后申请套餐</Button>
-              )}
-              <Typography.Paragraph type="secondary">
-                提交后，工作人员会联系你确认套餐和开通时间。
-              </Typography.Paragraph>
-            </Card>
-          </List.Item>
-        )}
+        renderItem={(plan) => {
+          const recommended = plan.is_recommended ?? plan.code === "professional-6980";
+          const coreBenefits = publicPlanCoreBenefitLines(plan.benefits);
+          const allBenefits = publicPlanBenefitLines(plan.benefits);
+          const extraBenefits = allBenefits.filter((benefit) => !coreBenefits.includes(benefit));
+          return (
+            <List.Item>
+              <Card
+                title={plan.name}
+                extra={recommended ? <Tag color="purple">推荐</Tag> : null}
+                style={
+                  recommended
+                    ? { borderColor: "#7c5cff", boxShadow: "0 12px 30px #7257ff1f" }
+                    : undefined
+                }
+              >
+                <Typography.Paragraph>{plan.description}</Typography.Paragraph>
+                <Typography.Title level={3}>
+                  {plan.price_display_mode === "fixed" ? `¥${plan.display_price}` : "联系开通"}
+                </Typography.Title>
+                <Space wrap>
+                  <Tag>{plan.valid_days === 365 ? "一年有效" : `${plan.valid_days} 天有效`}</Tag>
+                  <Tag color={plan.supports_formal_composite ? "green" : "orange"}>
+                    {plan.supports_formal_composite ? "支持正式综合分" : "不支持正式综合分"}
+                  </Tag>
+                </Space>
+                {plan.is_trial ? (
+                  <Typography.Paragraph strong style={{ marginTop: 16 }}>
+                    完整体验核心流程
+                  </Typography.Paragraph>
+                ) : null}
+                <List
+                  size="small"
+                  dataSource={coreBenefits}
+                  locale={{ emptyText: "具体权益以完整说明为准。" }}
+                  renderItem={(benefit) => <List.Item>✓ {benefit}</List.Item>}
+                />
+                <Collapse
+                  ghost
+                  size="small"
+                  items={[
+                    {
+                      key: "all",
+                      label: "查看完整权益",
+                      children: (
+                        <List
+                          size="small"
+                          dataSource={[...extraBenefits, `可使用 ${plan.models.length} 个 AI 模型`]}
+                          locale={{ emptyText: "具体权益以套餐说明为准。" }}
+                          renderItem={(benefit) => <List.Item>{benefit}</List.Item>}
+                        />
+                      ),
+                    },
+                  ]}
+                />
+                {plan.is_trial ? (
+                  <Alert type="info" message="提交申请后，我们会联系你确认试用开通事宜。" />
+                ) : authenticated ? (
+                  <Button type="primary" onClick={() => openApplication(plan)}>
+                    申请开通
+                  </Button>
+                ) : (
+                  <Button href="/login?next=%2F">登录后申请套餐</Button>
+                )}
+                <Typography.Paragraph type="secondary">
+                  提交后，工作人员会联系你确认套餐和开通时间。
+                </Typography.Paragraph>
+              </Card>
+            </List.Item>
+          );
+        }}
       />
       <Modal
         title="申请套餐"

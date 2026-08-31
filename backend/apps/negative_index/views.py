@@ -54,6 +54,7 @@ class NegativeIndexScanCreateView(APIView):
                 scan = create_negative_index_scan(
                     user=request.user,
                     subject_id=subject_id,
+                    request_id=getattr(request, "request_id", None),
                 )
                 transaction.on_commit(
                     lambda: execute_negative_index_scan_task.apply_async(

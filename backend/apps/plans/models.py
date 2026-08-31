@@ -32,6 +32,7 @@ class Plan(models.Model):  # noqa: DJ008
     display_price = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     display_currency = models.CharField(max_length=3, default="CNY", editable=False)
     is_trial = models.BooleanField(default=False)
+    is_recommended = models.BooleanField(default=False)
     status = models.CharField(max_length=16, choices=Status.choices, default=Status.DRAFT)
     sort_order = models.PositiveIntegerField(default=0)
     current_published_version = models.ForeignKey(

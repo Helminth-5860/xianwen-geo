@@ -20,9 +20,10 @@ from apps.keywords.services import _assert_user_write_allowed, _lock_effective_s
 from apps.plans.subscription_services import effective_entitlement_snapshot
 from apps.quotas.models import QuotaAccount
 from apps.quotas.services import (
+    available_quota,
     consume_hold,
     freeze_quota,
-    get_or_create_subject_cycle_account,
+    quota_account_for_subscription,
     release_hold,
 )
 from apps.subjects.risk_services import capabilities_for_subject
@@ -283,38 +284,45 @@ def create_question_generation_job(
     if actual_version != expected_workspace_version:
         raise QuestionBankVersionConflict
     provider = require_available_question_generation_provider()
-    limits = effective_entitlement_snapshot(subscription).get("limits", {})
-    question_limit = limits.get("question_bank_limit")
-    if type(question_limit) is not int or question_limit < 1:
+    available_items = available_quota(
+        subscription=subscription,
+        quota_type="question_generated_items",
+    )
+    caps = [100, available_items]
+    historical_limit = (subscription.entitlement_snapshot.get("limits") or {}).get(
+        "question_bank_limit"
+    )
+    if type(historical_limit) is int and historical_limit > 0:
+        caps.append(historical_limit)
+    question_limit = min(caps)
+    if question_limit < 1:
         raise QuestionBankValuesInvalid
     prior_success = QuestionGenerationJob.objects.filter(
         subject=subject, status="succeeded"
     ).exists()
     if prior_success and not regenerate:
         raise QuestionGenerationRegenerationConfirmationRequired
-    billing_mode = "regeneration" if prior_success else "free_initial"
+    # Preserve the existing immutable evidence shape while charging by the
+    # number of novel questions that are actually stored.
+    billing_mode = "regeneration"
     subject_values = _subject_values(distillation_set.subject_version)
     keywords = _effective_keywords(distillation_set)
     if not keywords:
         raise QuestionBankValuesInvalid
     categories, tags = _catalog_snapshots(subject)
     job_id = uuid.uuid4()
-    quota_hold = None
-    if billing_mode == "regeneration":
-        account = get_or_create_subject_cycle_account(
-            subscription=subscription,
-            subject=subject,
-            quota_type="question_bank_regenerations",
-            request_id=request_id,
-        )
-        quota_hold = freeze_quota(
-            account_id=account.pk,
-            amount=1,
-            business_type="question_bank_generation",
-            business_id=job_id,
-            idempotency_key=f"question-generation-freeze-{job_id}",
-            request_id=request_id,
-        )
+    account = quota_account_for_subscription(
+        subscription=subscription,
+        quota_type="question_generated_items",
+    )
+    quota_hold = freeze_quota(
+        account_id=account.pk,
+        amount=question_limit,
+        business_type="question_bank_generation",
+        business_id=job_id,
+        idempotency_key=f"question-generation-freeze-{job_id}",
+        request_id=request_id,
+    )
     input_digest = canonical_digest(
         {
             "subject_version_id": str(subject.current_version_id),
@@ -434,12 +442,12 @@ def claim_question_generation_job(*, job_id, expected_generation=None):
         return job.pk, job.generation
 
 
-def _settle_quota(job, action):
+def _settle_quota(job, action, amount=None):
     if job.quota_hold_id is None:
         return
     (consume_hold if action == "consume" else release_hold)(
         hold_id=job.quota_hold_id,
-        amount=1,
+        amount=job.question_limit if amount is None else amount,
         idempotency_key=f"question-generation-{action}-{job.pk}",
         request_id=job.request_id,
     )
@@ -562,6 +570,12 @@ def _finalize_success(job_id, generation, response):
             limit=job.question_limit,
         )
         output = [item.payload() for item in normalized]
+        previous_matching = (
+            set(workspace.draft_items.values_list("matching_text", flat=True))
+            if workspace is not None
+            else set()
+        )
+        novel_count = sum(1 for item in normalized if item.matching_text not in previous_matching)
         next_version = 1 if workspace is None else workspace.version + 1
         result = QuestionGenerationResult.objects.create(
             job=job,
@@ -595,7 +609,10 @@ def _finalize_success(job_id, generation, response):
                 )
             )
         _replace_draft(workspace, normalized)
-        _settle_quota(job, "consume")
+        if novel_count:
+            _settle_quota(job, "consume", novel_count)
+        if novel_count < job.question_limit:
+            _settle_quota(job, "release", job.question_limit - novel_count)
         job.status = "succeeded"
         job.finished_at = timezone.now()
         job.next_attempt_at = None
@@ -614,7 +631,11 @@ def _finalize_success(job_id, generation, response):
         _safe_event(
             job,
             "succeeded",
-            summary={"item_count": len(output), "workspace_version": workspace.version},
+            summary={
+                "item_count": len(output),
+                "added_count": novel_count,
+                "workspace_version": workspace.version,
+            },
         )
         return {"status": "succeeded"}
 
@@ -674,14 +695,14 @@ def question_generation_quota_payload(job):
     account = (
         QuotaAccount.objects.filter(
             subscription=job.subscription,
-            subject=job.subject,
-            quota_type="question_bank_regenerations",
+            subject__isnull=True,
+            quota_type="question_generated_items",
         )
         .order_by("-cycle_started_at", "-created_at")
         .first()
     )
     return {
-        "billing_mode": job.billing_mode,
+        "billing_mode": "按实际生成数量",
         "held": job.quota_hold_id is not None and job.status not in TERMINAL,
         "remaining": account.available if account else None,
     }
@@ -750,7 +771,7 @@ def save_question_bank_draft(*, user_id, subject_id, expected_version, items):
         effective_entitlement_snapshot(subscription).get("limits", {}).get("question_bank_limit")
     )
     if type(limit) is not int or limit < 1:
-        raise QuestionBankValuesInvalid
+        limit = 10_000
     normalized = validate_draft_items(
         items=items,
         category_ids=category_ids,
@@ -1126,9 +1147,7 @@ def remove_current_question_bank_items(*, user_id, subject_id, expected_version_
 
 def question_bank_versions_for_user(*, user, subject_id):
     subject = subject_for_user_or_404(user=user, subject_id=subject_id)
-    return QuestionBankVersion.objects.filter(subject=subject).order_by(
-        "-version_no", "id"
-    )
+    return QuestionBankVersion.objects.filter(subject=subject).order_by("-version_no", "id")
 
 
 def question_bank_version_for_user_or_404(*, user, subject_id, version_id):

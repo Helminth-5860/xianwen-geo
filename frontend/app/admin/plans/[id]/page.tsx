@@ -1,6 +1,20 @@
 "use client";
 
-import { Alert, Button, Card, Descriptions, Input, Space, Typography } from "antd";
+import {
+  Alert,
+  Button,
+  Card,
+  Descriptions,
+  Form,
+  Input,
+  InputNumber,
+  Modal,
+  Select,
+  Space,
+  Switch,
+  Tag,
+  Typography,
+} from "antd";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -12,6 +26,7 @@ import {
   copyPlan,
   createPlanVersion,
   getPlan,
+  updatePlan,
   type Plan,
   type PlanVersion,
 } from "@/lib/plans-client";
@@ -41,6 +56,10 @@ export default function PlanDetailPage() {
   const [copyName, setCopyName] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [priceMode, setPriceMode] = useState<"fixed" | "contact">("fixed");
+  const [form] = Form.useForm();
   const load = useCallback(
     () =>
       getPlan(id)
@@ -80,17 +99,126 @@ export default function PlanDetailPage() {
       <Card>
         <Descriptions
           items={[
-            { key: "code", label: "编码", children: plan.code },
-            { key: "status", label: "状态", children: plan.status },
+            { key: "code", label: "套餐编号", children: plan.code },
+            {
+              key: "status",
+              label: "销售状态",
+              children: {
+                draft: "草稿",
+                published: "销售中",
+                offline: "已停售",
+                archived: "已归档",
+              }[plan.status],
+            },
             {
               key: "price",
-              label: "展示价格",
+              label: "套餐价格",
               children: plan.price_display_mode === "fixed" ? `¥${plan.display_price}` : "联系开通",
             },
-            { key: "version", label: "乐观版本", children: plan.version },
+            {
+              key: "recommended",
+              label: "推荐展示",
+              children: plan.is_recommended ? <Tag color="purple">推荐</Tag> : "普通",
+            },
+            {
+              key: "version",
+              label: "当前版本",
+              children: plan.current_published_version
+                ? `第 ${plan.current_published_version.version_no} 版`
+                : "尚未发布",
+            },
+            {
+              key: "subscriptions",
+              label: "订阅客户",
+              children: `${plan.current_subscription_count ?? 0} 位`,
+            },
           ]}
         />
+        {plan.status !== "archived" ? (
+          <Button
+            style={{ marginTop: 16 }}
+            onClick={() => {
+              form.setFieldsValue({
+                name: plan.name,
+                description: plan.description,
+                price_display_mode: plan.price_display_mode,
+                display_price: plan.display_price,
+                is_trial: plan.is_trial,
+                is_recommended: plan.is_recommended ?? false,
+                sort_order: plan.sort_order,
+              });
+              setPriceMode(plan.price_display_mode);
+              setEditing(true);
+            }}
+          >
+            编辑套餐信息
+          </Button>
+        ) : null}
       </Card>
+
+      <Modal
+        open={editing}
+        title="编辑套餐信息"
+        okText="保存"
+        cancelText="取消"
+        confirmLoading={saving}
+        onCancel={() => setEditing(false)}
+        onOk={() => form.submit()}
+      >
+        <Form
+          form={form}
+          layout="vertical"
+          onFinish={async (values) => {
+            setSaving(true);
+            setError("");
+            try {
+              await updatePlan(plan.id, {
+                ...values,
+                expected_version: plan.version,
+                display_price: values.price_display_mode === "fixed" ? values.display_price : null,
+                confirmed: true,
+              });
+              setEditing(false);
+              setMessage("套餐信息已保存");
+              await load();
+            } catch (reason) {
+              setError(userMessage(reason));
+            } finally {
+              setSaving(false);
+            }
+          }}
+        >
+          <Form.Item name="name" label="套餐名称" rules={[{ required: true }]}>
+            <Input maxLength={120} />
+          </Form.Item>
+          <Form.Item name="description" label="套餐说明">
+            <Input.TextArea maxLength={500} rows={3} />
+          </Form.Item>
+          <Form.Item name="price_display_mode" label="价格展示方式">
+            <Select
+              onChange={setPriceMode}
+              options={[
+                { value: "fixed", label: "显示固定价格" },
+                { value: "contact", label: "联系开通" },
+              ]}
+            />
+          </Form.Item>
+          {priceMode === "fixed" ? (
+            <Form.Item name="display_price" label="套餐价格" rules={[{ required: true }]}>
+              <Input inputMode="decimal" />
+            </Form.Item>
+          ) : null}
+          <Form.Item name="sort_order" label="展示顺序">
+            <InputNumber min={0} precision={0} />
+          </Form.Item>
+          <Form.Item name="is_trial" label="体验套餐" valuePropName="checked">
+            <Switch />
+          </Form.Item>
+          <Form.Item name="is_recommended" label="推荐套餐" valuePropName="checked">
+            <Switch />
+          </Form.Item>
+        </Form>
+      </Modal>
 
       <Card title="复制套餐">
         <Space wrap>
@@ -145,7 +273,7 @@ export default function PlanDetailPage() {
         {(["online", "offline", "archive"] as const).map((action) => (
           <RiskActionButton
             key={action}
-            actionName={action}
+            actionName={{ online: "恢复销售", offline: "停止销售", archive: "归档套餐" }[action]}
             mode={modes[`plan.${action}`] ?? "password"}
             disabled={
               (action === "online" && plan.status !== "offline") ||
@@ -158,7 +286,7 @@ export default function PlanDetailPage() {
               void load();
             }}
           >
-            {action}
+            {{ online: "恢复销售", offline: "停止销售", archive: "归档套餐" }[action]}
           </RiskActionButton>
         ))}
       </Space>

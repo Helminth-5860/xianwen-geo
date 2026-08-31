@@ -143,6 +143,13 @@ class WebsiteGenerationJob(models.Model):  # noqa: DJ008
         on_delete=models.PROTECT,
         related_name="generation_jobs",
     )
+    quota_hold = models.OneToOneField(
+        "quotas.QuotaHoldGroup",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="website_generation_job",
+    )
     status = models.CharField(max_length=16, choices=Status.choices, default=Status.QUEUED)
     input_snapshot = models.JSONField(default=dict)
     input_digest = models.CharField(max_length=64)

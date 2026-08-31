@@ -45,6 +45,7 @@ def run_negative_search(
     )
     if not initial_queries:
         raise SearchProviderError("NEGATIVE_INDEX_SUBJECT_IDENTITY_MISSING")
+    max_requests = min(30, int(getattr(settings, "NEGATIVE_INDEX_MAX_REQUESTS", 30)))
 
     NegativeIndexScan.objects.filter(pk=scan.pk).update(
         status=NegativeIndexScan.Status.RUNNING,
@@ -75,9 +76,12 @@ def run_negative_search(
             search_budget_seconds=int(
                 getattr(settings, "NEGATIVE_INDEX_SEARCH_BUDGET_SECONDS", 120)
             ),
-            max_requests=int(getattr(settings, "NEGATIVE_INDEX_MAX_REQUESTS", 120)),
+            max_requests=max_requests,
             concurrency=int(getattr(settings, "NEGATIVE_INDEX_SEARCH_CONCURRENCY", 3)),
-            min_requests=int(getattr(settings, "NEGATIVE_INDEX_MIN_REQUESTS", 9)),
+            min_requests=min(
+                max_requests,
+                int(getattr(settings, "NEGATIVE_INDEX_MIN_REQUESTS", 9)),
+            ),
             stop_yield_ratio=float(getattr(settings, "NEGATIVE_INDEX_STOP_YIELD_RATIO", 0.08)),
             low_yield_batches=int(getattr(settings, "NEGATIVE_INDEX_LOW_YIELD_BATCHES", 3)),
             error_prefix="NEGATIVE_INDEX",

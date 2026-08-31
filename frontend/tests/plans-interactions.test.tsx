@@ -120,6 +120,44 @@ describe("套餐真实交互", () => {
     expect(await screen.findByText("当前没有可申请的套餐，请稍后查看或联系管理员。")).toBeTruthy();
   });
 
+  it("6980 套餐突出推荐和核心自然额度，其他权益可以展开", async () => {
+    getPublicPlans.mockResolvedValue([
+      {
+        ...fixed,
+        id: "plan-professional",
+        code: "professional-6980",
+        name: "专业版",
+        display_price: "6980.00",
+        valid_days: 365,
+        is_recommended: true,
+        benefits: {
+          geo_detection_runs: 60,
+          max_questions_per_detection: 20,
+          max_models_per_detection: 8,
+          article_generations: 3000,
+          keyword_generated_items: 20000,
+          question_generated_items: 20000,
+          image_generations: 300,
+          source_index_scans: 30,
+          negative_index_scans: 30,
+          auto_publish_count: 3000,
+          website_generations: 30,
+        },
+      },
+    ]);
+    render(<PlanCatalog />);
+    expect(await screen.findByText("推荐")).toBeTruthy();
+    expect(screen.getByText(/60 次 GEO 检测/)).toBeTruthy();
+    expect(screen.getByText(/单次检测最多 20 个问题 × 8 个模型/)).toBeTruthy();
+    expect(screen.getByText(/3000 篇 AI 文章/)).toBeTruthy();
+    expect(screen.getByText("一年有效")).toBeTruthy();
+    await userEvent.click(screen.getByText("查看完整权益"));
+    expect(await screen.findByText(/3000 篇自动发文/)).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(
+      /subject_active_limit|assistant_messages|检测点数/,
+    );
+  });
+
   it("创建 contact 套餐不会提交展示价格", async () => {
     createPlan.mockResolvedValue({ id: "new-plan" });
     render(<NewPlanPage />);

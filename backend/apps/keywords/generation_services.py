@@ -14,12 +14,11 @@ from django.http import Http404
 from django.utils import timezone
 
 from apps.ai.sanitization import sanitize_provider_metrics
-from apps.plans.subscription_services import effective_entitlement_snapshot
 from apps.quotas.models import QuotaAccount
 from apps.quotas.services import (
     consume_hold,
     freeze_quota,
-    get_or_create_subject_cycle_account,
+    quota_account_for_subscription,
     release_hold,
 )
 
@@ -335,9 +334,7 @@ def create_keyword_generation_job(
         normalized_regions = _subject_regions(subject_version)
     include_regional = bool(normalized_regions)
     subscription = _lock_effective_subscription(user)
-    limits = effective_entitlement_snapshot(subscription).get("limits", {})
-    plan_generation_limit = limits.get("keyword_generation_limit")
-    if type(plan_generation_limit) is not int or target_count > plan_generation_limit:
+    if target_count > 100:
         raise KeywordGenerationLimitExceeded
     if KeywordGenerationJob.objects.filter(
         subject=subject,
@@ -357,28 +354,22 @@ def create_keyword_generation_job(
     ).exists()
     if prior_success and not regenerate:
         raise KeywordGenerationRegenerationConfirmationRequired
-    billing_mode = (
-        KeywordGenerationJob.BillingMode.REGENERATION
-        if prior_success
-        else KeywordGenerationJob.BillingMode.FREE_INITIAL
-    )
-    account = get_or_create_subject_cycle_account(
+    # Keep the historical database value for immutable evidence compatibility;
+    # customer billing is now metered by the number of novel saved keywords.
+    billing_mode = KeywordGenerationJob.BillingMode.REGENERATION
+    account = quota_account_for_subscription(
         subscription=subscription,
-        subject=subject,
-        quota_type="keyword_regenerations",
-        request_id=request_id,
+        quota_type="keyword_generated_items",
     )
     job_id = uuid.uuid4()
-    quota_hold = None
-    if billing_mode == KeywordGenerationJob.BillingMode.REGENERATION:
-        quota_hold = freeze_quota(
-            account_id=account.pk,
-            amount=1,
-            business_type="keyword_generation",
-            business_id=job_id,
-            idempotency_key=f"keyword-generation-freeze-{job_id}",
-            request_id=request_id,
-        )
+    quota_hold = freeze_quota(
+        account_id=account.pk,
+        amount=target_count,
+        business_type="keyword_generation",
+        business_id=job_id,
+        idempotency_key=f"keyword-generation-freeze-{job_id}",
+        request_id=request_id,
+    )
 
     subject_values = _subject_values(subject, subject_version)
     exclusions = _historical_exclusions(subject.pk)
@@ -499,13 +490,13 @@ def claim_keyword_generation_job(*, job_id, expected_generation=None):
         return job.pk, job.generation
 
 
-def _settle_quota(job, action):
+def _settle_quota(job, action, amount=None):
     if job.quota_hold_id is None:
         return
     settle = consume_hold if action == "consume" else release_hold
     settle(
         hold_id=job.quota_hold_id,
-        amount=1,
+        amount=job.target_count if amount is None else amount,
         idempotency_key=f"keyword-generation-{action}-{job.pk}",
         request_id=job.request_id,
     )
@@ -763,7 +754,9 @@ def _finalize_success(job_id, generation, response):
             expected_version=draft_applied_version,
             expected_subject_version_id=job.subject_version_id,
         )
-        _settle_quota(job, "consume")
+        _settle_quota(job, "consume", added_count)
+        if added_count < job.target_count:
+            _settle_quota(job, "release", job.target_count - added_count)
         job.status = "succeeded"
         job.finished_at = timezone.now()
         job.next_attempt_at = None
@@ -889,14 +882,14 @@ def keyword_generation_quota_payload(job):
     account = (
         QuotaAccount.objects.filter(
             subscription=job.subscription,
-            subject=job.subject,
-            quota_type="keyword_regenerations",
+            subject__isnull=True,
+            quota_type="keyword_generated_items",
         )
         .order_by("-cycle_started_at", "-created_at")
         .first()
     )
     return {
-        "billing_mode": job.billing_mode,
+        "billing_mode": "按实际生成数量",
         "held": (job.quota_hold_id is not None and job.status not in _TERMINAL),
         "remaining": account.available if account is not None else None,
     }

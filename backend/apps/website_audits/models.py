@@ -39,6 +39,14 @@ class WebsiteAudit(models.Model):  # noqa: DJ008
         on_delete=models.PROTECT,
         related_name="website_audits",
     )
+    quota_hold = models.OneToOneField(
+        "quotas.QuotaHoldGroup",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="website_audit",
+    )
+    request_id = models.UUIDField(null=True, blank=True)
     root_url = models.TextField()
     root_host = models.CharField(max_length=255, db_index=True)
     status = models.CharField(max_length=16, choices=Status.choices, default=Status.QUEUED)

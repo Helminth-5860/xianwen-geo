@@ -136,9 +136,9 @@ def run_adaptive_scan(scan: SourceIndexScan, *, provider: SearchProvider) -> Sca
 
     started = time_module.monotonic()
     search_budget = int(getattr(settings, "SOURCE_INDEX_SEARCH_BUDGET_SECONDS", 260))
-    max_requests = int(getattr(settings, "SOURCE_INDEX_MAX_REQUESTS", 200))
+    max_requests = min(30, int(getattr(settings, "SOURCE_INDEX_MAX_REQUESTS", 30)))
     batch_size = int(getattr(settings, "SOURCE_INDEX_SEARCH_CONCURRENCY", 3))
-    min_requests = int(getattr(settings, "SOURCE_INDEX_MIN_REQUESTS", 12))
+    min_requests = min(max_requests, int(getattr(settings, "SOURCE_INDEX_MIN_REQUESTS", 12)))
     stop_ratio = float(getattr(settings, "SOURCE_INDEX_STOP_YIELD_RATIO", 0.08))
     low_yield_batches_needed = int(getattr(settings, "SOURCE_INDEX_LOW_YIELD_BATCHES", 3))
 

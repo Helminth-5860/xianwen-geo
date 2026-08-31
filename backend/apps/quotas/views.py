@@ -24,6 +24,7 @@ from .exceptions import QuotaError, QuotaIdempotencyConflict
 from .idempotency import derive_idempotency_digests
 from .models import QuotaLedgerEntry
 from .selectors import (
+    CUSTOMER_VISIBLE_QUOTA_TYPES,
     current_account_summaries,
     scoped_account_or_404,
     scoped_accounts,
@@ -92,7 +93,11 @@ class CurrentQuotaAccountsView(APIView):
 
 class UserQuotaLedgerView(APIView):
     def get(self, request):
-        return Response(_page(user_ledger(request.user), UserQuotaLedgerSerializer, request))
+        queryset = user_ledger(request.user)
+        quota_type = request.query_params.get("quota_type")
+        if quota_type:
+            queryset = queryset.filter(quota_type=validate_quota_type(quota_type))
+        return Response(_page(queryset, UserQuotaLedgerSerializer, request))
 
 
 class AdminQuotaAccountListView(APIView):
@@ -100,7 +105,10 @@ class AdminQuotaAccountListView(APIView):
     required_permission = "quotas.list"
 
     def get(self, request):
-        queryset = scoped_accounts(request.user, request.admin_context)
+        queryset = scoped_accounts(request.user, request.admin_context).filter(
+            subject__isnull=True,
+            quota_type__in=CUSTOMER_VISIBLE_QUOTA_TYPES,
+        )
         quota_type = request.query_params.get("quota_type")
         if quota_type:
             queryset = queryset.filter(quota_type=validate_quota_type(quota_type))
@@ -118,7 +126,9 @@ class AdminQuotaLedgerListView(APIView):
     required_permission = "quotas.ledger.view"
 
     def get(self, request):
-        queryset = scoped_ledger(request.user, request.admin_context)
+        queryset = scoped_ledger(request.user, request.admin_context).filter(
+            quota_type__in=CUSTOMER_VISIBLE_QUOTA_TYPES
+        )
         account_id = request.query_params.get("account_id")
         if account_id:
             queryset = queryset.filter(account_id=account_id)
@@ -144,6 +154,7 @@ class AdminQuotaAdjustmentView(APIView):
         action_map = {
             "grant": ("quota.grant", QuotaLedgerEntry.Action.GRANT),
             "compensate": ("quota.compensate", QuotaLedgerEntry.Action.COMPENSATE),
+            "refund": ("quota.refund", QuotaLedgerEntry.Action.REFUND),
             "manual-deduct": ("quota.manual_deduct", QuotaLedgerEntry.Action.MANUAL_DEDUCT),
         }
         if action not in action_map:

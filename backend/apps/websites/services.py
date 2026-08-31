@@ -15,7 +15,14 @@ from apps.ai.runtime import get_capability_runtime_snapshot
 from apps.documents.models import UserDocument
 from apps.images.models import ImageAsset
 from apps.keywords.models import Keyword, KeywordAssetPreference, KeywordSet
+from apps.plans.subscription_services import current_subscription
 from apps.questions.bank_models import Question, QuestionBankWorkspace
+from apps.quotas.services import (
+    consume_hold,
+    freeze_quota,
+    quota_account_for_subscription,
+    release_hold,
+)
 from apps.subjects.models import Subject, SubjectBusinessProfile, SubjectProduct
 from apps.subjects.subject_services import subject_for_user_or_404
 
@@ -486,9 +493,25 @@ def create_generation_job(
             normalized_request_id = uuid.UUID(str(request_id))
         except (TypeError, ValueError, AttributeError):
             normalized_request_id = uuid.uuid4()
+        subscription = current_subscription(user)
+        if subscription is None:
+            raise WebsiteInputError("当前操作需要有效套餐")
+        job_id = uuid.uuid4()
+        hold = freeze_quota(
+            account_id=quota_account_for_subscription(
+                subscription=subscription, quota_type="website_generations"
+            ).pk,
+            amount=1,
+            business_type="website_generation",
+            business_id=job_id,
+            idempotency_key=f"website-generation-freeze-{job_id}",
+            request_id=normalized_request_id,
+        )
         job = WebsiteGenerationJob.objects.create(
+            id=job_id,
             user=user,
             project=project,
+            quota_hold=hold,
             input_snapshot=input_snapshot,
             input_digest=input_digest,
             provider_key=runtime.provider_key,
@@ -626,6 +649,13 @@ def _mark_failed(job_id: str) -> dict[str, str]:
             WebsiteGenerationJob.Status.RUNNING,
         }:
             return {"status": failed.status}
+        if failed.quota_hold_id:
+            release_hold(
+                hold_id=failed.quota_hold_id,
+                amount=1,
+                idempotency_key=f"website-generation-release-{failed.pk}",
+                request_id=failed.request_id,
+            )
         failed.status = WebsiteGenerationJob.Status.FAILED
         failed.safe_error_code = "WEBSITE_GENERATION_FAILED"
         failed.finished_at = timezone.now()
@@ -711,6 +741,13 @@ def execute_generation_job(*, job_id: str) -> dict[str, str]:
                 "updated_at",
             )
         )
+        if succeeded.quota_hold_id:
+            consume_hold(
+                hold_id=succeeded.quota_hold_id,
+                amount=1,
+                idempotency_key=f"website-generation-consume-{succeeded.pk}",
+                request_id=succeeded.request_id,
+            )
         succeeded.status = WebsiteGenerationJob.Status.SUCCEEDED
         succeeded.provider_request_id = response.provider_request_id or ""
         succeeded.normalized_usage = {

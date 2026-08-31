@@ -87,6 +87,8 @@ def entitlement_summary(snapshot):
     return {
         "valid_days": snapshot.get("valid_days"),
         "limit_keys": limit_keys,
+        "max_models_per_detection": limits.get("max_models_per_detection"),
+        "max_questions_per_detection": limits.get("max_questions_per_detection"),
         "enabled_model_keys": sorted(
             item.get("model_key")
             for item in models
@@ -98,6 +100,11 @@ def entitlement_summary(snapshot):
 class CurrentSubscriptionSerializer(serializers.ModelSerializer):
     plan_code = serializers.CharField(source="plan.code")
     plan_name = serializers.CharField(source="plan.name")
+    plan_price_display_mode = serializers.CharField(source="plan.price_display_mode")
+    plan_display_price = serializers.DecimalField(
+        source="plan.display_price", max_digits=12, decimal_places=2, allow_null=True
+    )
+    plan_display_currency = serializers.CharField(source="plan.display_currency")
     entitlement_summary = serializers.SerializerMethodField()
 
     class Meta:
@@ -107,6 +114,9 @@ class CurrentSubscriptionSerializer(serializers.ModelSerializer):
             "plan_id",
             "plan_code",
             "plan_name",
+            "plan_price_display_mode",
+            "plan_display_price",
+            "plan_display_currency",
             "plan_version_id",
             "plan_version_no",
             "status",
@@ -136,6 +146,9 @@ class AdminSubscriptionListSerializer(CurrentSubscriptionSerializer):
             "plan_id",
             "plan_code",
             "plan_name",
+            "plan_price_display_mode",
+            "plan_display_price",
+            "plan_display_currency",
             "plan_version_id",
             "plan_version_no",
             "status",

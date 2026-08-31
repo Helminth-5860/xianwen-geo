@@ -93,12 +93,12 @@ def draft_payload(workspace):
     ]
 
 
-def test_initial_generation_is_free_bounded_and_keeps_provenance():
-    user, subject, _, _, distilled = facts(limit=2)
+def test_initial_generation_consumes_only_saved_questions_and_keeps_provenance():
+    user, subject, _, subscription, distilled = facts(limit=2)
     before = list(distilled.items.values_list("id", "action"))
     job, created = create_job(user, subject, distilled)
     assert created is True
-    assert job.billing_mode == "free_initial" and job.quota_hold_id is None
+    assert job.billing_mode == "regeneration" and job.quota_hold_id is not None
     assert execute_question_generation(job_id=job.pk) == {"status": "succeeded"}
     job.refresh_from_db()
     workspace = QuestionBankWorkspace.objects.get(subject=subject)
@@ -110,6 +110,15 @@ def test_initial_generation_is_free_bounded_and_keeps_provenance():
     assert "subject_values" not in str(
         [event.safe_summary for event in QuestionGenerationEvent.objects.filter(job=job)]
     )
+    job.quota_hold.refresh_from_db()
+    account = QuotaAccount.objects.get(
+        subscription=subscription,
+        subject__isnull=True,
+        quota_type="question_generated_items",
+    )
+    assert job.quota_hold.consumed_amount == 2
+    assert job.quota_hold.released_amount == 0
+    assert account.available == 4 and account.frozen == 0
 
 
 def test_question_generation_uses_effective_keyword_asset_preferences():
@@ -159,7 +168,7 @@ def test_question_generation_uses_effective_keyword_asset_preferences():
 
 
 def test_idempotency_one_active_and_regeneration_settles_once():
-    user, subject, _, _, distilled = facts()
+    user, subject, _, subscription, distilled = facts()
     idempotency_value = "test-test-test-test"
     first, created = create_job(user, subject, distilled, key=idempotency_value)
     replay, replay_created = create_job(user, subject, distilled, key=idempotency_value)
@@ -177,15 +186,20 @@ def test_idempotency_one_active_and_regeneration_settles_once():
     assert execute_question_generation(job_id=second.pk) == {"status": "succeeded"}
     assert execute_question_generation(job_id=second.pk) == {"status": "succeeded"}
     second.quota_hold.refresh_from_db()
-    account = QuotaAccount.objects.get(subject=subject, quota_type="question_bank_regenerations")
-    assert second.quota_hold.consumed_amount == 1
-    assert account.available == 1 and account.frozen == 0
+    account = QuotaAccount.objects.get(
+        subscription=subscription,
+        subject__isnull=True,
+        quota_type="question_generated_items",
+    )
+    assert second.quota_hold.consumed_amount == 0
+    assert second.quota_hold.released_amount == 3
+    assert account.available == 7 and account.frozen == 0
     assert (
         QuotaLedgerEntry.objects.filter(
             hold__group=second.quota_hold,
             action=QuotaLedgerEntry.Action.CONSUME,
         ).count()
-        == 1
+        == 0
     )
 
 
@@ -194,7 +208,7 @@ def test_idempotency_one_active_and_regeneration_settles_once():
     QUESTION_GENERATION_MAX_PROVIDER_ATTEMPTS=1,
 )
 def test_retry_exhaustion_releases_original_hold():
-    user, subject, _, _, distilled = facts()
+    user, subject, _, subscription, distilled = facts()
     with override_settings(QUESTION_GENERATION_MOCK_SCENARIO="success"):
         first, _ = create_job(user, subject, distilled)
         execute_question_generation(job_id=first.pk)
@@ -203,9 +217,13 @@ def test_retry_exhaustion_releases_original_hold():
     assert execute_question_generation(job_id=second.pk)["status"] == "failed"
     second.refresh_from_db()
     second.quota_hold.refresh_from_db()
-    assert second.quota_hold.released_amount == 1
-    account = QuotaAccount.objects.get(subject=subject, quota_type="question_bank_regenerations")
-    assert account.available == 2 and account.frozen == 0
+    assert second.quota_hold.released_amount == 3
+    account = QuotaAccount.objects.get(
+        subscription=subscription,
+        subject__isnull=True,
+        quota_type="question_generated_items",
+    )
+    assert account.available == 7 and account.frozen == 0
 
 
 @override_settings(QUESTION_GENERATION_MOCK_SCENARIO="invalid_response")
@@ -219,7 +237,7 @@ def test_invalid_provider_output_is_fail_closed():
 
 
 def test_manual_edit_is_free_and_confirmed_history_is_immutable():
-    user, subject, _, _, distilled = facts()
+    user, subject, _, subscription, distilled = facts()
     tag = QuestionTag.objects.create(
         key=f"purchase-{uuid.uuid4().hex[:8]}",
         name=f"Purchase {uuid.uuid4().hex[:8]}",
@@ -229,6 +247,12 @@ def test_manual_edit_is_free_and_confirmed_history_is_immutable():
     job, _ = create_job(user, subject, distilled)
     execute_question_generation(job_id=job.pk)
     workspace = QuestionBankWorkspace.objects.get(subject=subject)
+    account = QuotaAccount.objects.get(
+        subscription=subscription,
+        subject__isnull=True,
+        quota_type="question_generated_items",
+    )
+    available_before_edit = account.available
     original = list(QuestionGenerationResult.objects.get(job=job).output_snapshot)
     payload = draft_payload(workspace)
     payload[0]["text"] = "  Which core factors should users compare before purchase?  "
@@ -244,9 +268,8 @@ def test_manual_edit_is_free_and_confirmed_history_is_immutable():
     )
     assert changed is True and workspace.version == 2
     assert QuestionGenerationResult.objects.get(job=job).output_snapshot == original
-    assert not QuotaAccount.objects.filter(
-        subject=subject, quota_type="question_bank_regenerations"
-    ).exists()
+    account.refresh_from_db()
+    assert account.available == available_before_edit
     workspace, formal = confirm_question_bank(
         user_id=user.pk,
         subject_id=subject.pk,

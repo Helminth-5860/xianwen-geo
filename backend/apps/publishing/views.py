@@ -3,7 +3,12 @@ from __future__ import annotations
 from django.shortcuts import get_object_or_404
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
-from rest_framework.status import HTTP_200_OK, HTTP_201_CREATED, HTTP_202_ACCEPTED, HTTP_204_NO_CONTENT
+from rest_framework.status import (
+    HTTP_200_OK,
+    HTTP_201_CREATED,
+    HTTP_202_ACCEPTED,
+    HTTP_204_NO_CONTENT,
+)
 from rest_framework.views import APIView
 
 from apps.subjects.permissions import IsAvailableAuthenticatedUser
@@ -39,8 +44,13 @@ from .services import (
 from .tasks import adopt_ready_articles_task, prepare_publication_task
 
 
-def _sync_custom_platform(preference: PublishingPreference | None, platform_key: str, enabled: bool) -> None:
-    if preference is None or preference.distribution_strategy != PublishingPreference.DistributionStrategy.CUSTOM:
+def _sync_custom_platform(
+    preference: PublishingPreference | None, platform_key: str, enabled: bool
+) -> None:
+    if (
+        preference is None
+        or preference.distribution_strategy != PublishingPreference.DistributionStrategy.CUSTOM
+    ):
         return
     keys = list(dict.fromkeys(preference.custom_platform_keys or []))
     if enabled and platform_key not in keys:
@@ -75,7 +85,10 @@ class SubjectPublishingPreferenceView(APIView):
             )
         except PublishingInputError as exc:
             raise ValidationError({"publishing": [str(exc)]}) from exc
-        if preference.distribution_strategy == PublishingPreference.DistributionStrategy.CUSTOM and not preference.custom_platform_keys:
+        if (
+            preference.distribution_strategy == PublishingPreference.DistributionStrategy.CUSTOM
+            and not preference.custom_platform_keys
+        ):
             enabled_keys = list(
                 PlatformAccount.objects.filter(
                     user=request.user,
@@ -206,10 +219,13 @@ class SubjectPublicationCreateView(APIView):
                 article_id=serializer.validated_data["article_id"],
                 platform_keys=list(serializer.validated_data.get("platform_keys") or []),
                 scheduled_at=serializer.validated_data.get("scheduled_at"),
+                request_id=getattr(request, "request_id", None),
             )
         except PublishingInputError as exc:
             raise ValidationError({"publication": [str(exc)]}) from exc
-        publication = publication.__class__.objects.prefetch_related("targets").get(id=publication.id)
+        publication = publication.__class__.objects.prefetch_related("targets").get(
+            id=publication.id
+        )
         prepare_publication_task.delay(str(publication.id))
         return Response({"publication": publication_payload(publication)}, status=HTTP_201_CREATED)
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time as time_module
+import uuid
 from datetime import timedelta
 
 from django.conf import settings
@@ -9,6 +10,13 @@ from django.db.models import Q
 from django.utils import timezone
 from rest_framework.exceptions import NotFound as DRFNotFound
 
+from apps.plans.subscription_services import current_subscription
+from apps.quotas.services import (
+    consume_hold,
+    freeze_quota,
+    quota_account_for_subscription,
+    release_hold,
+)
 from apps.subjects.subject_services import subject_for_user_or_404
 
 from .models import SourceIndexHit, SourceIndexItem, SourceIndexScan
@@ -44,20 +52,24 @@ def recover_stale_source_index_scans(*, user=None, subject_id=None) -> int:
         queryset = queryset.filter(user=user)
     if subject_id is not None:
         queryset = queryset.filter(subject_id=subject_id)
-    return queryset.filter(
-        Q(status=SourceIndexScan.Status.QUEUED, created_at__lt=cutoff)
-        | Q(status=SourceIndexScan.Status.RUNNING, started_at__lt=cutoff)
-        | Q(status=SourceIndexScan.Status.RUNNING, started_at__isnull=True, created_at__lt=cutoff)
-    ).update(
-        status=SourceIndexScan.Status.FAILED,
-        stage=SourceIndexScan.Stage.COMPLETED,
-        stable_error_code="SOURCE_INDEX_TIMEOUT",
-        finished_at=timezone.now(),
-        updated_at=timezone.now(),
+    stale_ids = list(
+        queryset.filter(
+            Q(status=SourceIndexScan.Status.QUEUED, created_at__lt=cutoff)
+            | Q(status=SourceIndexScan.Status.RUNNING, started_at__lt=cutoff)
+            | Q(
+                status=SourceIndexScan.Status.RUNNING,
+                started_at__isnull=True,
+                created_at__lt=cutoff,
+            )
+        ).values_list("id", flat=True)
     )
+    for scan_id in stale_ids:
+        fail_source_index_scan(scan_id, "SOURCE_INDEX_TIMEOUT")
+    return len(stale_ids)
 
 
-def create_source_index_scan(*, user, subject_id) -> SourceIndexScan:
+@transaction.atomic
+def create_source_index_scan(*, user, subject_id, request_id=None) -> SourceIndexScan:
     try:
         subject = subject_for_user_or_404(user=user, subject_id=subject_id)
     except DRFNotFound as exc:
@@ -68,8 +80,29 @@ def create_source_index_scan(*, user, subject_id) -> SourceIndexScan:
         status__in=(SourceIndexScan.Status.QUEUED, SourceIndexScan.Status.RUNNING),
     ).exists():
         raise SourceIndexBusy
+    subscription = current_subscription(user)
+    if subscription is None:
+        raise SourceIndexBusy
+    scan_id = uuid.uuid4()
+    normalized_request_id = request_id or uuid.uuid4()
+    hold = freeze_quota(
+        account_id=quota_account_for_subscription(
+            subscription=subscription, quota_type="source_index_scans"
+        ).pk,
+        amount=1,
+        business_type="source_index_scan",
+        business_id=scan_id,
+        idempotency_key=f"source-index-freeze-{scan_id}",
+        request_id=normalized_request_id,
+    )
     try:
-        return SourceIndexScan.objects.create(user=user, subject=subject)
+        return SourceIndexScan.objects.create(
+            id=scan_id,
+            user=user,
+            subject=subject,
+            quota_hold=hold,
+            request_id=normalized_request_id,
+        )
     except IntegrityError as exc:
         # Close the race between two simultaneous POST requests for the same subject.
         raise SourceIndexBusy from exc
@@ -112,13 +145,28 @@ def _start_scan(scan_id) -> SourceIndexScan:
 
 
 def fail_source_index_scan(scan_id, stable_error_code: str = "SOURCE_INDEX_FAILED") -> None:
-    SourceIndexScan.objects.filter(pk=scan_id).update(
-        status=SourceIndexScan.Status.FAILED,
-        stage=SourceIndexScan.Stage.COMPLETED,
-        stable_error_code=stable_error_code[:100],
-        finished_at=timezone.now(),
-        updated_at=timezone.now(),
-    )
+    with transaction.atomic():
+        scan = SourceIndexScan.objects.select_for_update().filter(pk=scan_id).first()
+        if scan is None or scan.status in {
+            SourceIndexScan.Status.SUCCEEDED,
+            SourceIndexScan.Status.PARTIAL,
+            SourceIndexScan.Status.LIMIT_REACHED,
+        }:
+            return
+        if scan.quota_hold_id:
+            release_hold(
+                hold_id=scan.quota_hold_id,
+                amount=1,
+                idempotency_key=f"source-index-release-{scan.pk}",
+                request_id=scan.request_id or uuid.uuid4(),
+            )
+        scan.status = SourceIndexScan.Status.FAILED
+        scan.stage = SourceIndexScan.Stage.COMPLETED
+        scan.stable_error_code = stable_error_code[:100]
+        scan.finished_at = timezone.now()
+        scan.save(
+            update_fields=("status", "stage", "stable_error_code", "finished_at", "updated_at")
+        )
 
 
 def execute_source_index_scan(scan_id) -> dict:
@@ -284,6 +332,13 @@ def execute_source_index_scan(scan_id) -> dict:
             locked.stable_error_code = ""
             locked.elapsed_ms = elapsed_ms
             locked.finished_at = timezone.now()
+            if locked.quota_hold_id:
+                consume_hold(
+                    hold_id=locked.quota_hold_id,
+                    amount=1,
+                    idempotency_key=f"source-index-consume-{locked.pk}",
+                    request_id=locked.request_id or uuid.uuid4(),
+                )
             locked.save()
 
         return {

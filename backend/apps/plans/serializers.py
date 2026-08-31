@@ -24,6 +24,7 @@ class PlanCreatePayloadSerializer(StrictSerializer):
         required=False, allow_null=True, allow_blank=True, max_length=32
     )
     is_trial = serializers.BooleanField(required=False, default=False)
+    is_recommended = serializers.BooleanField(required=False, default=False)
     sort_order = serializers.IntegerField(required=False, default=0, min_value=0)
 
 
@@ -47,6 +48,7 @@ class PlanUpdatePayloadSerializer(StrictSerializer):
         required=False, allow_null=True, allow_blank=True, max_length=32
     )
     is_trial = serializers.BooleanField(required=False)
+    is_recommended = serializers.BooleanField(required=False)
     sort_order = serializers.IntegerField(required=False, min_value=0)
 
     def validate(self, attrs):
@@ -161,6 +163,7 @@ def limit_value(item):
 class PlanSummarySerializer(serializers.ModelSerializer):
     current_published_version_id = serializers.UUIDField(allow_null=True, read_only=True)
     display_price = serializers.SerializerMethodField()
+    current_subscription_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Plan
@@ -173,9 +176,11 @@ class PlanSummarySerializer(serializers.ModelSerializer):
             "display_price",
             "display_currency",
             "is_trial",
+            "is_recommended",
             "status",
             "sort_order",
             "current_published_version_id",
+            "current_subscription_count",
             "version",
             "created_at",
             "updated_at",
@@ -183,6 +188,12 @@ class PlanSummarySerializer(serializers.ModelSerializer):
 
     def get_display_price(self, obj):
         return str(obj.display_price) if obj.display_price is not None else None
+
+    def get_current_subscription_count(self, obj):
+        annotated = getattr(obj, "current_subscription_count", None)
+        if annotated is not None:
+            return annotated
+        return obj.subscriptions.filter(status="active").count()
 
 
 class PlanVersionSerializer(serializers.ModelSerializer):

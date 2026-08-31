@@ -255,13 +255,13 @@ export default function DetectionProgressPage() {
               />
             )}
           {job.status === "failed" && (
-            <Alert type="error" showIcon title="检测未能完成，未完成部分的检测点已退还" />
+            <Alert type="error" showIcon title="检测未能完成，本次检测额度已返还" />
           )}
           {job.status === "partial" && (
-            <Alert type="warning" showIcon title="部分模型检测未成功，已按实际完成数量结算" />
+            <Alert type="warning" showIcon title="部分模型未完成，已有可用结果，本次按1次检测结算" />
           )}
           {job.status === "cancelled" && (
-            <Alert type="warning" showIcon title="检测已取消，未消耗的检测点已释放" />
+            <Alert type="warning" showIcon title="检测已取消；如未产生有效结果，本次额度已返还" />
           )}
 
           <Card title="总体进度" extra={refreshing ? "正在刷新" : undefined}>
@@ -319,16 +319,16 @@ export default function DetectionProgressPage() {
             </Row>
           </Card>
 
-          <Card title="检测点结算" extra={<Tag>{settlementLabels[job.quota.status]}</Tag>}>
+          <Card title="检测额度结算" extra={<Tag>{settlementLabels[job.quota.status]}</Tag>}>
             <Row gutter={16}>
               <Col xs={24} sm={8}>
-                <Statistic title="预计／预留" value={job.quota.held} suffix="点" />
+                <Statistic title="预计／预留" value={job.quota.quota_type === "detection_points" ? Number(job.quota.held > 0) : job.quota.held} suffix="次" />
               </Col>
               <Col xs={24} sm={8}>
-                <Statistic title="实际扣除" value={job.quota.consumed} suffix="点" />
+                <Statistic title="实际扣除" value={job.quota.quota_type === "detection_points" ? Number(job.quota.consumed > 0) : job.quota.consumed} suffix="次" />
               </Col>
               <Col xs={24} sm={8}>
-                <Statistic title="返还／释放" value={job.quota.released} suffix="点" />
+                <Statistic title="返还／释放" value={job.quota.quota_type === "detection_points" ? Number(job.quota.consumed === 0 && job.quota.released > 0) : job.quota.released} suffix="次" />
               </Col>
             </Row>
           </Card>

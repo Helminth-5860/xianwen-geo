@@ -152,6 +152,7 @@ def create_plan(*, plan_id, actor, data: dict[str, Any]) -> Plan:
             display_price=price,
             display_currency="CNY",
             is_trial=data.get("is_trial", False),
+            is_recommended=data.get("is_recommended", False),
             sort_order=data.get("sort_order", 0),
             created_by=actor,
             updated_by=actor,
@@ -175,7 +176,7 @@ def update_plan(*, plan_id, actor, expected_version: int, data: dict[str, Any]) 
     raw_price = data.get("display_price", plan.display_price)
     plan.price_display_mode = mode
     plan.display_price = normalize_display_price(mode, raw_price)
-    for field in ("name", "description", "is_trial", "sort_order"):
+    for field in ("name", "description", "is_trial", "is_recommended", "sort_order"):
         if field in data:
             value = data[field]
             if isinstance(value, str):
@@ -376,6 +377,11 @@ def _create_models(version: PlanVersion, items: list[dict[str, Any]]) -> None:
 
 def _clone_entitlements(source: PlanVersion, target: PlanVersion) -> None:
     source_limits = list(source.limits.select_related("limit_definition").order_by("limit_key"))
+    source_limits = [
+        item
+        for item in source_limits
+        if item.limit_definition.status == PlanLimitDefinition.Status.ACTIVE
+    ]
     rows = [
         PlanLimit(
             plan_version=target,
@@ -390,12 +396,11 @@ def _clone_entitlements(source: PlanVersion, target: PlanVersion) -> None:
         for item in source_limits
     ]
     present = {item.limit_key for item in source_limits}
-    # Published snapshots created before video generation are immutable and
-    # legitimately lack only this newly introduced limit. Add its fail-closed
-    # default to the new draft without silently repairing unrelated corruption.
-    video_definition = _definition_rows().get("video_credits")
-    if video_definition is not None and "video_credits" not in present:
-        rows.append(_limit_row(target, video_definition, video_definition.default_value))
+    # Historical published versions remain immutable. A new draft uses the
+    # current catalog and receives defaults for entitlements introduced later.
+    for definition in _definition_rows().values():
+        if definition.status == PlanLimitDefinition.Status.ACTIVE and definition.key not in present:
+            rows.append(_limit_row(target, definition, definition.default_value))
     PlanLimit.objects.bulk_create(rows)
     source_models = source.model_permissions.order_by("sort_order", "model_key")
     PlanModelPermission.objects.bulk_create(
@@ -842,6 +847,7 @@ def copy_plan(
             "price_display_mode": source_plan.price_display_mode,
             "display_price": source_plan.display_price,
             "is_trial": source_plan.is_trial,
+            "is_recommended": False,
             "sort_order": source_plan.sort_order,
         },
     )
@@ -869,14 +875,20 @@ def public_plan_summary(plan: Plan) -> dict[str, Any]:
         for item in version.model_permissions.order_by("sort_order", "model_key")
     ]
     visible_limit_keys = (
-        "subject_active_limit",
         "max_models_per_detection",
         "max_questions_per_detection",
-        "detection_points",
-        "article_credits",
-        "image_credits",
-        "video_credits",
-        "storage_bytes",
+        "geo_detection_runs",
+        "article_generations",
+        "auto_publish_count",
+        "image_generations",
+        "source_index_scans",
+        "negative_index_scans",
+        "website_audits",
+        "website_generations",
+        "video_script_generations",
+        "competitor_comparisons",
+        "keyword_generated_items",
+        "question_generated_items",
         "white_label_enabled",
         "report_export_enabled",
         "report_share_enabled",
@@ -896,6 +908,7 @@ def public_plan_summary(plan: Plan) -> dict[str, Any]:
         "display_price": str(plan.display_price) if plan.display_price is not None else None,
         "display_currency": plan.display_currency,
         "is_trial": plan.is_trial,
+        "is_recommended": plan.is_recommended,
         "valid_days": version.valid_days,
         "benefits": values,
         "models": models,
