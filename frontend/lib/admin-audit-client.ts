@@ -1,5 +1,7 @@
 import { get, type PageData } from "./auth-client";
 
+export type AuditInteger = string | null;
+
 export type SensitiveAuditLog = Readonly<{
   id: string;
   action_key: string;
@@ -19,10 +21,10 @@ export type SensitiveAuditLog = Readonly<{
   target_tenant_id_snapshot: string | null;
   target_tenant_name_snapshot: string;
   quota_type: string;
-  quota_before: number | null;
-  quota_requested_delta: number | null;
-  quota_delta: number | null;
-  quota_after: number | null;
+  quota_before: AuditInteger;
+  quota_requested_delta: AuditInteger;
+  quota_delta: AuditInteger;
+  quota_after: AuditInteger;
   ledger_entry_id: string | null;
   request_id: string;
   operation_ip: string | null;
