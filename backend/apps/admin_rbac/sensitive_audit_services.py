@@ -232,7 +232,6 @@ def record_sensitive_risk_action(
             "target_id": str(target_id),
             "safe_before": safe_before,
             "safe_after": safe_after,
-            "safe_result": safe_result,
         },
     )
     setattr(request, "_sensitive_audit_recorded", True)
