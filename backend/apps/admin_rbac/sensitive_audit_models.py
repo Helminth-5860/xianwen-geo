@@ -30,6 +30,7 @@ class SensitiveAuditLog(models.Model):  # noqa: DJ008
         on_delete=models.SET_NULL,
         related_name="sensitive_audit_logs_as_actor",
     )
+    actor_user_id_snapshot = models.UUIDField(null=True, blank=True, db_index=True)
     actor_name_snapshot = models.CharField(max_length=50, blank=True)
     actor_role_snapshot = models.CharField(max_length=100, blank=True)
     actor_tenant_id_snapshot = models.UUIDField(null=True, blank=True)
@@ -42,6 +43,7 @@ class SensitiveAuditLog(models.Model):  # noqa: DJ008
         on_delete=models.SET_NULL,
         related_name="sensitive_audit_logs_as_target",
     )
+    target_user_id_snapshot = models.UUIDField(null=True, blank=True, db_index=True)
     target_name_snapshot = models.CharField(max_length=50, blank=True)
     target_tenant_id_snapshot = models.UUIDField(null=True, blank=True)
     target_tenant_name_snapshot = models.CharField(max_length=120, blank=True)
