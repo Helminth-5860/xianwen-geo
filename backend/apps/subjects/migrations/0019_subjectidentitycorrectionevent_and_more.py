@@ -68,7 +68,7 @@ BEGIN
     IF NOT EXISTS (
         SELECT 1
         FROM subjects s
-        JOIN users_user u ON u.id = p_user_id
+        JOIN users u ON u.id = p_user_id
         WHERE s.id = v_current_subject_id
           AND s.status = 'active'
           AND (
