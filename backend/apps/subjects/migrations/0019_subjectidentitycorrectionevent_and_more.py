@@ -8,7 +8,6 @@ from django.conf import settings
 from django.db import migrations, models
 from django.db.models import Count, F
 
-
 _previous_guard_migration = import_module(
     "apps.subjects.migrations.0005_subject_data_postgresql_guards"
 )
@@ -125,7 +124,9 @@ def backfill_workspace_and_identity(apps, schema_editor):
         SubjectBusinessProfile.objects.values_list("subject_id", "unified_social_credit_code")
     )
     version_ids = list(
-        Subject.objects.exclude(current_version_id=None).values_list("current_version_id", flat=True)
+        Subject.objects.exclude(current_version_id=None).values_list(
+            "current_version_id", flat=True
+        )
     )
     versions = {
         row[0]: row[1:]
@@ -168,9 +169,7 @@ def reconcile_existing_active_subjects(apps, schema_editor):
             )
         winner_id = current_ids.pop()
         loser_ids = [subject_id for subject_id in active_ids if subject_id != winner_id]
-        Subject.objects.filter(pk__in=loser_ids).update(
-            status="archived", version=F("version") + 1
-        )
+        Subject.objects.filter(pk__in=loser_ids).update(status="archived", version=F("version") + 1)
         SubjectContext.objects.filter(
             **context_user_filter, current_subject_id__in=loser_ids
         ).update(current_subject_id=winner_id, version=F("version") + 1)
@@ -209,84 +208,123 @@ def install_single_subject_guards(apps, schema_editor):
         schema_editor.execute(SINGLE_SUBJECT_GUARDS)
 
 
+def flush_pending_constraint_events(apps, schema_editor):
+    if schema_editor.connection.vendor == "postgresql":
+        schema_editor.execute("SET CONSTRAINTS ALL IMMEDIATE")
+
+
 def restore_previous_guards(apps, schema_editor):
     if schema_editor.connection.vendor == "postgresql":
-        schema_editor.execute("DROP TRIGGER IF EXISTS subjects_identity_audit_guard ON subject_identity_correction_events;")
+        schema_editor.execute(
+            "DROP TRIGGER IF EXISTS subjects_identity_audit_guard "
+            "ON subject_identity_correction_events;"
+        )
         schema_editor.execute("DROP FUNCTION IF EXISTS subjects_guard_identity_audit();")
         schema_editor.execute(PREVIOUS_GUARDS_REMOVE)
         schema_editor.execute(PREVIOUS_GUARDS)
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('subjects', '0018_subject_management_profile'),
-        ('users', '0014_user_appearance'),
+        ("subjects", "0018_subject_management_profile"),
+        ("users", "0014_user_appearance"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='SubjectIdentityCorrectionEvent',
+            name="SubjectIdentityCorrectionEvent",
             fields=[
-                ('id', models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
-                ('old_identity', models.JSONField()),
-                ('new_identity', models.JSONField()),
-                ('reason', models.TextField()),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
+                (
+                    "id",
+                    models.UUIDField(
+                        default=uuid.uuid4, editable=False, primary_key=True, serialize=False
+                    ),
+                ),
+                ("old_identity", models.JSONField()),
+                ("new_identity", models.JSONField()),
+                ("reason", models.TextField()),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
             ],
             options={
-                'db_table': 'subject_identity_correction_events',
-                'ordering': ('subject_id', 'created_at', 'id'),
+                "db_table": "subject_identity_correction_events",
+                "ordering": ("subject_id", "created_at", "id"),
             },
         ),
         migrations.AddField(
-            model_name='subject',
-            name='bound_official_name',
+            model_name="subject",
+            name="bound_official_name",
             field=models.CharField(blank=True, max_length=500),
         ),
         migrations.AddField(
-            model_name='subject',
-            name='bound_unified_social_credit_code',
+            model_name="subject",
+            name="bound_unified_social_credit_code",
             field=models.CharField(blank=True, max_length=32),
         ),
         migrations.AddField(
-            model_name='subject',
-            name='identity_bound_at',
+            model_name="subject",
+            name="identity_bound_at",
             field=models.DateTimeField(blank=True, null=True),
         ),
         migrations.AddField(
-            model_name='subject',
-            name='tenant',
-            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='subjects', to='users.tenant'),
+            model_name="subject",
+            name="tenant",
+            field=models.ForeignKey(
+                blank=True,
+                null=True,
+                on_delete=django.db.models.deletion.PROTECT,
+                related_name="subjects",
+                to="users.tenant",
+            ),
         ),
         migrations.AddIndex(
-            model_name='subject',
-            index=models.Index(fields=['tenant', 'status', 'created_at'], name='subject_tenant_status_idx'),
+            model_name="subject",
+            index=models.Index(
+                fields=["tenant", "status", "created_at"], name="subject_tenant_status_idx"
+            ),
         ),
         migrations.AddField(
-            model_name='subjectidentitycorrectionevent',
-            name='actor',
-            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='subject_identity_corrections', to=settings.AUTH_USER_MODEL),
+            model_name="subjectidentitycorrectionevent",
+            name="actor",
+            field=models.ForeignKey(
+                blank=True,
+                null=True,
+                on_delete=django.db.models.deletion.SET_NULL,
+                related_name="subject_identity_corrections",
+                to=settings.AUTH_USER_MODEL,
+            ),
         ),
         migrations.AddField(
-            model_name='subjectidentitycorrectionevent',
-            name='subject',
-            field=models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='identity_correction_events', to='subjects.subject'),
+            model_name="subjectidentitycorrectionevent",
+            name="subject",
+            field=models.ForeignKey(
+                on_delete=django.db.models.deletion.PROTECT,
+                related_name="identity_correction_events",
+                to="subjects.subject",
+            ),
         ),
         migrations.AddIndex(
-            model_name='subjectidentitycorrectionevent',
-            index=models.Index(fields=['subject', 'created_at'], name='subject_identity_audit_idx'),
+            model_name="subjectidentitycorrectionevent",
+            index=models.Index(fields=["subject", "created_at"], name="subject_identity_audit_idx"),
         ),
         migrations.RunPython(backfill_workspace_and_identity, migrations.RunPython.noop),
         migrations.RunPython(install_single_subject_guards, restore_previous_guards),
         migrations.RunPython(reconcile_existing_active_subjects, migrations.RunPython.noop),
+        migrations.RunPython(flush_pending_constraint_events, migrations.RunPython.noop),
         migrations.AddConstraint(
-            model_name='subject',
-            constraint=models.UniqueConstraint(condition=models.Q(('status', 'active'), ('tenant__isnull', False)), fields=('tenant',), name='subject_one_active_per_tenant'),
+            model_name="subject",
+            constraint=models.UniqueConstraint(
+                condition=models.Q(("status", "active"), ("tenant__isnull", False)),
+                fields=("tenant",),
+                name="subject_one_active_per_tenant",
+            ),
         ),
         migrations.AddConstraint(
-            model_name='subject',
-            constraint=models.UniqueConstraint(condition=models.Q(('status', 'active'), ('tenant__isnull', True)), fields=('user',), name='subject_one_active_per_user_workspace'),
+            model_name="subject",
+            constraint=models.UniqueConstraint(
+                condition=models.Q(("status", "active"), ("tenant__isnull", True)),
+                fields=("user",),
+                name="subject_one_active_per_user_workspace",
+            ),
         ),
     ]
