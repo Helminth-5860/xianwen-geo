@@ -607,7 +607,7 @@ export default function AdminOperationRecordsPage() {
                 <Descriptions.Item label="姓名">{selected.actor_name_snapshot || "—"}</Descriptions.Item>
                 <Descriptions.Item label="身份">{selected.actor_role_snapshot || "—"}</Descriptions.Item>
                 <Descriptions.Item label="操作人 ID">
-                  {selected.actor_user_id_snapshot || selected.actor_id || "—"}
+                  {selected.actor_user_id_snapshot || "—"}
                 </Descriptions.Item>
                 <Descriptions.Item label="所属租户">
                   {selected.actor_tenant_name_snapshot || "—"}
@@ -619,7 +619,7 @@ export default function AdminOperationRecordsPage() {
                   {selected.target_name_snapshot || "—"}
                 </Descriptions.Item>
                 <Descriptions.Item label="用户 ID">
-                  {selected.target_user_id_snapshot || selected.target_user_id || "—"}
+                  {selected.target_user_id_snapshot || "—"}
                 </Descriptions.Item>
                 <Descriptions.Item label="所属代理">
                   {selected.target_owner_name_snapshot || "独立用户 / 未分配"}
