@@ -1,6 +1,7 @@
 import os
 
 from celery import Celery  # type: ignore[import-untyped]  # Celery does not publish py.typed.
+from celery.schedules import crontab  # type: ignore[import-untyped]
 
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
 
@@ -31,5 +32,10 @@ app.conf.beat_schedule = {
     "publishing-recover-interrupted": {
         "task": "publishing.recover_interrupted",
         "schedule": 300.0,
+    },
+    # 敏感审计日志在线保留 365 天；每天低峰期分批清理过期记录，避免大事务删除。
+    "admin-sensitive-audit-retention": {
+        "task": "admin_rbac.purge_sensitive_audit_logs",
+        "schedule": crontab(hour=3, minute=20),
     },
 }
