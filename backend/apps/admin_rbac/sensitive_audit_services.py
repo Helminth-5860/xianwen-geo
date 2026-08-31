@@ -9,6 +9,7 @@ from apps.core.request_ids import validate_request_id
 from apps.users.models import User
 from apps.users.services import client_ip_address, request_user_agent
 
+from .audit_services import validate_safe_json
 from .sensitive_audit_models import SensitiveAuditLog
 
 RETENTION_DAYS = 365
@@ -177,9 +178,9 @@ def record_sensitive_risk_action(
         raise ValueError("敏感审计日志必须包含规范 request_id。")
 
     payload = payload or {}
-    safe_before = safe_before or {}
-    safe_after = safe_after or {}
-    safe_result = safe_result or {}
+    safe_before = validate_safe_json(safe_before or {})
+    safe_after = validate_safe_json(safe_after or {})
+    safe_result = validate_safe_json(safe_result or {})
     actor_snapshot = _user_snapshot(actor)
     evidence = _quota_evidence(
         action_key=action_key,
