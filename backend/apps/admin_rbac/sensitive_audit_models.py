@@ -17,20 +17,20 @@ class SensitiveAuditLog(models.Model):  # noqa: DJ008
         FAILURE = "failure", "失败"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    category = models.CharField(max_length=50, default="sensitive_action", db_index=True)
-    action_key = models.CharField(max_length=100, db_index=True)
-    outcome = models.CharField(max_length=16, choices=Outcome.choices, db_index=True)
+    category = models.CharField(max_length=50, default="sensitive_action")
+    action_key = models.CharField(max_length=100)
+    outcome = models.CharField(max_length=16, choices=Outcome.choices)
     channel = models.CharField(max_length=32, default="admin_console")
 
-    actor_user_id_snapshot = models.UUIDField(null=True, blank=True, db_index=True)
+    actor_user_id_snapshot = models.UUIDField(null=True, blank=True)
     actor_name_snapshot = models.CharField(max_length=50, blank=True)
     actor_role_snapshot = models.CharField(max_length=100, blank=True)
     actor_tenant_id_snapshot = models.UUIDField(null=True, blank=True)
     actor_tenant_name_snapshot = models.CharField(max_length=120, blank=True)
 
-    target_user_id_snapshot = models.UUIDField(null=True, blank=True, db_index=True)
+    target_user_id_snapshot = models.UUIDField(null=True, blank=True)
     target_name_snapshot = models.CharField(max_length=50, blank=True)
-    target_owner_user_id_snapshot = models.UUIDField(null=True, blank=True, db_index=True)
+    target_owner_user_id_snapshot = models.UUIDField(null=True, blank=True)
     target_owner_name_snapshot = models.CharField(max_length=50, blank=True)
     target_tenant_id_snapshot = models.UUIDField(null=True, blank=True)
     target_tenant_name_snapshot = models.CharField(max_length=120, blank=True)
@@ -63,7 +63,12 @@ class SensitiveAuditLog(models.Model):  # noqa: DJ008
             models.Index(
                 fields=("target_user_id_snapshot", "created_at"), name="sens_target_created_idx"
             ),
+            models.Index(
+                fields=("target_owner_user_id_snapshot", "created_at"),
+                name="sens_owner_created_idx",
+            ),
             models.Index(fields=("action_key", "created_at"), name="sens_action_created_idx"),
+            models.Index(fields=("outcome", "created_at"), name="sens_outcome_created_idx"),
             models.Index(fields=("operation_ip", "created_at"), name="sens_ip_created_idx"),
         ]
         constraints = [
