@@ -77,7 +77,7 @@ const routes: ConsoleRoute[] = [
   },
   {
     href: "/admin/operation-records",
-    label: "操作记录",
+    label: "日志中心",
     icon: <HistoryOutlined />,
     menuKeys: ["menu.admin.audit"],
   },
