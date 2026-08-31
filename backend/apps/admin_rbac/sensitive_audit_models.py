@@ -30,6 +30,8 @@ class SensitiveAuditLog(models.Model):  # noqa: DJ008
 
     target_user_id_snapshot = models.UUIDField(null=True, blank=True, db_index=True)
     target_name_snapshot = models.CharField(max_length=50, blank=True)
+    target_owner_user_id_snapshot = models.UUIDField(null=True, blank=True, db_index=True)
+    target_owner_name_snapshot = models.CharField(max_length=50, blank=True)
     target_tenant_id_snapshot = models.UUIDField(null=True, blank=True)
     target_tenant_name_snapshot = models.CharField(max_length=120, blank=True)
 
