@@ -81,6 +81,20 @@ def _user_snapshot(user: User | None) -> dict[str, Any]:
     }
 
 
+def _owner_snapshot(user: User | None) -> dict[str, Any]:
+    if user is None or user.is_staff or user.is_superuser:
+        return {"id": None, "name": ""}
+    try:
+        assignment = user.customer_assignment
+    except ObjectDoesNotExist:
+        return {"id": None, "name": ""}
+    owner = assignment.owner_admin
+    if owner is None:
+        return {"id": None, "name": ""}
+    owner_user = owner.user
+    return {"id": owner_user.pk, "name": owner_user.nickname}
+
+
 def _quota_evidence(
     *,
     action_key: str,
@@ -176,6 +190,7 @@ def record_sensitive_risk_action(
     )
     target_user = evidence["target_user"] or subject
     target_snapshot = _user_snapshot(target_user)
+    owner_snapshot = _owner_snapshot(target_user)
     reason = evidence["reason"] or str(
         payload.get("reason")
         or payload.get("opening_note")
@@ -196,6 +211,8 @@ def record_sensitive_risk_action(
         actor_tenant_name_snapshot=actor_snapshot["tenant_name"],
         target_user_id_snapshot=target_snapshot["id"],
         target_name_snapshot=target_snapshot["name"],
+        target_owner_user_id_snapshot=owner_snapshot["id"],
+        target_owner_name_snapshot=owner_snapshot["name"],
         target_tenant_id_snapshot=target_snapshot["tenant_id"],
         target_tenant_name_snapshot=target_snapshot["tenant_name"],
         quota_type=evidence["quota_type"],
