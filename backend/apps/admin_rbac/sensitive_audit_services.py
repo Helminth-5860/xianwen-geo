@@ -1,6 +1,7 @@
 from datetime import timedelta
 from typing import Any
 
+from django.core.exceptions import ObjectDoesNotExist
 from django.db import models
 from django.utils import timezone
 
@@ -8,7 +9,7 @@ from apps.core.request_ids import validate_request_id
 from apps.users.models import LoginEvent, User
 from apps.users.services import client_ip_address, request_user_agent
 
-from .models import SensitiveAuditLog
+from .sensitive_audit_models import SensitiveAuditLog
 
 RETENTION_DAYS = 365
 DEFAULT_PURGE_BATCH_SIZE = 5_000
@@ -56,7 +57,7 @@ def _actor_role(user: User | None) -> str:
         return "超级管理员"
     try:
         profile = user.admin_profile
-    except Exception:  # pragma: no cover - defensive against deleted/partial historical identities.
+    except ObjectDoesNotExist:
         return "管理员" if user.is_staff else "用户"
     if profile.role_id and profile.role:
         return profile.role.name
