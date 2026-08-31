@@ -67,12 +67,14 @@ def _actor_role(user: User | None) -> str:
 def _user_snapshot(user: User | None) -> dict[str, Any]:
     if user is None:
         return {
+            "id": None,
             "name": "",
             "tenant_id": None,
             "tenant_name": "",
         }
     tenant = user.tenant
     return {
+        "id": user.pk,
         "name": user.nickname,
         "tenant_id": tenant.pk if tenant else None,
         "tenant_name": tenant.display_name if tenant else "",
@@ -188,11 +190,13 @@ def record_sensitive_risk_action(
         action_key=action_key,
         outcome=outcome,
         actor=actor,
+        actor_user_id_snapshot=actor_snapshot["id"],
         actor_name_snapshot=actor_snapshot["name"],
         actor_role_snapshot=_actor_role(actor),
         actor_tenant_id_snapshot=actor_snapshot["tenant_id"],
         actor_tenant_name_snapshot=actor_snapshot["tenant_name"],
         target_user=target_user,
+        target_user_id_snapshot=target_snapshot["id"],
         target_name_snapshot=target_snapshot["name"],
         target_tenant_id_snapshot=target_snapshot["tenant_id"],
         target_tenant_name_snapshot=target_snapshot["tenant_name"],
