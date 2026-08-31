@@ -16,8 +16,8 @@ from rest_framework.views import APIView
 
 from apps.core.error_codes import ErrorCode
 from apps.core.responses import error_response
-from apps.subjects.models import Subject
 from apps.subjects.permissions import IsAvailableAuthenticatedUser
+from apps.subjects.subject_services import subject_for_user_or_404
 
 from .exceptions import WebSourceError
 from .models import WebSourceImport
@@ -122,12 +122,9 @@ class SubjectWebSourceListView(APIView):
     permission_classes = [IsAvailableAuthenticatedUser]
 
     def get(self, request, subject_id):
-        if not Subject.objects.filter(pk=subject_id, user=request.user).exists():
-            from rest_framework.exceptions import NotFound
-
-            raise NotFound
+        subject = subject_for_user_or_404(user=request.user, subject_id=subject_id)
         rows = WebSourceImport.objects.filter(
-            user=request.user, subject_id=subject_id
+            subject=subject
         ).select_related("latest_parsed_version", "current_confirmed_version")
         return _no_store(Response({"results": WebSourceImportSerializer(rows, many=True).data}))
 

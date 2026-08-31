@@ -305,7 +305,7 @@ def calculate_competitor_comparison(
 
 
 def _active_competitor_definitions(*, user, subject) -> tuple[CompetitorDefinition, ...]:
-    rows = active_competitors(user=user, subject=subject)
+    rows = active_competitors(subject=subject)
     return tuple(
         CompetitorDefinition(
             id=row.pk,
@@ -322,16 +322,8 @@ def _active_competitor_definitions(*, user, subject) -> tuple[CompetitorDefiniti
 def _latest_report(*, user, subject_id: UUID) -> GeoReport | None:
     return (
         GeoReport.objects.filter(
-            user_id=user.pk,
-            user__tenant_id=user.tenant_id,
             subject_id=subject_id,
-            subject__user_id=user.pk,
-            subject__user__tenant_id=user.tenant_id,
-            job__user_id=user.pk,
-            job__user__tenant_id=user.tenant_id,
             job__subject_id=subject_id,
-            job__subject__user_id=user.pk,
-            job__subject__user__tenant_id=user.tenant_id,
             job__user_removed_at__isnull=True,
         )
         .select_related("job")
@@ -344,11 +336,7 @@ def _call_facts(*, user, subject_id: UUID, report: GeoReport) -> tuple[Compariso
     calls = (
         ModelCall.objects.filter(
             job_id=report.job_id,
-            job__user_id=user.pk,
-            job__user__tenant_id=user.tenant_id,
             job__subject_id=subject_id,
-            job__subject__user_id=user.pk,
-            job__subject__user__tenant_id=user.tenant_id,
             job__user_removed_at__isnull=True,
             status=ModelCall.Status.SUCCEEDED,
             question_snapshot__participates_in_scoring=True,

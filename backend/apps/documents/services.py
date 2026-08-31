@@ -14,6 +14,7 @@ from apps.plans.models import Subscription
 from apps.quotas.models import QuotaAccount, QuotaHold, QuotaHoldGroup, QuotaLedgerEntry
 from apps.quotas.services import consume_hold, freeze_quota, release_hold
 from apps.subjects.models import Subject
+from apps.subjects.subject_services import subject_for_user_or_404, workspace_subject_filter
 from apps.users.models import User
 
 from .exceptions import (
@@ -155,10 +156,7 @@ def create_upload_intent(
         account = _storage_account_locked(subscription)
         if account is None:
             raise FileStorageUnavailable
-        try:
-            subject = Subject.objects.select_for_update().get(pk=subject_id, user=user)
-        except Subject.DoesNotExist as exc:
-            raise NotFound from exc
+        subject = subject_for_user_or_404(user=user, subject_id=subject_id, lock=True)
         if subject.status == Subject.Status.ARCHIVED:
             raise FileStateConflict
         hold_group = freeze_quota(
@@ -519,10 +517,9 @@ def due_verification_intent_ids(limit=100):
 
 
 def documents_for_subject(*, user, subject_id):
-    if not Subject.objects.filter(pk=subject_id, user=user).exists():
-        raise NotFound
+    subject = subject_for_user_or_404(user=user, subject_id=subject_id)
     return (
-        UserDocument.objects.filter(user=user, subject_id=subject_id)
+        UserDocument.objects.filter(subject=subject)
         .select_related("current_version")
         .order_by("-created_at", "id")
     )
@@ -530,7 +527,9 @@ def documents_for_subject(*, user, subject_id):
 
 def document_for_user_or_404(*, user, document_id):
     try:
-        return UserDocument.objects.select_related("current_version").get(pk=document_id, user=user)
+        return UserDocument.objects.filter(
+            workspace_subject_filter(user, prefix="subject__")
+        ).select_related("current_version").get(pk=document_id)
     except UserDocument.DoesNotExist as exc:
         raise NotFound from exc
 
@@ -559,6 +558,8 @@ def storage_usage_bytes(user_id) -> int:
 def validate_document_references(
     *, user_id, subject_id, schema_snapshot, field_values
 ) -> list[tuple[str, DocumentVersion]]:
+    user = User.objects.get(pk=user_id)
+    subject_for_user_or_404(user=user, subject_id=subject_id)
     references = []
     for field in schema_snapshot.get("fields", []):
         if field.get("field_type") not in {"image", "file"}:
@@ -570,7 +571,6 @@ def validate_document_references(
             version_id = value["document_version_id"]
             version = DocumentVersion.objects.select_related("document", "completed_intent").get(
                 pk=version_id,
-                document__user_id=user_id,
                 document__subject_id=subject_id,
                 completed_intent__status=FileUploadIntent.Status.COMPLETED,
             )

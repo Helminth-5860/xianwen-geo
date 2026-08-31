@@ -17,6 +17,7 @@ from rest_framework.exceptions import NotFound
 from apps.plans.models import Subscription
 from apps.subjects.models import Subject
 from apps.subjects.risk_services import ensure_subject_feature_allowed
+from apps.subjects.subject_services import subject_for_user_or_404, workspace_subject_filter
 from apps.users.models import Notification, User
 
 from .exceptions import FileStorageUnavailable
@@ -201,11 +202,21 @@ def create_parse_job(
             raise DocumentParseStateConflict
         try:
             subject_id = (
-                UserDocument.objects.only("subject_id").get(pk=document_id, user=user).subject_id
+                UserDocument.objects.filter(
+                    workspace_subject_filter(user, prefix="subject__")
+                )
+                .only("subject_id")
+                .get(pk=document_id)
+                .subject_id
             )
-            subject = Subject.objects.select_for_update().get(pk=subject_id, user=user)
+            subject = subject_for_user_or_404(
+                user=user,
+                subject_id=subject_id,
+                lock=True,
+            )
             document = UserDocument.objects.select_for_update().get(
-                pk=document_id, user=user, subject=subject
+                pk=document_id,
+                subject=subject,
             )
             version = DocumentVersion.objects.select_for_update().get(
                 pk=document_version_id, document=document
@@ -566,11 +577,21 @@ def confirm_parsed_text(
             raise DocumentParseStateConflict
         try:
             subject_id = (
-                UserDocument.objects.only("subject_id").get(pk=document_id, user=user).subject_id
+                UserDocument.objects.filter(
+                    workspace_subject_filter(user, prefix="subject__")
+                )
+                .only("subject_id")
+                .get(pk=document_id)
+                .subject_id
             )
-            subject = Subject.objects.select_for_update().get(pk=subject_id, user=user)
+            subject = subject_for_user_or_404(
+                user=user,
+                subject_id=subject_id,
+                lock=True,
+            )
             document = UserDocument.objects.select_for_update().get(
-                pk=document_id, user=user, subject=subject
+                pk=document_id,
+                subject=subject,
             )
             current_version_id = document.current_version_id
             if current_version_id is None:
@@ -580,14 +601,12 @@ def confirm_parsed_text(
             )
             state = DocumentParseState.objects.select_for_update().get(
                 document_version=version,
-                user=user,
                 subject=subject,
                 document=document,
             )
             source = DocumentParsedVersion.objects.select_for_update().get(
                 pk=source_parsed_version_id,
                 document_version=version,
-                user=user,
                 subject=subject,
                 document=document,
             )
@@ -668,11 +687,17 @@ def confirm_parsed_text(
 
 def parse_result_for_user(*, user, document_id):
     try:
-        document = UserDocument.objects.select_related(
-            "current_version__parse_job",
-            "current_version__parse_state__latest_parsed_version",
-            "current_version__parse_state__current_confirmed_version",
-        ).get(pk=document_id, user=user)
+        document = (
+            UserDocument.objects.filter(
+                workspace_subject_filter(user, prefix="subject__")
+            )
+            .select_related(
+                "current_version__parse_job",
+                "current_version__parse_state__latest_parsed_version",
+                "current_version__parse_state__current_confirmed_version",
+            )
+            .get(pk=document_id)
+        )
     except UserDocument.DoesNotExist as exc:
         raise NotFound from exc
     version = document.current_version
@@ -696,7 +721,6 @@ def get_confirmed_document_content(*, subject, document_version):
         ).get(
             document_version=document_version,
             subject=subject,
-            user=subject.user,
         )
     except DocumentParseState.DoesNotExist as exc:
         raise DocumentParseStateConflict from exc

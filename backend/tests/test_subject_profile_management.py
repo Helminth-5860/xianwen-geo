@@ -2,6 +2,7 @@ import json
 
 import pytest
 from django.core.management import call_command
+from django.test import override_settings
 from rest_framework.test import APIClient
 
 from apps.subjects.models import Subject, SubjectBusinessProfile, SubjectType
@@ -201,6 +202,7 @@ def test_invalid_address_or_business_coverage_cannot_activate_subject(
 
 
 @pytest.mark.django_db
+@override_settings(ROOT_URLCONF="config.urls")
 def test_bound_subject_is_unique_identity_locked_and_operating_profile_remains_editable():
     install_empty_published_risk_catalog()
     tenant = Tenant.objects.create(key="single-subject-test", display_name="单主体测试空间")
@@ -307,3 +309,25 @@ def test_bound_subject_is_unique_identity_locked_and_operating_profile_remains_e
     colleague_versions = colleague_client.get(f"/api/v1/subjects/{bound['id']}/versions")
     assert colleague_versions.status_code == 200
     assert len(response_data(colleague_versions)["versions"]) == 1
+
+    # Subject-related pages are shared within the workspace. A colleague must see
+    # normal empty states instead of a misleading 404 for data owned by the subject.
+    for path in (
+        f"/api/v1/subjects/{bound['id']}/documents",
+        f"/api/v1/subjects/{bound['id']}/web-sources",
+        f"/api/v1/subjects/{bound['id']}/ai-enrichment/sources",
+        f"/api/v1/subjects/{bound['id']}/distillations/draft",
+        f"/api/v1/subjects/{bound['id']}/question-banks/draft",
+    ):
+        page_response = colleague_client.get(path)
+        assert page_response.status_code == 200, (path, page_response.json())
+
+    created_competitor = colleague_client.post(
+        f"/api/v1/subjects/{bound['id']}/competitors",
+        {"name": "同工作空间竞品", "website": "https://competitor.example.com"},
+        format="json",
+    )
+    assert created_competitor.status_code == 201
+    owner_competitors = owner_client.get(f"/api/v1/subjects/{bound['id']}/competitors")
+    assert owner_competitors.status_code == 200
+    assert owner_competitors.data["count"] == 1

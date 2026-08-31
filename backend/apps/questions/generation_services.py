@@ -259,13 +259,13 @@ def create_question_generation_job(
                 "workspace", "subject_version", "input_keyword_set_version"
             )
             .prefetch_related("items__source_keyword", "items__canonical_keyword")
-            .get(pk=distillation_set_id, subject=subject, user=user)
+            .get(pk=distillation_set_id, subject=subject)
         )
     except DistillationSet.DoesNotExist as exc:
         raise QuestionBankInputConflict from exc
     try:
         distillation_workspace = DistillationWorkspace.objects.select_for_update().get(
-            subject=subject, user=user
+            subject=subject
         )
     except DistillationWorkspace.DoesNotExist as exc:
         raise QuestionBankInputConflict from exc
@@ -688,8 +688,7 @@ def question_generation_quota_payload(job):
 
 
 def question_bank_workspace_for_subject(*, user, subject):
-    if subject.user_id != user.pk:
-        raise Http404
+    subject_for_user_or_404(user=user, subject_id=subject.pk)
     return (
         QuestionBankWorkspace.objects.select_related(
             "draft_subject_version",
@@ -697,7 +696,7 @@ def question_bank_workspace_for_subject(*, user, subject):
             "draft_source_result",
             "current_version",
         )
-        .filter(subject=subject, user=user)
+        .filter(subject=subject)
         .first()
     )
 
@@ -739,7 +738,7 @@ def save_question_bank_draft(*, user_id, subject_id, expected_version, items):
         workspace = (
             QuestionBankWorkspace.objects.select_for_update()
             .select_related("subject", "draft_distillation_set")
-            .get(subject=subject, user=user)
+            .get(subject=subject)
         )
     except QuestionBankWorkspace.DoesNotExist as exc:
         raise QuestionBankValuesInvalid from exc
@@ -808,7 +807,7 @@ def confirm_question_bank(*, user_id, subject_id, expected_version):
                 "draft_source_result",
                 "current_version",
             )
-            .get(subject=subject, user=user)
+            .get(subject=subject)
         )
     except QuestionBankWorkspace.DoesNotExist as exc:
         raise QuestionBankValuesInvalid from exc
@@ -973,7 +972,7 @@ def remove_current_question_bank_items(*, user_id, subject_id, expected_version_
                 "draft_source_result",
                 "current_version",
             )
-            .get(subject=subject, user=user)
+            .get(subject=subject)
         )
     except QuestionBankWorkspace.DoesNotExist as exc:
         raise QuestionBankValuesInvalid from exc
@@ -1126,13 +1125,14 @@ def remove_current_question_bank_items(*, user_id, subject_id, expected_version_
 
 
 def question_bank_versions_for_user(*, user, subject_id):
-    subject_for_user_or_404(user=user, subject_id=subject_id)
-    return QuestionBankVersion.objects.filter(user=user, subject_id=subject_id).order_by(
+    subject = subject_for_user_or_404(user=user, subject_id=subject_id)
+    return QuestionBankVersion.objects.filter(subject=subject).order_by(
         "-version_no", "id"
     )
 
 
 def question_bank_version_for_user_or_404(*, user, subject_id, version_id):
+    subject = subject_for_user_or_404(user=user, subject_id=subject_id)
     try:
         return (
             QuestionBankVersion.objects.select_related(
@@ -1141,7 +1141,7 @@ def question_bank_version_for_user_or_404(*, user, subject_id, version_id):
             .prefetch_related(
                 "questions__primary_category", "questions__tag_links", "questions__keyword_links"
             )
-            .get(pk=version_id, user=user, subject_id=subject_id)
+            .get(pk=version_id, subject=subject)
         )
     except QuestionBankVersion.DoesNotExist as exc:
         raise Http404 from exc
@@ -1150,7 +1150,7 @@ def question_bank_version_for_user_or_404(*, user, subject_id, version_id):
 def current_question_bank_for_user_or_404(*, user, subject_id):
     subject = subject_for_user_or_404(user=user, subject_id=subject_id)
     try:
-        workspace = QuestionBankWorkspace.objects.get(subject=subject, user=user)
+        workspace = QuestionBankWorkspace.objects.get(subject=subject)
     except QuestionBankWorkspace.DoesNotExist as exc:
         raise Http404 from exc
     if workspace.current_version_id is None:

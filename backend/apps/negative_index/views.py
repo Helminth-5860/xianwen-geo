@@ -10,8 +10,8 @@ from rest_framework.status import (
 )
 from rest_framework.views import APIView
 
-from apps.subjects.models import Subject
 from apps.subjects.permissions import IsAvailableAuthenticatedUser
+from apps.subjects.subject_services import subject_for_user_or_404, workspace_subject_filter
 
 from .models import NegativeEvent, NegativeIndexScan
 from .serializers import (
@@ -81,19 +81,10 @@ class SubjectNegativeIndexView(APIView):
     permission_classes = [IsAvailableAuthenticatedUser]
 
     def get(self, request, subject_id):
-        if not Subject.objects.filter(pk=subject_id, user=request.user).exists():
-            return Response(
-                {"detail": "主体不存在。"},
-                status=HTTP_404_NOT_FOUND,
-            )
-
-        recover_stale_negative_index_scans(
-            user=request.user,
-            subject_id=subject_id,
-        )
+        subject = subject_for_user_or_404(user=request.user, subject_id=subject_id)
+        recover_stale_negative_index_scans(subject_id=subject_id)
         scans = NegativeIndexScan.objects.filter(
-            user=request.user,
-            subject_id=subject_id,
+            subject=subject,
         )
         active = scans.filter(status__in=ACTIVE_STATUSES).order_by("-created_at").first()
         latest = (
@@ -125,16 +116,17 @@ class NegativeIndexScanDetailView(APIView):
     permission_classes = [IsAvailableAuthenticatedUser]
 
     def get(self, request, scan_id):
-        recover_stale_negative_index_scans(user=request.user)
         scan = NegativeIndexScan.objects.filter(
+            workspace_subject_filter(request.user, prefix="subject__"),
             pk=scan_id,
-            user=request.user,
         ).first()
         if scan is None:
             return Response(
                 {"detail": "负面信息扫描记录不存在。"},
                 status=HTTP_404_NOT_FOUND,
             )
+        recover_stale_negative_index_scans(subject_id=scan.subject_id)
+        scan.refresh_from_db()
         return Response(NegativeIndexScanDetailSerializer(scan).data)
 
 
@@ -143,8 +135,8 @@ class NegativeIndexEventListView(APIView):
 
     def get(self, request, scan_id):
         scan = NegativeIndexScan.objects.filter(
+            workspace_subject_filter(request.user, prefix="subject__"),
             pk=scan_id,
-            user=request.user,
         ).first()
         if scan is None:
             return Response(
@@ -189,8 +181,8 @@ class NegativeIndexEventDetailView(APIView):
     def get(self, request, event_id):
         event = (
             NegativeEvent.objects.filter(
+                workspace_subject_filter(request.user, prefix="scan__subject__"),
                 pk=event_id,
-                scan__user=request.user,
             )
             .select_related("scan")
             .first()

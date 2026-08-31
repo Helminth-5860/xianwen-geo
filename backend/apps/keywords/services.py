@@ -113,7 +113,8 @@ def _lock_subject_for_keywords(
 
 
 def keyword_set_for_user_or_404(*, user: User, subject_id, lock: bool = False) -> KeywordSet:
-    query = KeywordSet.objects.filter(user=user, subject_id=subject_id)
+    subject = subject_for_user_or_404(user=user, subject_id=subject_id)
+    query = KeywordSet.objects.filter(subject=subject)
     if lock:
         query = query.select_for_update()
     try:
@@ -123,8 +124,9 @@ def keyword_set_for_user_or_404(*, user: User, subject_id, lock: bool = False) -
 
 
 def keyword_set_for_subject(*, user: User, subject: Subject) -> KeywordSet | None:
+    subject_for_user_or_404(user=user, subject_id=subject.pk)
     return (
-        KeywordSet.objects.filter(user=user, subject=subject)
+        KeywordSet.objects.filter(subject=subject)
         .select_related("draft_subject_version", "current_version")
         .first()
     )
@@ -369,7 +371,7 @@ def commit_keyword_version(
     )
     _lock_effective_subscription(user)
     try:
-        keyword_set = KeywordSet.objects.select_for_update().get(subject=subject, user=user)
+        keyword_set = KeywordSet.objects.select_for_update().get(subject=subject)
     except KeywordSet.DoesNotExist as exc:
         raise KeywordValuesInvalid from exc
     if keyword_set.version != expected_version:
@@ -440,19 +442,19 @@ def commit_keyword_version(
 
 
 def keyword_versions_for_user(*, user: User, subject_id):
-    if not Subject.objects.filter(pk=subject_id, user=user).exists():
-        raise NotFound
+    subject = subject_for_user_or_404(user=user, subject_id=subject_id)
     return (
-        KeywordSetVersion.objects.filter(user=user, subject_id=subject_id)
+        KeywordSetVersion.objects.filter(subject=subject)
         .select_related("subject_version")
         .order_by("-version_no", "id")
     )
 
 
 def keyword_version_for_user_or_404(*, user: User, subject_id, version_id) -> KeywordSetVersion:
+    subject = subject_for_user_or_404(user=user, subject_id=subject_id)
     try:
         return (
-            KeywordSetVersion.objects.filter(user=user, subject_id=subject_id)
+            KeywordSetVersion.objects.filter(subject=subject)
             .select_related("subject_version")
             .prefetch_related("keywords")
             .get(pk=version_id)
@@ -463,7 +465,7 @@ def keyword_version_for_user_or_404(*, user: User, subject_id, version_id) -> Ke
 
 def _current_asset_keywords(*, user: User, subject: Subject) -> dict[uuid.UUID, Keyword]:
     workspace = (
-        DistillationWorkspace.objects.filter(user=user, subject=subject)
+        DistillationWorkspace.objects.filter(subject=subject)
         .select_related("current_set")
         .first()
     )
@@ -490,7 +492,7 @@ def _current_asset_groups(
     *, user: User, subject: Subject
 ) -> list[tuple[Keyword, tuple[Keyword, ...]]]:
     workspace = (
-        DistillationWorkspace.objects.filter(user=user, subject=subject)
+        DistillationWorkspace.objects.filter(subject=subject)
         .select_related("current_set")
         .first()
     )

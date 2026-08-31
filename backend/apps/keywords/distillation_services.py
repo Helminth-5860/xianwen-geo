@@ -169,11 +169,11 @@ def create_distillation_job(
         input_version = (
             KeywordSetVersion.objects.select_related("keyword_set", "subject_version")
             .prefetch_related("keywords")
-            .get(pk=keyword_set_version_id, subject=subject, user=user)
+            .get(pk=keyword_set_version_id, subject=subject)
         )
     except KeywordSetVersion.DoesNotExist as exc:
         raise DistillationKeywordVersionConflict from exc
-    keyword_set = KeywordSet.objects.select_for_update().get(subject=subject, user=user)
+    keyword_set = KeywordSet.objects.select_for_update().get(subject=subject)
     if (
         keyword_set.current_version_id != input_version.pk
         or subject.current_version_id != input_version.subject_version_id
@@ -272,15 +272,14 @@ def distillation_job_for_user_or_404(*, user, job_id):
 
 
 def distillation_workspace_for_subject(*, user, subject):
-    if subject.user_id != user.pk:
-        raise Http404
+    subject_for_user_or_404(user=user, subject_id=subject.pk)
     return (
         DistillationWorkspace.objects.select_related(
             "draft_input_version__subject_version",
             "draft_source_result__job",
             "current_set",
         )
-        .filter(subject=subject, user=user)
+        .filter(subject=subject)
         .first()
     )
 
@@ -669,13 +668,13 @@ def save_distillation_draft(*, user_id, subject_id, expected_version: int, items
         workspace = (
             DistillationWorkspace.objects.select_for_update()
             .select_related("draft_input_version", "draft_source_result")
-            .get(subject=subject, user=user)
+            .get(subject=subject)
         )
     except DistillationWorkspace.DoesNotExist as exc:
         raise DistillationValuesInvalid from exc
     if workspace.version != expected_version:
         raise DistillationVersionConflict
-    keyword_set = KeywordSet.objects.select_for_update().get(subject=subject, user=user)
+    keyword_set = KeywordSet.objects.select_for_update().get(subject=subject)
     if (
         keyword_set.current_version_id != workspace.draft_input_version_id
         or subject.current_version_id != workspace.draft_input_version.subject_version_id
@@ -727,13 +726,13 @@ def confirm_distillation(*, user_id, subject_id, expected_version: int):
         workspace = (
             DistillationWorkspace.objects.select_for_update()
             .select_related("draft_input_version__subject_version", "draft_source_result")
-            .get(subject=subject, user=user)
+            .get(subject=subject)
         )
     except DistillationWorkspace.DoesNotExist as exc:
         raise DistillationValuesInvalid from exc
     if workspace.version != expected_version:
         raise DistillationVersionConflict
-    keyword_set = KeywordSet.objects.select_for_update().get(subject=subject, user=user)
+    keyword_set = KeywordSet.objects.select_for_update().get(subject=subject)
     if (
         keyword_set.current_version_id != workspace.draft_input_version_id
         or subject.current_version_id != workspace.draft_input_version.subject_version_id
@@ -796,7 +795,7 @@ def current_distillation_for_user_or_404(*, user, subject_id):
     subject = subject_for_user_or_404(user=user, subject_id=subject_id)
     try:
         workspace = DistillationWorkspace.objects.select_related("current_set").get(
-            subject=subject, user=user
+            subject=subject
         )
     except DistillationWorkspace.DoesNotExist as exc:
         raise Http404 from exc

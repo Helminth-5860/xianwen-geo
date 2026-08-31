@@ -7,6 +7,7 @@ from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.utils import timezone
+from rest_framework.exceptions import NotFound as DRFNotFound
 
 from apps.search_discovery.provider import BaiduSearchProvider, SearchProviderError
 from apps.search_discovery.source_quality import (
@@ -15,7 +16,7 @@ from apps.search_discovery.source_quality import (
     relevance_score,
     visibility_score,
 )
-from apps.subjects.models import Subject
+from apps.subjects.subject_services import subject_for_user_or_404
 
 from .classifier import (
     CandidateAnalysis,
@@ -76,12 +77,12 @@ def recover_stale_negative_index_scans(*, user=None, subject_id=None) -> int:
 
 
 def create_negative_index_scan(*, user, subject_id) -> NegativeIndexScan:
-    subject = Subject.objects.filter(pk=subject_id, user=user).first()
-    if subject is None:
-        raise NegativeIndexNotFound
-    recover_stale_negative_index_scans(user=user, subject_id=subject.pk)
+    try:
+        subject = subject_for_user_or_404(user=user, subject_id=subject_id)
+    except DRFNotFound as exc:
+        raise NegativeIndexNotFound from exc
+    recover_stale_negative_index_scans(subject_id=subject.pk)
     if NegativeIndexScan.objects.filter(
-        user=user,
         subject=subject,
         status__in=(
             NegativeIndexScan.Status.QUEUED,

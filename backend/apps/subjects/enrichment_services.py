@@ -89,7 +89,6 @@ def _ensure_create_eligible(*, user: User, subject: Subject) -> Subscription:
     if (
         not user.is_active
         or user.account_status != User.AccountStatus.ACTIVE
-        or subject.user_id != user.pk
         or subject.status not in {Subject.Status.DRAFT, Subject.Status.ACTIVE}
     ):
         raise SubjectEnrichmentStateConflict
@@ -176,7 +175,6 @@ def _selected_sources_locked(
                     "document_version__parse_state"
                 ).get(
                     pk=ref["parsed_version_id"],
-                    user=user,
                     subject=subject,
                     source=DocumentParsedVersion.Source.USER_CONFIRMATION,
                 )
@@ -200,7 +198,6 @@ def _selected_sources_locked(
             try:
                 web_parsed = WebSourceParsedVersion.objects.select_related("import_record").get(
                     pk=ref["parsed_version_id"],
-                    user=user,
                     subject=subject,
                     source=WebSourceParsedVersion.Source.USER_CONFIRMATION,
                 )
@@ -229,12 +226,11 @@ def _selected_sources_locked(
 
 
 def available_sources(*, user: User, subject: Subject) -> list[dict[str, Any]]:
-    if subject.user_id != user.pk:
-        raise NotFound
+    subject_for_user_or_404(user=user, subject_id=subject.pk)
     output: list[dict[str, Any]] = []
     document_states = (
         DocumentParseState.objects.filter(
-            user=user, subject=subject, current_confirmed_version__isnull=False
+            subject=subject, current_confirmed_version__isnull=False
         )
         .select_related("document", "current_confirmed_version")
         .order_by("-updated_at", "id")
@@ -254,7 +250,6 @@ def available_sources(*, user: User, subject: Subject) -> list[dict[str, Any]]:
         )
     imports = (
         WebSourceImport.objects.filter(
-            user=user,
             subject=subject,
             status=WebSourceImport.Status.SUCCEEDED,
             current_confirmed_version__isnull=False,

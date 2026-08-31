@@ -7,8 +7,9 @@ from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.utils import timezone
+from rest_framework.exceptions import NotFound as DRFNotFound
 
-from apps.subjects.models import Subject
+from apps.subjects.subject_services import subject_for_user_or_404
 
 from .models import SourceIndexHit, SourceIndexItem, SourceIndexScan
 from .provider import BaiduSearchProvider, SearchProviderError
@@ -57,12 +58,12 @@ def recover_stale_source_index_scans(*, user=None, subject_id=None) -> int:
 
 
 def create_source_index_scan(*, user, subject_id) -> SourceIndexScan:
-    subject = Subject.objects.filter(pk=subject_id, user=user).first()
-    if subject is None:
-        raise SourceIndexNotFound
-    recover_stale_source_index_scans(user=user, subject_id=subject.pk)
+    try:
+        subject = subject_for_user_or_404(user=user, subject_id=subject_id)
+    except DRFNotFound as exc:
+        raise SourceIndexNotFound from exc
+    recover_stale_source_index_scans(subject_id=subject.pk)
     if SourceIndexScan.objects.filter(
-        user=user,
         subject=subject,
         status__in=(SourceIndexScan.Status.QUEUED, SourceIndexScan.Status.RUNNING),
     ).exists():

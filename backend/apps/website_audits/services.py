@@ -7,8 +7,9 @@ from django.conf import settings
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
+from rest_framework.exceptions import NotFound as DRFNotFound
 
-from apps.subjects.models import Subject
+from apps.subjects.subject_services import subject_for_user_or_404
 from apps.web_sources.url_security import canonicalize_url
 
 from .crawler import crawl_website
@@ -59,13 +60,13 @@ def recover_stale_website_audits(*, user=None, subject_id=None) -> int:
 
 
 def create_website_audit(*, user, subject_id, url: str) -> WebsiteAudit:
-    subject = Subject.objects.filter(pk=subject_id, user=user).first()
-    if subject is None:
-        raise WebsiteAuditNotFound
-    recover_stale_website_audits(user=user, subject_id=subject.pk)
+    try:
+        subject = subject_for_user_or_404(user=user, subject_id=subject_id)
+    except DRFNotFound as exc:
+        raise WebsiteAuditNotFound from exc
+    recover_stale_website_audits(subject_id=subject.pk)
     canonical = canonicalize_url(url)
     if WebsiteAudit.objects.filter(
-        user=user,
         subject=subject,
         status__in=(WebsiteAudit.Status.QUEUED, WebsiteAudit.Status.RUNNING),
     ).exists():
@@ -241,7 +242,10 @@ def execute_website_audit(audit_id) -> dict[str, int | str]:
                     f"{fetched_count} 个页面证据，未继续等待剩余慢页面。"
                 ),
                 impact="报告仍基于已获取的真实页面、浏览器与语义证据生成，但未抓取页面不会被假定为正常。",
-                recommendation="如需扩大覆盖，可优化源站响应速度、Sitemap 质量与异常页面访问稳定性后重新检测。",
+                recommendation=(
+                    "如需扩大覆盖，可优化源站响应速度、Sitemap 质量与异常页面访问稳定性"
+                    "后重新检测。"
+                ),
                 affected_count=max(0, len(result.discovered_urls) - fetched_count),
                 evidence={
                     "time_budget_seconds": settings.WEBSITE_AUDIT_TOTAL_TIMEOUT_SECONDS,

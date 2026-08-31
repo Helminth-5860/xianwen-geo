@@ -43,6 +43,7 @@ def _make_subject(*, tenant_key: str, name: str, official_url: str):
     values["official_url"] = official_url
     subject = Subject.objects.create(
         user=user,
+        tenant=tenant,
         subject_type=subject_type,
         status=Subject.Status.ACTIVE,
         draft_values=values,
@@ -197,7 +198,7 @@ def test_subject_alias_cannot_be_added_as_competitor():
     assert response.data["error"]["code"] == "COMPETITOR_IS_SUBJECT"
 
 
-def test_tenant_and_owner_scope_fail_closed():
+def test_workspace_members_share_competitors_but_other_tenants_fail_closed():
     owner, subject = _make_subject(
         tenant_key="competitor-tenant-owner",
         name="甲公司",
@@ -221,21 +222,32 @@ def test_tenant_and_owner_scope_fail_closed():
         account_status=User.AccountStatus.ACTIVE,
         tenant=owner.tenant,
     )
-    assert _client(same_tenant_outsider).get(_list_path(subject)).status_code == 404
+    shared = _client(same_tenant_outsider).get(_list_path(subject))
+    assert shared.status_code == 200
+    assert [item["name"] for item in shared.data["items"]] == ["核心竞品"]
+    assert _create(_client(same_tenant_outsider), subject, "第二竞品").status_code == 201
+    assert _client(owner).get(_list_path(subject)).data["count"] == 2
 
 
-def test_subjects_do_not_share_competitors_even_for_same_user():
+def test_replacement_subject_does_not_inherit_archived_subject_competitors():
     user, first_subject = _make_subject(
         tenant_key="competitor-subject-scope",
         name="甲公司",
         official_url="https://alpha.example.com",
     )
+    client = _client(user)
+    created = _create(client, first_subject, "核心竞品")
+    assert created.status_code == 201
+    first_subject.status = Subject.Status.ARCHIVED
+    first_subject.save(update_fields=("status", "updated_at"))
+
     subject_type = first_subject.subject_type
     snapshot, digest = build_schema_snapshot(subject_type)
     values = materialize_defaults(snapshot)
     values["name"] = "甲公司第二品牌"
     second = Subject.objects.create(
         user=user,
+        tenant=user.tenant,
         subject_type=subject_type,
         status=Subject.Status.ACTIVE,
         draft_values=values,
@@ -260,9 +272,6 @@ def test_subjects_do_not_share_competitors_even_for_same_user():
     second.current_version = version
     second.save(update_fields=("current_version", "updated_at"))
 
-    client = _client(user)
-    created = _create(client, first_subject, "核心竞品")
-    assert created.status_code == 201
     listed = client.get(_list_path(second))
     assert listed.status_code == 200
     assert listed.data["count"] == 0

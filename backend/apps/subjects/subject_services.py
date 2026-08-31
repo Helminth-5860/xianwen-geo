@@ -87,10 +87,21 @@ def _ensure_subject_write_allowed(user: User) -> None:
         raise SubjectAccountReadOnly
 
 
-def _workspace_subject_filter(user: User) -> Q:
+def workspace_subject_filter(user: User, *, prefix: str = "") -> Q:
+    """Return the subject ownership predicate for the user's workspace."""
+
     if user.tenant_id is not None:
-        return Q(tenant_id=user.tenant_id)
-    return Q(tenant__isnull=True, user=user)
+        return Q(**{f"{prefix}tenant_id": user.tenant_id})
+    return Q(
+        **{
+            f"{prefix}tenant__isnull": True,
+            f"{prefix}user_id": user.pk,
+        }
+    )
+
+
+def _workspace_subject_filter(user: User) -> Q:
+    return workspace_subject_filter(user)
 
 
 def _workspace_users(user: User):

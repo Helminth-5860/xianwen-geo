@@ -10,6 +10,7 @@ from rest_framework.exceptions import NotFound
 
 from apps.plans.models import Subscription
 from apps.subjects.models import Subject
+from apps.subjects.subject_services import subject_for_user_or_404, workspace_subject_filter
 from apps.users.models import Notification, User
 
 from .exceptions import (
@@ -38,7 +39,6 @@ def _eligible_locked(*, user: User, subject: Subject) -> Subscription:
         not settings.WEB_IMPORT_ENABLED
         or not user.is_active
         or user.account_status != User.AccountStatus.ACTIVE
-        or subject.user_id != user.pk
         or subject.status not in {Subject.Status.DRAFT, Subject.Status.ACTIVE}
     ):
         raise WebSourceStateConflict
@@ -60,10 +60,7 @@ def create_import(*, request, user_id, subject_id, raw_url: str, idempotency_key
     )
     with transaction.atomic():
         user = User.objects.select_for_update().get(pk=user_id)
-        try:
-            subject = Subject.objects.select_for_update().get(pk=subject_id, user=user)
-        except Subject.DoesNotExist as exc:
-            raise NotFound from exc
+        subject = subject_for_user_or_404(user=user, subject_id=subject_id, lock=True)
         _eligible_locked(user=user, subject=subject)
         replay = WebSourceImport.objects.filter(idempotency_key_digest=digest).first()
         if replay is not None:
@@ -344,7 +341,7 @@ def import_for_user_or_404(*, user, import_id, for_update=False):
             "latest_parsed_version", "current_confirmed_version", "snapshot"
         )
     try:
-        return rows.get(pk=import_id, user=user)
+        return rows.filter(workspace_subject_filter(user, prefix="subject__")).get(pk=import_id)
     except WebSourceImport.DoesNotExist as exc:
         raise NotFound from exc
 
@@ -358,7 +355,7 @@ def confirm_import(
     with transaction.atomic():
         user = User.objects.select_for_update().get(pk=user_id)
         row = import_for_user_or_404(user=user, import_id=import_id, for_update=True)
-        subject = Subject.objects.select_for_update().get(pk=row.subject_id, user=user)
+        subject = subject_for_user_or_404(user=user, subject_id=row.subject_id, lock=True)
         if (
             not user.is_active
             or user.account_status != User.AccountStatus.ACTIVE
@@ -368,7 +365,7 @@ def confirm_import(
             raise WebSourceStateConflict
         try:
             source = WebSourceParsedVersion.objects.get(
-                pk=source_version_id, import_record=row, user=user, subject=subject
+                pk=source_version_id, import_record=row, subject=subject
             )
         except WebSourceParsedVersion.DoesNotExist as exc:
             raise WebSourceStateConflict from exc
@@ -425,7 +422,7 @@ def confirm_import(
 
 
 def confirmed_content(*, subject, import_record):
-    if import_record.subject_id != subject.pk or import_record.user_id != subject.user_id:
+    if import_record.subject_id != subject.pk:
         raise WebSourceStateConflict
     if import_record.current_confirmed_version_id is None:
         raise WebSourceStateConflict

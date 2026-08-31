@@ -8,12 +8,14 @@ from django.core.validators import URLValidator
 from django.db import transaction
 from django.http import Http404
 from django.utils import timezone
+from rest_framework.exceptions import NotFound as DRFNotFound
 
 from apps.core.error_codes import ErrorCode
 from apps.keywords.normalization import KeywordNormalizationError, normalize_plain_text
 from apps.search_discovery.normalization import normalize_url
 from apps.search_discovery.subject_context import extract_self_domains
 from apps.subjects.models import Subject, SubjectVersion
+from apps.subjects.subject_services import subject_for_user_or_404
 
 from .models import SubjectCompetitor
 
@@ -27,24 +29,14 @@ class CompetitorBusinessError(Exception):
     status: int
 
 
-def _subject_query(*, user, subject_id, lock: bool = False):
-    query = Subject.objects.filter(
-        pk=subject_id,
-        user=user,
-        user__tenant_id=user.tenant_id,
-        status=Subject.Status.ACTIVE,
-        current_version__isnull=False,
-    ).select_related("current_version")
-    if lock:
-        query = query.select_for_update(of=("self",))
-    return query
-
-
 def subject_for_competitors(*, user, subject_id, lock: bool = False) -> Subject:
     try:
-        return _subject_query(user=user, subject_id=subject_id, lock=lock).get()
-    except Subject.DoesNotExist as exc:
+        subject = subject_for_user_or_404(user=user, subject_id=subject_id, lock=lock)
+    except DRFNotFound as exc:
         raise Http404 from exc
+    if subject.status != Subject.Status.ACTIVE or subject.current_version_id is None:
+        raise Http404
+    return subject
 
 
 def subject_version_for_competitors(*, subject: Subject) -> SubjectVersion:
@@ -54,13 +46,10 @@ def subject_version_for_competitors(*, subject: Subject) -> SubjectVersion:
     return version
 
 
-def active_competitors(*, user, subject: Subject):
+def active_competitors(*, subject: Subject):
     return SubjectCompetitor.objects.filter(
-        user=user,
-        tenant_id=user.tenant_id,
+        tenant_id=subject.tenant_id,
         subject=subject,
-        subject__user=user,
-        subject__user__tenant_id=user.tenant_id,
         status=SubjectCompetitor.Status.ACTIVE,
     ).order_by("position", "created_at", "id")
 
@@ -68,7 +57,7 @@ def active_competitors(*, user, subject: Subject):
 def competitor_for_user(
     *, user, subject: Subject, competitor_id, lock: bool = False
 ) -> SubjectCompetitor:
-    query = active_competitors(user=user, subject=subject).filter(pk=competitor_id)
+    query = active_competitors(subject=subject).filter(pk=competitor_id)
     if lock:
         query = query.select_for_update(of=("self",))
     try:
@@ -128,7 +117,7 @@ def _assert_not_subject(*, subject: Subject, name_key: str, website_domain: str)
 def _assert_not_duplicate(
     *, user, subject: Subject, name_key: str, website_domain: str, exclude_id=None
 ) -> None:
-    query = active_competitors(user=user, subject=subject)
+    query = active_competitors(subject=subject)
     if exclude_id is not None:
         query = query.exclude(pk=exclude_id)
     if query.filter(normalized_name=name_key).exists():
@@ -154,7 +143,7 @@ def competitor_payload(competitor: SubjectCompetitor) -> dict[str, object]:
 def competitor_list_payload(*, user, subject_id) -> dict[str, object]:
     subject = subject_for_competitors(user=user, subject_id=subject_id)
     version = subject_version_for_competitors(subject=subject)
-    items = tuple(active_competitors(user=user, subject=subject))
+    items = tuple(active_competitors(subject=subject))
     return {
         "subject": {
             "id": str(subject.pk),
@@ -176,7 +165,7 @@ def create_competitor(*, user, subject_id, name: str, website: str) -> SubjectCo
         name_key=name_key,
         website_domain=website_domain,
     )
-    current = tuple(active_competitors(user=user, subject=subject))
+    current = tuple(active_competitors(subject=subject))
     if len(current) >= MAX_SUBJECT_COMPETITORS:
         raise CompetitorBusinessError(ErrorCode.COMPETITOR_LIMIT_REACHED, 409)
     _assert_not_duplicate(
@@ -193,7 +182,7 @@ def create_competitor(*, user, subject_id, name: str, website: str) -> SubjectCo
     )
     return SubjectCompetitor.objects.create(
         user=user,
-        tenant_id=user.tenant_id,
+        tenant_id=subject.tenant_id,
         subject=subject,
         name=display_name,
         normalized_name=name_key,
@@ -271,7 +260,7 @@ def remove_competitor(*, user, subject_id, competitor_id) -> None:
     competitor.version += 1
     competitor.save(update_fields=("status", "removed_at", "version", "updated_at"))
 
-    remaining = tuple(active_competitors(user=user, subject=subject))
+    remaining = tuple(active_competitors(subject=subject))
     for position, item in enumerate(remaining, start=1):
         if item.position == position:
             continue
