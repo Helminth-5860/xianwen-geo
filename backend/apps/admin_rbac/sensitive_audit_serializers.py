@@ -4,9 +4,6 @@ from .sensitive_audit_models import SensitiveAuditLog
 
 
 class SensitiveAuditLogListSerializer(serializers.ModelSerializer):
-    actor_id = serializers.UUIDField(allow_null=True)
-    target_user_id = serializers.UUIDField(allow_null=True)
-
     class Meta:
         model = SensitiveAuditLog
         fields = (
@@ -14,13 +11,11 @@ class SensitiveAuditLogListSerializer(serializers.ModelSerializer):
             "action_key",
             "outcome",
             "channel",
-            "actor_id",
             "actor_user_id_snapshot",
             "actor_name_snapshot",
             "actor_role_snapshot",
             "actor_tenant_id_snapshot",
             "actor_tenant_name_snapshot",
-            "target_user_id",
             "target_user_id_snapshot",
             "target_name_snapshot",
             "target_tenant_id_snapshot",
