@@ -39,6 +39,11 @@ class Migration(migrations.Migration):
                 ("actor_tenant_name_snapshot", models.CharField(blank=True, max_length=120)),
                 ("target_user_id_snapshot", models.UUIDField(blank=True, db_index=True, null=True)),
                 ("target_name_snapshot", models.CharField(blank=True, max_length=50)),
+                (
+                    "target_owner_user_id_snapshot",
+                    models.UUIDField(blank=True, db_index=True, null=True),
+                ),
+                ("target_owner_name_snapshot", models.CharField(blank=True, max_length=50)),
                 ("target_tenant_id_snapshot", models.UUIDField(blank=True, null=True)),
                 ("target_tenant_name_snapshot", models.CharField(blank=True, max_length=120)),
                 ("quota_type", models.CharField(blank=True, max_length=100)),
