@@ -18,6 +18,8 @@ class SensitiveAuditLogListSerializer(serializers.ModelSerializer):
             "actor_tenant_name_snapshot",
             "target_user_id_snapshot",
             "target_name_snapshot",
+            "target_owner_user_id_snapshot",
+            "target_owner_name_snapshot",
             "target_tenant_id_snapshot",
             "target_tenant_name_snapshot",
             "quota_type",
