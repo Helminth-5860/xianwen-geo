@@ -89,6 +89,7 @@ def _apply_keyword_filter(queryset, keyword: str):
         | Q(actor_role_snapshot__icontains=keyword)
         | Q(actor_tenant_name_snapshot__icontains=keyword)
         | Q(target_name_snapshot__icontains=keyword)
+        | Q(target_owner_name_snapshot__icontains=keyword)
         | Q(target_tenant_name_snapshot__icontains=keyword)
     )
     try:
@@ -107,6 +108,7 @@ def _apply_keyword_filter(queryset, keyword: str):
             Q(pk=parsed_uuid)
             | Q(actor_user_id_snapshot=parsed_uuid)
             | Q(target_user_id_snapshot=parsed_uuid)
+            | Q(target_owner_user_id_snapshot=parsed_uuid)
             | Q(ledger_entry_id=parsed_uuid)
             | Q(request_id=parsed_uuid)
         )
