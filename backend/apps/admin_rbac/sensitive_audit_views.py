@@ -19,6 +19,7 @@ from .sensitive_audit_serializers import (
 
 MAX_QUERY_DAYS = 365
 DEFAULT_QUERY_DAYS = 7
+PAGE_SIZE = 20
 
 
 def _require_superuser(request) -> None:
@@ -29,20 +30,19 @@ def _require_superuser(request) -> None:
 def _page(queryset, request):
     try:
         page = max(int(request.query_params.get("page", 1)), 1)
-        page_size = min(max(int(request.query_params.get("page_size", 20)), 1), 100)
     except (TypeError, ValueError) as exc:
         raise ValidationError({"page": ["分页参数不正确。"]}) from exc
     count = queryset.count()
-    offset = (page - 1) * page_size
+    offset = (page - 1) * PAGE_SIZE
     return {
         "results": SensitiveAuditLogListSerializer(
-            queryset[offset : offset + page_size], many=True
+            queryset[offset : offset + PAGE_SIZE], many=True
         ).data,
         "pagination": {
             "page": page,
-            "page_size": page_size,
+            "page_size": PAGE_SIZE,
             "count": count,
-            "total_pages": ceil(count / page_size) if count else 0,
+            "total_pages": ceil(count / PAGE_SIZE) if count else 0,
         },
     }
 
