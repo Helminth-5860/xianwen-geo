@@ -1,6 +1,5 @@
 import uuid
 
-from django.conf import settings
 from django.db import models
 
 
@@ -23,26 +22,12 @@ class SensitiveAuditLog(models.Model):  # noqa: DJ008
     outcome = models.CharField(max_length=16, choices=Outcome.choices, db_index=True)
     channel = models.CharField(max_length=32, default="admin_console")
 
-    actor = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        null=True,
-        blank=True,
-        on_delete=models.SET_NULL,
-        related_name="sensitive_audit_logs_as_actor",
-    )
     actor_user_id_snapshot = models.UUIDField(null=True, blank=True, db_index=True)
     actor_name_snapshot = models.CharField(max_length=50, blank=True)
     actor_role_snapshot = models.CharField(max_length=100, blank=True)
     actor_tenant_id_snapshot = models.UUIDField(null=True, blank=True)
     actor_tenant_name_snapshot = models.CharField(max_length=120, blank=True)
 
-    target_user = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        null=True,
-        blank=True,
-        on_delete=models.SET_NULL,
-        related_name="sensitive_audit_logs_as_target",
-    )
     target_user_id_snapshot = models.UUIDField(null=True, blank=True, db_index=True)
     target_name_snapshot = models.CharField(max_length=50, blank=True)
     target_tenant_id_snapshot = models.UUIDField(null=True, blank=True)
@@ -70,8 +55,12 @@ class SensitiveAuditLog(models.Model):  # noqa: DJ008
         db_table = "sensitive_audit_logs"
         ordering = ("-created_at", "-id")
         indexes = [
-            models.Index(fields=("actor", "created_at"), name="sens_actor_created_idx"),
-            models.Index(fields=("target_user", "created_at"), name="sens_target_created_idx"),
+            models.Index(
+                fields=("actor_user_id_snapshot", "created_at"), name="sens_actor_created_idx"
+            ),
+            models.Index(
+                fields=("target_user_id_snapshot", "created_at"), name="sens_target_created_idx"
+            ),
             models.Index(fields=("action_key", "created_at"), name="sens_action_created_idx"),
             models.Index(fields=("operation_ip", "created_at"), name="sens_ip_created_idx"),
         ]
