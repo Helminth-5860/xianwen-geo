@@ -241,9 +241,15 @@ export function AdminConsoleShell({
             menu={{
               items: [
                 { key: "identity", label: identityLabel, disabled: true },
+                {
+                  key: "sales-contact",
+                  icon: <SettingOutlined />,
+                  label: "销售联系方式",
+                },
                 { key: "logout", label: loggingOut ? "正在退出…" : "退出登录" },
               ],
               onClick: ({ key }) => {
+                if (key === "sales-contact") router.push("/admin/settings#sales-contact");
                 if (key === "logout" && !loggingOut) void signOut();
               },
             }}

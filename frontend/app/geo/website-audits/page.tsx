@@ -11,6 +11,7 @@ import { Alert, Button, Card, Empty, Input, Progress, Space, Spin, Tag, Typograp
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
+import { QuotaActionHint } from "@/components/quota-action-hint";
 import { useSubjectWorkspace } from "@/components/subject-workspace-context";
 import { userMessage } from "@/lib/auth-client";
 import {
@@ -189,6 +190,10 @@ export default function WebsiteAuditsPage() {
                   type="info"
                   showIcon
                   message="一次检测会依次完成整站扫描、SEO/GEO 规则、浏览器渲染和 AI 语义分析。"
+                />
+                <QuotaActionHint
+                  quotaType="website_audits"
+                  actionText="本次完整检测使用 1 次官网检测额度，完全失败将自动退回"
                 />
                 <Button
                   type="primary"

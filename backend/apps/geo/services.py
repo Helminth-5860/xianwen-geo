@@ -235,6 +235,12 @@ def _detection_account(subscription: Subscription):
         raise GeoDetectionInputConflict from exc
 
 
+def _detection_hold_amount(*, quota_type: str, planned_calls: int) -> int:
+    """Keep legacy point billing compatible while natural-unit plans charge one run."""
+
+    return planned_calls if quota_type == "detection_points" else 1
+
+
 def _available_detection_runs(subscription: Subscription) -> int:
     account = _detection_account(subscription)
     return available_quota(subscription=subscription, quota_type=account.quota_type)
@@ -448,7 +454,10 @@ def create_detection_job(
         raise GeoDetectionConcurrencyLimit
     job_id = uuid.uuid4()
     account = _detection_account(subscription)
-    held_amount = selected["required"] if account.quota_type == "detection_points" else 1
+    held_amount = _detection_hold_amount(
+        quota_type=account.quota_type,
+        planned_calls=selected["required"],
+    )
     hold = freeze_quota(
         account_id=account.pk,
         amount=held_amount,

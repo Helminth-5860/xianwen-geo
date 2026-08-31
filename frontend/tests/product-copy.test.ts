@@ -42,8 +42,18 @@ describe("普通用户产品文案", () => {
         subject_active_limit: 3,
         max_models_per_detection: 8,
         article_credits: 500,
+        video_script_generations: 3,
         runtime_endpoint: "internal-only",
       }),
-    ).toEqual(["最多管理 3 个主体", "单次检测最多覆盖 8 个 AI 平台", "500 次文章生成"]);
+    ).toEqual(["单次检测最多选择 8 个模型", "500 篇 AI 文章", "3 条视频脚本"]);
+  });
+
+  it("套餐权益中的无限额度统一显示为不限", () => {
+    const lines = publicPlanBenefitLines({
+      article_generations: 9_223_372_036_854_776_000,
+    });
+
+    expect(lines).toEqual(["AI 文章不限"]);
+    expect(lines.join(" ")).not.toContain("922337");
   });
 });

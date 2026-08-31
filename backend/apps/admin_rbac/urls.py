@@ -7,6 +7,11 @@ from .risk_views import (
     RiskPolicyDetailView,
     RiskPolicyListView,
 )
+from .sales_contact_views import (
+    AdminSalesContactView,
+    CustomerSalesContactView,
+    SalesContactMediaView,
+)
 from .security_views import (
     AdminForceLogoutView,
     AdminLogoutView,
@@ -38,6 +43,13 @@ from .views import (
 )
 
 urlpatterns = [
+    path("sales-contact", CustomerSalesContactView.as_view(), name="sales-contact"),
+    path("sales-contact/qr", SalesContactMediaView.as_view(), name="sales-contact-media"),
+    path(
+        "admin/sales-contact",
+        AdminSalesContactView.as_view(),
+        name="admin-sales-contact",
+    ),
     path(
         "admin/auth/login/password", AdminPasswordLoginView.as_view(), name="admin-password-login"
     ),

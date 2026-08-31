@@ -10,6 +10,7 @@ import {
 import { Alert, Button, Card, Empty, Skeleton, Space, Tag, Typography, message } from "antd";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { QuotaActionHint } from "@/components/quota-action-hint";
 import { useSubjectWorkspace } from "@/components/subject-workspace-context";
 import { WebsiteDesignSelector } from "@/components/website-design-selector";
 import { WebsiteDraftPreview, type WebsitePreviewImage } from "@/components/website-draft-preview";
@@ -586,16 +587,22 @@ export function WebsiteBuilderWorkspace() {
               友好的中文内容。
             </Typography.Text>
           </div>
-          <Button
-            type="primary"
-            size="large"
-            icon={<RocketOutlined />}
-            loading={generating}
-            disabled={!readiness?.can_generate || uploading || loading}
-            onClick={() => void startGeneration()}
-          >
-            {project?.site ? "重新生成官网内容" : "AI 一键生成官网"}
-          </Button>
+          <Space orientation="vertical" align="end" size={6}>
+            <Button
+              type="primary"
+              size="large"
+              icon={<RocketOutlined />}
+              loading={generating}
+              disabled={!readiness?.can_generate || uploading || loading}
+              onClick={() => void startGeneration()}
+            >
+              {project?.site ? "重新生成官网内容" : "AI 一键生成官网"}
+            </Button>
+            <QuotaActionHint
+              quotaType="website_generations"
+              actionText="成功生成官网内容后使用 1 次官网生成额度"
+            />
+          </Space>
         </section>
 
         {generating && (

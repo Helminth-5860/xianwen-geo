@@ -27,6 +27,7 @@ from apps.geo.exceptions import (
 )
 from apps.geo.models import GeoDetectionJob, GeoDetectionModelRun, ModelCall, ModelResponse
 from apps.geo.services import (
+    _detection_hold_amount,
     cancel_detection,
     create_detection_job,
     detection_options,
@@ -44,6 +45,26 @@ from tests.test_question_bank import create_job as create_question_job
 from tests.test_question_bank import facts as question_facts
 
 pytestmark = pytest.mark.django_db
+
+
+def test_ten_questions_by_eight_models_still_holds_one_natural_run():
+    planned_calls = 10 * 8
+
+    assert planned_calls == 80
+    assert (
+        _detection_hold_amount(
+            quota_type="geo_detection_runs",
+            planned_calls=planned_calls,
+        )
+        == 1
+    )
+    assert (
+        _detection_hold_amount(
+            quota_type="detection_points",
+            planned_calls=planned_calls,
+        )
+        == 80
+    )
 
 
 class _FakeSemaphoreStore:
@@ -311,6 +332,44 @@ def test_successful_detection_consumes_once_after_all_calls_finish(geo_facts):
     job.quota_hold.refresh_from_db()
     assert job.quota_hold.consumed_amount == 1
 
+    assert (
+        QuotaLedgerEntry.objects.filter(
+            hold__group=job.quota_hold,
+            action=QuotaLedgerEntry.Action.CONSUME,
+        ).count()
+        == 1
+    )
+
+
+def test_partial_detection_with_one_usable_result_consumes_one_run(geo_facts):
+    job, _ = _create(
+        geo_facts,
+        key="geo-detection-partial-consumes-one-run",
+    )
+    calls = list(job.model_calls.order_by("id"))
+    with patch("apps.geo.services.model_registry.resolve", return_value=_SuccessAdapter()):
+        assert execute_model_call(
+            call_id=calls[0].pk,
+            semaphore_store=_FakeSemaphoreStore(),
+        ) == {"status": "succeeded", "terminal_transition": True}
+
+    runtime = AIModelRuntimeConfig.objects.get(model_id=calls[1].model_id)
+    runtime.paused = True
+    runtime.pause_reason = "partial settlement test"
+    runtime.version += 1
+    runtime.save(update_fields=("paused", "pause_reason", "version", "updated_at"))
+    assert execute_model_call(
+        call_id=calls[1].pk,
+        semaphore_store=_FakeSemaphoreStore(),
+    ) == {"status": "failed", "terminal_transition": True}
+
+    job.refresh_from_db()
+    job.quota_hold.refresh_from_db()
+    assert job.status == GeoDetectionJob.Status.PARTIAL
+    assert job.successful_calls == job.failed_calls == 1
+    assert job.quota_hold.requested_amount == 1
+    assert job.quota_hold.consumed_amount == 1
+    assert job.quota_hold.released_amount == 0
     assert (
         QuotaLedgerEntry.objects.filter(
             hold__group=job.quota_hold,

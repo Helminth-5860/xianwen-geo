@@ -1,3 +1,5 @@
+import { formatQuotaAmount } from "./quota-format";
+
 export const XIANWEN_PRODUCT_TERMS = Object.freeze({
   overview: "GEO 总览",
   subjectArchive: "主体档案",
@@ -84,7 +86,7 @@ export function publicPlanBenefitLines(benefits: Readonly<Record<string, unknown
     [numberValue("negative_index_scans"), "次负面信息扫描"],
     [numberValue("website_audits"), "次官网检测"],
     [numberValue("website_generations"), "次官网生成"],
-    [numberValue("video_script_generations"), "篇视频脚本"],
+    [numberValue("video_script_generations"), "条视频脚本"],
     [numberValue("competitor_comparisons"), "次竞品对比"],
     [numberValue("keyword_generated_items"), "条智能关键词"],
     [numberValue("question_generated_items"), "条 AI 问题"],
@@ -97,7 +99,13 @@ export function publicPlanBenefitLines(benefits: Readonly<Record<string, unknown
     if (models !== undefined) lines.push(`单次检测最多选择 ${models} 个模型`);
   }
   for (const [amount, label] of quotaLines) {
-    if (amount !== undefined) lines.push(`${amount} ${label}`);
+    if (amount === undefined) continue;
+    const formattedAmount = formatQuotaAmount(amount);
+    lines.push(
+      formattedAmount === "不限"
+        ? `${label.replace(/^(次|篇|张|条)\s*/, "")}不限`
+        : `${formattedAmount} ${label}`,
+    );
   }
   if (benefits.white_label_enabled === true) lines.push("支持自定义品牌展示");
   if (benefits.report_export_enabled === true) lines.push("支持导出报告");

@@ -148,6 +148,8 @@ class UserQuotaLedgerSerializer(serializers.ModelSerializer):
     related_object = serializers.SerializerMethodField()
     remaining_amount = serializers.IntegerField(source="available_after")
     pending_amount = serializers.IntegerField(source="frozen_after")
+    balance_before = serializers.SerializerMethodField()
+    balance_after = serializers.SerializerMethodField()
     description = serializers.SerializerMethodField()
     reason = serializers.SerializerMethodField()
 
@@ -169,6 +171,8 @@ class UserQuotaLedgerSerializer(serializers.ModelSerializer):
             "frozen_before",
             "frozen_delta",
             "frozen_after",
+            "balance_before",
+            "balance_after",
             "remaining_amount",
             "pending_amount",
             "status_label",
@@ -209,10 +213,25 @@ class UserQuotaLedgerSerializer(serializers.ModelSerializer):
             return "已退回"
         return "已完成"
 
+    def get_balance_before(self, obj):
+        if obj.action == QuotaLedgerEntry.Action.CONSUME:
+            return obj.available_before + obj.frozen_before
+        return obj.available_before
+
+    def get_balance_after(self, obj):
+        if obj.action == QuotaLedgerEntry.Action.CONSUME:
+            return obj.available_after + obj.frozen_after
+        return obj.available_after
+
     def get_related_object(self, obj):
         names = {
             "geo_detection": "GEO 检测",
+            "geo_detection_job": "GEO 检测",
             "article_generation": "文章生成",
+            "article_outline": "文章生成",
+            "article_body": "文章生成",
+            "article_local_optimize": "文章优化",
+            "article_quality_recheck": "文章质量检查",
             "image_generation": "图片生成",
             "keyword_generation": "关键词生成",
             "question_bank_generation": "问题库生成",
@@ -227,6 +246,13 @@ class UserQuotaLedgerSerializer(serializers.ModelSerializer):
         return names.get(obj.business_type, "额度变更")
 
     def get_description(self, obj):
+        related_object = self.get_related_object(obj)
+        if obj.action == QuotaLedgerEntry.Action.CONSUME:
+            return f"{related_object}已完成"
+        if obj.action == QuotaLedgerEntry.Action.RELEASE:
+            return f"{related_object}未完成，额度已退回"
+        if obj.action in MANUAL_ACTIONS and obj.safe_reason.strip():
+            return obj.safe_reason.strip()
         return LEDGER_ACTION_NAMES.get(obj.action, "额度已更新")
 
     def get_reason(self, obj):

@@ -1,0 +1,142 @@
+.page {
+  width: min(1480px, calc(100% - 72px));
+  min-height: calc(100vh - 60px);
+  margin: 0 auto;
+  padding: 40px 0 72px;
+}
+
+.pageHeader h1 {
+  margin-bottom: 8px !important;
+}
+
+.pageHeader p {
+  margin-bottom: 0;
+}
+
+.usageTitle {
+  margin: 12px 0 8px !important;
+}
+
+.section {
+  margin-top: 34px;
+  min-width: 0;
+}
+
+.section > h2,
+.sectionHeading h2 {
+  margin-bottom: 14px !important;
+}
+
+.summaryCard {
+  overflow: hidden;
+}
+
+.summaryTitle {
+  margin: 4px 0 0 !important;
+}
+
+.summaryPrice {
+  margin: 8px 0 0 !important;
+  color: var(--xw-primary) !important;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.coreQuotaGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 20px;
+}
+
+.coreQuota {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.numberLine {
+  margin: 0 !important;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.inlineLink {
+  display: inline-block;
+  margin-top: 14px;
+  font-weight: 600;
+}
+
+.sectionHeading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.sectionHeading p {
+  margin-bottom: 0;
+}
+
+.sectionAlert {
+  margin-bottom: 18px;
+}
+
+.quotaCard {
+  height: 100%;
+}
+
+.quotaCard :global(.ant-card-body) {
+  min-height: 190px;
+}
+
+.usageEntry {
+  margin-top: 22px;
+  padding: 18px 22px;
+  text-align: right;
+  border: 1px solid var(--xw-border);
+  border-radius: 14px;
+  background: var(--xw-surface);
+}
+
+.usageEntry a {
+  font-weight: 700;
+}
+
+.usageFilter {
+  width: 240px;
+  margin-bottom: 18px;
+}
+
+.usageLoading {
+  min-height: 260px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@media (max-width: 1023px) {
+  .page {
+    width: min(100% - 40px, 1480px);
+    padding-top: 30px;
+  }
+}
+
+@media (max-width: 767px) {
+  .page {
+    width: min(100% - 28px, 1480px);
+    padding: 24px 0 48px;
+  }
+
+  .section {
+    margin-top: 26px;
+  }
+
+  .coreQuotaGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .usageEntry {
+    text-align: left;
+  }
+}

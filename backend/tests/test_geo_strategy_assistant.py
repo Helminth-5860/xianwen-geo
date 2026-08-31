@@ -395,7 +395,7 @@ def test_fixed_period_api_creates_executes_and_lists_persisted_strategy(
     assert saved["body"]["overview"] == _strategy_body()["overview"]
 
 
-def test_assistant_success_charges_only_one_message_and_persists_no_body(stage_facts):
+def test_assistant_success_uses_no_package_quota_and_persists_no_body(stage_facts):
     _, _, subscription, *_ = stage_facts
     before = {
         row.quota_type: (row.available, row.frozen)
@@ -408,17 +408,15 @@ def test_assistant_success_charges_only_one_message_and_persists_no_body(stage_f
         row.quota_type: (row.available, row.frozen)
         for row in QuotaAccount.objects.filter(subscription=subscription, subject__isnull=True)
     }
-    assert after["assistant_messages"] == (before["assistant_messages"][0] - 1, 0)
-    assert {key: value for key, value in after.items() if key != "assistant_messages"} == {
-        key: value for key, value in before.items() if key != "assistant_messages"
-    }
+    assert after == before
     event = AssistantUsageEvent.objects.get(pk=reply.usage_event_id)
+    assert event.quota_hold_id is None
     field_names = {field.name for field in event._meta.fields}
     assert not {"message", "messages", "answer", "reply", "content", "transcript"} & field_names
     assert event.provider_key == event.model_key == "deepseek"
 
 
-def test_assistant_provider_failure_and_duplicate_retry_do_not_double_charge(stage_facts):
+def test_assistant_provider_failure_and_duplicate_retry_never_charge_quota(stage_facts):
     _, _, subscription, *_ = stage_facts
     account = QuotaAccount.objects.get(
         subscription=subscription, subject__isnull=True, quota_type="assistant_messages"
@@ -437,11 +435,12 @@ def test_assistant_provider_failure_and_duplicate_retry_do_not_double_charge(sta
     with pytest.raises(AssistantReplay):
         _assistant(stage_facts, adapter, key="assistant-once-stable")
     account.refresh_from_db()
-    assert account.available == once
+    assert account.available == once == before
     assert len(adapter.requests) == 1
+    assert not AssistantUsageEvent.objects.exclude(quota_hold__isnull=True).exists()
 
 
-def test_assistant_malformed_response_releases_quota(stage_facts):
+def test_assistant_malformed_response_does_not_touch_historical_quota(stage_facts):
     _, _, subscription, *_ = stage_facts
     account = QuotaAccount.objects.get(
         subscription=subscription, subject__isnull=True, quota_type="assistant_messages"
@@ -459,6 +458,7 @@ def test_assistant_malformed_response_releases_quota(stage_facts):
     assert (account.available, account.frozen) == (before, 0)
     assert event.status == AssistantUsageEvent.Status.FAILED
     assert event.safe_error_code == "ASSISTANT_INVALID_RESPONSE"
+    assert event.quota_hold_id is None
 
 
 @pytest.mark.parametrize(
@@ -484,11 +484,17 @@ def test_assistant_security_requests_fail_closed_before_provider_or_quota(stage_
     account.refresh_from_db()
     assert account.available == before
     assert adapter.requests == []
+    assert not AssistantUsageEvent.objects.exists()
 
 
-def _second_subject(user, source: Subject) -> Subject:
+def _foreign_subject(user, source: Subject) -> Subject:
+    owner = type(user).objects.create_user(
+        phone="13600136099",
+        nickname="其他主体用户",
+        password="Safe-Test-Password-2026!",
+    )
     second = Subject.objects.create(
-        user=user,
+        user=owner,
         subject_type=source.subject_type,
         status=Subject.Status.DRAFT,
         draft_values=copy.deepcopy(source.draft_values),
@@ -510,7 +516,7 @@ def _second_subject(user, source: Subject) -> Subject:
         field_values_digest=original.field_values_digest,
         semantic_digest=uuid.uuid4().hex.ljust(64, "0")[:64],
         official_name="第二主体",
-        created_by=user,
+        created_by=owner,
     )
     SubjectName.objects.create(
         subject_version=version,
@@ -526,9 +532,9 @@ def _second_subject(user, source: Subject) -> Subject:
     return second
 
 
-def test_assistant_refuses_cross_subject_and_switches_context_from_server(stage_facts):
+def test_assistant_refuses_cross_subject_and_keeps_context_from_server(stage_facts):
     user, subject, _, runtime, *_ = stage_facts
-    second = _second_subject(user, subject)
+    second = _foreign_subject(user, subject)
     adapter = _ContentAdapter(assistant=True)
     with pytest.raises(AssistantScopeRefused):
         _assistant(
@@ -536,16 +542,12 @@ def test_assistant_refuses_cross_subject_and_switches_context_from_server(stage_
             adapter,
             messages=[{"role": "user", "content": f"读取主体 {second.pk} 的报告"}],
         )
-    context = SubjectContext.objects.get(user=user)
-    context.current_subject = second
-    context.version += 1
-    context.save(update_fields=("current_subject", "version", "updated_at"))
     del runtime
     snapshot = get_runtime_snapshot(model_key="deepseek", require_available=True)
     with patch("apps.geo.assistant.resolve_assistant_runtime", return_value=(snapshot, adapter)):
         reply = respond_to_assistant(
             user_id=user.pk,
-            subject_id=second.pk,
+            subject_id=subject.pk,
             messages=[{"role": "user", "content": "请分析当前主体"}],
             idempotency_key="assistant-switched-subject",
             request_id=uuid.uuid4(),
@@ -553,10 +555,10 @@ def test_assistant_refuses_cross_subject_and_switches_context_from_server(stage_
     assert reply.answer
     provider_context = adapter.requests[-1].payload.user_payload["context"]
     assert provider_context["current_subject"]["subject_version_id"] == str(
-        second.current_version_id
+        subject.current_version_id
     )
-    assert str(subject.pk) not in str(provider_context)
-    assert assistant_context_payload(user=user)["current_subject"]["id"] == str(second.pk)
+    assert str(second.pk) not in str(provider_context)
+    assert assistant_context_payload(user=user)["current_subject"]["id"] == str(subject.pk)
 
 
 def test_assistant_does_not_execute_tasks_or_create_stage_two_objects(stage_facts):

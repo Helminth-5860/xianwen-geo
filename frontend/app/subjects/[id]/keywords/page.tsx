@@ -24,6 +24,7 @@ import {
   keywordRegionSelectionsFromServiceArea,
   KeywordRegionSelector,
 } from "@/components/keyword-region-selector";
+import { QuotaActionHint } from "@/components/quota-action-hint";
 import { useSubjectWorkspace } from "@/components/subject-workspace-context";
 import { AuthApiError, userMessage } from "@/lib/auth-client";
 import {
@@ -345,11 +346,7 @@ export function KeywordCenterPage({
         await reload();
         setNotice("关键词已生成并加入待蒸馏关键词");
       } else {
-        setNotice(
-          job.billing.billing_mode === "free_initial"
-            ? "已开始首次免费生成关键词"
-            : "已开始重新生成关键词，并暂时预留额度",
-        );
+        setNotice("已开始生成关键词，系统将按成功新增并保存的条数使用额度");
       }
     } catch (reason) {
       if (
@@ -358,7 +355,7 @@ export function KeywordCenterPage({
       ) {
         setRegenerationConfirmation(true);
         setError("");
-        setNotice("该主体已使用免费生成，请确认消耗一次再生成额度");
+        setNotice("该主体已有生成结果，请确认再次生成；成功新增的关键词将按条使用额度");
       } else {
         setError(userMessage(reason));
         setNotice("");
@@ -737,6 +734,10 @@ export function KeywordCenterPage({
             >
               AI 生成关键词
             </Button>
+            <QuotaActionHint
+              quotaType="keyword_generated_items"
+              actionText={`本次最多生成 ${targetCount} 条，按成功新增的关键词条数使用额度`}
+            />
             {generation ? (
               <Tag color={generation.status === "succeeded" ? "green" : "blue"}>
                 {generation.status === "superseded"
@@ -746,14 +747,14 @@ export function KeywordCenterPage({
             ) : null}
             {regenerationConfirmation ? (
               <Popconfirm
-                title="确认消耗一次关键词再生成额度？"
-                description="生成成功后才会扣除，未完成则不会扣除。"
+                title="确认再次生成关键词？"
+                description="按本次成功新增并保存的关键词条数使用额度，重复或失败内容不计入。"
                 okText="确认再生成"
                 cancelText="取消"
                 onConfirm={() => void startGeneration(true)}
               >
                 <Button danger disabled={disabled}>
-                  确认消耗额度并再生成
+                  确认再次生成
                 </Button>
               </Popconfirm>
             ) : null}

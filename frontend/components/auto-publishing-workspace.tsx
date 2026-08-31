@@ -28,6 +28,7 @@ import {
 } from "antd";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { QuotaActionHint } from "@/components/quota-action-hint";
 import { useSubjectWorkspace } from "@/components/subject-workspace-context";
 import { getSubjectArticles, type Article } from "@/lib/articles-client";
 import { userMessage } from "@/lib/auth-client";
@@ -800,7 +801,7 @@ export function AutoPublishingWorkspace() {
               显问会从可发布文章中自动完成平台判断、智能配图、内容调整、错峰排期和发布。客户只需要完成平台授权，并决定是否开启自动发文。
             </p>
           </div>
-          <Space>
+          <Space wrap>
             <Button
               icon={<ReloadOutlined />}
               loading={loading}
@@ -821,6 +822,10 @@ export function AutoPublishingWorkspace() {
                 onChange={(checked) => void savePreference({ is_enabled: checked })}
               />
             </Space>
+            <QuotaActionHint
+              quotaType="auto_publish_count"
+              actionText="每成功正式发布 1 篇文章使用 1 篇自动发文额度，预览和失败不扣除"
+            />
           </Space>
         </section>
 

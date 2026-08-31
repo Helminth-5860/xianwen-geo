@@ -459,6 +459,20 @@ def test_customer_quota_center_exposes_only_natural_unit_accounts_and_safe_ledge
         idempotency_key="customer-center-consume-0001",
         request_id=uuid.uuid4(),
     )
+    released_hold = freeze_quota(
+        account_id=account.pk,
+        amount=1,
+        business_type="geo_detection_job",
+        business_id=uuid.uuid4(),
+        idempotency_key="customer-center-freeze-0002",
+        request_id=uuid.uuid4(),
+    )
+    release_hold(
+        hold_id=released_hold.pk,
+        amount=1,
+        idempotency_key="customer-center-release-0001",
+        request_id=uuid.uuid4(),
+    )
 
     client = APIClient()
     client.force_authenticate(user)
@@ -479,9 +493,32 @@ def test_customer_quota_center_exposes_only_natural_unit_accounts_and_safe_ledge
     entries = ledger.json()["data"]["results"]
     assert entries
     assert {entry["quota_type"] for entry in entries} <= expected_types
+    assert {entry["action"] for entry in entries} == {"grant", "consume", "release"}
+    assert not {
+        "initialize",
+        "storage_capacity_reconcile",
+        "freeze",
+        "plan_change_forfeit",
+        "plan_change_transfer_out",
+        "plan_change_transfer_in",
+        "cycle_forfeit",
+        "cycle_late_release_forfeit",
+        "expiry_forfeit",
+        "expiry_late_release_forfeit",
+    } & {entry["action"] for entry in entries}
     consume_entry = next(entry for entry in entries if entry["action"] == "consume")
     assert consume_entry["action_name"] == "任务已完成"
     assert consume_entry["change_amount"] == -1
+    assert consume_entry["balance_before"] == 5
+    assert consume_entry["balance_after"] == 4
+    assert consume_entry["available_before"] == consume_entry["available_after"] == 4
+    assert consume_entry["description"] == "GEO 检测已完成"
+    release_entry = next(entry for entry in entries if entry["action"] == "release")
+    assert release_entry["action_name"] == "任务额度已恢复"
+    assert release_entry["change_amount"] == 1
+    assert release_entry["balance_before"] == 3
+    assert release_entry["balance_after"] == 4
+    assert release_entry["description"] == "GEO 检测未完成，额度已退回"
     serialized = str(entries)
     for forbidden in ("business_type", "business_id", "safe_reason", "request_digest"):
         assert forbidden not in serialized

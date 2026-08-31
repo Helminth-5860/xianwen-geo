@@ -1,6 +1,8 @@
 import { get, post, type PageData } from "./auth-client";
 import type { RiskExecution } from "./risk-client";
 
+export { formatQuotaAmount, isUnlimitedQuotaAmount } from "./quota-format";
+
 export const CUSTOMER_QUOTA_TYPES = [
   "geo_detection_runs",
   "article_generations",
@@ -94,6 +96,7 @@ export type UserQuotaSummary = Readonly<{
   available: number;
   frozen: number;
   used_amount?: number;
+  unlimited?: boolean;
 }>;
 
 export type UserQuotaLedgerEntry = Readonly<{
@@ -109,6 +112,10 @@ export type UserQuotaLedgerEntry = Readonly<{
   frozen_delta: number;
   frozen_after: number;
   amount?: number;
+  change_amount?: number;
+  balance_before?: number;
+  balance_after?: number;
+  unit_display_name?: string;
   business_type?: string;
   safe_reason?: string;
   description?: string;

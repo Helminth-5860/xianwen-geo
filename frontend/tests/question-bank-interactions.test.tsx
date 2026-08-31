@@ -404,9 +404,11 @@ describe("问题生成与问题管理", () => {
     expect(await screen.findByText("问题生成")).toBeTruthy();
     await userEvent.click(screen.getByRole("button", { name: "AI 生成问题" }));
     expect(
-      await screen.findByText("该主体已有成功问题生成，请确认消耗一次重生成额度"),
+      await screen.findByText(
+        "该主体已有生成结果，请确认再次生成；成功新增的问题将按条使用额度",
+      ),
     ).toBeTruthy();
-    await userEvent.click(screen.getByRole("button", { name: "确认消耗额度并重生成" }));
+    await userEvent.click(screen.getByRole("button", { name: "确认再次生成" }));
     await userEvent.click(await screen.findByRole("button", { name: "确认重生成" }));
     await waitFor(() => expect(api.createQuestionGeneration).toHaveBeenCalledTimes(2));
   });

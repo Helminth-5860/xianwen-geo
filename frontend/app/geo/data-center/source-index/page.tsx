@@ -23,6 +23,7 @@ import {
 } from "antd";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { QuotaActionHint } from "@/components/quota-action-hint";
 import { useSubjectWorkspace } from "@/components/subject-workspace-context";
 import { userMessage } from "@/lib/auth-client";
 import {
@@ -392,6 +393,10 @@ export default function SourceIndexPage() {
           >
             {activeScan ? "正在扫描" : latestResult ? "更新信源" : "开始扫描"}
           </Button>
+          <QuotaActionHint
+            quotaType="source_index_scans"
+            actionText="本次扫描获得有效结果后使用 1 次信源扫描额度"
+          />
         </Space>
       </section>
 

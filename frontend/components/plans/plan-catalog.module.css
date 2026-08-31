@@ -1,0 +1,100 @@
+.catalog {
+  min-width: 0;
+}
+
+.heading h2 {
+  margin-bottom: 6px !important;
+}
+
+.heading p {
+  margin-bottom: 18px;
+}
+
+.grid :global(.ant-row) {
+  align-items: stretch;
+}
+
+.item,
+.item > :global(.ant-card) {
+  height: 100%;
+}
+
+.card {
+  height: 100%;
+  border-color: var(--xw-border);
+}
+
+.card :global(.ant-card-body) {
+  min-height: 510px;
+  display: flex;
+  flex-direction: column;
+}
+
+.currentCard {
+  border-color: var(--xw-primary) !important;
+  box-shadow: 0 14px 34px rgb(43 109 246 / 13%);
+}
+
+.description {
+  min-height: 44px;
+}
+
+.price {
+  margin: 0 0 12px !important;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.benefits {
+  margin-top: 14px;
+}
+
+.benefits :global(.ant-list-item) {
+  align-items: flex-start;
+  padding-inline: 0;
+}
+
+.collapse {
+  margin-top: 2px;
+}
+
+.collapse :global(.ant-collapse-header) {
+  padding-inline: 0 !important;
+}
+
+.action {
+  margin-top: auto;
+  padding-top: 14px;
+}
+
+.salesContact {
+  min-height: 290px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  text-align: center;
+}
+
+.salesContact > :global(.ant-alert) {
+  width: 100%;
+}
+
+.qrCode {
+  max-width: 240px;
+  border-radius: 14px;
+}
+
+@media (max-width: 1599px) {
+  .card :global(.ant-card-body) {
+    min-height: 480px;
+  }
+}
+
+@media (max-width: 575px) {
+  .card :global(.ant-card-body),
+  .description {
+    min-height: 0;
+  }
+}

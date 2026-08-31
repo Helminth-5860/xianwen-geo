@@ -24,6 +24,7 @@ from apps.geo.models import (
     ScoreResult,
     SubjectCompetitor,
 )
+from apps.quotas.models import QuotaLedgerEntry
 from apps.users.models import Tenant, User
 from tests.test_geo_detection import _create, _mark_job_terminal
 from tests.test_geo_detection import geo_facts as geo_facts_fixture
@@ -409,9 +410,11 @@ def test_latest_real_report_drives_ready_payload(geo_facts) -> None:
         provenance={},
     )
 
+    ledger_count_before_view = QuotaLedgerEntry.objects.count()
     payload = competitor_comparison_payload(user=user, subject_id=subject.pk)
 
     assert payload["status"] == "ready"
+    assert QuotaLedgerEntry.objects.count() == ledger_count_before_view
     assert payload["report_id"] == str(report.pk)
     assert payload["detection_id"] == str(job.pk)
     assert payload["valid_answer_count"] == 1

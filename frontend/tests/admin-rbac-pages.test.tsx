@@ -16,6 +16,8 @@ describe("企业级管理员后台", () => {
     expect(shell).toContain("平台总览");
     expect(shell).toContain("模型与接口");
     expect(shell).toContain("操作记录");
+    expect(shell).toContain("销售联系方式");
+    expect(shell).toContain("/admin/settings#sales-contact");
     expect(shell).not.toMatch(/租户|角色模板|高风险审批|统一审计/);
   });
 
@@ -31,12 +33,14 @@ describe("企业级管理员后台", () => {
     expect(read("../app/admin/admins/page.tsx")).toContain('title="管理员"');
     expect(read("../app/admin/users/page.tsx")).toContain('title="用户"');
     expect(read("../app/admin/plans/page.tsx")).toContain('title="套餐管理"');
-    expect(read("../app/admin/quotas/page.tsx")).toContain('title="额度管理"');
+    expect(read("../app/admin/quotas/page.tsx")).toContain('title="客户额度中心"');
     expect(read("../app/admin/models/page.tsx")).toContain('title="模型与接口"');
     expect(read("../app/admin/business-data/page.tsx")).toContain('title="业务数据"');
     expect(read("../app/admin/system-status/page.tsx")).toContain('title="系统状态"');
     expect(read("../app/admin/operation-records/page.tsx")).toContain('title="操作记录"');
-    expect(read("../app/admin/settings/page.tsx")).toContain('title="系统设置"');
+    expect(read("../app/admin/settings/page.tsx")).toContain('isSuperuser ? "系统设置"');
+    expect(read("../app/admin/settings/page.tsx")).toContain("getAdminSalesContact");
+    expect(read("../app/admin/settings/page.tsx")).toContain("uploadAdminSalesContact");
   });
 
   it("前端实现版本冲突和客户归属冲突提示", () => {

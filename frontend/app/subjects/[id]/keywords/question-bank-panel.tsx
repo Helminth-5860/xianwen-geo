@@ -14,6 +14,7 @@ import {
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
+import { QuotaActionHint } from "@/components/quota-action-hint";
 import { AuthApiError, userMessage } from "@/lib/auth-client";
 import {
   confirmQuestionBank,
@@ -172,11 +173,7 @@ export default function QuestionBankPanel({ subjectId, upstreamDirty }: Props) {
       setJob(next);
       setConfirmRegeneration(false);
       setError("");
-      setNotice(
-        next.billing.billing_mode === "free_initial"
-          ? "已开始首次免费生成问题"
-          : "已开始重新生成问题，并暂时预留额度",
-      );
+      setNotice("已开始生成问题，系统将按成功新增并保存的条数使用额度");
     } catch (reason) {
       if (
         reason instanceof AuthApiError &&
@@ -184,7 +181,7 @@ export default function QuestionBankPanel({ subjectId, upstreamDirty }: Props) {
       ) {
         setConfirmRegeneration(true);
         setError("");
-        setNotice("该主体已有成功问题生成，请确认消耗一次重生成额度");
+        setNotice("该主体已有生成结果，请确认再次生成；成功新增的问题将按条使用额度");
       } else if (reason instanceof AuthApiError && reason.code.startsWith("QUESTION_GENERATION_")) {
         setError(questionGenerationMessage(reason.code));
         setNotice("");
@@ -307,16 +304,20 @@ export default function QuestionBankPanel({ subjectId, upstreamDirty }: Props) {
           >
             AI 生成问题
           </Button>
+          <QuotaActionHint
+            quotaType="question_generated_items"
+            actionText="按成功新增并保存的问题条数使用额度，重复内容不计入"
+          />
           {confirmRegeneration ? (
             <Popconfirm
-              title="确认消耗一次问题重生成额度？"
-              description="成功生成后扣除；失败、冲突或过期会释放。"
+              title="确认再次生成问题？"
+              description="按本次成功新增并保存的问题条数使用额度，重复或失败内容不计入。"
               okText="确认重生成"
               cancelText="取消"
               onConfirm={() => void generate(true)}
             >
               <Button danger disabled={disabled || upstreamDirty}>
-                确认消耗额度并重生成
+                确认再次生成
               </Button>
             </Popconfirm>
           ) : null}

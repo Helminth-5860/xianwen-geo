@@ -29,6 +29,7 @@ import {
 } from "antd";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { QuotaActionHint } from "@/components/quota-action-hint";
 import { useSubjectWorkspace } from "@/components/subject-workspace-context";
 import { userMessage } from "@/lib/auth-client";
 import {
@@ -554,15 +555,21 @@ function NegativeIndexSubjectPage({ subjectId }: Readonly<{ subjectId: string }>
             汇集公开网络信息，结合来源可信度、智能语义分析和高风险内容核验，分析当前主体的公开负面风险。
           </Paragraph>
         </div>
-        <Button
-          type="primary"
-          icon={<ReloadOutlined />}
-          loading={starting}
-          disabled={Boolean(activeScan)}
-          onClick={() => void startScan()}
-        >
-          {latestResult ? "重新扫描" : "开始扫描"}
-        </Button>
+        <Space orientation="vertical" align="end" size={6}>
+          <Button
+            type="primary"
+            icon={<ReloadOutlined />}
+            loading={starting}
+            disabled={Boolean(activeScan)}
+            onClick={() => void startScan()}
+          >
+            {latestResult ? "重新扫描" : "开始扫描"}
+          </Button>
+          <QuotaActionHint
+            quotaType="negative_index_scans"
+            actionText="本次扫描获得有效结果后使用 1 次负面信息扫描额度"
+          />
+        </Space>
       </div>
 
       <Alert

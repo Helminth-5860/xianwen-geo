@@ -28,6 +28,11 @@ MANUAL_ADJUSTMENT_ACTIONS = (
     QuotaLedgerEntry.Action.REFUND,
     QuotaLedgerEntry.Action.MANUAL_DEDUCT,
 )
+CUSTOMER_VISIBLE_LEDGER_ACTIONS = (
+    QuotaLedgerEntry.Action.CONSUME,
+    QuotaLedgerEntry.Action.RELEASE,
+    *MANUAL_ADJUSTMENT_ACTIONS,
+)
 
 
 def _with_account_activity(queryset):
@@ -113,13 +118,7 @@ def user_ledger(user):
         QuotaLedgerEntry.objects.filter(
             user=user,
             quota_type__in=CUSTOMER_VISIBLE_QUOTA_TYPES,
-        )
-        .exclude(
-            action__in=(
-                QuotaLedgerEntry.Action.PLAN_CHANGE_FORFEIT,
-                QuotaLedgerEntry.Action.PLAN_CHANGE_TRANSFER_OUT,
-                QuotaLedgerEntry.Action.PLAN_CHANGE_TRANSFER_IN,
-            )
+            action__in=CUSTOMER_VISIBLE_LEDGER_ACTIONS,
         )
         .select_related("account")
         .order_by("-created_at", "-id")

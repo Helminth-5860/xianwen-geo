@@ -21,6 +21,7 @@ import {
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { QuotaActionHint } from "@/components/quota-action-hint";
 import { useSubjectSwitchGuard } from "@/components/subject-workspace-context";
 import { userMessage } from "@/lib/auth-client";
 import {
@@ -511,6 +512,10 @@ export default function VideoScriptWorkspace({
                 >
                   生成视频脚本
                 </Button>
+                <QuotaActionHint
+                  quotaType="video_script_generations"
+                  actionText="成功生成后使用 1 条视频脚本额度"
+                />
                 <Text type="secondary">建议时长 15-90 秒；首次先生成完整分镜，再按需要编辑。</Text>
               </Space>
             </Space>
