@@ -224,9 +224,18 @@ export type SubjectSummary = Readonly<{
   current_version_no: number | null;
   official_name: string | null;
   service_regions: string;
+  profile_completeness?: SubjectProfileCompleteness;
   retest_required: boolean;
   created_at: string;
   updated_at: string;
+}>;
+
+export type SubjectProfileCompleteness = Readonly<{
+  percentage: number;
+  core_completed: number;
+  core_total: number;
+  missing_core: readonly string[];
+  suggestion: string;
 }>;
 
 export type SubjectSocialChannels = Readonly<{
@@ -244,8 +253,11 @@ export type SubjectBusinessProfile = Readonly<{
   contact_name: string;
   contact_phone: string;
   business_address: string;
+  industry: string;
   primary_business: string;
   brand_name: string;
+  subject_aliases: string;
+  unified_social_credit_code: string;
   social_channels: SubjectSocialChannels;
 }>;
 
@@ -254,8 +266,11 @@ export const emptySubjectBusinessProfile = (): SubjectBusinessProfile => ({
   contact_name: "",
   contact_phone: "",
   business_address: "",
+  industry: "",
   primary_business: "",
   brand_name: "",
+  subject_aliases: "",
+  unified_social_credit_code: "",
   social_channels: {
     douyin: "",
     wechat_channels: "",

@@ -1,8 +1,10 @@
 from django.db import transaction
 
 from .models import Subject, SubjectVersion
+from .profile_completeness import calculate_subject_profile_completeness
 from .schema_snapshots import derive_product_candidates
 from .subject_services import (
+    SubjectValuesInvalid,
     mark_subject_usable_after_save,
     subject_for_user_or_404,
     update_subject_draft,
@@ -28,6 +30,9 @@ def save_subject_profile(
         values=values,
         profile_values=profile_values,
     )
+    completeness = calculate_subject_profile_completeness(subject)
+    if completeness.missing_core_keys:
+        raise SubjectValuesInvalid(completeness.missing_core_keys[0])
     candidates = derive_product_candidates(subject.schema_snapshot, subject.draft_values)
     confirmations = [
         {

@@ -121,6 +121,59 @@
   font-weight: 600;
 }
 
+.completenessCard {
+  margin-top: 16px;
+  padding: 18px 22px;
+  border: 1px solid var(--xw-glass-border);
+  border-radius: 16px;
+  background:
+    linear-gradient(120deg, var(--xw-glass-highlight), transparent 64%), var(--xw-glass-soft);
+  box-shadow:
+    var(--xw-shadow-soft),
+    inset 0 1px 0 var(--xw-glass-border-highlight);
+  backdrop-filter: blur(18px) saturate(112%);
+  -webkit-backdrop-filter: blur(18px) saturate(112%);
+}
+
+.completenessHeading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 8px;
+}
+
+.completenessHeading strong {
+  color: var(--xw-primary);
+  font-size: 22px;
+  line-height: 1;
+}
+
+.completenessTitle,
+.completenessMeta,
+.completenessSuggestion {
+  display: block;
+}
+
+.completenessTitle {
+  color: #26344a;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.completenessMeta {
+  margin-top: 3px;
+  color: #7b899b;
+  font-size: 12px;
+}
+
+.completenessSuggestion {
+  margin-top: 7px;
+  color: #65748a;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
 .alert {
   margin-top: 18px;
   border-radius: 12px;

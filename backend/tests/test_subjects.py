@@ -52,9 +52,12 @@ def api_data(response):
 
 @pytest.mark.django_db
 def test_catalog_contains_only_frozen_types_and_common_fields():
-    assert set(SubjectType.objects.values_list("key", flat=True)) == {
-        item.key for item in SUBJECT_TYPE_CATALOG
-    }
+    assert set(
+        SubjectType.objects.filter(status=SubjectType.Status.ACTIVE).values_list("key", flat=True)
+    ) == {item.key for item in SUBJECT_TYPE_CATALOG}
+    assert set(
+        SubjectType.objects.filter(status=SubjectType.Status.INACTIVE).values_list("key", flat=True)
+    ) >= {"store", "service", "professional_institution"}
     assert set(
         SubjectFieldDefinition.objects.filter(scope="common").values_list("field_key", flat=True)
     ) == {item.key for item in COMMON_FIELD_CATALOG}
@@ -358,6 +361,8 @@ def test_catalog_sync_is_idempotent_and_does_not_replace_mutable_config():
 @pytest.mark.django_db
 def test_type_option_and_reorder_mutations_each_increment_schema_version():
     subject_type = SubjectType.objects.get(key="enterprise")
+    initial_schema_version = subject_type.schema_version
+    initial_version = subject_type.version
     client = admin_client()
 
     updated = client.patch(
@@ -371,8 +376,8 @@ def test_type_option_and_reorder_mutations_each_increment_schema_version():
     )
     assert updated.status_code == 200
     subject_type.refresh_from_db()
-    assert subject_type.schema_version == 2
-    assert subject_type.version == 2
+    assert subject_type.schema_version == initial_schema_version + 1
+    assert subject_type.version == initial_version + 1
 
     disabled = client.post(
         f"/api/v1/admin/subject-types/{subject_type.id}/disable",
@@ -385,7 +390,7 @@ def test_type_option_and_reorder_mutations_each_increment_schema_version():
     assert disabled.status_code == 200
     subject_type.refresh_from_db()
     assert subject_type.status == "inactive"
-    assert subject_type.schema_version == 3
+    assert subject_type.schema_version == initial_schema_version + 2
 
     enabled = client.post(
         f"/api/v1/admin/subject-types/{subject_type.id}/enable",
@@ -398,7 +403,7 @@ def test_type_option_and_reorder_mutations_each_increment_schema_version():
     assert enabled.status_code == 200
     subject_type.refresh_from_db()
     assert subject_type.status == "active"
-    assert subject_type.schema_version == 4
+    assert subject_type.schema_version == initial_schema_version + 3
 
     created = client.post(
         f"/api/v1/admin/subject-types/{subject_type.id}/fields",
@@ -414,7 +419,7 @@ def test_type_option_and_reorder_mutations_each_increment_schema_version():
     assert created.status_code == 201
     config = SubjectTypeFieldConfig.objects.get(pk=api_data(created)["id"])
     subject_type.refresh_from_db()
-    assert subject_type.schema_version == 5
+    assert subject_type.schema_version == initial_schema_version + 4
 
     option = client.post(
         f"/api/v1/admin/subject-type-fields/{config.id}/options",
@@ -429,7 +434,7 @@ def test_type_option_and_reorder_mutations_each_increment_schema_version():
     assert option.status_code == 201
     subject_type.refresh_from_db()
     config.refresh_from_db()
-    assert subject_type.schema_version == 6
+    assert subject_type.schema_version == initial_schema_version + 5
     assert config.version == 2
 
     configs = list(subject_type.field_configs.order_by("sort_order", "id"))
@@ -445,7 +450,7 @@ def test_type_option_and_reorder_mutations_each_increment_schema_version():
     )
     assert reordered.status_code == 200
     subject_type.refresh_from_db()
-    assert subject_type.schema_version == 7
+    assert subject_type.schema_version == initial_schema_version + 6
     assert list(
         subject_type.field_configs.order_by("sort_order", "id").values_list("id", flat=True)
     ) == [item.id for item in reversed(configs)]

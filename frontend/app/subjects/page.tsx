@@ -1,17 +1,36 @@
 "use client";
 
-import { Alert, Button, Popconfirm, Space, Spin, Table, Tag, Typography } from "antd";
+import { PlusOutlined } from "@ant-design/icons";
+import {
+  Alert,
+  Button,
+  Form,
+  Input,
+  Modal,
+  Popconfirm,
+  Progress,
+  Select,
+  Space,
+  Spin,
+  Table,
+  Tag,
+  Typography,
+} from "antd";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import { userMessage } from "@/lib/auth-client";
 import {
   deleteSubject,
+  createSubject,
   getSubjects,
+  getSubjectTypes,
   notifySubjectContextUpdated,
   setCurrentSubject,
   type SubjectContext,
   type SubjectSummary,
+  type SubjectType,
 } from "@/lib/subjects-client";
 
 function formatUpdatedAt(value: string) {
@@ -54,6 +73,7 @@ function serviceAreaLabel(value: string) {
 }
 
 export default function SubjectsPage() {
+  const router = useRouter();
   const [subjects, setSubjects] = useState<SubjectSummary[]>();
   const [context, setContext] = useState<SubjectContext>({
     current_subject_id: null,
@@ -62,6 +82,12 @@ export default function SubjectsPage() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [types, setTypes] = useState<SubjectType[]>();
+  const [selectedTypeId, setSelectedTypeId] = useState("");
+  const [subjectName, setSubjectName] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState("");
 
   const load = useCallback(async () => {
     const subjectData = await getSubjects();
@@ -89,11 +115,41 @@ export default function SubjectsPage() {
     };
   }, []);
 
-  useEffect(() => {
-    if (subjects?.length === 0) {
-      window.location.replace("/subjects/new");
+  const openCreate = async () => {
+    setCreateOpen(true);
+    setCreateError("");
+    if (types !== undefined) return;
+    try {
+      const rows = await getSubjectTypes();
+      setTypes(rows);
+      setSelectedTypeId((current) => current || rows[0]?.id || "");
+    } catch (reason) {
+      setCreateError(userMessage(reason));
     }
-  }, [subjects]);
+  };
+
+  const submitCreate = async () => {
+    const name = subjectName.trim();
+    const selectedType = types?.find((item) => item.id === selectedTypeId);
+    if (!name) {
+      setCreateError("请填写主体名称");
+      return;
+    }
+    if (!selectedType) {
+      setCreateError("请选择主体类型");
+      return;
+    }
+    setCreating(true);
+    setCreateError("");
+    try {
+      const subject = await createSubject(selectedType.id, selectedType.schema_version, { name });
+      notifySubjectContextUpdated();
+      router.push(`/subjects/${subject.id}`);
+    } catch (reason) {
+      setCreateError(userMessage(reason));
+      setCreating(false);
+    }
+  };
 
   const execute = async (operation: () => Promise<unknown>, message: string) => {
     setBusy(true);
@@ -115,20 +171,26 @@ export default function SubjectsPage() {
     return <Spin fullscreen description="正在加载主体档案" />;
   }
 
-  if (subjects?.length === 0 && !error) {
-    return <Spin fullscreen description="正在进入创建主体页面" />;
-  }
-
   return (
     <main className="page-shell">
-      <Space wrap align="baseline">
-        <Typography.Title>主体管理</Typography.Title>
-        <Button href="/assistant" type="primary">
-          显问 AI 助手
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 16,
+        }}
+      >
+        <Space wrap align="baseline">
+          <Typography.Title>主体管理</Typography.Title>
+          <Button href="/assistant">显问 AI 助手</Button>
+        </Space>
+        <Button type="primary" icon={<PlusOutlined />} onClick={() => void openCreate()}>
+          新增主体
         </Button>
-      </Space>
+      </div>
       <Typography.Paragraph type="secondary">
-        统一管理企业主体档案。保存后的主体立即可用，可随时查看、编辑、切换或删除。
+        统一管理主体档案。保存后的主体立即可用，可随时查看、编辑、切换或删除。
       </Typography.Paragraph>
       {error && (
         <Alert type="error" showIcon message={error} closable onClose={() => setError("")} />
@@ -140,7 +202,7 @@ export default function SubjectsPage() {
         rowKey="id"
         dataSource={subjects ?? []}
         pagination={false}
-        locale={{ emptyText: "还没有主体档案，请点击上方“显问 AI 助手”创建" }}
+        locale={{ emptyText: "还没有主体，请点击右上角“新增主体”开始创建" }}
         columns={[
           {
             title: "主体名称",
@@ -157,6 +219,17 @@ export default function SubjectsPage() {
           {
             title: "服务区域",
             render: (_, item) => serviceAreaLabel(item.service_regions),
+          },
+          {
+            title: "资料完整度",
+            width: 180,
+            render: (_, item) => (
+              <Progress
+                percent={item.profile_completeness?.percentage ?? 0}
+                size="small"
+                status="normal"
+              />
+            ),
           },
           {
             title: "更新时间",
@@ -213,6 +286,54 @@ export default function SubjectsPage() {
           },
         ]}
       />
+      <Modal
+        title="新增主体"
+        open={createOpen}
+        okText="创建并完善资料"
+        cancelText="取消"
+        confirmLoading={creating}
+        okButtonProps={{ disabled: !types?.length }}
+        onCancel={() => {
+          if (creating) return;
+          setCreateOpen(false);
+          setCreateError("");
+        }}
+        onOk={() => void submitCreate()}
+      >
+        <Typography.Paragraph type="secondary">
+          先填写主体名称并选择类型，创建后继续完善行业、业务、地址和覆盖区域。
+        </Typography.Paragraph>
+        {createError && (
+          <Alert type="error" showIcon message={createError} style={{ marginBottom: 16 }} />
+        )}
+        <Form layout="vertical">
+          <Form.Item label="主体名称" required extra="填写对外使用的正式名称。">
+            <Input
+              aria-label="新增主体名称"
+              value={subjectName}
+              maxLength={500}
+              placeholder="例如：广州显问网络科技有限公司"
+              onChange={(event) => {
+                setSubjectName(event.target.value);
+                setCreateError("");
+              }}
+            />
+          </Form.Item>
+          <Form.Item label="主体类型" required extra="请选择最符合当前主体身份的类型。">
+            <Select
+              aria-label="新增主体类型"
+              value={selectedTypeId || undefined}
+              loading={types === undefined && !createError}
+              placeholder="请选择主体类型"
+              options={types?.map((item) => ({ value: item.id, label: item.name }))}
+              onChange={(value) => {
+                setSelectedTypeId(value);
+                setCreateError("");
+              }}
+            />
+          </Form.Item>
+        </Form>
+      </Modal>
     </main>
   );
 }

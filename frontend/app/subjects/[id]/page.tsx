@@ -30,6 +30,7 @@ import {
   Form,
   Input,
   InputNumber,
+  Progress,
   Select,
   Spin,
   Tag,
@@ -40,8 +41,16 @@ import { useParams, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { SubjectAiEnrichment } from "@/components/subject-ai-enrichment";
+import {
+  businessAddressIsComplete,
+  SubjectBusinessAddressSelector,
+} from "@/components/subject-business-address-selector";
+import {
+  businessCoverageIsComplete,
+  normalizeBusinessCoverage,
+  SubjectBusinessCoverageSelector,
+} from "@/components/subject-business-coverage-selector";
 import { SubjectDocuments } from "@/components/subject-documents";
-import { SubjectServiceAreaSelector } from "@/components/subject-service-area-selector";
 import { useSubjectSwitchGuard } from "@/components/subject-workspace-context";
 import { SubjectWebSources } from "@/components/subject-web-sources";
 import { AuthApiError, userMessage } from "@/lib/auth-client";
@@ -60,18 +69,21 @@ import {
 import styles from "./subject-profile.module.css";
 
 const fieldLabels: Record<string, string> = {
-  name: "营业执照主体名称",
+  name: "主体名称",
   legal_entity_type: "主体类型",
   contact_name: "联系人",
   contact_phone: "联系电话",
-  business_address: "经营地址",
+  business_address: "主体地址",
+  industry: "所属行业",
   primary_business: "主营业务",
-  target_audience: "目标用户",
-  core_products_services: "产品 / 服务",
-  service_regions: "服务区域",
+  target_audience: "服务对象 / 目标客户",
+  core_products_services: "核心产品 / 服务",
+  service_regions: "业务覆盖区域",
   brand_name: "品牌名称",
-  summary: "企业简介",
-  official_url: "官网",
+  subject_aliases: "主体别名",
+  unified_social_credit_code: "统一社会信用代码",
+  summary: "主体简介",
+  official_url: "官网 / 官方主页",
   douyin: "抖音",
   wechat_channels: "视频号",
   wechat_official_account: "公众号",
@@ -82,14 +94,16 @@ const fieldLabels: Record<string, string> = {
 };
 
 const fieldPlaceholders: Record<string, string> = {
-  name: "请输入营业执照上的完整主体名称",
+  name: "例如：广州显问网络科技有限公司",
   contact_name: "请输入日常业务联系人",
   contact_phone: "请输入可联系的手机或座机",
-  business_address: "请输入实际经营地址",
-  primary_business: "请简要说明主要经营内容",
-  target_audience: "请描述主要服务的客户群体",
+  industry: "例如：汽车服务、教育培训、企业软件",
+  primary_business: "例如：汽车维修、汽车保养、钣金喷漆",
+  target_audience: "例如：咸阳市私家车车主",
+  subject_aliases: "例如：显问、显问 GEO；多个别名可分行填写",
+  unified_social_credit_code: "请输入18位统一社会信用代码",
   brand_name: "如对外品牌与营业执照名称不同，请填写品牌名称",
-  summary: "用简洁、客观的语言介绍企业业务与优势",
+  summary: "用简洁、客观的语言介绍主体业务与优势",
   official_url: "https://example.com",
   douyin: "填写账号名称或公开主页链接",
   wechat_channels: "填写视频号名称或公开资料",
@@ -100,20 +114,26 @@ const fieldPlaceholders: Record<string, string> = {
   other_public_urls: "每行填写一个可公开访问的网页",
 };
 
-const baseIdentityKeys = new Set([
-  "name",
-  "legal_entity_type",
-  "contact_name",
-  "contact_phone",
-  "business_address",
-]);
+const baseIdentityKeys = new Set(["name"]);
 const businessKeys = new Set([
   "primary_business",
   "target_audience",
   "core_products_services",
   "service_regions",
 ]);
-const requiredProfileKeys = new Set([...baseIdentityKeys, ...businessKeys]);
+const requiredSchemaKeys = new Set(["name", "target_audience", "service_regions"]);
+
+const fieldDescriptions: Record<string, string> = {
+  name: "填写营业执照、品牌或公开资料中使用的正式名称。",
+  industry: "填写最能代表当前主体主营方向的行业。",
+  primary_business: "说明当前主要经营或提供的业务。",
+  target_audience: "填写实际服务的客户或人群。",
+  business_address: "填写营业执照注册地址或当前实际经营地址。",
+  service_regions: "填写实际产品或服务覆盖范围，可选择全国。",
+  official_url: "填写官方网站或能够代表主体的官方主页。",
+  subject_aliases: "填写客户或公众常用的其他名称。",
+  unified_social_credit_code: "企业 / 公司、个体工商户可选填。",
+};
 
 type DirectProfileFieldKey = Exclude<keyof SubjectBusinessProfile, "social_channels">;
 type ProfileFieldKey = DirectProfileFieldKey | keyof SubjectSocialChannels;
@@ -124,6 +144,7 @@ type ProfileField = Readonly<{
   required: boolean;
   wide?: boolean;
   textarea?: boolean;
+  description?: string;
 }>;
 
 const profileFields: Record<ProfileFieldKey, ProfileField> = {
@@ -132,13 +153,20 @@ const profileFields: Record<ProfileFieldKey, ProfileField> = {
     label: fieldLabels.legal_entity_type,
     required: true,
   },
-  contact_name: { key: "contact_name", label: fieldLabels.contact_name, required: true },
-  contact_phone: { key: "contact_phone", label: fieldLabels.contact_phone, required: true },
+  contact_name: { key: "contact_name", label: fieldLabels.contact_name, required: false },
+  contact_phone: { key: "contact_phone", label: fieldLabels.contact_phone, required: false },
   business_address: {
     key: "business_address",
     label: fieldLabels.business_address,
     required: true,
     wide: true,
+    description: fieldDescriptions.business_address,
+  },
+  industry: {
+    key: "industry",
+    label: fieldLabels.industry,
+    required: true,
+    description: fieldDescriptions.industry,
   },
   primary_business: {
     key: "primary_business",
@@ -146,8 +174,23 @@ const profileFields: Record<ProfileFieldKey, ProfileField> = {
     required: true,
     wide: true,
     textarea: true,
+    description: fieldDescriptions.primary_business,
   },
   brand_name: { key: "brand_name", label: fieldLabels.brand_name, required: false },
+  subject_aliases: {
+    key: "subject_aliases",
+    label: fieldLabels.subject_aliases,
+    required: false,
+    wide: true,
+    textarea: true,
+    description: fieldDescriptions.subject_aliases,
+  },
+  unified_social_credit_code: {
+    key: "unified_social_credit_code",
+    label: fieldLabels.unified_social_credit_code,
+    required: false,
+    description: fieldDescriptions.unified_social_credit_code,
+  },
   douyin: { key: "douyin", label: fieldLabels.douyin, required: false },
   wechat_channels: {
     key: "wechat_channels",
@@ -178,9 +221,7 @@ const profileFields: Record<ProfileFieldKey, ProfileField> = {
 };
 
 const requiredBusinessProfileFields = [
-  profileFields.legal_entity_type,
-  profileFields.contact_name,
-  profileFields.contact_phone,
+  profileFields.industry,
   profileFields.business_address,
   profileFields.primary_business,
 ];
@@ -277,7 +318,8 @@ function presentedField(field: PersistedSubjectField): PersistedSubjectField {
   return {
     ...field,
     label: fieldLabels[field.field_key] ?? field.label,
-    required: field.required || requiredProfileKeys.has(field.field_key),
+    description: fieldDescriptions[field.field_key] ?? field.description,
+    required: field.required || requiredSchemaKeys.has(field.field_key),
   };
 }
 
@@ -290,15 +332,7 @@ function valueMissing(value: unknown) {
 
 function profileValueMissing(field: PersistedSubjectField, value: unknown) {
   if (field.field_key !== "service_regions") return valueMissing(value);
-  if (typeof value !== "string" || !value.trim()) return true;
-  try {
-    const parsed = JSON.parse(value) as { nationwide?: unknown; areas?: unknown };
-    return (
-      parsed.nationwide !== true && (!Array.isArray(parsed.areas) || parsed.areas.length === 0)
-    );
-  } catch {
-    return false;
-  }
+  return !businessCoverageIsComplete(value);
 }
 
 function normalizedValue(field: PersistedSubjectField, value: unknown): unknown {
@@ -311,6 +345,9 @@ function valuesForSave(subject: SubjectDetail, values: Record<string, unknown>) 
   return Object.fromEntries(
     subject.form_schema.fields.map((field) => {
       const value = values[field.field_key];
+      if (field.field_key === "service_regions") {
+        return [field.field_key, normalizeBusinessCoverage(value)];
+      }
       if (field.field_type === "url" && typeof value === "string" && !value.trim()) {
         return [field.field_key, null];
       }
@@ -388,6 +425,9 @@ function ProfileFieldInput({
   disabled: boolean;
   onChange: (value: string) => void;
 }) {
+  if (field.key === "business_address") {
+    return <SubjectBusinessAddressSelector value={value} disabled={disabled} onChange={onChange} />;
+  }
   if (field.key === "legal_entity_type") {
     return (
       <Select
@@ -424,8 +464,15 @@ function ProfileFieldInput({
       disabled={disabled}
       prefix={fieldIcon(field.key)}
       inputMode={field.key === "contact_phone" ? "tel" : undefined}
+      maxLength={field.key === "unified_social_credit_code" ? 18 : undefined}
       placeholder={fieldPlaceholders[field.key]}
-      onChange={(event) => onChange(event.target.value)}
+      onChange={(event) =>
+        onChange(
+          field.key === "unified_social_credit_code"
+            ? event.target.value.toUpperCase()
+            : event.target.value,
+        )
+      }
     />
   );
 }
@@ -444,7 +491,9 @@ function FieldInput({
   onChange: (value: unknown) => void;
 }) {
   if (field.field_key === "service_regions") {
-    return <SubjectServiceAreaSelector value={value} disabled={disabled} onChange={onChange} />;
+    return (
+      <SubjectBusinessCoverageSelector value={value} disabled={disabled} onChange={onChange} />
+    );
   }
   if (field.field_key === "core_products_services") {
     const items =
@@ -627,10 +676,19 @@ function SubjectDetailContent() {
       return `请先填写：${missing.map((field) => field.label).join("、")}`;
     }
     const missingProfile = requiredBusinessProfileFields.filter((field) =>
-      valueMissing(businessProfileValue(currentProfile, field.key)),
+      field.key === "business_address"
+        ? !businessAddressIsComplete(businessProfileValue(currentProfile, field.key))
+        : valueMissing(businessProfileValue(currentProfile, field.key)),
     );
     if (missingProfile.length) {
       return `请先填写：${missingProfile.map((field) => field.label).join("、")}`;
+    }
+    if (
+      ["enterprise", "individual_business"].includes(currentSubject.subject_type.key) &&
+      currentProfile.unified_social_credit_code &&
+      !/^[0-9A-HJ-NPQRTUWXY]{18}$/.test(currentProfile.unified_social_credit_code)
+    ) {
+      return "统一社会信用代码格式不正确，请填写正确的18位代码";
     }
     return "";
   };
@@ -688,7 +746,7 @@ function SubjectDetailContent() {
   useSubjectSwitchGuard(`subject-profile:${params.id}`, dirty, save);
 
   if (!subject && !error) {
-    return <Spin fullscreen description="正在加载企业资料" />;
+    return <Spin fullscreen description="正在加载主体资料" />;
   }
 
   const renderBusinessProfileField = (field: ProfileField) => (
@@ -697,6 +755,7 @@ function SubjectDetailContent() {
       className={`${styles.fieldItem} ${field.wide ? styles.fieldWide : ""}`}
       label={fieldLabel(field.key, field.label)}
       required={field.required}
+      extra={field.description}
     >
       <ProfileFieldInput
         field={field}
@@ -778,8 +837,8 @@ function SubjectDetailContent() {
               </Typography.Title>
               <Typography.Paragraph className={styles.heroDescription}>
                 {readOnly
-                  ? "查看已保存的企业经营、品牌与公开资料。"
-                  : "填写真实经营资料，建立清晰的企业档案，统一管理企业身份、业务、品牌与公开信息。"}
+                  ? "查看已保存的主体经营、品牌与公开资料。"
+                  : "填写真实资料，建立清晰的主体档案，统一管理身份、业务、品牌与公开信息。"}
               </Typography.Paragraph>
             </div>
             <div className={styles.statuses}>
@@ -797,6 +856,30 @@ function SubjectDetailContent() {
             </div>
           </header>
 
+          <section className={styles.completenessCard} aria-label="主体资料完整度">
+            <div className={styles.completenessHeading}>
+              <div>
+                <Typography.Text className={styles.completenessTitle}>
+                  主体资料完整度
+                </Typography.Text>
+                <Typography.Text className={styles.completenessMeta}>
+                  核心资料已完成 {subject.profile_completeness?.core_completed ?? 0} /{" "}
+                  {subject.profile_completeness?.core_total ?? 7} 项
+                </Typography.Text>
+              </div>
+              <strong>{subject.profile_completeness?.percentage ?? 0}%</strong>
+            </div>
+            <Progress
+              percent={subject.profile_completeness?.percentage ?? 0}
+              showInfo={false}
+              strokeColor={{ from: "#2474ff", to: "#8666f6" }}
+            />
+            <Typography.Text className={styles.completenessSuggestion}>
+              {subject.profile_completeness?.suggestion ??
+                "请完善核心资料，完成后主体即可正常使用。"}
+            </Typography.Text>
+          </section>
+
           {subject.risk.public_reason && (
             <Alert
               className={styles.alert}
@@ -812,18 +895,13 @@ function SubjectDetailContent() {
               {
                 key: "identity",
                 title: "基础身份信息",
-                description: "用于确认企业经营主体和日常联系方式",
+                description: "用于确认主体身份、所属行业和实际经营地址",
                 icon: <BankOutlined />,
                 fields: subject.form_schema.fields.filter((field) =>
                   baseIdentityKeys.has(field.field_key),
                 ),
                 profileBefore: [] as ProfileField[],
-                profileAfter: [
-                  profileFields.legal_entity_type,
-                  profileFields.contact_name,
-                  profileFields.contact_phone,
-                  profileFields.business_address,
-                ],
+                profileAfter: [profileFields.industry, profileFields.business_address],
               },
               {
                 key: "business",
@@ -854,6 +932,21 @@ function SubjectDetailContent() {
                     <Tag className={`${styles.badge} ${styles.badgeRequired}`}>必填</Tag>
                   </div>
                   <div className={styles.fieldGrid}>
+                    {section.key === "identity" && (
+                      <Form.Item
+                        className={styles.fieldItem}
+                        label={fieldLabel("legal_entity_type", "主体类型")}
+                        required
+                        extra="主体类型在创建时确定，如需更换类型请新增主体。"
+                      >
+                        <Input
+                          aria-label="主体类型"
+                          value={subject.subject_type.name}
+                          prefix={<ShopOutlined />}
+                          disabled
+                        />
+                      </Form.Item>
+                    )}
                     {section.profileBefore.map(renderBusinessProfileField)}
                     {section.fields.map(renderSchemaField)}
                     {section.profileAfter.map(renderBusinessProfileField)}
@@ -872,13 +965,18 @@ function SubjectDetailContent() {
                     <OptionalPanelLabel
                       icon={<GlobalOutlined />}
                       title="品牌与公开资料"
-                      description="品牌名称、官网、公众号、抖音、小红书以及公开电商渠道"
+                      description="联系人、主体别名、官网、品牌账号以及其他公开渠道"
                       badge="选填"
                     />
                   ),
                   children: (
                     <div className={styles.fieldGrid}>
+                      {renderBusinessProfileField(profileFields.contact_name)}
+                      {renderBusinessProfileField(profileFields.contact_phone)}
                       {renderBusinessProfileField(profileFields.brand_name)}
+                      {renderBusinessProfileField(profileFields.subject_aliases)}
+                      {["enterprise", "individual_business"].includes(subject.subject_type.key) &&
+                        renderBusinessProfileField(profileFields.unified_social_credit_code)}
                       {subject.form_schema.fields
                         .filter(
                           (field) =>
@@ -916,14 +1014,14 @@ function SubjectDetailContent() {
                   <OptionalPanelLabel
                     icon={<DatabaseOutlined />}
                     title="更多资料来源"
-                    description="补充宣传册、产品资料、企业公开网页等可信信息"
+                    description="补充宣传册、产品资料、主体公开网页等可信信息"
                     badge="选填"
                   />
                 ),
                 children: (
                   <>
                     <Typography.Paragraph className={styles.sourcesIntro}>
-                      可上传宣传册、PDF、产品资料，或导入企业公开网页；这些资料只用于补充主体档案。
+                      可上传宣传册、PDF、产品资料，或导入主体公开网页；这些资料只用于补充主体档案。
                     </Typography.Paragraph>
                     <SubjectDocuments
                       subjectId={subject.id}
@@ -951,7 +1049,7 @@ function SubjectDetailContent() {
                     <OptionalPanelLabel
                       icon={<RobotOutlined />}
                       title="AI 帮我补充资料"
-                      description="根据已有资料辅助整理企业信息，不会自动覆盖已确认内容"
+                      description="根据已有资料辅助整理主体信息，不会自动覆盖已确认内容"
                     />
                   ),
                   children: (
@@ -959,7 +1057,8 @@ function SubjectDetailContent() {
                       <div className={styles.aiIntro}>
                         <RobotOutlined />
                         <span>
-                          AI 建议会先展示给你确认，再写入主体档案；已经填写并确认的资料不会被自动覆盖。
+                          AI
+                          建议会先展示给你确认，再写入主体档案；已经填写并确认的资料不会被自动覆盖。
                         </span>
                       </div>
                       <SubjectAiEnrichment
@@ -981,10 +1080,10 @@ function SubjectDetailContent() {
             <div className={styles.actionBar}>
               <div className={styles.actionCopy}>
                 <span className={styles.actionTitle}>
-                  {subject.current_version_no === null ? "创建企业主体档案" : "保存主体资料修改"}
+                  {subject.current_version_no === null ? "创建主体档案" : "保存主体资料修改"}
                 </span>
                 <span className={styles.actionDescription}>
-                  保存后资料立即生效，你可以继续留在本页完善企业档案。
+                  保存后资料立即生效，你可以继续留在本页完善主体档案。
                 </span>
               </div>
               <div className={styles.actionButtons}>
@@ -1015,7 +1114,7 @@ function SubjectDetailContent() {
 
 export default function SubjectDetailPage() {
   return (
-    <Suspense fallback={<Spin fullscreen description="正在加载企业资料" />}>
+    <Suspense fallback={<Spin fullscreen description="正在加载主体资料" />}>
       <SubjectDetailContent />
     </Suspense>
   );

@@ -50,22 +50,16 @@ export const navigationConfig: readonly WorkspaceNavigationItem[] = [
     icon: <ProfileOutlined />,
     children: [
       {
-        key: "subject-edit",
-        label: "编辑主体",
-        href: subjectRoute(),
-        isActive: (pathname) => /^\/subjects\/[^/]+$/.test(pathname),
+        key: "subject-manage",
+        label: "主体管理",
+        href: "/subjects",
+        isActive: (pathname) => /^\/subjects(?:\/[^/]+)?$/.test(pathname),
       },
       {
         key: "subject-competitors",
         label: "竞品管理",
         href: subjectRoute("/competitors"),
         isActive: (pathname) => /^\/subjects\/[^/]+\/competitors(?:\/|$)/.test(pathname),
-      },
-      {
-        key: "subject-manage",
-        label: "主体管理",
-        href: "/subjects",
-        isActive: (pathname) => pathname === "/subjects",
       },
     ],
   },

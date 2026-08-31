@@ -14,6 +14,7 @@ from .models import (
     SubjectTypeFieldConfig,
     SubjectVersion,
 )
+from .profile_completeness import calculate_subject_profile_completeness
 from .risk_services import subject_risk_summary
 from .schema_snapshots import (
     FrozenSemanticError,
@@ -300,14 +301,41 @@ class SubjectSocialChannelsSerializer(StrictSerializer):
 
 class SubjectBusinessProfileInputSerializer(StrictSerializer):
     legal_entity_type = serializers.ChoiceField(
-        choices=SubjectBusinessProfile.LegalEntityType.values
+        choices=SubjectBusinessProfile.LegalEntityType.values,
+        required=False,
+        allow_blank=True,
+        default="",
     )
-    contact_name = serializers.CharField(max_length=100)
-    contact_phone = serializers.RegexField(regex=r"^[0-9+()\-\s]{5,32}$", max_length=32)
-    business_address = serializers.CharField(max_length=500)
-    primary_business = serializers.CharField(max_length=5000)
+    contact_name = serializers.CharField(
+        required=False, allow_blank=True, default="", max_length=100
+    )
+    contact_phone = serializers.RegexField(
+        regex=r"^[0-9+()\-\s]{5,32}$",
+        required=False,
+        allow_blank=True,
+        default="",
+        max_length=32,
+    )
+    business_address = serializers.CharField(allow_blank=True, max_length=500)
+    industry = serializers.CharField(required=False, allow_blank=True, default="", max_length=200)
+    primary_business = serializers.CharField(allow_blank=True, max_length=5000)
     brand_name = serializers.CharField(required=False, allow_blank=True, default="", max_length=200)
+    subject_aliases = serializers.CharField(
+        required=False, allow_blank=True, default="", max_length=2000
+    )
+    unified_social_credit_code = serializers.CharField(
+        required=False, allow_blank=True, default="", max_length=32
+    )
     social_channels = SubjectSocialChannelsSerializer(required=False, default=dict)
+
+    def validate_unified_social_credit_code(self, value):
+        normalized = value.strip().upper()
+        if normalized and (
+            len(normalized) != 18
+            or any(character not in "0123456789ABCDEFGHJKLMNPQRTUWXY" for character in normalized)
+        ):
+            raise serializers.ValidationError("请输入正确的18位统一社会信用代码。")
+        return normalized
 
 
 class SubjectBusinessProfileSerializer(serializers.ModelSerializer):
@@ -320,8 +348,11 @@ class SubjectBusinessProfileSerializer(serializers.ModelSerializer):
             "contact_name",
             "contact_phone",
             "business_address",
+            "industry",
             "primary_business",
             "brand_name",
+            "subject_aliases",
+            "unified_social_credit_code",
             "social_channels",
         )
 
@@ -409,6 +440,7 @@ class SubjectSummarySerializer(serializers.ModelSerializer):
     current_version_no = serializers.SerializerMethodField()
     official_name = serializers.SerializerMethodField()
     service_regions = serializers.SerializerMethodField()
+    profile_completeness = serializers.SerializerMethodField()
 
     class Meta:
         model = Subject
@@ -421,18 +453,18 @@ class SubjectSummarySerializer(serializers.ModelSerializer):
             "current_version_no",
             "official_name",
             "service_regions",
+            "profile_completeness",
             "retest_required",
             "created_at",
             "updated_at",
         )
 
     def get_subject_type(self, obj):
-        snapshot_type = obj.schema_snapshot["subject_type"]
         return {
-            "id": snapshot_type["id"],
-            "key": snapshot_type["key"],
-            "name": snapshot_type["name"],
-            "icon_key": snapshot_type["icon_key"],
+            "id": str(obj.subject_type_id),
+            "key": obj.subject_type.key,
+            "name": obj.subject_type.name,
+            "icon_key": obj.subject_type.icon_key,
         }
 
     def get_is_current(self, obj):
@@ -452,6 +484,16 @@ class SubjectSummarySerializer(serializers.ModelSerializer):
         service_regions = values.get("service_regions")
         return service_regions if isinstance(service_regions, str) else ""
 
+    def get_profile_completeness(self, obj):
+        result = calculate_subject_profile_completeness(obj)
+        return {
+            "percentage": result.percentage,
+            "core_completed": result.core_completed,
+            "core_total": result.core_total,
+            "missing_core": result.missing_core_labels,
+            "suggestion": result.suggestion,
+        }
+
 
 class SubjectDetailSerializer(SubjectSummarySerializer):
     business_profile = serializers.SerializerMethodField()
@@ -470,6 +512,7 @@ class SubjectDetailSerializer(SubjectSummarySerializer):
             "is_current",
             "current_version_no",
             "official_name",
+            "profile_completeness",
             "retest_required",
             "created_at",
             "updated_at",
@@ -494,8 +537,11 @@ class SubjectDetailSerializer(SubjectSummarySerializer):
                 "contact_name": "",
                 "contact_phone": "",
                 "business_address": "",
+                "industry": "",
                 "primary_business": "",
                 "brand_name": "",
+                "subject_aliases": "",
+                "unified_social_credit_code": "",
                 "social_channels": SubjectSocialChannelsSerializer({}).data,
             }
         return SubjectBusinessProfileSerializer(profile).data

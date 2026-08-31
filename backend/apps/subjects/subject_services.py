@@ -177,7 +177,7 @@ def _subject_event(
 def subjects_for_user(user: User):
     return (
         Subject.objects.filter(user=user)
-        .select_related("subject_type", "current_version")
+        .select_related("subject_type", "current_version", "business_profile")
         .order_by("-updated_at", "id")
     )
 
@@ -367,6 +367,14 @@ def update_subject_draft(
         raise SubjectVersionConflict
     subject = merge_subject_draft_values_locked(user=user, subject=subject, values=values)
     if profile_values is not None:
+        profile_values = dict(profile_values)
+        profile_values["legal_entity_type"] = (
+            SubjectBusinessProfile.LegalEntityType.INDIVIDUAL_BUSINESS
+            if subject.subject_type.key == "individual_business"
+            else SubjectBusinessProfile.LegalEntityType.COMPANY
+        )
+        if subject.subject_type.key not in {"enterprise", "individual_business"}:
+            profile_values["unified_social_credit_code"] = ""
         profile, _ = SubjectBusinessProfile.objects.update_or_create(
             subject=subject,
             defaults=profile_values,

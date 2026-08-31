@@ -619,13 +619,11 @@ describe("GEO 产品工作台", () => {
     expect(subjectMenu.getAttribute("aria-expanded")).toBe("false");
     await userEvent.click(screen.getByText("主体档案"));
     expect(subjectMenu.getAttribute("aria-expanded")).toBe("true");
-    expect(screen.getByRole("link", { name: "编辑主体" }).getAttribute("href")).toBe(
-      "/subjects/subject-1",
-    );
+    expect(screen.queryByRole("link", { name: "编辑主体" })).toBeNull();
+    expect(screen.getByRole("link", { name: "主体管理" }).getAttribute("href")).toBe("/subjects");
     expect(screen.getByRole("link", { name: "竞品管理" }).getAttribute("href")).toBe(
       "/subjects/subject-1/competitors",
     );
-    expect(screen.getByRole("link", { name: "主体管理" }).getAttribute("href")).toBe("/subjects");
     await userEvent.click(screen.getByText("主体档案"));
     expect(subjectMenu.getAttribute("aria-expanded")).toBe("false");
 

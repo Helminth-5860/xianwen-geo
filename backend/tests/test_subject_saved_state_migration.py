@@ -1,3 +1,4 @@
+import json
 from importlib import import_module
 
 import pytest
@@ -36,12 +37,31 @@ def test_saved_subject_data_migration_promotes_usable_rows_and_repairs_context()
         f"/api/v1/subjects/{created['id']}",
         {
             "expected_version": created["version"],
-            "values": created["draft_values"],
+            "values": {
+                **created["draft_values"],
+                "target_audience": "企业客户",
+                "service_regions": json.dumps(
+                    {"version": 1, "nationwide": True, "areas": []},
+                    ensure_ascii=False,
+                ),
+            },
             "profile_values": {
                 "legal_entity_type": "company",
                 "contact_name": "张三",
                 "contact_phone": "0755-12345678",
-                "business_address": "广东省深圳市南山区",
+                "business_address": json.dumps(
+                    {
+                        "version": 1,
+                        "path": [
+                            {"code": "440000", "name": "广东省"},
+                            {"code": "440300", "name": "深圳市"},
+                            {"code": "440305", "name": "南山区"},
+                        ],
+                        "detail": "示例路 1 号",
+                    },
+                    ensure_ascii=False,
+                ),
+                "industry": "企业服务",
                 "primary_business": "企业 GEO 服务",
                 "brand_name": "",
                 "social_channels": {},

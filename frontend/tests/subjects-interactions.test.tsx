@@ -13,16 +13,19 @@ import {
 import type { SubjectDetail, SubjectList } from "../lib/subjects-client";
 
 let viewMode = false;
+const routerPush = vi.fn();
 
 vi.mock("next/navigation", () => ({
   useParams: () => ({ id: "subject-1" }),
-  useRouter: () => ({ push: vi.fn() }),
+  useRouter: () => ({ push: routerPush }),
   useSearchParams: () => new URLSearchParams(viewMode ? "mode=view" : ""),
 }));
 
 const getSubjectFormSchema = vi.fn();
 const getSubjects = vi.fn();
 const getSubject = vi.fn();
+const getSubjectTypes = vi.fn();
+const createSubject = vi.fn();
 const saveSubject = vi.fn();
 const deleteSubject = vi.fn();
 const setCurrentSubject = vi.fn();
@@ -35,6 +38,8 @@ vi.mock("../lib/subjects-client", async () => {
     getSubjectFormSchema: (...args: unknown[]) => getSubjectFormSchema(...args),
     getSubjects: (...args: unknown[]) => getSubjects(...args),
     getSubject: (...args: unknown[]) => getSubject(...args),
+    getSubjectTypes: (...args: unknown[]) => getSubjectTypes(...args),
+    createSubject: (...args: unknown[]) => createSubject(...args),
     saveSubject: (...args: unknown[]) => saveSubject(...args),
     deleteSubject: (...args: unknown[]) => deleteSubject(...args),
     setCurrentSubject: (...args: unknown[]) => setCurrentSubject(...args),
@@ -70,9 +75,20 @@ const detail: SubjectDetail = {
     legal_entity_type: "company",
     contact_name: "张三",
     contact_phone: "0755-12345678",
-    business_address: "广东省深圳市南山区示例路 1 号",
+    business_address: JSON.stringify({
+      version: 1,
+      path: [
+        { code: "440000", name: "广东省" },
+        { code: "440300", name: "深圳市" },
+        { code: "440305", name: "南山区" },
+      ],
+      detail: "示例路 1 号",
+    }),
+    industry: "企业服务",
     primary_business: "企业 GEO 咨询与内容服务",
     brand_name: "显问测试品牌",
+    subject_aliases: "显问",
+    unified_social_credit_code: "",
     social_channels: {
       douyin: "显问测试品牌",
       wechat_channels: "",
@@ -162,6 +178,13 @@ const detail: SubjectDetail = {
     { candidate_key: "a".repeat(64), display_value: "\u534e\u4e1c", source_field_key: "regions" },
   ],
   has_uncommitted_changes: true,
+  profile_completeness: {
+    percentage: 78,
+    core_completed: 7,
+    core_total: 7,
+    missing_core: [],
+    suggestion: "建议补充官方网站，有助于提升主体识别与 GEO 分析质量。",
+  },
   risk: { status: "not_assessed", review_id: null, public_reason: "" },
 };
 
@@ -211,6 +234,18 @@ beforeEach(() => {
   viewMode = false;
   getSubjects.mockResolvedValue(list);
   getSubject.mockResolvedValue(detail);
+  getSubjectTypes.mockResolvedValue([
+    {
+      id: "type-1",
+      key: "enterprise",
+      name: "企业 / 公司",
+      description: "依法设立的企业或公司主体",
+      icon_key: "building",
+      sort_order: 10,
+      schema_version: 2,
+    },
+  ]);
+  createSubject.mockResolvedValue(detail);
   saveSubject.mockResolvedValue({
     subject: {
       ...detail,
@@ -233,8 +268,8 @@ afterEach(() => {
 describe("subject profile interactions", () => {
   it("renders and edits an existing subject exclusively from its persisted form schema", async () => {
     render(<SubjectDetailPage />);
-    const name = await screen.findByLabelText("营业执照主体名称");
-    expect(screen.getByRole("heading", { name: "完善企业经营资料" })).toBeTruthy();
+    const name = await screen.findByLabelText("主体名称");
+    expect(screen.getByRole("heading", { name: "新增主体" })).toBeTruthy();
     expect(screen.getByText("基础身份信息")).toBeTruthy();
     expect(screen.getByText("经营信息")).toBeTruthy();
     expect(screen.getByText("品牌与公开资料")).toBeTruthy();
@@ -243,7 +278,7 @@ describe("subject profile interactions", () => {
 
     await userEvent.clear(name);
     await userEvent.type(name, "\u66f4\u65b0\u540d\u79f0");
-    await userEvent.click(screen.getByRole("button", { name: "保存资料" }));
+    await userEvent.click(screen.getByRole("button", { name: /新\s*增\s*主\s*体/ }));
     await waitFor(() =>
       expect(saveSubject).toHaveBeenCalledWith(
         detail,
@@ -256,7 +291,7 @@ describe("subject profile interactions", () => {
         detail.business_profile,
       ),
     );
-    expect(await screen.findByText("保存成功，资料已生效")).toBeTruthy();
+    expect(await screen.findByText("主体已新增，资料已生效")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "提交正式版本" })).toBeNull();
   });
 
@@ -276,12 +311,13 @@ describe("subject profile interactions", () => {
     );
     render(<SubjectDetailPage />);
 
+    await userEvent.click(await screen.findByText("品牌与公开资料"));
     const contact = await screen.findByLabelText("联系人");
     await userEvent.clear(contact);
     await userEvent.type(contact, "李四");
     const xiaohongshu = screen.getByLabelText("小红书");
     await userEvent.type(xiaohongshu, "显问 GEO 主页");
-    await userEvent.click(screen.getByRole("button", { name: "保存资料" }));
+    await userEvent.click(screen.getByRole("button", { name: /新\s*增\s*主\s*体/ }));
 
     await waitFor(() =>
       expect(saveSubject).toHaveBeenCalledWith(
@@ -293,18 +329,17 @@ describe("subject profile interactions", () => {
         }),
       ),
     );
-    expect(await screen.findByText("保存成功，资料已生效")).toBeTruthy();
+    expect(await screen.findByText("主体已新增，资料已生效")).toBeTruthy();
     expect((screen.getByLabelText("联系人") as HTMLInputElement).value).toBe("李四");
     expect((screen.getByLabelText("小红书") as HTMLInputElement).value).toBe("显问 GEO 主页");
   });
 
   it("enables the private library and verified image-version selector", async () => {
     render(<SubjectDetailPage />);
-    await screen.findByText("更多资料来源（选填）");
-    await userEvent.click(screen.getByText("更多资料来源（选填）"));
+    await screen.findByText("更多资料来源");
+    await userEvent.click(screen.getByText("更多资料来源"));
     expect(await screen.findByText("主体资料库")).toBeTruthy();
     expect(screen.getByRole("button", { name: "上传资料" })).toBeTruthy();
-    expect(screen.getByLabelText("品牌图片")).toBeTruthy();
   });
   it("requires confirmation before removing a subject from the active list", async () => {
     render(<SubjectsPage />);
@@ -318,15 +353,27 @@ describe("subject profile interactions", () => {
     await waitFor(() => expect(deleteSubject).toHaveBeenCalledWith(list.subjects[0]));
   });
 
+  it("creates a named subject from the subject-management modal", async () => {
+    render(<SubjectsPage />);
+    await screen.findByRole("heading", { name: "主体管理" });
+    await userEvent.click(screen.getByRole("button", { name: /新增主体/ }));
+    expect(await screen.findByRole("dialog", { name: "新增主体" })).toBeTruthy();
+    await userEvent.type(screen.getByLabelText("新增主体名称"), "广州显问网络科技有限公司");
+    await userEvent.click(screen.getByRole("button", { name: "创建并完善资料" }));
+    await waitFor(() =>
+      expect(createSubject).toHaveBeenCalledWith("type-1", 2, {
+        name: "广州显问网络科技有限公司",
+      }),
+    );
+    expect(routerPush).toHaveBeenCalledWith("/subjects/subject-1");
+  });
+
   it("keeps deleted subject values read-only", async () => {
     getSubject.mockResolvedValueOnce({ ...detail, status: "archived" });
     render(<SubjectDetailPage />);
     expect(await screen.findByText("已删除")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "保存资料" })).toBeNull();
-    expect(screen.getByLabelText("营业执照主体名称") as HTMLInputElement).toHaveProperty(
-      "disabled",
-      true,
-    );
+    expect(screen.queryByRole("button", { name: /新增主体|保存修改/ })).toBeNull();
+    expect(screen.getByLabelText("主体名称") as HTMLInputElement).toHaveProperty("disabled", true);
     expect(screen.queryByRole("button", { name: "提交正式版本" })).toBeNull();
   });
 
@@ -335,11 +382,8 @@ describe("subject profile interactions", () => {
     render(<SubjectDetailPage />);
 
     expect(await screen.findByRole("heading", { name: "查看主体档案" })).toBeTruthy();
-    expect(screen.getByLabelText("营业执照主体名称") as HTMLInputElement).toHaveProperty(
-      "disabled",
-      true,
-    );
-    expect(screen.queryByRole("button", { name: "保存资料" })).toBeNull();
+    expect(screen.getByLabelText("主体名称") as HTMLInputElement).toHaveProperty("disabled", true);
+    expect(screen.queryByRole("button", { name: /新增主体|保存修改/ })).toBeNull();
     expect(screen.queryByText("AI 帮我补充资料")).toBeNull();
     expect(screen.getByRole("link", { name: "编辑主体" }).getAttribute("href")).toBe(
       "/subjects/subject-1",
@@ -365,8 +409,9 @@ describe("subject profile interactions", () => {
       }),
     );
     render(<SubjectDetailPage />);
-    await screen.findByLabelText("营业执照主体名称");
-    await userEvent.click(screen.getByRole("button", { name: "保存资料" }));
+    await screen.findByLabelText("主体名称");
+    await userEvent.click(screen.getByText("品牌与公开资料"));
+    await userEvent.click(screen.getByRole("button", { name: /新\s*增\s*主\s*体/ }));
 
     expect(
       await screen.findByText("联系电话格式不正确，请填写 5 至 32 位的手机号或座机号码"),
@@ -376,7 +421,7 @@ describe("subject profile interactions", () => {
 
   it("exposes one save action without draft or formal-version product steps", async () => {
     render(<SubjectDetailPage />);
-    await screen.findByRole("button", { name: "保存资料" });
+    await screen.findByRole("button", { name: /新\s*增\s*主\s*体/ });
     expect(screen.queryByText("草稿")).toBeNull();
     expect(screen.queryByText(/提交正式版本/)).toBeNull();
     expect(screen.queryByText("产品候选确认")).toBeNull();
