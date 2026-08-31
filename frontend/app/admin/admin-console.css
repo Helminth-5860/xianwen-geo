@@ -1,11 +1,11 @@
 .admin-console {
-  --admin-brand: #635bff;
-  --admin-brand-strong: #4f46e5;
-  --admin-ink: #15172a;
-  --admin-muted: #687086;
-  --admin-border: #e7e9f2;
+  --admin-brand: var(--xw-primary);
+  --admin-brand-strong: var(--xw-primary-strong);
+  --admin-ink: var(--xw-text);
+  --admin-muted: var(--xw-text-secondary);
+  --admin-border: var(--xw-glass-border);
   min-height: 100vh;
-  background: #f5f7fb;
+  background: transparent;
   color: var(--admin-ink);
 }
 
@@ -18,8 +18,15 @@
   flex-direction: column;
   padding: 24px 16px 18px;
   overflow-y: auto;
-  background: radial-gradient(circle at 10% 0%, rgb(99 91 255 / 28%), transparent 280px), #101325;
-  box-shadow: 16px 0 44px rgb(21 23 42 / 10%);
+  border-right: 1px solid var(--xw-glass-border);
+  background:
+    radial-gradient(circle at 10% 0%, var(--xw-ambient-lavender), transparent 280px),
+    var(--xw-glass-sidebar);
+  box-shadow:
+    14px 0 40px rgb(55 87 132 / 6%),
+    inset -1px 0 0 var(--xw-glass-border-highlight);
+  backdrop-filter: blur(24px) saturate(116%);
+  -webkit-backdrop-filter: blur(24px) saturate(116%);
 }
 
 .admin-console__brand {
@@ -27,12 +34,12 @@
   align-items: center;
   gap: 12px;
   padding: 2px 10px;
-  color: white;
+  color: var(--xw-text);
   text-decoration: none;
 }
 
 .admin-console__brand:hover {
-  color: white;
+  color: var(--xw-primary);
 }
 
 .admin-console__brand-mark {
@@ -41,8 +48,13 @@
   height: 42px;
   place-items: center;
   border-radius: 13px;
-  background: linear-gradient(145deg, #7c73ff, #5147e5);
-  box-shadow: 0 12px 24px rgb(83 73 229 / 34%);
+  border: 1px solid color-mix(in srgb, var(--xw-primary) 50%, white);
+  background:
+    linear-gradient(145deg, rgb(255 255 255 / 32%), transparent 48%),
+    linear-gradient(135deg, color-mix(in srgb, var(--xw-primary) 82%, white), var(--xw-primary));
+  box-shadow:
+    0 12px 26px color-mix(in srgb, var(--xw-primary) 18%, transparent),
+    inset 0 1px 0 rgb(255 255 255 / 46%);
   font-size: 20px;
   font-weight: 800;
 }
@@ -59,14 +71,14 @@
 
 .admin-console__brand small {
   margin-top: 2px;
-  color: rgb(255 255 255 / 54%);
+  color: var(--xw-text-tertiary);
   font-size: 11px;
   letter-spacing: 0.08em;
 }
 
 .admin-console__brand-divider.ant-divider {
   margin: 20px 8px 14px;
-  border-color: rgb(255 255 255 / 9%);
+  border-color: var(--xw-border-subtle);
 }
 
 .admin-console__menu.ant-menu {
@@ -81,11 +93,24 @@
   margin-block: 4px;
   border-radius: 11px;
   line-height: 46px;
+  color: var(--xw-text-secondary);
 }
 
 .admin-console__menu.ant-menu-dark .ant-menu-item-selected {
-  background: linear-gradient(100deg, #665dff, #5148e4);
-  box-shadow: 0 10px 24px rgb(71 63 202 / 28%);
+  border: 1px solid color-mix(in srgb, var(--xw-primary) 22%, var(--xw-glass-border));
+  background:
+    linear-gradient(145deg, var(--xw-glass-highlight), transparent 58%),
+    color-mix(in srgb, var(--xw-primary-soft) 74%, transparent);
+  color: var(--xw-primary-strong);
+  box-shadow:
+    0 8px 22px color-mix(in srgb, var(--xw-primary) 9%, transparent),
+    inset 0 1px 0 var(--xw-glass-border-highlight);
+}
+
+.admin-console__menu.ant-menu-dark .ant-menu-item:hover,
+.admin-console__menu.ant-menu-dark .ant-menu-submenu-title:hover {
+  color: var(--xw-primary);
+  background: color-mix(in srgb, var(--xw-primary-soft) 58%, transparent);
 }
 
 .admin-console__sidebar-footer {
@@ -93,7 +118,7 @@
   align-items: center;
   gap: 8px;
   margin: 18px 10px 0;
-  color: rgb(255 255 255 / 56%);
+  color: var(--xw-text-tertiary);
   font-size: 12px;
 }
 
@@ -119,9 +144,11 @@
   align-items: center;
   justify-content: space-between;
   padding: 12px clamp(20px, 3vw, 42px);
-  border-bottom: 1px solid rgb(224 227 238 / 80%);
-  background: rgb(255 255 255 / 92%);
-  backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--xw-glass-border);
+  background: var(--xw-glass-sidebar);
+  box-shadow: inset 0 -1px 0 rgb(255 255 255 / 34%);
+  backdrop-filter: blur(22px) saturate(116%);
+  -webkit-backdrop-filter: blur(22px) saturate(116%);
 }
 
 .admin-console__header h4.ant-typography {
@@ -211,12 +238,12 @@
 
 .admin-console__content .ant-table-wrapper {
   overflow: hidden;
-  background: white;
+  background: var(--xw-glass-strong);
 }
 
 .admin-console__content .ant-table-thead > tr > th {
   padding-block: 15px;
-  background: #f8f9fc;
+  background: var(--xw-surface-muted);
   color: #535b70;
   font-weight: 650;
 }

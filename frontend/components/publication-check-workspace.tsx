@@ -44,19 +44,19 @@ const EMPTY_STATS: PublicationVerificationStats = {
 const statusPresentation = {
   published: {
     label: "发布成功",
-    english: "PUBLICLY AVAILABLE",
+    english: "公开页面可正常访问",
     icon: <CheckCircleFilled />,
     tone: "success",
   },
   failed: {
     label: "发布失败",
-    english: "NOT AVAILABLE",
+    english: "公开页面暂不可访问",
     icon: <CloseCircleFilled />,
     tone: "danger",
   },
   unknown: {
     label: "暂时无法确认",
-    english: "NEEDS CONFIRMATION",
+    english: "需要进一步确认",
     icon: <ExclamationCircleFilled />,
     tone: "warning",
   },
@@ -283,7 +283,7 @@ export function PublicationCheckWorkspace({ subjectId }: Props) {
       <section className={styles.hero}>
         <div className={styles.heroHeading}>
           <span className={styles.eyebrow}>
-            <SafetyCertificateOutlined /> PUBLICATION VERIFICATION
+            <SafetyCertificateOutlined /> 公开文章发布检测
           </span>
           <h1>发布检测</h1>
           <p>检测互联网任意公开文章是否已成功上线并可正常访问。</p>
@@ -306,7 +306,7 @@ export function PublicationCheckWorkspace({ subjectId }: Props) {
               aria-label="公开文章链接"
               value={url}
               disabled={checking}
-              placeholder="https://example.com/article/..."
+              placeholder="请输入文章完整链接"
               onChange={(event) => {
                 setUrl(event.target.value);
                 setError("");
@@ -329,7 +329,7 @@ export function PublicationCheckWorkspace({ subjectId }: Props) {
           <div className={styles.verificationChain}>
             {[
               ["连接站点", "验证目标地址是否可访问"],
-              ["验证页面", "检查 HTTP 与公开访问状态"],
+              ["验证页面", "检查页面回应与公开访问状态"],
               ["识别内容", "确认页面存在有效文章内容"],
             ].map(([title, description], index) => {
               const state = chainState(result, checking, scanStage, index);
@@ -370,10 +370,22 @@ export function PublicationCheckWorkspace({ subjectId }: Props) {
                 </div>
               </div>
               <div className={styles.resultMeta}>
-                <div><span>网站</span><strong>{result.hostname || "—"}</strong></div>
-                <div><span>HTTP</span><strong>{result.http_status ?? "—"}</strong></div>
-                <div><span>响应时间</span><strong>{result.response_time_ms ?? "—"} ms</strong></div>
-                <div><span>检测时间</span><strong>{formatCheckedAt(result.checked_at)}</strong></div>
+                <div>
+                  <span>网站</span>
+                  <strong>{result.hostname || "—"}</strong>
+                </div>
+                <div>
+                  <span>页面状态</span>
+                  <strong>{result.http_status ?? "—"}</strong>
+                </div>
+                <div>
+                  <span>响应时间</span>
+                  <strong>{result.response_time_ms ?? "—"} 毫秒</strong>
+                </div>
+                <div>
+                  <span>检测时间</span>
+                  <strong>{formatCheckedAt(result.checked_at)}</strong>
+                </div>
               </div>
               <a
                 className={styles.openLink}
@@ -386,9 +398,11 @@ export function PublicationCheckWorkspace({ subjectId }: Props) {
             </>
           ) : (
             <div className={styles.idleResult}>
-              <span className={styles.idleIcon}><ApiOutlined /></span>
+              <span className={styles.idleIcon}>
+                <ApiOutlined />
+              </span>
               <div>
-                <span>VERIFICATION RESULT</span>
+                <span>发布检测结果</span>
                 <h2>{checking ? "正在验证公开发布状态" : "等待检测"}</h2>
                 <p>
                   {checking
@@ -402,7 +416,7 @@ export function PublicationCheckWorkspace({ subjectId }: Props) {
 
         <div className={styles.rateCard}>
           <div className={styles.rateHeader}>
-            <span>PUBLICATION HEALTH</span>
+            <span>发布情况概览</span>
             <strong>发布成功率</strong>
           </div>
           <div
@@ -412,7 +426,9 @@ export function PublicationCheckWorkspace({ subjectId }: Props) {
             }}
           >
             <div>
-              <strong><AnimatedNumber value={stats.success_rate} decimals={1} suffix="%" /></strong>
+              <strong>
+                <AnimatedNumber value={stats.success_rate} decimals={1} suffix="%" />
+              </strong>
               <span>成功率</span>
             </div>
           </div>
@@ -422,27 +438,55 @@ export function PublicationCheckWorkspace({ subjectId }: Props) {
 
       <section className={styles.statsGrid}>
         <div className={styles.statCard}>
-          <span className={styles.statIcon}><RadarChartOutlined /></span>
-          <div><small>累计检测</small><strong><AnimatedNumber value={stats.total} /></strong></div>
+          <span className={styles.statIcon}>
+            <RadarChartOutlined />
+          </span>
+          <div>
+            <small>累计检测</small>
+            <strong>
+              <AnimatedNumber value={stats.total} />
+            </strong>
+          </div>
         </div>
         <div className={`${styles.statCard} ${styles.statSuccess}`}>
-          <span className={styles.statIcon}><CheckCircleFilled /></span>
-          <div><small>发布成功</small><strong><AnimatedNumber value={stats.published} /></strong></div>
+          <span className={styles.statIcon}>
+            <CheckCircleFilled />
+          </span>
+          <div>
+            <small>发布成功</small>
+            <strong>
+              <AnimatedNumber value={stats.published} />
+            </strong>
+          </div>
         </div>
         <div className={`${styles.statCard} ${styles.statDanger}`}>
-          <span className={styles.statIcon}><CloseCircleFilled /></span>
-          <div><small>发布失败</small><strong><AnimatedNumber value={stats.failed} /></strong></div>
+          <span className={styles.statIcon}>
+            <CloseCircleFilled />
+          </span>
+          <div>
+            <small>发布失败</small>
+            <strong>
+              <AnimatedNumber value={stats.failed} />
+            </strong>
+          </div>
         </div>
         <div className={`${styles.statCard} ${styles.statWarning}`}>
-          <span className={styles.statIcon}><ExclamationCircleFilled /></span>
-          <div><small>无法确认</small><strong><AnimatedNumber value={stats.unknown} /></strong></div>
+          <span className={styles.statIcon}>
+            <ExclamationCircleFilled />
+          </span>
+          <div>
+            <small>无法确认</small>
+            <strong>
+              <AnimatedNumber value={stats.unknown} />
+            </strong>
+          </div>
         </div>
       </section>
 
       <section className={styles.historyPanel}>
         <div className={styles.historyHeader}>
           <div>
-            <span className={styles.eyebrow}>VERIFICATION HISTORY</span>
+            <span className={styles.eyebrow}>发布检测历史</span>
             <h2>最近检测记录</h2>
             <p>保留需要的检测结果，不需要的记录可随时删除。</p>
           </div>
@@ -481,9 +525,13 @@ export function PublicationCheckWorkspace({ subjectId }: Props) {
         </div>
 
         {loading ? (
-          <div className={styles.loadingState}><Spin description="正在加载检测记录" /></div>
+          <div className={styles.loadingState}>
+            <Spin description="正在加载检测记录" />
+          </div>
         ) : items.length ? (
-          <div className={`${styles.historyTable} ${historyLoading ? styles.historyRefreshing : ""}`}>
+          <div
+            className={`${styles.historyTable} ${historyLoading ? styles.historyRefreshing : ""}`}
+          >
             <div className={styles.tableHeader}>
               <Checkbox
                 checked={allCurrentSelected}
@@ -519,10 +567,10 @@ export function PublicationCheckWorkspace({ subjectId }: Props) {
                     <span>{item.hostname || "—"}</span>
                   </div>
                   <div className={styles.resultCell}>
-                    <strong>{item.http_status ? `HTTP ${item.http_status}` : "—"}</strong>
+                    <strong>{item.http_status ? `页面状态 ${item.http_status}` : "—"}</strong>
                     <small>
                       {item.response_time_ms !== null
-                        ? `${item.response_time_ms} ms`
+                        ? `${item.response_time_ms} 毫秒`
                         : item.result_message}
                     </small>
                   </div>
@@ -552,7 +600,9 @@ export function PublicationCheckWorkspace({ subjectId }: Props) {
           </div>
         ) : (
           <div className={styles.emptyState}>
-            <span className={styles.emptyIcon}><ThunderboltOutlined /></span>
+            <span className={styles.emptyIcon}>
+              <ThunderboltOutlined />
+            </span>
             <h3>{filter === "all" ? "还没有发布检测记录" : "当前筛选下没有记录"}</h3>
             <p>
               {filter === "all"

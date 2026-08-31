@@ -7,7 +7,7 @@ const ACCENT_COLORS: Record<
   Record<ColorTheme, Readonly<{ primary: string; primarySoft: string; primaryStrong: string }>>
 > = {
   light: {
-    blue: { primary: "#2468d8", primarySoft: "#eaf2ff", primaryStrong: "#1754b5" },
+    blue: { primary: "#2f76df", primarySoft: "rgb(222 238 255 / 66%)", primaryStrong: "#245db6" },
     green: { primary: "#147a68", primarySoft: "#e7f6f1", primaryStrong: "#0d5f52" },
     purple: { primary: "#6d4fd1", primarySoft: "#f0ecfb", primaryStrong: "#5536b8" },
     orange: { primary: "#b9500d", primarySoft: "#fff0e3", primaryStrong: "#923b06" },
@@ -22,19 +22,19 @@ const ACCENT_COLORS: Record<
 
 const BASE_COLORS = {
   light: {
-    background: "#f3f6fb",
-    surface: "#ffffff",
-    surfaceSubtle: "#f8fafd",
-    surfaceElevated: "#ffffff",
+    background: "#f3f7fd",
+    surface: "rgb(255 255 255 / 72%)",
+    surfaceSubtle: "rgb(247 250 255 / 64%)",
+    surfaceElevated: "rgb(255 255 255 / 90%)",
     text: "#172033",
     textSecondary: "#536178",
     textTertiary: "#7c899d",
-    border: "#dfe6f0",
-    borderStrong: "#cad5e4",
+    border: "rgb(150 177 214 / 30%)",
+    borderStrong: "rgb(126 157 199 / 42%)",
     positive: "#25835a",
     warning: "#b66a19",
     danger: "#c14d56",
-    shadow: "0 18px 48px rgb(37 61 99 / 10%)",
+    shadow: "0 22px 64px rgb(46 78 122 / 10%)",
   },
   dark: {
     background: "#0b1220",
@@ -88,8 +88,8 @@ export function buildXwTheme(resolvedTheme: ResolvedTheme, colorTheme: ColorThem
       colorTextTertiary: base.textTertiary,
       colorBorder: base.border,
       colorBorderSecondary: base.border,
-      borderRadius: 10,
-      borderRadiusLG: 14,
+      borderRadius: 12,
+      borderRadiusLG: 18,
       controlHeight: 40,
       fontFamily:
         'Inter, "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
