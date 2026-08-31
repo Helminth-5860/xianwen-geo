@@ -105,9 +105,7 @@ def _apply_keyword_filter(queryset, keyword: str):
     if parsed_uuid:
         conditions |= (
             Q(pk=parsed_uuid)
-            | Q(actor_id=parsed_uuid)
             | Q(actor_user_id_snapshot=parsed_uuid)
-            | Q(target_user_id=parsed_uuid)
             | Q(target_user_id_snapshot=parsed_uuid)
             | Q(ledger_entry_id=parsed_uuid)
             | Q(request_id=parsed_uuid)
@@ -121,7 +119,7 @@ class SensitiveAuditLogListView(APIView):
 
     def get(self, request):
         _require_superuser(request)
-        queryset = SensitiveAuditLog.objects.select_related("actor", "target_user").all()
+        queryset = SensitiveAuditLog.objects.all()
         queryset = _apply_time_filter(queryset, request)
         queryset = _apply_keyword_filter(queryset, request.query_params.get("q", ""))
 
