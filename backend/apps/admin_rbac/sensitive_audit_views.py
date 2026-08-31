@@ -58,17 +58,17 @@ def _apply_time_filter(queryset, request):
     date_from = request.query_params.get("date_from", "").strip()
     date_to = request.query_params.get("date_to", "").strip()
     if date_from or date_to:
-        start = _aware_day_start(date_from, "date_from") if date_from else None
-        end = _aware_day_start(date_to, "date_to") + timedelta(days=1) if date_to else None
-        if start and end and start >= end:
+        if not date_from or not date_to:
+            raise ValidationError({"date_from": ["自定义时间必须同时提供开始和结束日期。"]})
+        start = _aware_day_start(date_from, "date_from")
+        end = _aware_day_start(date_to, "date_to") + timedelta(days=1)
+        if start >= end:
             raise ValidationError({"date_to": ["结束日期不能早于开始日期。"]})
-        if start and timezone.now() - start > timedelta(days=MAX_QUERY_DAYS + 1):
+        if end - start > timedelta(days=MAX_QUERY_DAYS):
+            raise ValidationError({"date_to": ["单次最多查询 365 天。"]})
+        if timezone.now() - start > timedelta(days=MAX_QUERY_DAYS + 1):
             raise ValidationError({"date_from": ["在线审计日志最多查询最近 365 天。"]})
-        if start:
-            queryset = queryset.filter(created_at__gte=start)
-        if end:
-            queryset = queryset.filter(created_at__lt=end)
-        return queryset
+        return queryset.filter(created_at__gte=start, created_at__lt=end)
 
     try:
         days = int(request.query_params.get("days", DEFAULT_QUERY_DAYS))
