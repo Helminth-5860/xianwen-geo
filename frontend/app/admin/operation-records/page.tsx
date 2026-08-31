@@ -12,6 +12,7 @@ import {
   Pagination,
   Select,
   Space,
+  Spin,
   Table,
   Tabs,
   Tag,
@@ -82,7 +83,7 @@ const friendlyTarget = (event: AuditEvent) => {
 };
 
 const operationSucceeded = (outcome: string) =>
-  ["success", "executed", "completed", "updated"].includes(outcome);
+  ["success", "succeeded", "executed", "completed", "updated"].includes(outcome);
 
 const formatNumber = (value: number | null | undefined) =>
   value === null || value === undefined ? "—" : new Intl.NumberFormat("zh-CN").format(value);
@@ -118,6 +119,14 @@ const deviceSummary = (userAgent = "") => {
   return `${os} / ${browser}`;
 };
 
+const asRecord = (value: unknown): Record<string, unknown> | null =>
+  typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+
+const hasEntries = (value: Record<string, unknown> | null) =>
+  value !== null && Object.keys(value).length > 0;
+
 type AuditDraft = {
   q: string;
   actionKey: string;
@@ -142,8 +151,8 @@ function toAuditFilters(draft: AuditDraft): SensitiveAuditFilters {
       q: draft.q,
       actionKey: draft.actionKey,
       outcome: draft.outcome,
-      dateFrom: draft.dateFrom || undefined,
-      dateTo: draft.dateTo || undefined,
+      dateFrom: draft.dateFrom,
+      dateTo: draft.dateTo,
     };
   }
   return {
@@ -161,8 +170,7 @@ export default function AdminOperationRecordsPage() {
 
   const [operationData, setOperationData] = useState<PageData<AuditEvent> | null>(null);
   const [operationPage, setOperationPage] = useState(1);
-  const [operationAction, setOperationAction] = useState("");
-  const [operationOutcome, setOperationOutcome] = useState("");
+  const [operationKeyword, setOperationKeyword] = useState("");
   const [operationLoading, setOperationLoading] = useState(true);
 
   const [auditData, setAuditData] = useState<PageData<SensitiveAuditLog> | null>(null);
@@ -178,13 +186,13 @@ export default function AdminOperationRecordsPage() {
     setOperationLoading(true);
     setError("");
     try {
-      setOperationData(await getAuditEvents(operationPage, operationAction, operationOutcome));
+      setOperationData(await getAuditEvents(operationPage));
     } catch (reason) {
       setError(userMessage(reason));
     } finally {
       setOperationLoading(false);
     }
-  }, [operationAction, operationOutcome, operationPage]);
+  }, [operationPage]);
 
   const loadAudit = useCallback(async () => {
     if (!isSuperAdmin || activeTab !== "audit") return;
@@ -207,6 +215,17 @@ export default function AdminOperationRecordsPage() {
     void loadAudit();
   }, [loadAudit]);
 
+  const visibleOperations = useMemo(() => {
+    const records = operationData?.results ?? [];
+    const query = operationKeyword.trim().toLocaleLowerCase("zh-CN");
+    if (!query) return records;
+    return records.filter((record) =>
+      `${friendlyAction(record)} ${friendlyTarget(record)} ${record.action_key} ${record.target_type}`
+        .toLocaleLowerCase("zh-CN")
+        .includes(query),
+    );
+  }, [operationData, operationKeyword]);
+
   const auditActionOptions = useMemo(
     () =>
       Object.entries(ACTION_LABELS).map(([value, label]) => ({
@@ -223,6 +242,7 @@ export default function AdminOperationRecordsPage() {
     try {
       setSelected(await getSensitiveAuditLog(record.id));
     } catch (reason) {
+      setSelected(null);
       setError(userMessage(reason));
     } finally {
       setDetailLoading(false);
@@ -230,11 +250,23 @@ export default function AdminOperationRecordsPage() {
   };
 
   const applyAuditFilters = () => {
+    if (auditDraft.range === "custom") {
+      if (!auditDraft.dateFrom || !auditDraft.dateTo) {
+        setError("自定义时间需要同时选择开始日期和结束日期。");
+        return;
+      }
+      if (auditDraft.dateFrom > auditDraft.dateTo) {
+        setError("结束日期不能早于开始日期。");
+        return;
+      }
+    }
+    setError("");
     setAuditPage(1);
     setAuditFilters(toAuditFilters(auditDraft));
   };
 
   const resetAuditFilters = () => {
+    setError("");
     setAuditDraft(initialAuditDraft);
     setAuditPage(1);
     setAuditFilters({ days: 7 });
@@ -248,38 +280,19 @@ export default function AdminOperationRecordsPage() {
   const operationPanel = (
     <>
       <Card className="admin-surface" style={{ marginBottom: 18 }}>
-        <Space wrap>
-          <Input
-            allowClear
-            prefix={<SearchOutlined />}
-            placeholder="动作 key"
-            value={operationAction}
-            onChange={(event) => {
-              setOperationAction(event.target.value);
-              setOperationPage(1);
-            }}
-            style={{ width: 260 }}
-          />
-          <Select
-            allowClear
-            placeholder="执行结果"
-            value={operationOutcome || undefined}
-            onChange={(value) => {
-              setOperationOutcome(value ?? "");
-              setOperationPage(1);
-            }}
-            style={{ width: 160 }}
-            options={[
-              { value: "executed", label: "成功" },
-              { value: "execution_failed", label: "未完成" },
-            ]}
-          />
-        </Space>
+        <Input
+          allowClear
+          prefix={<SearchOutlined />}
+          placeholder="搜索操作类型或操作对象"
+          value={operationKeyword}
+          onChange={(event) => setOperationKeyword(event.target.value)}
+          style={{ maxWidth: 360 }}
+        />
       </Card>
       <Table<AuditEvent>
         rowKey="id"
         loading={operationLoading}
-        dataSource={operationData?.results ?? []}
+        dataSource={visibleOperations}
         pagination={false}
         locale={{
           emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无操作记录" />,
@@ -460,7 +473,7 @@ export default function AdminOperationRecordsPage() {
             align: "right",
             render: (_, record) => {
               const value = record.quota_delta ?? record.quota_requested_delta;
-              if (value === null) return "—";
+              if (value === null || value === undefined) return "—";
               return (
                 <Typography.Text strong={record.outcome === "success"}>
                   {formatDelta(value)}
@@ -469,7 +482,12 @@ export default function AdminOperationRecordsPage() {
               );
             },
           },
-          { title: "操作 IP", dataIndex: "operation_ip", width: 150, render: (value) => value || "—" },
+          {
+            title: "操作 IP",
+            dataIndex: "operation_ip",
+            width: 150,
+            render: (value: string | null) => value || "—",
+          },
           {
             title: "状态",
             width: 90,
@@ -502,6 +520,9 @@ export default function AdminOperationRecordsPage() {
     </>
   );
 
+  const safeBefore = asRecord(selected?.details?.safe_before);
+  const safeAfter = asRecord(selected?.details?.safe_after);
+
   return (
     <div className="admin-page">
       <AdminPageHeader
@@ -517,7 +538,15 @@ export default function AdminOperationRecordsPage() {
           </Button>
         }
       />
-      {error ? <Alert type="error" showIcon title="日志加载失败" description={error} /> : null}
+      {error ? (
+        <Alert
+          type="error"
+          showIcon
+          title="日志处理失败"
+          description={error}
+          style={{ marginBottom: 18 }}
+        />
+      ) : null}
       <Tabs
         activeKey={activeTab}
         onChange={setActiveTab}
@@ -533,90 +562,122 @@ export default function AdminOperationRecordsPage() {
         onCancel={() => setSelected(null)}
         footer={null}
         width={920}
-        loading={detailLoading}
       >
-        {selected ? (
-          <Space direction="vertical" size="large" style={{ width: "100%" }}>
-            <Descriptions bordered column={2} size="small">
-              <Descriptions.Item label="审计 ID" span={2}>
-                {selected.id}
-              </Descriptions.Item>
-              <Descriptions.Item label="操作时间">
-                {new Date(selected.created_at).toLocaleString("zh-CN")}
-              </Descriptions.Item>
-              <Descriptions.Item label="执行结果">
-                <Tag color={selected.outcome === "success" ? "green" : "red"}>
-                  {selected.outcome === "success" ? "成功" : "失败"}
-                </Tag>
-              </Descriptions.Item>
-              <Descriptions.Item label="操作类型">
-                {ACTION_LABELS[selected.action_key] ?? selected.action_key}
-              </Descriptions.Item>
-              <Descriptions.Item label="操作渠道">
-                {selected.channel === "admin_console" ? "后台管理" : selected.channel}
-              </Descriptions.Item>
-            </Descriptions>
+        <Spin spinning={detailLoading}>
+          {selected ? (
+            <Space direction="vertical" size="large" style={{ width: "100%" }}>
+              <Descriptions bordered column={2} size="small">
+                <Descriptions.Item label="审计 ID" span={2}>
+                  <Typography.Text copyable>{selected.id}</Typography.Text>
+                </Descriptions.Item>
+                <Descriptions.Item label="操作时间">
+                  {new Date(selected.created_at).toLocaleString("zh-CN")}
+                </Descriptions.Item>
+                <Descriptions.Item label="执行结果">
+                  <Tag color={selected.outcome === "success" ? "green" : "red"}>
+                    {selected.outcome === "success" ? "成功" : "失败"}
+                  </Tag>
+                </Descriptions.Item>
+                <Descriptions.Item label="操作类型">
+                  {ACTION_LABELS[selected.action_key] ?? selected.action_key}
+                </Descriptions.Item>
+                <Descriptions.Item label="操作渠道">
+                  {selected.channel === "admin_console" ? "后台管理" : selected.channel}
+                </Descriptions.Item>
+              </Descriptions>
 
-            <Descriptions title="操作人" bordered column={2} size="small">
-              <Descriptions.Item label="姓名">{selected.actor_name_snapshot || "—"}</Descriptions.Item>
-              <Descriptions.Item label="身份">{selected.actor_role_snapshot || "—"}</Descriptions.Item>
-              <Descriptions.Item label="操作人 ID">{selected.actor_id || "—"}</Descriptions.Item>
-              <Descriptions.Item label="所属代理 / 租户">
-                {selected.actor_tenant_name_snapshot || "—"}
-              </Descriptions.Item>
-            </Descriptions>
+              <Descriptions title="操作人" bordered column={2} size="small">
+                <Descriptions.Item label="姓名">{selected.actor_name_snapshot || "—"}</Descriptions.Item>
+                <Descriptions.Item label="身份">{selected.actor_role_snapshot || "—"}</Descriptions.Item>
+                <Descriptions.Item label="操作人 ID">
+                  {selected.actor_user_id_snapshot || selected.actor_id || "—"}
+                </Descriptions.Item>
+                <Descriptions.Item label="所属代理 / 租户">
+                  {selected.actor_tenant_name_snapshot || "—"}
+                </Descriptions.Item>
+              </Descriptions>
 
-            <Descriptions title="目标用户" bordered column={2} size="small">
-              <Descriptions.Item label="用户名 / 姓名">
-                {selected.target_name_snapshot || "—"}
-              </Descriptions.Item>
-              <Descriptions.Item label="用户 ID">{selected.target_user_id || "—"}</Descriptions.Item>
-              <Descriptions.Item label="所属代理 / 租户" span={2}>
-                {selected.target_tenant_name_snapshot || "—"}
-              </Descriptions.Item>
-            </Descriptions>
+              <Descriptions title="目标用户" bordered column={2} size="small">
+                <Descriptions.Item label="用户名 / 姓名">
+                  {selected.target_name_snapshot || "—"}
+                </Descriptions.Item>
+                <Descriptions.Item label="用户 ID">
+                  {selected.target_user_id_snapshot || selected.target_user_id || "—"}
+                </Descriptions.Item>
+                <Descriptions.Item label="所属代理 / 租户" span={2}>
+                  {selected.target_tenant_name_snapshot || "—"}
+                </Descriptions.Item>
+              </Descriptions>
 
-            <Descriptions title="额度证据" bordered column={2} size="small">
-              <Descriptions.Item label="额度类型">
-                {(QUOTA_LABELS[selected.quota_type] ?? selected.quota_type) || "—"}
-              </Descriptions.Item>
-              <Descriptions.Item label="流水 ID">{selected.ledger_entry_id || "—"}</Descriptions.Item>
-              <Descriptions.Item label="变更前">{formatNumber(selected.quota_before)}</Descriptions.Item>
-              <Descriptions.Item label="请求变化">
-                {formatDelta(selected.quota_requested_delta)}
-              </Descriptions.Item>
-              <Descriptions.Item label="实际变化">{formatDelta(selected.quota_delta)}</Descriptions.Item>
-              <Descriptions.Item label="变更后">{formatNumber(selected.quota_after)}</Descriptions.Item>
-            </Descriptions>
+              <Descriptions title="额度证据" bordered column={2} size="small">
+                <Descriptions.Item label="额度类型">
+                  {(QUOTA_LABELS[selected.quota_type] ?? selected.quota_type) || "—"}
+                </Descriptions.Item>
+                <Descriptions.Item label="流水 ID">
+                  {selected.ledger_entry_id || "—"}
+                </Descriptions.Item>
+                <Descriptions.Item label="变更前">
+                  {formatNumber(selected.quota_before)}
+                </Descriptions.Item>
+                <Descriptions.Item label="请求变化">
+                  {formatDelta(selected.quota_requested_delta)}
+                </Descriptions.Item>
+                <Descriptions.Item label="实际变化">
+                  {formatDelta(selected.quota_delta)}
+                </Descriptions.Item>
+                <Descriptions.Item label="变更后">
+                  {formatNumber(selected.quota_after)}
+                </Descriptions.Item>
+              </Descriptions>
 
-            <Descriptions title="操作环境" bordered column={2} size="small">
-              <Descriptions.Item label="操作 IP">{selected.operation_ip || "—"}</Descriptions.Item>
-              <Descriptions.Item label="登录 IP">
-                {selected.login_ip_snapshot || "—"}
-              </Descriptions.Item>
-              <Descriptions.Item label="设备 / 浏览器" span={2}>
-                {deviceSummary(selected.user_agent)}
-              </Descriptions.Item>
-              <Descriptions.Item label="User-Agent" span={2}>
-                <Typography.Text copyable={Boolean(selected.user_agent)}>
-                  {selected.user_agent || "—"}
-                </Typography.Text>
-              </Descriptions.Item>
-            </Descriptions>
+              <Descriptions title="操作环境" bordered column={2} size="small">
+                <Descriptions.Item label="操作 IP">{selected.operation_ip || "—"}</Descriptions.Item>
+                <Descriptions.Item label="登录 IP">
+                  {selected.login_ip_snapshot || "—"}
+                </Descriptions.Item>
+                <Descriptions.Item label="设备 / 浏览器" span={2}>
+                  {deviceSummary(selected.user_agent)}
+                </Descriptions.Item>
+                <Descriptions.Item label="User-Agent" span={2}>
+                  <Typography.Text copyable={Boolean(selected.user_agent)}>
+                    {selected.user_agent || "—"}
+                  </Typography.Text>
+                </Descriptions.Item>
+              </Descriptions>
 
-            <Descriptions title="追踪与原因" bordered column={2} size="small">
-              <Descriptions.Item label="Request ID" span={2}>
-                <Typography.Text copyable>{selected.request_id}</Typography.Text>
-              </Descriptions.Item>
-              <Descriptions.Item label="操作原因" span={2}>
-                {selected.safe_reason || "—"}
-              </Descriptions.Item>
-              <Descriptions.Item label="失败原因" span={2}>
-                {selected.failure_reason || "—"}
-              </Descriptions.Item>
-            </Descriptions>
-          </Space>
-        ) : null}
+              <Descriptions title="追踪与原因" bordered column={2} size="small">
+                <Descriptions.Item label="Request ID" span={2}>
+                  <Typography.Text copyable>{selected.request_id}</Typography.Text>
+                </Descriptions.Item>
+                <Descriptions.Item label="操作原因" span={2}>
+                  {selected.safe_reason || "—"}
+                </Descriptions.Item>
+                <Descriptions.Item label="失败原因" span={2}>
+                  {selected.failure_reason || "—"}
+                </Descriptions.Item>
+              </Descriptions>
+
+              {hasEntries(safeBefore) || hasEntries(safeAfter) ? (
+                <Descriptions title="变更安全摘要" bordered column={1} size="small">
+                  {hasEntries(safeBefore) ? (
+                    <Descriptions.Item label="执行前">
+                      <Typography.Paragraph style={{ marginBottom: 0, whiteSpace: "pre-wrap" }}>
+                        {JSON.stringify(safeBefore, null, 2)}
+                      </Typography.Paragraph>
+                    </Descriptions.Item>
+                  ) : null}
+                  {hasEntries(safeAfter) ? (
+                    <Descriptions.Item label="执行后">
+                      <Typography.Paragraph style={{ marginBottom: 0, whiteSpace: "pre-wrap" }}>
+                        {JSON.stringify(safeAfter, null, 2)}
+                      </Typography.Paragraph>
+                    </Descriptions.Item>
+                  ) : null}
+                </Descriptions>
+              ) : null}
+            </Space>
+          ) : null}
+        </Spin>
       </Modal>
     </div>
   );
