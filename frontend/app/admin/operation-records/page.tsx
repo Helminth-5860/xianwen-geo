@@ -578,7 +578,7 @@ export default function AdminOperationRecordsPage() {
 
             <Descriptions title="额度证据" bordered column={2} size="small">
               <Descriptions.Item label="额度类型">
-                {QUOTA_LABELS[selected.quota_type] ?? selected.quota_type || "—"}
+                {(QUOTA_LABELS[selected.quota_type] ?? selected.quota_type) || "—"}
               </Descriptions.Item>
               <Descriptions.Item label="流水 ID">{selected.ledger_entry_id || "—"}</Descriptions.Item>
               <Descriptions.Item label="变更前">{formatNumber(selected.quota_before)}</Descriptions.Item>
