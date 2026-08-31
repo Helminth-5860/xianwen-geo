@@ -1,13 +1,11 @@
-import django.db.models.deletion
 import uuid
-from django.conf import settings
+
 from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
     dependencies = [
         ("admin_rbac", "0027_allow_independent_users"),
-        migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
     operations = [
@@ -57,26 +55,6 @@ class Migration(migrations.Migration):
                 ("failure_reason", models.CharField(blank=True, max_length=128)),
                 ("details", models.JSONField(default=dict)),
                 ("created_at", models.DateTimeField(auto_now_add=True, db_index=True)),
-                (
-                    "actor",
-                    models.ForeignKey(
-                        blank=True,
-                        null=True,
-                        on_delete=django.db.models.deletion.SET_NULL,
-                        related_name="sensitive_audit_logs_as_actor",
-                        to=settings.AUTH_USER_MODEL,
-                    ),
-                ),
-                (
-                    "target_user",
-                    models.ForeignKey(
-                        blank=True,
-                        null=True,
-                        on_delete=django.db.models.deletion.SET_NULL,
-                        related_name="sensitive_audit_logs_as_target",
-                        to=settings.AUTH_USER_MODEL,
-                    ),
-                ),
             ],
             options={
                 "db_table": "sensitive_audit_logs",
@@ -85,12 +63,14 @@ class Migration(migrations.Migration):
         ),
         migrations.AddIndex(
             model_name="sensitiveauditlog",
-            index=models.Index(fields=["actor", "created_at"], name="sens_actor_created_idx"),
+            index=models.Index(
+                fields=["actor_user_id_snapshot", "created_at"], name="sens_actor_created_idx"
+            ),
         ),
         migrations.AddIndex(
             model_name="sensitiveauditlog",
             index=models.Index(
-                fields=["target_user", "created_at"], name="sens_target_created_idx"
+                fields=["target_user_id_snapshot", "created_at"], name="sens_target_created_idx"
             ),
         ),
         migrations.AddIndex(
