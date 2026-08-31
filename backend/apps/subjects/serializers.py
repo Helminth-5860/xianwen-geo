@@ -441,6 +441,7 @@ class SubjectSummarySerializer(serializers.ModelSerializer):
     official_name = serializers.SerializerMethodField()
     service_regions = serializers.SerializerMethodField()
     profile_completeness = serializers.SerializerMethodField()
+    identity_bound = serializers.SerializerMethodField()
 
     class Meta:
         model = Subject
@@ -454,6 +455,7 @@ class SubjectSummarySerializer(serializers.ModelSerializer):
             "official_name",
             "service_regions",
             "profile_completeness",
+            "identity_bound",
             "retest_required",
             "created_at",
             "updated_at",
@@ -494,6 +496,9 @@ class SubjectSummarySerializer(serializers.ModelSerializer):
             "suggestion": result.suggestion,
         }
 
+    def get_identity_bound(self, obj):
+        return obj.identity_bound_at is not None
+
 
 class SubjectDetailSerializer(SubjectSummarySerializer):
     business_profile = serializers.SerializerMethodField()
@@ -513,6 +518,7 @@ class SubjectDetailSerializer(SubjectSummarySerializer):
             "current_version_no",
             "official_name",
             "profile_completeness",
+            "identity_bound",
             "retest_required",
             "created_at",
             "updated_at",

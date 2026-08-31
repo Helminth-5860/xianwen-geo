@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, Modal, Select, Space, Spin, Typography, message } from "antd";
+import { Space, Spin, Typography } from "antd";
 import { usePathname } from "next/navigation";
 import {
   createContext,
@@ -8,7 +8,6 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -17,9 +16,7 @@ import { AccountMenu } from "@/components/account/account-menu";
 import { getCurrentUser, type AccountUser } from "@/lib/auth-client";
 import {
   getSubjects,
-  navigateWorkspaceAfterSubjectChange,
   SUBJECT_CONTEXT_UPDATED_EVENT,
-  setCurrentSubject,
   type SubjectContext,
   type SubjectSummary,
 } from "@/lib/subjects-client";
@@ -33,11 +30,6 @@ const HIDDEN_PREFIXES = [
   "/public",
 ];
 
-type SwitchGuard = Readonly<{
-  isDirty: () => boolean;
-  save: () => Promise<boolean>;
-}>;
-
 type SubjectWorkspaceValue = Readonly<{
   active: boolean;
   loading: boolean;
@@ -45,9 +37,6 @@ type SubjectWorkspaceValue = Readonly<{
   subjects: SubjectSummary[];
   subjectContext: SubjectContext;
   currentSubject: SubjectSummary | null;
-  switchingSubject: boolean;
-  requestSubjectSwitch: (subjectId: string) => void;
-  registerSwitchGuard: (key: string, guard: SwitchGuard) => () => void;
   refresh: () => Promise<void>;
 }>;
 
@@ -59,9 +48,6 @@ const fallbackWorkspaceValue: SubjectWorkspaceValue = {
   subjects: [],
   subjectContext: emptyContext,
   currentSubject: null,
-  switchingSubject: false,
-  requestSubjectSwitch: () => undefined,
-  registerSwitchGuard: () => () => undefined,
   refresh: async () => undefined,
 };
 const SubjectWorkspaceContext = createContext<SubjectWorkspaceValue>(fallbackWorkspaceValue);
@@ -73,15 +59,10 @@ export function isWorkspaceShellHiddenPath(pathname: string) {
 export function SubjectWorkspaceProvider({ children }: Readonly<{ children: ReactNode }>) {
   const pathname = usePathname();
   const hidden = isWorkspaceShellHiddenPath(pathname);
-  const [messageApi, messageHolder] = message.useMessage();
   const [user, setUser] = useState<AccountUser | null>(null);
   const [subjects, setSubjects] = useState<SubjectSummary[]>([]);
   const [subjectContext, setSubjectContext] = useState<SubjectContext>(emptyContext);
   const [loading, setLoading] = useState(!hidden);
-  const [switchingSubject, setSwitchingSubject] = useState(false);
-  const [pendingSubjectId, setPendingSubjectId] = useState<string | null>(null);
-  const [savingBeforeSwitch, setSavingBeforeSwitch] = useState(false);
-  const guards = useRef(new Map<string, SwitchGuard>());
 
   const refresh = useCallback(async () => {
     if (hidden) {
@@ -98,7 +79,11 @@ export function SubjectWorkspaceProvider({ children }: Readonly<{ children: Reac
         return;
       }
       const data = await getSubjects();
-      setSubjects(data.subjects.filter((subject) => subject.current_version_no !== null));
+      setSubjects(
+        data.subjects.filter(
+          (subject) => subject.status === "active" && subject.current_version_no !== null,
+        ),
+      );
       setSubjectContext(data.context);
     } catch {
       setUser(null);
@@ -119,66 +104,9 @@ export function SubjectWorkspaceProvider({ children }: Readonly<{ children: Reac
   }, [refresh]);
 
   const currentSubject = useMemo(
-    () =>
-      subjects.find((subject) => subject.id === subjectContext.current_subject_id) ??
-      subjects.find((subject) => subject.is_current) ??
-      (subjects.length === 1 ? subjects[0] : null),
-    [subjectContext.current_subject_id, subjects],
+    () => subjects.find((subject) => subject.status === "active") ?? null,
+    [subjects],
   );
-
-  const registerSwitchGuard = useCallback((key: string, guard: SwitchGuard) => {
-    guards.current.set(key, guard);
-    return () => guards.current.delete(key);
-  }, []);
-
-  const performSwitch = useCallback(
-    async (subjectId: string) => {
-      if (subjectId === currentSubject?.id) return;
-      setSwitchingSubject(true);
-      try {
-        await setCurrentSubject(subjectId, subjectContext.version);
-        navigateWorkspaceAfterSubjectChange(pathname, subjectId);
-      } catch {
-        setSwitchingSubject(false);
-        setPendingSubjectId(null);
-        messageApi.error("主体切换失败，请刷新页面后重试");
-        await refresh();
-      }
-    },
-    [currentSubject?.id, messageApi, pathname, refresh, subjectContext.version],
-  );
-
-  const requestSubjectSwitch = useCallback(
-    (subjectId: string) => {
-      if (subjectId === currentSubject?.id || switchingSubject) return;
-      const hasDirtyState = Array.from(guards.current.values()).some((guard) => guard.isDirty());
-      if (hasDirtyState) {
-        setPendingSubjectId(subjectId);
-        return;
-      }
-      void performSwitch(subjectId);
-    },
-    [currentSubject?.id, performSwitch, switchingSubject],
-  );
-
-  const saveAndSwitch = async () => {
-    if (!pendingSubjectId) return;
-    setSavingBeforeSwitch(true);
-    try {
-      const dirtyGuards = Array.from(guards.current.values()).filter((guard) => guard.isDirty());
-      for (const guard of dirtyGuards) {
-        if (!(await guard.save())) {
-          messageApi.error("当前页面保存失败，已取消主体切换");
-          return;
-        }
-      }
-      const target = pendingSubjectId;
-      setPendingSubjectId(null);
-      await performSwitch(target);
-    } finally {
-      setSavingBeforeSwitch(false);
-    }
-  };
 
   const value = useMemo<SubjectWorkspaceValue>(
     () => ({
@@ -188,65 +116,13 @@ export function SubjectWorkspaceProvider({ children }: Readonly<{ children: Reac
       subjects,
       subjectContext,
       currentSubject,
-      switchingSubject,
-      requestSubjectSwitch,
-      registerSwitchGuard,
       refresh,
     }),
-    [
-      currentSubject,
-      hidden,
-      loading,
-      refresh,
-      registerSwitchGuard,
-      requestSubjectSwitch,
-      subjectContext,
-      subjects,
-      switchingSubject,
-      user,
-    ],
+    [currentSubject, hidden, loading, refresh, subjectContext, subjects, user],
   );
 
   return (
-    <SubjectWorkspaceContext.Provider value={value}>
-      {messageHolder}
-      {children}
-      <Modal
-        title="当前页面有未保存修改"
-        open={pendingSubjectId !== null}
-        closable={!savingBeforeSwitch}
-        mask={{ closable: false }}
-        footer={
-          <Space wrap>
-            <Button disabled={savingBeforeSwitch} onClick={() => setPendingSubjectId(null)}>
-              取消切换
-            </Button>
-            <Button
-              disabled={savingBeforeSwitch}
-              onClick={() => {
-                const target = pendingSubjectId;
-                setPendingSubjectId(null);
-                if (target) void performSwitch(target);
-              }}
-            >
-              放弃修改并切换
-            </Button>
-            <Button
-              type="primary"
-              loading={savingBeforeSwitch}
-              onClick={() => void saveAndSwitch()}
-            >
-              保存后切换
-            </Button>
-          </Space>
-        }
-        onCancel={() => setPendingSubjectId(null)}
-      >
-        <Typography.Paragraph>
-          切换主体会清空当前页面的临时状态。你可以先保存修改，也可以放弃修改后切换。
-        </Typography.Paragraph>
-      </Modal>
-    </SubjectWorkspaceContext.Provider>
+    <SubjectWorkspaceContext.Provider value={value}>{children}</SubjectWorkspaceContext.Provider>
   );
 }
 
@@ -255,23 +131,17 @@ export function useSubjectWorkspace() {
 }
 
 export function useSubjectSwitchGuard(key: string, dirty: boolean, save: () => Promise<boolean>) {
-  const { registerSwitchGuard } = useSubjectWorkspace();
-  useEffect(
-    () =>
-      registerSwitchGuard(key, {
-        isDirty: () => dirty,
-        save,
-      }),
-    [dirty, key, registerSwitchGuard, save],
-  );
+  void key;
+  void dirty;
+  void save;
+  // 单主体模式下不存在主体切换；保留兼容入口，避免影响既有编辑页的未保存状态处理。
 }
 
 export function SubjectWorkspaceSwitcher({
   className,
   stacked = false,
 }: Readonly<{ className?: string; stacked?: boolean }>) {
-  const { active, currentSubject, loading, requestSubjectSwitch, subjects, switchingSubject } =
-    useSubjectWorkspace();
+  const { active, currentSubject, loading } = useSubjectWorkspace();
   if (!active) return null;
 
   return (
@@ -285,23 +155,13 @@ export function SubjectWorkspaceSwitcher({
         .join(" ")}
     >
       <Space size={stacked ? 6 : "middle"} orientation={stacked ? "vertical" : "horizontal"}>
-        <Typography.Text type="secondary">当前主体</Typography.Text>
+        <Typography.Text type="secondary">主体</Typography.Text>
         {loading ? (
           <Spin size="small" />
-        ) : subjects.length ? (
-          <Select
-            aria-label="切换当前主体"
-            value={currentSubject?.id}
-            loading={switchingSubject}
-            disabled={switchingSubject || subjects.length === 1}
-            options={subjects.map((subject) => ({
-              value: subject.id,
-              label: subject.official_name || subject.subject_type.name,
-            }))}
-            onChange={requestSubjectSwitch}
-          />
         ) : (
-          <Typography.Text strong>尚未创建可用主体</Typography.Text>
+          <Typography.Text strong>
+            {currentSubject?.official_name || currentSubject?.subject_type.name || "请先绑定主体"}
+          </Typography.Text>
         )}
       </Space>
     </div>

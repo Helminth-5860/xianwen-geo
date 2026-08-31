@@ -225,6 +225,7 @@ export type SubjectSummary = Readonly<{
   official_name: string | null;
   service_regions: string;
   profile_completeness?: SubjectProfileCompleteness;
+  identity_bound?: boolean;
   retest_required: boolean;
   created_at: string;
   updated_at: string;

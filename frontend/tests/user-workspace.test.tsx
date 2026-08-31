@@ -11,7 +11,7 @@ import {
   useSubjectSwitchGuard,
 } from "../components/subject-workspace-context";
 import { UserWorkspaceNavigation } from "../components/user-workspace-navigation";
-import { SUBJECT_CONTEXT_UPDATED_EVENT, subjectSwitchTargetPath } from "../lib/subjects-client";
+import { subjectSwitchTargetPath } from "../lib/subjects-client";
 
 const getCurrentUser = vi.fn();
 const getSubjects = vi.fn();
@@ -396,7 +396,7 @@ describe("GEO 产品工作台", () => {
     expect(screen.queryByText(/upstream|unavailable|接口|异常码/)).toBeNull();
   });
 
-  it("切换主体后重新读取全部总览数据，并忽略上一主体的迟到结果", async () => {
+  it("单主体模式忽略额外主体并始终使用唯一启用主体读取总览", async () => {
     const delayedFirstStrategy = deferred<{
       items: (typeof latestStrategy)[];
       first_free_available: boolean;
@@ -502,26 +502,8 @@ describe("GEO 产品工作台", () => {
     expect(getQuestionBankDraft).toHaveBeenCalledWith(subject.id);
     expect(getStrategies).toHaveBeenCalledWith(latestReport.id);
 
-    await userEvent.click(screen.getByLabelText("切换当前主体"));
-    await userEvent.click(await screen.findByText("显问华南"));
-    await waitFor(() => expect(setCurrentSubject).toHaveBeenCalledWith(otherSubject.id, 7));
-
-    getSubjects.mockResolvedValue({
-      subjects: [subject, { ...otherSubject, is_current: true }],
-      context: { current_subject_id: otherSubject.id, version: 8 },
-    });
-    await act(async () => {
-      window.dispatchEvent(new Event(SUBJECT_CONTEXT_UPDATED_EVENT));
-    });
-
-    await waitFor(() => expect(getReportHistory).toHaveBeenCalledWith(otherSubject.id));
-    expect(screen.queryByText("68.2")).toBeNull();
-    await waitFor(() => expect(screen.getByText("82.6")).toBeTruthy());
-    expect(getReportTrends).toHaveBeenCalledWith(otherSubject.id);
-    expect(getDetectionHistory).toHaveBeenCalledWith(otherSubject.id);
-    expect(getQuestionBankDraft).toHaveBeenCalledWith(otherSubject.id);
-    await waitFor(() => expect(getStrategies).toHaveBeenCalledWith(secondReport.id));
-    expect(await screen.findByText("补强华南本地服务证据")).toBeTruthy();
+    expect(screen.queryByLabelText("切换当前主体")).toBeNull();
+    expect(setCurrentSubject).not.toHaveBeenCalled();
 
     await act(async () => {
       delayedFirstStrategy.resolve({
@@ -532,9 +514,9 @@ describe("GEO 产品工作台", () => {
       await Promise.resolve();
     });
 
-    expect(screen.getByText("补强华南本地服务证据")).toBeTruthy();
-    expect(screen.queryByText("先完善品牌可信证据")).toBeNull();
-    expect(screen.queryByText("68.2")).toBeNull();
+    expect(await screen.findByText("先完善品牌可信证据")).toBeTruthy();
+    expect(screen.getByText("68.2")).toBeTruthy();
+    expect(getReportHistory).not.toHaveBeenCalledWith(otherSubject.id);
   });
 
   it("总览请求一直无响应时十秒后结束加载并显示中文局部失败状态", async () => {
@@ -597,7 +579,8 @@ describe("GEO 产品工作台", () => {
     );
     const { rerender } = render(shell());
     expect(await screen.findByRole("navigation", { name: "GEO 工作台导航" })).toBeTruthy();
-    expect(screen.getByLabelText("切换当前主体")).toBeTruthy();
+    expect(screen.queryByLabelText("切换当前主体")).toBeNull();
+    expect(screen.getAllByText("显问科技").length).toBeGreaterThan(0);
     expect(screen.getByRole("link", { name: "GEO 总览" }).getAttribute("href")).toBe("/workspace");
     for (const label of [
       "主体档案",
@@ -881,7 +864,7 @@ describe("GEO 产品工作台", () => {
     );
   }, 15_000);
 
-  it("切换当前主体后刷新整个工作区，避免保留上一个主体的页面状态", async () => {
+  it("顶部主体名称为静态文本且不提供切换能力", async () => {
     getSubjects.mockResolvedValue({
       subjects: [subject, otherSubject],
       context: { current_subject_id: subject.id, version: 7 },
@@ -891,12 +874,11 @@ describe("GEO 产品工作台", () => {
         <SubjectWorkspaceTopbar />
       </SubjectWorkspaceProvider>,
     );
-    const selector = await screen.findByLabelText("切换当前主体");
-    await userEvent.click(selector);
-    await userEvent.click(await screen.findByText("显问华南"));
-
-    await waitFor(() => expect(setCurrentSubject).toHaveBeenCalledWith("subject-2", 7));
-    expect(navigateWorkspaceAfterSubjectChange).toHaveBeenCalledWith("/workspace", "subject-2");
+    expect((await screen.findAllByText("显问科技")).length).toBeGreaterThan(0);
+    expect(screen.queryByLabelText("切换当前主体")).toBeNull();
+    expect(screen.queryByText("显问华南")).toBeNull();
+    expect(setCurrentSubject).not.toHaveBeenCalled();
+    expect(navigateWorkspaceAfterSubjectChange).not.toHaveBeenCalled();
   });
 
   it("动态主体路由切换到同一功能的新主体，历史对象详情回到所属模块列表", () => {
@@ -959,7 +941,7 @@ describe("GEO 产品工作台", () => {
     );
   });
 
-  it("有未保存修改时先确认，保存成功后才切换主体", async () => {
+  it("单主体模式不会因其他主体数据触发未保存切换流程", async () => {
     pathname = "/subjects/subject-1/keywords";
     getSubjects.mockResolvedValue({
       subjects: [subject, otherSubject],
@@ -972,18 +954,11 @@ describe("GEO 产品工作台", () => {
         <DirtyWorkspace save={save} />
       </SubjectWorkspaceProvider>,
     );
-    const selector = await screen.findByLabelText("切换当前主体");
-    await userEvent.click(selector);
-    await userEvent.click(await screen.findByText("显问华南"));
-    expect(await screen.findByText("当前页面有未保存修改")).toBeTruthy();
+    expect(await screen.findByText("存在未保存修改")).toBeTruthy();
+    expect(screen.queryByLabelText("切换当前主体")).toBeNull();
+    expect(screen.queryByText("当前页面有未保存修改")).toBeNull();
     expect(setCurrentSubject).not.toHaveBeenCalled();
-
-    await userEvent.click(screen.getByRole("button", { name: "保存后切换" }));
-    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(setCurrentSubject).toHaveBeenCalledWith("subject-2", 7));
-    expect(navigateWorkspaceAfterSubjectChange).toHaveBeenCalledWith(
-      "/subjects/subject-1/keywords",
-      "subject-2",
-    );
+    expect(save).not.toHaveBeenCalled();
+    expect(navigateWorkspaceAfterSubjectChange).not.toHaveBeenCalled();
   });
 });

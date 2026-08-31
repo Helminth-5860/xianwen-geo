@@ -1,13 +1,14 @@
 from dataclasses import dataclass
 from typing import Any
 
-from django.db import transaction
+from django.db import IntegrityError, transaction
+from django.db.models import Q
 from django.utils import timezone
 from rest_framework.exceptions import NotFound
 
 from apps.plans.models import Subscription, SubscriptionChange
 from apps.plans.subscription_services import effective_entitlement_snapshot
-from apps.users.models import User
+from apps.users.models import Tenant, User
 
 from .models import Subject, SubjectBusinessProfile, SubjectContext, SubjectEvent, SubjectType
 from .schema_snapshots import (
@@ -62,6 +63,10 @@ class SubjectStateConflict(SubjectBusinessError):
     code = "SUBJECT_STATE_CONFLICT"
 
 
+class SubjectIdentityLocked(SubjectBusinessError):
+    code = "SUBJECT_IDENTITY_LOCKED"
+
+
 class SubjectPlanRequired(SubjectBusinessError):
     code = "PLAN_REQUIRED"
 
@@ -80,6 +85,31 @@ class SubjectLimitPreview:
 def _ensure_subject_write_allowed(user: User) -> None:
     if not user.is_active or user.account_status != User.AccountStatus.ACTIVE:
         raise SubjectAccountReadOnly
+
+
+def _workspace_subject_filter(user: User) -> Q:
+    if user.tenant_id is not None:
+        return Q(tenant_id=user.tenant_id)
+    return Q(tenant__isnull=True, user=user)
+
+
+def _workspace_users(user: User):
+    if user.tenant_id is not None:
+        return User.objects.filter(tenant_id=user.tenant_id)
+    return User.objects.filter(pk=user.pk)
+
+
+def _lock_workspace(user: User) -> None:
+    if user.tenant_id is not None:
+        Tenant.objects.select_for_update().get(pk=user.tenant_id)
+
+
+def active_subject_for_user(user: User) -> Subject | None:
+    return (
+        Subject.objects.filter(_workspace_subject_filter(user), status=Subject.Status.ACTIVE)
+        .select_related("subject_type", "current_version", "business_profile")
+        .first()
+    )
 
 
 def _limit_from_snapshot(snapshot: Any) -> int:
@@ -101,7 +131,9 @@ def _limit_from_snapshot(snapshot: Any) -> int:
 
 def subject_limit_preview(*, user: User, target_snapshot: Any) -> SubjectLimitPreview:
     target_limit = _limit_from_snapshot(target_snapshot)
-    active_count = Subject.objects.filter(user=user, status=Subject.Status.ACTIVE).count()
+    active_count = Subject.objects.filter(
+        _workspace_subject_filter(user), status=Subject.Status.ACTIVE
+    ).count()
     return SubjectLimitPreview(
         active_count=active_count,
         target_limit=target_limit,
@@ -176,14 +208,14 @@ def _subject_event(
 
 def subjects_for_user(user: User):
     return (
-        Subject.objects.filter(user=user)
+        Subject.objects.filter(_workspace_subject_filter(user))
         .select_related("subject_type", "current_version", "business_profile")
         .order_by("-updated_at", "id")
     )
 
 
 def subject_for_user_or_404(*, user: User, subject_id, lock: bool = False) -> Subject:
-    query = Subject.objects.filter(user=user).select_related(
+    query = Subject.objects.filter(_workspace_subject_filter(user)).select_related(
         "subject_type", "current_version", "business_profile"
     )
     if lock:
@@ -195,7 +227,16 @@ def subject_for_user_or_404(*, user: User, subject_id, lock: bool = False) -> Su
 
 
 def subject_context_for_user(user: User) -> SubjectContext | None:
-    return SubjectContext.objects.filter(user=user).select_related("current_subject").first()
+    active_subject = active_subject_for_user(user)
+    context = SubjectContext.objects.filter(user=user).select_related("current_subject").first()
+    active_id = active_subject.pk if active_subject is not None else None
+    if context is None:
+        return SubjectContext.objects.create(user=user, current_subject=active_subject)
+    if context.current_subject_id != active_id:
+        context.current_subject = active_subject
+        context.version += 1
+        context.save(update_fields=["current_subject", "version", "updated_at"])
+    return context
 
 
 @transaction.atomic
@@ -209,6 +250,11 @@ def create_subject(
 ) -> Subject:
     user = User.objects.select_for_update().get(pk=user_id)
     _ensure_subject_write_allowed(user)
+    _lock_workspace(user)
+    if Subject.objects.filter(
+        _workspace_subject_filter(user), status=Subject.Status.ACTIVE
+    ).exists():
+        raise SubjectLimitReached
     moment = timezone.now()
     subscription = _effective_subscription_locked(user=user, moment=moment)
     if not user.is_test_account:
@@ -238,6 +284,7 @@ def create_subject(
         raise SubjectValuesInvalid(exc.field_key) from exc
     subject = Subject.objects.create(
         user=user,
+        tenant_id=user.tenant_id,
         subject_type=subject_type,
         status=Subject.Status.DRAFT,
         draft_values=values,
@@ -275,14 +322,42 @@ def mark_subject_usable_after_save(*, user_id, subject_id, request_id) -> Subjec
     """Make a successfully saved subject usable and select the first saved subject globally."""
     user = User.objects.select_for_update().get(pk=user_id)
     _ensure_subject_write_allowed(user)
+    _lock_workspace(user)
     subject = subject_for_user_or_404(user=user, subject_id=subject_id, lock=True)
     if subject.status == Subject.Status.ARCHIVED or subject.current_version_id is None:
         raise SubjectStateConflict
     if subject.status != Subject.Status.ACTIVE:
+        if (
+            Subject.objects.filter(_workspace_subject_filter(user), status=Subject.Status.ACTIVE)
+            .exclude(pk=subject.pk)
+            .exists()
+        ):
+            raise SubjectLimitReached
         previous = subject.status
         subject.status = Subject.Status.ACTIVE
+        subject.identity_bound_at = timezone.now()
+        subject.bound_official_name = subject.current_version.official_name.strip()
+        try:
+            profile = subject.business_profile
+        except SubjectBusinessProfile.DoesNotExist:
+            profile = None
+        subject.bound_unified_social_credit_code = (
+            profile.unified_social_credit_code.strip().upper() if profile is not None else ""
+        )
         subject.version += 1
-        subject.save(update_fields=["status", "version", "updated_at"])
+        try:
+            subject.save(
+                update_fields=[
+                    "status",
+                    "identity_bound_at",
+                    "bound_official_name",
+                    "bound_unified_social_credit_code",
+                    "version",
+                    "updated_at",
+                ]
+            )
+        except IntegrityError as exc:
+            raise SubjectLimitReached from exc
         _subject_event(
             subject=subject,
             event_type=SubjectEvent.EventType.ACTIVATED,
@@ -291,17 +366,17 @@ def mark_subject_usable_after_save(*, user_id, subject_id, request_id) -> Subjec
             request_id=request_id,
             summary="Saved subject became usable.",
         )
-    context = SubjectContext.objects.select_for_update().filter(user=user).first()
-    if context is None:
-        SubjectContext.objects.create(user=user, current_subject=subject)
-        selected = True
-    elif context.current_subject_id is None:
-        context.current_subject = subject
-        context.version += 1
-        context.save(update_fields=["current_subject", "version", "updated_at"])
-        selected = True
-    else:
-        selected = False
+    selected = False
+    for workspace_user in _workspace_users(user).select_for_update():
+        context = SubjectContext.objects.select_for_update().filter(user=workspace_user).first()
+        if context is None:
+            SubjectContext.objects.create(user=workspace_user, current_subject=subject)
+            selected = True
+        elif context.current_subject_id != subject.pk:
+            context.current_subject = subject
+            context.version += 1
+            context.save(update_fields=["current_subject", "version", "updated_at"])
+            selected = True
     if selected:
         _subject_event(
             subject=subject,
@@ -322,8 +397,16 @@ def merge_subject_draft_values_locked(
 ) -> Subject:
     """Apply a validated draft patch to an already locked owner/subject pair."""
     _ensure_subject_write_allowed(user)
-    if subject.user_id != user.pk or subject.status == Subject.Status.ARCHIVED:
+    if (
+        not Subject.objects.filter(_workspace_subject_filter(user), pk=subject.pk).exists()
+        or subject.status == Subject.Status.ARCHIVED
+    ):
         raise SubjectStateConflict
+    if subject.identity_bound_at is not None and "name" in values:
+        candidate_name = values.get("name")
+        normalized_name = candidate_name.strip() if isinstance(candidate_name, str) else ""
+        if normalized_name != subject.bound_official_name:
+            raise SubjectIdentityLocked
     try:
         assert_snapshot_integrity(subject.schema_snapshot, subject.schema_digest)
         merged = merge_and_validate_values(
@@ -368,6 +451,20 @@ def update_subject_draft(
     subject = merge_subject_draft_values_locked(user=user, subject=subject, values=values)
     if profile_values is not None:
         profile_values = dict(profile_values)
+        if subject.identity_bound_at is not None:
+            candidate_credit = (
+                str(
+                    profile_values.get(
+                        "unified_social_credit_code",
+                        subject.bound_unified_social_credit_code,
+                    )
+                    or ""
+                )
+                .strip()
+                .upper()
+            )
+            if candidate_credit != subject.bound_unified_social_credit_code:
+                raise SubjectIdentityLocked
         profile_values["legal_entity_type"] = (
             SubjectBusinessProfile.LegalEntityType.INDIVIDUAL_BUSINESS
             if subject.subject_type.key == "individual_business"
@@ -393,6 +490,7 @@ def archive_subject(
 ) -> Subject:
     user = User.objects.select_for_update().get(pk=user_id)
     _ensure_subject_write_allowed(user)
+    _lock_workspace(user)
     subject = subject_for_user_or_404(user=user, subject_id=subject_id, lock=True)
     if subject.version != expected_version:
         raise SubjectVersionConflict
@@ -470,7 +568,9 @@ def activate_subject(
     ).exists():
         raise SubjectStateConflict
     limit = effective_subject_activation_limit(user=user, subscription=subscription)
-    active_count = Subject.objects.filter(user=user, status=Subject.Status.ACTIVE).count()
+    active_count = Subject.objects.filter(
+        _workspace_subject_filter(user), status=Subject.Status.ACTIVE
+    ).count()
     if active_count >= limit:
         raise SubjectLimitReached
     previous = subject.status
@@ -498,8 +598,18 @@ def set_current_subject(
 ) -> SubjectContext:
     user = User.objects.select_for_update().get(pk=user_id)
     _ensure_subject_write_allowed(user)
+    _lock_workspace(user)
     subject = subject_for_user_or_404(user=user, subject_id=subject_id, lock=True)
-    if subject.status == Subject.Status.ARCHIVED or subject.current_version_id is None:
+    active_subject = (
+        Subject.objects.select_for_update()
+        .filter(_workspace_subject_filter(user), status=Subject.Status.ACTIVE)
+        .first()
+    )
+    if (
+        active_subject is None
+        or active_subject.pk != subject.pk
+        or subject.current_version_id is None
+    ):
         raise SubjectStateConflict
     context = SubjectContext.objects.select_for_update().filter(user=user).first()
     if context is None:

@@ -369,7 +369,7 @@ export function WebsiteBuilderWorkspace() {
     return (
       <main className="page-shell">
         <Empty
-          description="请先创建并选择一个主体，再为这个主体搭建官网"
+          description="请先绑定主体，再为这个主体搭建官网"
           image={Empty.PRESENTED_IMAGE_SIMPLE}
         />
       </main>

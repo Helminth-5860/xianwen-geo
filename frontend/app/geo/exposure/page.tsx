@@ -440,7 +440,7 @@ export default function GeoExposurePage() {
 
       {!subject ? (
         <section className={styles.emptyPanel}>
-          <Empty description="请先创建并选择当前主体">
+          <Empty description="请先绑定主体">
             <Button type="primary" href="/subjects">
               进入主体档案
             </Button>

@@ -2,7 +2,6 @@
 
 import {
   AppstoreOutlined,
-  ArrowLeftOutlined,
   BankOutlined,
   BookOutlined,
   DatabaseOutlined,
@@ -10,10 +9,10 @@ import {
   FileTextOutlined,
   GlobalOutlined,
   LinkOutlined,
+  LockOutlined,
   MessageOutlined,
   PhoneOutlined,
   PictureOutlined,
-  PlusOutlined,
   RobotOutlined,
   SaveOutlined,
   ShopOutlined,
@@ -30,6 +29,7 @@ import {
   Form,
   Input,
   InputNumber,
+  Modal,
   Progress,
   Select,
   Spin,
@@ -38,7 +38,7 @@ import {
 } from "antd";
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Suspense, useEffect, useState, type ReactNode } from "react";
 
 import { SubjectAiEnrichment } from "@/components/subject-ai-enrichment";
 import {
@@ -51,7 +51,6 @@ import {
   SubjectBusinessCoverageSelector,
 } from "@/components/subject-business-coverage-selector";
 import { SubjectDocuments } from "@/components/subject-documents";
-import { useSubjectSwitchGuard } from "@/components/subject-workspace-context";
 import { SubjectWebSources } from "@/components/subject-web-sources";
 import { AuthApiError, userMessage } from "@/lib/auth-client";
 import type { SubjectDocument } from "@/lib/documents-client";
@@ -713,7 +712,7 @@ function SubjectDetailContent() {
     notifySubjectContextUpdated();
     setError("");
     if (showSuccess) {
-      setNotice(isCreating ? "主体已新增，资料已生效" : "修改已保存，资料已生效");
+      setNotice(isCreating ? "主体已成功绑定，资料已生效" : "经营资料已保存并生效");
     }
     return result.subject;
   };
@@ -733,17 +732,22 @@ function SubjectDetailContent() {
     }
   };
 
-  const dirty = useMemo(
-    () =>
-      Boolean(
-        subject &&
-        !readOnly &&
-        (JSON.stringify(values) !== JSON.stringify(subject.draft_values) ||
-          JSON.stringify(businessProfile) !== JSON.stringify(subject.business_profile)),
-      ),
-    [businessProfile, readOnly, subject, values],
-  );
-  useSubjectSwitchGuard(`subject-profile:${params.id}`, dirty, save);
+  const requestSave = () => {
+    if (!subject || subject.identity_bound) {
+      void save();
+      return;
+    }
+    Modal.confirm({
+      title: "确认绑定主体",
+      content: "主体身份绑定后不可自行修改，请确认信息准确。身份信息如需更正，请联系客服。",
+      okText: "确认绑定",
+      cancelText: "返回检查",
+      centered: true,
+      onOk: async () => {
+        await save();
+      },
+    });
+  };
 
   if (!subject && !error) {
     return <Spin fullscreen description="正在加载主体资料" />;
@@ -760,7 +764,11 @@ function SubjectDetailContent() {
       <ProfileFieldInput
         field={field}
         value={businessProfileValue(businessProfile, field.key)}
-        disabled={readOnly || subject?.status === "archived"}
+        disabled={
+          readOnly ||
+          subject?.status === "archived" ||
+          Boolean(subject?.identity_bound && field.key === "unified_social_credit_code")
+        }
         onChange={(value) => updateBusinessProfileField(field.key, value)}
       />
     </Form.Item>
@@ -789,7 +797,11 @@ function SubjectDetailContent() {
         <FieldInput
           field={field}
           value={values[field.field_key]}
-          disabled={readOnly || subject?.status === "archived"}
+          disabled={
+            readOnly ||
+            subject?.status === "archived" ||
+            Boolean(subject?.identity_bound && field.field_key === "name")
+          }
           documents={documents}
           onChange={(value) => {
             setError("");
@@ -806,10 +818,6 @@ function SubjectDetailContent() {
 
   return (
     <main className={`page-shell ${styles.page}`}>
-      <Link href="/subjects" className={styles.backLink}>
-        <ArrowLeftOutlined />
-        返回主体管理
-      </Link>
       {error && <Alert className={styles.alert} type="error" showIcon message={error} />}
       {notice && (
         <Alert
@@ -817,7 +825,7 @@ function SubjectDetailContent() {
           type="success"
           showIcon
           message={notice}
-          description="你可以继续完善选填资料，或返回主体管理查看当前主体。"
+          description="你可以继续完善其他经营资料。"
         />
       )}
       {subject && (
@@ -829,27 +837,26 @@ function SubjectDetailContent() {
             <div className={styles.heroContent}>
               <Typography.Text className={styles.eyebrow}>主体档案</Typography.Text>
               <Typography.Title className={styles.heroTitle}>
-                {readOnly
-                  ? "查看主体档案"
-                  : subject.current_version_no === null
-                    ? "新增主体"
-                    : "编辑主体"}
+                {readOnly ? "查看主体档案" : subject.identity_bound ? "主体管理" : "绑定主体"}
               </Typography.Title>
               <Typography.Paragraph className={styles.heroDescription}>
                 {readOnly
-                  ? "查看已保存的主体经营、品牌与公开资料。"
-                  : "填写真实资料，建立清晰的主体档案，统一管理身份、业务、品牌与公开信息。"}
+                  ? "查看已保存的主体身份、经营与公开资料。"
+                  : subject.identity_bound
+                    ? "主体身份已经绑定，你可以继续维护经营、品牌与公开资料。"
+                    : "填写真实资料，确认无误后绑定为当前工作空间的唯一主体。"}
               </Typography.Paragraph>
             </div>
             <div className={styles.statuses}>
               {subject.status === "archived" ? (
-                <Tag>已删除</Tag>
-              ) : subject.current_version_no === null ? (
-                <Tag color="orange">待完善</Tag>
+                <Tag>历史记录</Tag>
+              ) : subject.identity_bound ? (
+                <Tag color="green" icon={<LockOutlined />}>
+                  已绑定
+                </Tag>
               ) : (
-                <Tag color="green">可用</Tag>
+                <Tag color="orange">待绑定</Tag>
               )}
-              {subject.is_current && <Tag color="blue">当前</Tag>}
               {readOnly && subject.status !== "archived" && (
                 <Button href={`/subjects/${subject.id}`}>编辑主体</Button>
               )}
@@ -894,25 +901,35 @@ function SubjectDetailContent() {
             {[
               {
                 key: "identity",
-                title: "基础身份信息",
-                description: "用于确认主体身份、所属行业和实际经营地址",
+                title: "主体身份",
+                description: subject.identity_bound
+                  ? "主体身份信息不可自行修改，如登记信息有误请联系客服。"
+                  : "请核对正式名称、主体类型和登记信息，绑定后不可自行修改",
                 icon: <BankOutlined />,
                 fields: subject.form_schema.fields.filter((field) =>
                   baseIdentityKeys.has(field.field_key),
                 ),
                 profileBefore: [] as ProfileField[],
-                profileAfter: [profileFields.industry, profileFields.business_address],
+                profileAfter: [
+                  ...(["enterprise", "individual_business"].includes(subject.subject_type.key)
+                    ? [profileFields.unified_social_credit_code]
+                    : []),
+                ],
               },
               {
                 key: "business",
-                title: "经营信息",
+                title: "经营资料",
                 description: "帮助系统理解你提供什么、服务谁，以及覆盖哪些区域",
                 icon: <ShopOutlined />,
                 fields: subject.form_schema.fields.filter((field) =>
                   businessKeys.has(field.field_key),
                 ),
-                profileBefore: [profileFields.primary_business],
-                profileAfter: [] as ProfileField[],
+                profileBefore: [
+                  profileFields.industry,
+                  profileFields.business_address,
+                  profileFields.primary_business,
+                ],
+                profileAfter: [profileFields.contact_name, profileFields.contact_phone],
               },
             ].map((section) => (
               <Card key={section.key} className={styles.sectionCard}>
@@ -937,7 +954,7 @@ function SubjectDetailContent() {
                         className={styles.fieldItem}
                         label={fieldLabel("legal_entity_type", "主体类型")}
                         required
-                        extra="主体类型在创建时确定，如需更换类型请新增主体。"
+                        extra="主体类型绑定后不可自行修改，如登记信息有误请联系客服。"
                       >
                         <Input
                           aria-label="主体类型"
@@ -971,12 +988,8 @@ function SubjectDetailContent() {
                   ),
                   children: (
                     <div className={styles.fieldGrid}>
-                      {renderBusinessProfileField(profileFields.contact_name)}
-                      {renderBusinessProfileField(profileFields.contact_phone)}
                       {renderBusinessProfileField(profileFields.brand_name)}
                       {renderBusinessProfileField(profileFields.subject_aliases)}
-                      {["enterprise", "individual_business"].includes(subject.subject_type.key) &&
-                        renderBusinessProfileField(profileFields.unified_social_credit_code)}
                       {subject.form_schema.fields
                         .filter(
                           (field) =>
@@ -1080,10 +1093,12 @@ function SubjectDetailContent() {
             <div className={styles.actionBar}>
               <div className={styles.actionCopy}>
                 <span className={styles.actionTitle}>
-                  {subject.current_version_no === null ? "创建主体档案" : "保存主体资料修改"}
+                  {subject.identity_bound ? "保存经营资料" : "确认绑定主体"}
                 </span>
                 <span className={styles.actionDescription}>
-                  保存后资料立即生效，你可以继续留在本页完善主体档案。
+                  {subject.identity_bound
+                    ? "保存后资料立即生效，并继续使用当前主体编号。"
+                    : "提交前会再次提醒你核对不可修改的主体身份信息。"}
                 </span>
               </div>
               <div className={styles.actionButtons}>
@@ -1094,10 +1109,10 @@ function SubjectDetailContent() {
                   className={styles.primaryButton}
                   type="primary"
                   loading={saving}
-                  icon={subject.current_version_no === null ? <PlusOutlined /> : <SaveOutlined />}
-                  onClick={() => void save()}
+                  icon={subject.identity_bound ? <SaveOutlined /> : <LockOutlined />}
+                  onClick={requestSave}
                 >
-                  {subject.current_version_no === null ? "新增主体" : "保存修改"}
+                  {subject.identity_bound ? "保存修改" : "绑定主体"}
                 </Button>
               </div>
             </div>

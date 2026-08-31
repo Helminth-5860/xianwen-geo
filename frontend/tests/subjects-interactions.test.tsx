@@ -14,10 +14,11 @@ import type { SubjectDetail, SubjectList } from "../lib/subjects-client";
 
 let viewMode = false;
 const routerPush = vi.fn();
+const routerReplace = vi.fn();
 
 vi.mock("next/navigation", () => ({
   useParams: () => ({ id: "subject-1" }),
-  useRouter: () => ({ push: routerPush }),
+  useRouter: () => ({ push: routerPush, replace: routerReplace }),
   useSearchParams: () => new URLSearchParams(viewMode ? "mode=view" : ""),
 }));
 
@@ -58,6 +59,7 @@ const detail: SubjectDetail = {
   version: 4,
   is_current: true,
   current_version_no: null,
+  identity_bound: false,
   official_name: null,
   service_regions: JSON.stringify({ version: 1, nationwide: true, areas: [] }),
   retest_required: false,
@@ -251,6 +253,7 @@ beforeEach(() => {
       ...detail,
       version: 6,
       current_version_no: 1,
+      identity_bound: true,
       draft_values: { ...detail.draft_values, name: "\u66f4\u65b0\u540d\u79f0" },
     },
     version: { version_no: 1 },
@@ -269,16 +272,22 @@ describe("subject profile interactions", () => {
   it("renders and edits an existing subject exclusively from its persisted form schema", async () => {
     render(<SubjectDetailPage />);
     const name = await screen.findByLabelText("主体名称");
-    expect(screen.getByRole("heading", { name: "新增主体" })).toBeTruthy();
-    expect(screen.getByText("基础身份信息")).toBeTruthy();
-    expect(screen.getByText("经营信息")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "绑定主体" })).toBeTruthy();
+    expect(screen.getByText("主体身份")).toBeTruthy();
+    expect(screen.getByText("经营资料")).toBeTruthy();
     expect(screen.getByText("品牌与公开资料")).toBeTruthy();
     expect(getSubject).toHaveBeenCalledWith("subject-1");
     expect(getSubjectFormSchema).not.toHaveBeenCalled();
 
     await userEvent.clear(name);
     await userEvent.type(name, "\u66f4\u65b0\u540d\u79f0");
-    await userEvent.click(screen.getByRole("button", { name: /新\s*增\s*主\s*体/ }));
+    await userEvent.click(screen.getByRole("button", { name: /绑\s*定\s*主\s*体/ }));
+    expect(
+      await screen.findByText(
+        "主体身份绑定后不可自行修改，请确认信息准确。身份信息如需更正，请联系客服。",
+      ),
+    ).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: /确\s*认\s*绑\s*定/ }));
     await waitFor(() =>
       expect(saveSubject).toHaveBeenCalledWith(
         detail,
@@ -291,7 +300,7 @@ describe("subject profile interactions", () => {
         detail.business_profile,
       ),
     );
-    expect(await screen.findByText("主体已新增，资料已生效")).toBeTruthy();
+    expect(await screen.findByText("主体已成功绑定，资料已生效")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "提交正式版本" })).toBeNull();
   });
 
@@ -317,7 +326,8 @@ describe("subject profile interactions", () => {
     await userEvent.type(contact, "李四");
     const xiaohongshu = screen.getByLabelText("小红书");
     await userEvent.type(xiaohongshu, "显问 GEO 主页");
-    await userEvent.click(screen.getByRole("button", { name: /新\s*增\s*主\s*体/ }));
+    await userEvent.click(screen.getByRole("button", { name: /绑\s*定\s*主\s*体/ }));
+    await userEvent.click(screen.getByRole("button", { name: /确\s*认\s*绑\s*定/ }));
 
     await waitFor(() =>
       expect(saveSubject).toHaveBeenCalledWith(
@@ -329,7 +339,7 @@ describe("subject profile interactions", () => {
         }),
       ),
     );
-    expect(await screen.findByText("主体已新增，资料已生效")).toBeTruthy();
+    expect(await screen.findByText("主体已成功绑定，资料已生效")).toBeTruthy();
     expect((screen.getByLabelText("联系人") as HTMLInputElement).value).toBe("李四");
     expect((screen.getByLabelText("小红书") as HTMLInputElement).value).toBe("显问 GEO 主页");
   });
@@ -341,25 +351,22 @@ describe("subject profile interactions", () => {
     expect(await screen.findByText("主体资料库")).toBeTruthy();
     expect(screen.getByRole("button", { name: "上传资料" })).toBeTruthy();
   });
-  it("requires confirmation before removing a subject from the active list", async () => {
+  it("does not expose list, delete, switch, or second-subject actions", async () => {
     render(<SubjectsPage />);
     await screen.findByRole("heading", { name: "主体管理" });
-    expect(screen.queryByText("新建主体档案")).toBeNull();
-    await userEvent.click(screen.getByRole("button", { name: /删\s*除/ }));
-    expect(
-      await screen.findByText("删除后会自动切换到其他可用主体；如无其他主体，将清空当前主体。"),
-    ).toBeTruthy();
-    await userEvent.click(screen.getByRole("button", { name: /确认删除|确\s*认\s*删\s*除/ }));
-    await waitFor(() => expect(deleteSubject).toHaveBeenCalledWith(list.subjects[0]));
+    expect(screen.getByRole("button", { name: "继续绑定主体" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /删除|切换|新增/ })).toBeNull();
+    expect(deleteSubject).not.toHaveBeenCalled();
   });
 
-  it("creates a named subject from the subject-management modal", async () => {
+  it("starts the one-time subject binding from the subject-management modal", async () => {
+    getSubjects.mockResolvedValueOnce({ subjects: [], context: list.context });
     render(<SubjectsPage />);
     await screen.findByRole("heading", { name: "主体管理" });
-    await userEvent.click(screen.getByRole("button", { name: /新增主体/ }));
-    expect(await screen.findByRole("dialog", { name: "新增主体" })).toBeTruthy();
-    await userEvent.type(screen.getByLabelText("新增主体名称"), "广州显问网络科技有限公司");
-    await userEvent.click(screen.getByRole("button", { name: "创建并完善资料" }));
+    await userEvent.click(screen.getByRole("button", { name: "绑定主体" }));
+    expect(await screen.findByRole("dialog", { name: "绑定主体" })).toBeTruthy();
+    await userEvent.type(screen.getByLabelText("主体正式名称"), "广州显问网络科技有限公司");
+    await userEvent.click(screen.getByRole("button", { name: /继续完善资料/ }));
     await waitFor(() =>
       expect(createSubject).toHaveBeenCalledWith("type-1", 2, {
         name: "广州显问网络科技有限公司",
@@ -371,8 +378,8 @@ describe("subject profile interactions", () => {
   it("keeps deleted subject values read-only", async () => {
     getSubject.mockResolvedValueOnce({ ...detail, status: "archived" });
     render(<SubjectDetailPage />);
-    expect(await screen.findByText("已删除")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: /新增主体|保存修改/ })).toBeNull();
+    expect(await screen.findByText("历史记录")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /绑定主体|保存修改/ })).toBeNull();
     expect(screen.getByLabelText("主体名称") as HTMLInputElement).toHaveProperty("disabled", true);
     expect(screen.queryByRole("button", { name: "提交正式版本" })).toBeNull();
   });
@@ -383,7 +390,7 @@ describe("subject profile interactions", () => {
 
     expect(await screen.findByRole("heading", { name: "查看主体档案" })).toBeTruthy();
     expect(screen.getByLabelText("主体名称") as HTMLInputElement).toHaveProperty("disabled", true);
-    expect(screen.queryByRole("button", { name: /新增主体|保存修改/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /绑定主体|保存修改/ })).toBeNull();
     expect(screen.queryByText("AI 帮我补充资料")).toBeNull();
     expect(screen.getByRole("link", { name: "编辑主体" }).getAttribute("href")).toBe(
       "/subjects/subject-1",
@@ -411,7 +418,8 @@ describe("subject profile interactions", () => {
     render(<SubjectDetailPage />);
     await screen.findByLabelText("主体名称");
     await userEvent.click(screen.getByText("品牌与公开资料"));
-    await userEvent.click(screen.getByRole("button", { name: /新\s*增\s*主\s*体/ }));
+    await userEvent.click(screen.getByRole("button", { name: /绑\s*定\s*主\s*体/ }));
+    await userEvent.click(screen.getByRole("button", { name: /确\s*认\s*绑\s*定/ }));
 
     expect(
       await screen.findByText("联系电话格式不正确，请填写 5 至 32 位的手机号或座机号码"),
@@ -421,7 +429,7 @@ describe("subject profile interactions", () => {
 
   it("exposes one save action without draft or formal-version product steps", async () => {
     render(<SubjectDetailPage />);
-    await screen.findByRole("button", { name: /新\s*增\s*主\s*体/ });
+    await screen.findByRole("button", { name: /绑\s*定\s*主\s*体/ });
     expect(screen.queryByText("草稿")).toBeNull();
     expect(screen.queryByText(/提交正式版本/)).toBeNull();
     expect(screen.queryByText("产品候选确认")).toBeNull();

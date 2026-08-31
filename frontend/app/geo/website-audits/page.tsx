@@ -78,7 +78,8 @@ export default function WebsiteAuditsPage() {
       .then((rows) => {
         if (!alive) return;
         const sorted = [...rows].sort(
-          (left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime(),
+          (left, right) =>
+            new Date(right.created_at).getTime() - new Date(left.created_at).getTime(),
         );
         setHistory(sorted);
         setCurrent(sorted[0] ?? null);
@@ -145,7 +146,8 @@ export default function WebsiteAuditsPage() {
           <Text type="secondary">官网检测</Text>
           <Title level={2}>官网检测</Title>
           <Paragraph type="secondary">
-            深度扫描官网的 SEO、GEO、浏览器渲染与 AI 内容准备度，定位影响搜索与生成式搜索理解的问题。
+            深度扫描官网的 SEO、GEO、浏览器渲染与 AI
+            内容准备度，定位影响搜索与生成式搜索理解的问题。
           </Paragraph>
         </div>
         <Button href="/geo/detections">返回主体检测</Button>
@@ -155,7 +157,7 @@ export default function WebsiteAuditsPage() {
 
       {!subject ? (
         <Card>
-          <Empty description="请先创建并选择当前主体">
+          <Empty description="请先绑定主体">
             <Button type="primary" href="/subjects">
               进入主体档案
             </Button>
@@ -226,7 +228,10 @@ export default function WebsiteAuditsPage() {
                       <ClockCircleOutlined />
                     )}
                   </div>
-                  <Progress percent={progress} status={current.status === "failed" ? "exception" : "active"} />
+                  <Progress
+                    percent={progress}
+                    status={current.status === "failed" ? "exception" : "active"}
+                  />
                   <Space wrap>
                     {stageTag("整站扫描", current.status)}
                     {stageTag("浏览器", current.browser_status)}
@@ -249,15 +254,22 @@ export default function WebsiteAuditsPage() {
             ) : (
               <div className="website-audit-history">
                 {history.slice(0, 10).map((audit) => (
-                  <a key={audit.id} href={`/geo/website-audits/${audit.id}`} className="geo-report-row">
+                  <a
+                    key={audit.id}
+                    href={`/geo/website-audits/${audit.id}`}
+                    className="geo-report-row"
+                  >
                     <span>
                       <Space wrap>
                         <Text strong>{audit.root_host || audit.root_url}</Text>
                         <Tag>{websiteAuditStatusLabel(audit.status)}</Tag>
-                        {audit.semantic_status === "succeeded" && <Tag color="purple">AI 语义完成</Tag>}
+                        {audit.semantic_status === "succeeded" && (
+                          <Tag color="purple">AI 语义完成</Tag>
+                        )}
                       </Space>
                       <Text type="secondary">
-                        {audit.fetched_count} 页 · {new Date(audit.created_at).toLocaleString("zh-CN")}
+                        {audit.fetched_count} 页 ·{" "}
+                        {new Date(audit.created_at).toLocaleString("zh-CN")}
                       </Text>
                     </span>
                     <ArrowRightOutlined />

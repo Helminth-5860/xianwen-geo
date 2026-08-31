@@ -190,7 +190,7 @@ export default function CompetitorComparisonPage() {
 
       {!subjectLoading && !subject ? (
         <Card className={styles.emptyCard}>
-          <Empty description="请先创建并选择当前主体">
+          <Empty description="请先绑定主体">
             <Button type="primary" href="/subjects">
               前往主体管理
             </Button>

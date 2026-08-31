@@ -58,8 +58,7 @@ class SubjectVersionNoChanges(SubjectBusinessError):
 
 
 def subject_versions_for_user(*, user: User, subject_id):
-    if not Subject.objects.filter(pk=subject_id, user=user).exists():
-        raise NotFound
+    subject_for_user_or_404(user=user, subject_id=subject_id)
     return (
         SubjectVersion.objects.filter(subject_id=subject_id)
         .prefetch_related("names", "products")
@@ -68,9 +67,10 @@ def subject_versions_for_user(*, user: User, subject_id):
 
 
 def subject_version_for_user_or_404(*, user: User, subject_id, version_id) -> SubjectVersion:
+    subject_for_user_or_404(user=user, subject_id=subject_id)
     try:
         return (
-            SubjectVersion.objects.filter(subject_id=subject_id, subject__user=user)
+            SubjectVersion.objects.filter(subject_id=subject_id)
             .prefetch_related("names", "products")
             .get(pk=version_id)
         )

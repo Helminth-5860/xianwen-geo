@@ -14,10 +14,7 @@ import {
   type ReactNode,
 } from "react";
 
-import {
-  SubjectWorkspaceSwitcher,
-  useSubjectWorkspace,
-} from "@/components/subject-workspace-context";
+import { useSubjectWorkspace } from "@/components/subject-workspace-context";
 import {
   getActiveWorkspaceNavigation,
   resolveWorkspaceNavigation,
@@ -92,7 +89,6 @@ function FullNavigationContent({
   pathname,
   currentSubjectName,
   showBrand = true,
-  showSubjectSwitcher = false,
   headerAction,
   onNavigate,
 }: Readonly<{
@@ -100,7 +96,6 @@ function FullNavigationContent({
   pathname: string;
   currentSubjectName: string;
   showBrand?: boolean;
-  showSubjectSwitcher?: boolean;
   headerAction?: ReactNode;
   onNavigate?: () => void;
 }>) {
@@ -120,16 +115,12 @@ function FullNavigationContent({
         </div>
       ) : null}
 
-      {showSubjectSwitcher ? (
-        <SubjectWorkspaceSwitcher className="geo-navigation-panel__subject-switcher" stacked />
-      ) : (
-        <div className="geo-sidebar__subject">
-          <Typography.Text type="secondary">当前主体</Typography.Text>
-          <Typography.Text strong ellipsis={{ tooltip: currentSubjectName }}>
-            {currentSubjectName}
-          </Typography.Text>
-        </div>
-      )}
+      <div className="geo-sidebar__subject">
+        <Typography.Text type="secondary">主体</Typography.Text>
+        <Typography.Text strong ellipsis={{ tooltip: currentSubjectName }}>
+          {currentSubjectName}
+        </Typography.Text>
+      </div>
 
       <nav aria-label="GEO 工作台导航">
         <FullNavigationMenu items={mainItems} pathname={pathname} onNavigate={onNavigate} />
@@ -346,7 +337,7 @@ export function UserWorkspaceNavigation({
   if (!active || !user) return null;
 
   const currentSubjectName =
-    currentSubject?.official_name || currentSubject?.subject_type.name || "尚未选择主体";
+    currentSubject?.official_name || currentSubject?.subject_type.name || "请先绑定主体";
   const drawerMode = mode === "focus" || mode === "mobile_drawer";
 
   return (
@@ -418,7 +409,6 @@ export function UserWorkspaceNavigation({
             pathname={pathname}
             currentSubjectName={currentSubjectName}
             showBrand={false}
-            showSubjectSwitcher
             onNavigate={onDrawerClose}
           />
         </Drawer>

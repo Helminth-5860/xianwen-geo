@@ -1,5 +1,7 @@
 from django.db import transaction
 
+from apps.users.models import User
+
 from .models import Subject, SubjectVersion
 from .profile_completeness import calculate_subject_profile_completeness
 from .schema_snapshots import derive_product_candidates
@@ -57,7 +59,8 @@ def save_subject_profile(
         )
         return subject, version, True
     except SubjectVersionNoChanges:
-        subject = subject_for_user_or_404(user=subject.user, subject_id=subject_id)
+        actor = User.objects.get(pk=user_id)
+        subject = subject_for_user_or_404(user=actor, subject_id=subject_id)
         if subject.current_version is None:
             raise
         subject = mark_subject_usable_after_save(

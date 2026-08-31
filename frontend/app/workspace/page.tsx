@@ -2,9 +2,9 @@
 
 import {
   ArrowRightOutlined,
+  BankOutlined,
   ClockCircleOutlined,
   FileSearchOutlined,
-  SwapOutlined,
 } from "@ant-design/icons";
 import { Alert, Button, ConfigProvider, Empty } from "antd";
 import zhCN from "antd/locale/zh_CN";
@@ -160,7 +160,7 @@ function OverviewLoading() {
 
 export default function WorkspacePage() {
   const { replace } = useRouter();
-  const { currentSubject, loading: subjectLoading, subjects, user } = useSubjectWorkspace();
+  const { currentSubject, loading: subjectLoading, user } = useSubjectWorkspace();
   const [overviewState, setOverviewState] = useState<OverviewState>(EMPTY_STATE);
 
   const subjectId = currentSubject?.id ?? "";
@@ -405,7 +405,7 @@ export default function WorkspacePage() {
   ]);
 
   const primaryAction = useMemo(() => {
-    if (!currentSubject) return { label: "创建主体", href: "/subjects" };
+    if (!currentSubject) return { label: "绑定主体", href: "/subjects" };
     if (!subjectReady) return { label: "完善主体资料", href: `/subjects/${currentSubject.id}` };
     if (!questionReady && !latestReport)
       return {
@@ -449,8 +449,8 @@ export default function WorkspacePage() {
             ) : null}
           </div>
           <div className={styles.headerActions}>
-            <Button href="/subjects" icon={<SwapOutlined />}>
-              切换主体
+            <Button href="/subjects" icon={<BankOutlined />}>
+              主体资料
             </Button>
             <Button type="primary" href={primaryAction.href}>
               {primaryAction.label} <ArrowRightOutlined />
@@ -661,12 +661,6 @@ export default function WorkspacePage() {
                 </div>
               </XwDataStateView>
             </section>
-
-            {subjects.length > 1 ? (
-              <p className={styles.emptyCopy}>
-                当前账号共有 {subjects.length} 个主体，可在页面顶部切换主体。
-              </p>
-            ) : null}
           </>
         )}
       </main>

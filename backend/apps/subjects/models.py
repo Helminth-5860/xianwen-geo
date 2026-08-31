@@ -259,6 +259,13 @@ class Subject(models.Model):  # noqa: DJ008
         on_delete=models.PROTECT,
         related_name="subjects",
     )
+    tenant = models.ForeignKey(
+        "users.Tenant",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="subjects",
+    )
     subject_type = models.ForeignKey(
         SubjectType,
         on_delete=models.PROTECT,
@@ -277,6 +284,9 @@ class Subject(models.Model):  # noqa: DJ008
         on_delete=models.PROTECT,
         related_name="current_for_subjects",
     )
+    identity_bound_at = models.DateTimeField(null=True, blank=True)
+    bound_official_name = models.CharField(max_length=500, blank=True)
+    bound_unified_social_credit_code = models.CharField(max_length=32, blank=True)
     retest_required = models.BooleanField(default=False)
     version = models.PositiveBigIntegerField(default=1)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -289,6 +299,9 @@ class Subject(models.Model):  # noqa: DJ008
         ordering = ("-updated_at", "id")
         indexes = [
             models.Index(fields=("user", "status", "created_at"), name="subject_user_status_idx"),
+            models.Index(
+                fields=("tenant", "status", "created_at"), name="subject_tenant_status_idx"
+            ),
             models.Index(
                 fields=("subject_type", "status", "created_at"),
                 name="subject_type_status_idx",
@@ -310,6 +323,16 @@ class Subject(models.Model):  # noqa: DJ008
             models.CheckConstraint(
                 condition=models.Q(version__gte=1),
                 name="subject_version_gte_1",
+            ),
+            models.UniqueConstraint(
+                fields=("tenant",),
+                condition=models.Q(status="active", tenant__isnull=False),
+                name="subject_one_active_per_tenant",
+            ),
+            models.UniqueConstraint(
+                fields=("user",),
+                condition=models.Q(status="active", tenant__isnull=True),
+                name="subject_one_active_per_user_workspace",
             ),
         ]
 
@@ -527,6 +550,37 @@ class SubjectEvent(models.Model):  # noqa: DJ008
         db_table = "subject_events"
         ordering = ("subject_id", "created_at", "id")
         indexes = [models.Index(fields=("subject", "created_at"), name="subject_event_created_idx")]
+
+
+class SubjectIdentityCorrectionEvent(models.Model):  # noqa: DJ008
+    """Append-only audit record reserved for privileged identity corrections."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    subject = models.ForeignKey(
+        Subject,
+        on_delete=models.PROTECT,
+        related_name="identity_correction_events",
+    )
+    old_identity = models.JSONField()
+    new_identity = models.JSONField()
+    reason = models.TextField()
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="subject_identity_corrections",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = AppendOnlySubjectEventQuerySet.as_manager()
+
+    class Meta:
+        db_table = "subject_identity_correction_events"
+        ordering = ("subject_id", "created_at", "id")
+        indexes = [
+            models.Index(fields=("subject", "created_at"), name="subject_identity_audit_idx")
+        ]
 
 
 class SubjectContextQuerySet(models.QuerySet):

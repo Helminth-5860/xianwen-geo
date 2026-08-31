@@ -54,6 +54,7 @@ ERROR_STATUS = {
     "SUBJECT_VERSION_CONFLICT": HTTP_409_CONFLICT,
     "SUBJECT_CURRENT_VERSION_CONFLICT": HTTP_409_CONFLICT,
     "SUBJECT_STATE_CONFLICT": HTTP_409_CONFLICT,
+    "SUBJECT_IDENTITY_LOCKED": HTTP_409_CONFLICT,
     "SUBJECT_REQUIRED_FIELDS_INCOMPLETE": HTTP_422_UNPROCESSABLE_ENTITY,
     "SUBJECT_SEMANTICS_INVALID": HTTP_422_UNPROCESSABLE_ENTITY,
     "SUBJECT_PRODUCT_CONFIRMATION_INVALID": HTTP_422_UNPROCESSABLE_ENTITY,
@@ -243,9 +244,25 @@ class SubjectStatusView(APIView):
 class SubjectActivateView(SubjectStatusView):
     operation = "activate"
 
+    @method_decorator(csrf_protect)
+    def post(self, request, subject_id):
+        return error_response(
+            ErrorCode.SUBJECT_STATE_CONFLICT,
+            status_code=HTTP_409_CONFLICT,
+            request=request,
+        )
+
 
 class SubjectArchiveView(SubjectStatusView):
     operation = "archive"
+
+    @method_decorator(csrf_protect)
+    def post(self, request, subject_id):
+        return error_response(
+            ErrorCode.SUBJECT_STATE_CONFLICT,
+            status_code=HTTP_409_CONFLICT,
+            request=request,
+        )
 
 
 class SubjectCurrentView(APIView):

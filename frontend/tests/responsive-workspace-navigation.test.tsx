@@ -136,7 +136,7 @@ describe("四态工作台导航", () => {
     await userEvent.click(await screen.findByRole("button", { name: "收起为精简导航" }));
     await waitFor(() => expect(shell?.dataset.navigationMode).toBe("compact"));
     expect(window.localStorage.getItem(WORKSPACE_NAVIGATION_PREFERENCE_KEY)).toBe("compact");
-    expect(screen.queryByText("当前主体")).toBeTruthy();
+    expect(screen.getAllByText("主体").length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: "展开完整导航" })).toBeTruthy();
 
     firstRender.unmount();
@@ -240,7 +240,8 @@ describe("四态工作台导航", () => {
     expect(screen.getByRole("menuitem", { name: /智能关键词/ }).className).toContain(
       "ant-menu-item-selected",
     );
-    expect(screen.getAllByLabelText("切换当前主体").length).toBeGreaterThan(1);
+    expect(screen.queryByLabelText("切换当前主体")).toBeNull();
+    expect(screen.getAllByText(subject.official_name ?? "").length).toBeGreaterThan(1);
 
     await userEvent.click(screen.getByRole("button", { name: "关闭导航" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
