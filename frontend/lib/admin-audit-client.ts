@@ -8,13 +8,11 @@ export type SensitiveAuditLog = Readonly<{
   outcome: "success" | "failure";
   channel: string;
   actor_user_id_snapshot: string | null;
-  actor_id?: string | null;
   actor_name_snapshot: string;
   actor_role_snapshot: string;
   actor_tenant_id_snapshot: string | null;
   actor_tenant_name_snapshot: string;
   target_user_id_snapshot: string | null;
-  target_user_id?: string | null;
   target_name_snapshot: string;
   target_owner_user_id_snapshot: string | null;
   target_owner_name_snapshot: string;
@@ -49,7 +47,7 @@ export function getSensitiveAuditLogs(
   page = 1,
   filters: SensitiveAuditFilters = { days: 7 },
 ) {
-  const query = new URLSearchParams({ page: String(page), page_size: "20" });
+  const query = new URLSearchParams({ page: String(page) });
   if (filters.q?.trim()) query.set("q", filters.q.trim());
   if (filters.actionKey) query.set("action_key", filters.actionKey);
   if (filters.outcome) query.set("outcome", filters.outcome);
