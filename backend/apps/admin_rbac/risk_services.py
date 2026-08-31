@@ -19,6 +19,8 @@ from .risk_catalog import MODE_STRENGTH, PASSWORD, requires_sms_step_up
 from .risk_handlers import HandlerContext, handler_spec
 from .security import require_admin_step_up
 from .security_services import _reauth
+from .sensitive_audit_models import SensitiveAuditLog
+from .sensitive_audit_services import record_sensitive_risk_action
 
 MAX_RISK_PAYLOAD_BYTES = 16_384
 FORBIDDEN_TEXT_MARKERS = (
@@ -248,6 +250,16 @@ def _perform_risk_action_transactional(
             safe_after={"executed": False},
             stable_error_code=stable_code[:64],
         )
+        record_sensitive_risk_action(
+            request=request,
+            action_key=action_key,
+            target_id=target_id,
+            outcome=SensitiveAuditLog.Outcome.FAILURE,
+            actor=request.user,
+            payload=payload,
+            safe_after={"executed": False},
+            failure_reason=stable_code,
+        )
         return RiskResult({}, error=exc)
     record_audit_event(
         request=request,
@@ -261,6 +273,18 @@ def _perform_risk_action_transactional(
         target_id=target_id,
         safe_before=result.safe_before,
         safe_after=result.safe_after,
+    )
+    record_sensitive_risk_action(
+        request=request,
+        action_key=action_key,
+        target_id=target_id,
+        outcome=SensitiveAuditLog.Outcome.SUCCESS,
+        actor=request.user,
+        subject=result.subject,
+        payload=payload,
+        safe_before=result.safe_before,
+        safe_after=result.safe_after,
+        safe_result=result.safe_result,
     )
     return RiskResult(result.safe_result)
 
