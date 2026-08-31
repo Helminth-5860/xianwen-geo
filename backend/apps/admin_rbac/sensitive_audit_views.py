@@ -106,7 +106,9 @@ def _apply_keyword_filter(queryset, keyword: str):
         conditions |= (
             Q(pk=parsed_uuid)
             | Q(actor_id=parsed_uuid)
+            | Q(actor_user_id_snapshot=parsed_uuid)
             | Q(target_user_id=parsed_uuid)
+            | Q(target_user_id_snapshot=parsed_uuid)
             | Q(ledger_entry_id=parsed_uuid)
             | Q(request_id=parsed_uuid)
         )
