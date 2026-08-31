@@ -5,13 +5,11 @@ export type SensitiveAuditLog = Readonly<{
   action_key: string;
   outcome: "success" | "failure";
   channel: string;
-  actor_id: string | null;
   actor_user_id_snapshot: string | null;
   actor_name_snapshot: string;
   actor_role_snapshot: string;
   actor_tenant_id_snapshot: string | null;
   actor_tenant_name_snapshot: string;
-  target_user_id: string | null;
   target_user_id_snapshot: string | null;
   target_name_snapshot: string;
   target_tenant_id_snapshot: string | null;
