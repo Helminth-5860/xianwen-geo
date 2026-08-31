@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from .models import SensitiveAuditLog
+from .sensitive_audit_models import SensitiveAuditLog
 
 
 class SensitiveAuditLogListSerializer(serializers.ModelSerializer):
