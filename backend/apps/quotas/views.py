@@ -245,6 +245,16 @@ class AdminQuotaAdjustmentView(APIView):
                 confirmed=confirmed,
                 current_password=current_password,
             )
+        except (NotFound, PermissionDenied) as exc:
+            stable_code = getattr(exc, "default_code", exc.__class__.__name__.upper())
+            _record_failed_adjustment(
+                request,
+                action_key=action_key,
+                account_id=account_id,
+                payload=payload,
+                reason=str(stable_code),
+            )
+            raise
         except QuotaError as exc:
             _record_failed_adjustment(
                 request,
