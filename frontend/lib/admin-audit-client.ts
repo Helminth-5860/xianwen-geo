@@ -14,6 +14,8 @@ export type SensitiveAuditLog = Readonly<{
   target_user_id_snapshot: string | null;
   target_user_id?: string | null;
   target_name_snapshot: string;
+  target_owner_user_id_snapshot: string | null;
+  target_owner_name_snapshot: string;
   target_tenant_id_snapshot: string | null;
   target_tenant_name_snapshot: string;
   quota_type: string;
