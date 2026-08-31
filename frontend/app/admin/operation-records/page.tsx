@@ -25,6 +25,7 @@ import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import {
   getSensitiveAuditLog,
   getSensitiveAuditLogs,
+  type AuditInteger,
   type SensitiveAuditFilters,
   type SensitiveAuditLog,
 } from "@/lib/admin-audit-client";
@@ -85,13 +86,25 @@ const friendlyTarget = (event: AuditEvent) => {
 const operationSucceeded = (outcome: string) =>
   ["success", "succeeded", "executed", "completed", "updated"].includes(outcome);
 
-const formatNumber = (value: number | null | undefined) =>
-  value === null || value === undefined ? "—" : new Intl.NumberFormat("zh-CN").format(value);
+const parseAuditInteger = (value: AuditInteger | undefined): bigint | null => {
+  if (value === null || value === undefined || value === "") return null;
+  try {
+    return BigInt(value);
+  } catch {
+    return null;
+  }
+};
 
-const formatDelta = (value: number | null | undefined) => {
-  if (value === null || value === undefined) return "—";
-  const formatted = new Intl.NumberFormat("zh-CN").format(Math.abs(value));
-  return value >= 0 ? `+${formatted}` : `-${formatted}`;
+const formatNumber = (value: AuditInteger | undefined) => {
+  const parsed = parseAuditInteger(value);
+  return parsed === null ? "—" : parsed.toLocaleString("zh-CN");
+};
+
+const formatDelta = (value: AuditInteger | undefined) => {
+  const parsed = parseAuditInteger(value);
+  if (parsed === null) return "—";
+  const absolute = parsed < 0n ? -parsed : parsed;
+  return `${parsed >= 0n ? "+" : "-"}${absolute.toLocaleString("zh-CN")}`;
 };
 
 const deviceSummary = (userAgent = "") => {
@@ -449,13 +462,17 @@ export default function AdminOperationRecordsPage() {
           },
           {
             title: "目标用户",
-            width: 170,
+            width: 190,
             render: (_, record) => (
               <Space direction="vertical" size={0}>
                 <Typography.Text>{record.target_name_snapshot || "—"}</Typography.Text>
-                {record.target_tenant_name_snapshot ? (
+                {record.target_owner_name_snapshot ? (
                   <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                    {record.target_tenant_name_snapshot}
+                    代理：{record.target_owner_name_snapshot}
+                  </Typography.Text>
+                ) : record.target_tenant_name_snapshot ? (
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                    租户：{record.target_tenant_name_snapshot}
                   </Typography.Text>
                 ) : null}
               </Space>
@@ -592,7 +609,7 @@ export default function AdminOperationRecordsPage() {
                 <Descriptions.Item label="操作人 ID">
                   {selected.actor_user_id_snapshot || selected.actor_id || "—"}
                 </Descriptions.Item>
-                <Descriptions.Item label="所属代理 / 租户">
+                <Descriptions.Item label="所属租户">
                   {selected.actor_tenant_name_snapshot || "—"}
                 </Descriptions.Item>
               </Descriptions>
@@ -604,7 +621,13 @@ export default function AdminOperationRecordsPage() {
                 <Descriptions.Item label="用户 ID">
                   {selected.target_user_id_snapshot || selected.target_user_id || "—"}
                 </Descriptions.Item>
-                <Descriptions.Item label="所属代理 / 租户" span={2}>
+                <Descriptions.Item label="所属代理">
+                  {selected.target_owner_name_snapshot || "独立用户 / 未分配"}
+                </Descriptions.Item>
+                <Descriptions.Item label="代理账号 ID">
+                  {selected.target_owner_user_id_snapshot || "—"}
+                </Descriptions.Item>
+                <Descriptions.Item label="所属租户" span={2}>
                   {selected.target_tenant_name_snapshot || "—"}
                 </Descriptions.Item>
               </Descriptions>
