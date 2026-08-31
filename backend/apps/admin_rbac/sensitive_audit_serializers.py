@@ -4,6 +4,11 @@ from .sensitive_audit_models import SensitiveAuditLog
 
 
 class SensitiveAuditLogListSerializer(serializers.ModelSerializer):
+    quota_before = serializers.CharField(allow_null=True, read_only=True)
+    quota_requested_delta = serializers.CharField(allow_null=True, read_only=True)
+    quota_delta = serializers.CharField(allow_null=True, read_only=True)
+    quota_after = serializers.CharField(allow_null=True, read_only=True)
+
     class Meta:
         model = SensitiveAuditLog
         fields = (
