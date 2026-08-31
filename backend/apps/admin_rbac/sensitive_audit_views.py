@@ -10,8 +10,8 @@ from rest_framework.exceptions import NotFound, PermissionDenied, ValidationErro
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import SensitiveAuditLog
 from .permissions import HasAdminPermission
+from .sensitive_audit_models import SensitiveAuditLog
 from .sensitive_audit_serializers import (
     SensitiveAuditLogDetailSerializer,
     SensitiveAuditLogListSerializer,
