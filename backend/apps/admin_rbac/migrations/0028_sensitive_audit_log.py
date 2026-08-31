@@ -20,29 +20,24 @@ class Migration(migrations.Migration):
                 ),
                 (
                     "category",
-                    models.CharField(db_index=True, default="sensitive_action", max_length=50),
+                    models.CharField(default="sensitive_action", max_length=50),
                 ),
-                ("action_key", models.CharField(db_index=True, max_length=100)),
+                ("action_key", models.CharField(max_length=100)),
                 (
                     "outcome",
                     models.CharField(
-                        choices=[("success", "成功"), ("failure", "失败")],
-                        db_index=True,
-                        max_length=16,
+                        choices=[("success", "成功"), ("failure", "失败")], max_length=16
                     ),
                 ),
                 ("channel", models.CharField(default="admin_console", max_length=32)),
-                ("actor_user_id_snapshot", models.UUIDField(blank=True, db_index=True, null=True)),
+                ("actor_user_id_snapshot", models.UUIDField(blank=True, null=True)),
                 ("actor_name_snapshot", models.CharField(blank=True, max_length=50)),
                 ("actor_role_snapshot", models.CharField(blank=True, max_length=100)),
                 ("actor_tenant_id_snapshot", models.UUIDField(blank=True, null=True)),
                 ("actor_tenant_name_snapshot", models.CharField(blank=True, max_length=120)),
-                ("target_user_id_snapshot", models.UUIDField(blank=True, db_index=True, null=True)),
+                ("target_user_id_snapshot", models.UUIDField(blank=True, null=True)),
                 ("target_name_snapshot", models.CharField(blank=True, max_length=50)),
-                (
-                    "target_owner_user_id_snapshot",
-                    models.UUIDField(blank=True, db_index=True, null=True),
-                ),
+                ("target_owner_user_id_snapshot", models.UUIDField(blank=True, null=True)),
                 ("target_owner_name_snapshot", models.CharField(blank=True, max_length=50)),
                 ("target_tenant_id_snapshot", models.UUIDField(blank=True, null=True)),
                 ("target_tenant_name_snapshot", models.CharField(blank=True, max_length=120)),
@@ -81,7 +76,20 @@ class Migration(migrations.Migration):
         migrations.AddIndex(
             model_name="sensitiveauditlog",
             index=models.Index(
+                fields=["target_owner_user_id_snapshot", "created_at"],
+                name="sens_owner_created_idx",
+            ),
+        ),
+        migrations.AddIndex(
+            model_name="sensitiveauditlog",
+            index=models.Index(
                 fields=["action_key", "created_at"], name="sens_action_created_idx"
+            ),
+        ),
+        migrations.AddIndex(
+            model_name="sensitiveauditlog",
+            index=models.Index(
+                fields=["outcome", "created_at"], name="sens_outcome_created_idx"
             ),
         ),
         migrations.AddIndex(
