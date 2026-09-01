@@ -25,6 +25,7 @@ RECENT_LEDGER_LIMIT = 20
 RECENT_AUDIT_LIMIT = 20
 SUBSCRIPTION_HISTORY_LIMIT = 20
 USAGE_WINDOW_DAYS = 30
+LEGACY_INTERNAL_TEST_SOURCE = "internal_test"
 
 MANUAL_ADJUSTMENT_ACTIONS = (
     QuotaLedgerEntry.Action.GRANT,
@@ -48,6 +49,7 @@ def _active_subscription(user, moment):
             starts_at__lte=moment,
             ends_at__gt=moment,
         )
+        .exclude(source_type=LEGACY_INTERNAL_TEST_SOURCE)
         .select_related("plan", "plan_version")
         .first()
     )
@@ -95,15 +97,21 @@ def _assignment_payload(user):
 
 
 def _login_payload(user):
-    events = list(LoginEvent.objects.filter(user=user).order_by("-created_at", "-id")[:RECENT_LOGIN_LIMIT])
+    events = list(
+        LoginEvent.objects.filter(user=user).order_by("-created_at", "-id")[:RECENT_LOGIN_LIMIT]
+    )
     last_success = next((event for event in events if event.success), None)
     if last_success is None:
         last_success = (
-            LoginEvent.objects.filter(user=user, success=True).order_by("-created_at", "-id").first()
+            LoginEvent.objects.filter(user=user, success=True)
+            .order_by("-created_at", "-id")
+            .first()
         )
     return {
         "last_success_at": last_success.created_at if last_success else None,
-        "last_success_ip": str(last_success.ip_address) if last_success and last_success.ip_address else None,
+        "last_success_ip": (
+            str(last_success.ip_address) if last_success and last_success.ip_address else None
+        ),
         "last_success_user_agent": last_success.user_agent if last_success else "",
         "recent": [
             {
@@ -137,8 +145,20 @@ def _current_quota_rows(request, user, subscription, moment):
             Q(cycle_started_at__isnull=True, cycle_ends_at__isnull=True)
             | Q(cycle_started_at__lte=moment, cycle_ends_at__gt=moment)
         )
+        .filter(Q(spendable_until__isnull=True) | Q(spendable_until__gt=moment))
         .order_by("quota_type", "batch_type", "created_at", "id")
     )
+    account_ids = [account.pk for account in accounts]
+
+    used_rows = (
+        scoped_ledger(request.user, request.admin_context)
+        .filter(account_id__in=account_ids, action=QuotaLedgerEntry.Action.CONSUME)
+        .values("account_id")
+        .annotate(amount=Sum("frozen_delta"))
+    )
+    used_by_account = {
+        row["account_id"]: max(-int(row["amount"] or 0), 0) for row in used_rows
+    }
 
     manual_rows = (
         scoped_ledger(request.user, request.admin_context)
@@ -172,7 +192,7 @@ def _current_quota_rows(request, user, subscription, moment):
                 "accounts": [],
             },
         )
-        used = max(-int(getattr(account, "consumed_frozen_delta", 0) or 0), 0)
+        used = used_by_account.get(account.pk, 0)
         row["entitlement_amount"] += int(account.entitlement_amount)
         row["available"] += int(account.available)
         row["frozen"] += int(account.frozen)
@@ -287,6 +307,7 @@ def _recent_ledger_payload(request, user):
     entries = list(
         scoped_ledger(request.user, request.admin_context)
         .filter(user=user, quota_type__in=CUSTOMER_VISIBLE_QUOTA_TYPES)
+        .select_related("actor")
         .order_by("-created_at", "-id")[:RECENT_LEDGER_LIMIT]
     )
     return [
@@ -322,6 +343,7 @@ def _recent_audit_payload(user):
 def _subscription_history_payload(user):
     subscriptions = (
         Subscription.objects.filter(user=user)
+        .exclude(source_type=LEGACY_INTERNAL_TEST_SOURCE)
         .select_related("plan", "plan_version")
         .order_by("-created_at", "-id")[:SUBSCRIPTION_HISTORY_LIMIT]
     )
