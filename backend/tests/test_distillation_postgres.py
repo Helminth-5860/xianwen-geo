@@ -12,6 +12,7 @@ from apps.keywords.distillation_services import (
     confirm_distillation,
     execute_distillation,
 )
+from apps.keywords.generation_services import execute_keyword_generation
 from apps.keywords.models import (
     DistillationEvent,
     DistillationItem,
@@ -19,9 +20,13 @@ from apps.keywords.models import (
     DistillationResult,
     DistillationSet,
     DistillationWorkspace,
+    KeywordSet,
 )
 from apps.quotas.services import _create_initialized_account
+from apps.users.models import Tenant, User
 from tests.test_distillation import _account, _create, _facts
+from tests.test_keyword_generation import _create as create_keyword_generation
+from tests.test_keyword_generation import _facts as keyword_generation_facts
 
 pytestmark = [
     pytest.mark.django_db(transaction=True),
@@ -69,6 +74,48 @@ def test_database_allows_only_one_active_distillation_per_subject():
             request_digest="c" * 64,
         )
     assert DistillationJob.objects.get(pk=first.pk).status == "queued"
+
+
+def test_same_tenant_operator_can_distill_subject_owned_by_teammate():
+    tenant_suffix = uuid.uuid4().hex[:8]
+    tenant = Tenant.objects.create(
+        key=f"tenant-{tenant_suffix}",
+        display_name=f"Tenant {tenant_suffix}",
+    )
+    owner = User.objects.create_user(
+        phone=f"139{uuid.uuid4().int % 100000000:08d}",
+        nickname="Subject owner",
+        password="Correct-Horse-Battery-2026!",
+        account_status=User.AccountStatus.ACTIVE,
+        tenant=tenant,
+    )
+    operator = User.objects.create_user(
+        phone=f"139{uuid.uuid4().int % 100000000:08d}",
+        nickname="Tenant operator",
+        password="Correct-Horse-Battery-2026!",
+        account_status=User.AccountStatus.ACTIVE,
+        tenant=tenant,
+    )
+    operator, subject, subject_version, _ = keyword_generation_facts(
+        user=operator,
+        subject_owner=owner,
+        tenant=tenant,
+    )
+    generation, _ = create_keyword_generation(operator, subject, subject_version)
+    assert execute_keyword_generation(job_id=generation.pk)["status"] == "succeeded"
+    keyword_version = KeywordSet.objects.get(subject=subject).current_version
+
+    distillation, _ = _create(operator, subject, keyword_version)
+    assert execute_distillation(job_id=distillation.pk)["status"] == "succeeded"
+    workspace = DistillationWorkspace.objects.get(subject=subject)
+    workspace, confirmed = confirm_distillation(
+        user_id=operator.pk,
+        subject_id=subject.pk,
+        expected_version=workspace.version,
+    )
+
+    assert workspace.current_set_id == confirmed.pk
+    assert confirmed.user_id == operator.pk
 
 
 @override_settings(DISTILLATION_MOCK_SCENARIO="invalid_response")

@@ -101,9 +101,9 @@ def test_regeneration_settles_the_original_hold_across_cycle_boundary():
     with transaction.atomic():
         later = _create_initialized_account(
             subscription=subscription,
-            subject=subject,
-            quota_type="question_bank_regenerations",
-            amount=2,
+            subject=None,
+            quota_type="question_generated_items",
+            amount=3,
             cycle_started_at=original.cycle_started_at + timedelta(days=1),
             cycle_ends_at=original.cycle_ends_at,
             request_id=uuid.uuid4(),
@@ -113,9 +113,25 @@ def test_regeneration_settles_the_original_hold_across_cycle_boundary():
     original.refresh_from_db()
     later.refresh_from_db()
     second.quota_hold.refresh_from_db()
-    assert second.quota_hold.consumed_amount == 1
-    assert original.available == 1 and original.frozen == 0
-    assert later.available == 2 and later.frozen == 0
+    assert second.quota_hold.consumed_amount == 0
+    assert second.quota_hold.released_amount == second.question_limit
+    assert original.frozen == 0
+    assert later.available == 3 and later.frozen == 0
+
+
+def test_generation_hold_uses_item_quota_and_matches_question_limit():
+    user, subject, _, _, distilled = facts(limit=2)
+    job, _ = create_job(user, subject, distilled)
+
+    job.quota_hold.refresh_from_db()
+    assert job.quota_hold.quota_type == "question_generated_items"
+    assert job.quota_hold.requested_amount == job.question_limit == 2
+    assert execute_question_generation(job_id=job.pk)["status"] == "succeeded"
+    job.quota_hold.refresh_from_db()
+    assert (
+        job.quota_hold.consumed_amount + job.quota_hold.released_amount
+        == job.question_limit
+    )
 
 
 def test_workspace_current_version_must_point_to_latest_formal_version():
