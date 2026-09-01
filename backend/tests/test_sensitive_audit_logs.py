@@ -42,6 +42,7 @@ def test_quota_grant_creates_sensitive_audit_evidence():
     )
 
     assert response.status_code == 200
+    response_data = response.json()["data"]
     log = SensitiveAuditLog.objects.get(action_key="quota.grant", outcome="success")
     assert log.actor_user_id_snapshot == requester.pk
     assert log.target_user_id_snapshot == user.pk
@@ -49,7 +50,7 @@ def test_quota_grant_creates_sensitive_audit_evidence():
     assert log.quota_requested_delta == 1
     assert log.quota_delta == 1
     assert log.quota_after == before + 1
-    assert str(log.ledger_entry_id) == response.json()["ledger_entry_id"]
+    assert str(log.ledger_entry_id) == response_data["ledger_entry_id"]
     assert log.safe_reason == "专项审计验收"
     assert str(log.operation_ip) == "127.0.0.1"
     assert str(log.login_ip_snapshot) == "127.0.0.1"
