@@ -377,6 +377,9 @@ DROP FUNCTION IF EXISTS keywords_subject_actor_allowed(uuid, uuid);
 
 
 class Migration(migrations.Migration):
-    dependencies = [("keywords", "0011_align_keyword_asset_guards_with_tenant")]
+    dependencies = [
+        ("keywords", "0011_align_keyword_asset_guards_with_tenant"),
+        ("subjects", "0020_correct_single_subject_context_guard"),
+    ]
 
     operations = [migrations.RunSQL(FORWARD_SQL, REVERSE_SQL)]
