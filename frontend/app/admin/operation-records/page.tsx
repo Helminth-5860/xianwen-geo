@@ -221,11 +221,17 @@ export default function AdminOperationRecordsPage() {
   }, [activeTab, auditFilters, auditPage, isSuperAdmin]);
 
   useEffect(() => {
-    void loadOperations();
+    const timer = window.setTimeout(() => {
+      void loadOperations();
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [loadOperations]);
 
   useEffect(() => {
-    void loadAudit();
+    const timer = window.setTimeout(() => {
+      void loadAudit();
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [loadAudit]);
 
   const visibleOperations = useMemo(() => {
