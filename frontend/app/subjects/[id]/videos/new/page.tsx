@@ -1,4 +1,4 @@
-import VideoGenerationWorkspace from "./video-generation-workspace";
+import { redirect } from "next/navigation";
 
 type VideoGenerationPageProps = Readonly<{
   params: Promise<{ id: string }>;
@@ -6,5 +6,5 @@ type VideoGenerationPageProps = Readonly<{
 
 export default async function VideoGenerationPage({ params }: VideoGenerationPageProps) {
   const { id } = await params;
-  return <VideoGenerationWorkspace key={id} subjectId={id} />;
+  redirect(`/subjects/${id}/video-library`);
 }

@@ -14,10 +14,16 @@ import {
 } from "../lib/detection-ui-constants";
 import type { GeoDetectionJob, GeoModelProgress } from "../lib/geo-detection-client";
 
-vi.mock("next/navigation", () => ({ useParams: () => ({ detectionId: "detection-42" }) }));
+const push = vi.fn();
+vi.mock("next/navigation", () => ({
+  useParams: () => ({ detectionId: "detection-42" }),
+  useRouter: () => ({ push }),
+}));
 
 const getDetectionJob = vi.fn();
 const getDetectionModelProgress = vi.fn();
+const getReportForDetection = vi.fn();
+const adjustedRetest = vi.fn();
 vi.mock("../lib/geo-detection-client", async () => {
   const actual = await vi.importActual<typeof import("../lib/geo-detection-client")>(
     "../lib/geo-detection-client",
@@ -28,6 +34,10 @@ vi.mock("../lib/geo-detection-client", async () => {
     getDetectionModelProgress: (...args: unknown[]) => getDetectionModelProgress(...args),
   };
 });
+vi.mock("../lib/geo-report-client", () => ({
+  getReportForDetection: (...args: unknown[]) => getReportForDetection(...args),
+  adjustedRetest: (...args: unknown[]) => adjustedRetest(...args),
+}));
 
 const job = (
   status: GeoDetectionJob["status"] = "running",
@@ -91,6 +101,11 @@ const models: GeoModelProgress[] = statuses.map((status, index) => ({
 
 describe("DetectionProgressPage", () => {
   beforeAll(() => {
+    globalThis.ResizeObserver = class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    };
     Object.defineProperty(window, "matchMedia", {
       writable: true,
       value: vi.fn().mockImplementation(() => ({
@@ -106,8 +121,24 @@ describe("DetectionProgressPage", () => {
   beforeEach(() => {
     getDetectionJob.mockReset();
     getDetectionModelProgress.mockReset();
+    getReportForDetection.mockReset();
+    adjustedRetest.mockReset();
+    push.mockReset();
     getDetectionJob.mockResolvedValue(job());
     getDetectionModelProgress.mockResolvedValue({ items: models });
+    getReportForDetection.mockResolvedValue({
+      id: "report-42",
+      summary: {
+        models: [
+          { model_id: "model-success", failed_calls: 0 },
+          { model_id: "model-failed", failed_calls: 2 },
+        ],
+      },
+      provenance: {
+        questions: [{ source_question_id: "question-1" }, { source_question_id: "question-2" }],
+      },
+    });
+    adjustedRetest.mockResolvedValue({ detection_id: "detection-43" });
   });
   afterEach(() => {
     cleanup();
@@ -152,6 +183,25 @@ describe("DetectionProgressPage", () => {
     );
     await act(async () => void (await vi.advanceTimersByTimeAsync(DETECTION_POLL_INTERVAL_MS * 2)));
     expect(getDetectionJob).toHaveBeenCalledTimes(1);
+  });
+
+  it("allows a partial result to be deliberately retested without automatic repeats", async () => {
+    getDetectionJob.mockResolvedValue(job("partial"));
+    render(<DetectionProgressPage />);
+
+    expect(await screen.findByText("部分模型未完成，已有可用结果，本次按1次检测结算")).toBeTruthy();
+    expect(adjustedRetest).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "重检未完成模型" }));
+    await userEvent.click(await screen.findByRole("button", { name: "确认重新检测" }));
+
+    await waitFor(() => expect(getReportForDetection).toHaveBeenCalledWith("detection-42"));
+    expect(adjustedRetest).toHaveBeenCalledWith(
+      "report-42",
+      ["question-1", "question-2"],
+      ["model-failed"],
+      expect.any(String),
+    );
+    expect(push).toHaveBeenCalledWith("/geo/detections/detection-43");
   });
 
   it("shows an API failure and allows retry", async () => {

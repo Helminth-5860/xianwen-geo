@@ -101,6 +101,28 @@ def test_worker_releases_dispatch_lease_and_accepts_legacy_one_argument_message(
     store_factory.assert_called_once_with()
 
 
+@override_settings(GEO_DETECTION_CONCURRENCY_RECHECK_SECONDS=4)
+def test_worker_defers_concurrency_limited_call_without_releasing_dispatch_lease():
+    result = {
+        "status": "queued",
+        "reason": "concurrency_limit",
+        "terminal_transition": False,
+    }
+    with (
+        patch("apps.geo.tasks.execute_model_call", return_value=result),
+        patch.object(execute_model_call_task, "apply_async") as apply_async,
+        patch("apps.geo.tasks._release_dispatch_lease") as release,
+    ):
+        assert execute_model_call_task.run("call-1", "dispatch-token") == result
+
+    apply_async.assert_called_once_with(
+        args=["call-1", "dispatch-token"],
+        queue="geo_detection",
+        countdown=4,
+    )
+    release.assert_not_called()
+
+
 def test_legacy_duplicate_terminal_message_does_not_enqueue_downstream_work():
     with (
         patch(

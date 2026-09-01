@@ -697,9 +697,7 @@ describe("GEO 产品工作台", () => {
     expect(screen.getByRole("link", { name: "视频脚本生成" }).getAttribute("href")).toBe(
       "/subjects/subject-1/video-scripts/new",
     );
-    expect(screen.getByRole("link", { name: "视频生成" }).getAttribute("href")).toBe(
-      "/subjects/subject-1/videos/new",
-    );
+    expect(screen.queryByRole("link", { name: "视频生成" })).toBeNull();
 
     await userEvent.click(screen.getByText("内容资产中心"));
     expect(screen.getByRole("link", { name: "内容库" }).getAttribute("href")).toBe(
@@ -723,14 +721,6 @@ describe("GEO 产品工作台", () => {
     );
     expect(screen.getByRole("menuitem", { name: "图片生成" }).className).toContain(
       "ant-menu-item-selected",
-    );
-
-    pathname = "/subjects/subject-1/videos/new";
-    rerender(shell());
-    await waitFor(() =>
-      expect(screen.getByRole("menuitem", { name: "视频生成" }).className).toContain(
-        "ant-menu-item-selected",
-      ),
     );
 
     pathname = "/subjects/subject-1/articles";

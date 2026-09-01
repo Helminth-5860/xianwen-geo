@@ -82,14 +82,14 @@ export function VideoLibraryWorkspace({ subjectId }: Props) {
         <div>
           <Typography.Title level={2}>视频库</Typography.Title>
           <Typography.Text type="secondary">
-            查看和下载已保存到当前主体的视频，每页显示 20 条
+            查看和下载当前主体已保存的历史视频，每页显示 20 条
           </Typography.Text>
         </div>
         <Alert
           type="info"
           showIcon
           title="视频仅对当前主体可见"
-          description="生成的视频需要由你明确保存后才会出现在这里。"
+          description="视频生成能力已停止使用，已经保存的视频仍可继续查看和下载。"
         />
         {error && <Alert type="error" showIcon title={error} />}
         <Card title={`已保存视频 ${pagination.count} 条`}>
@@ -97,13 +97,7 @@ export function VideoLibraryWorkspace({ subjectId }: Props) {
             loading={loading || loadedSubjectId !== subjectId}
             dataSource={visibleVideos}
             locale={{
-              emptyText: (
-                <Empty description="当前主体还没有已保存的视频。">
-                  <Button type="primary" href={`/subjects/${subjectId}/videos/new`}>
-                    生成第一个视频
-                  </Button>
-                </Empty>
-              ),
+              emptyText: <Empty description="当前主体还没有已保存的视频。" />,
             }}
             renderItem={(video) => (
               <List.Item

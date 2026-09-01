@@ -120,7 +120,11 @@ def test_provider_wave_normal_chinese_call_maps_contract(provider_key, adapter_c
         {"role": "user", "content": "什么是云计算？"},
     ]
     assert captured["body"]["stream"] is False
-    assert captured["body"]["temperature"] == 0.2
+    if provider_key == "kimi":
+        assert "temperature" not in captured["body"]
+        assert captured["body"]["reasoning_effort"] == "low"
+    else:
+        assert captured["body"]["temperature"] == 0.2
     assert captured["body"]["max_tokens"] == 256
     assert response.output.raw_text.startswith("云计算")
     assert response.usage.input_tokens == 20
@@ -131,6 +135,24 @@ def test_provider_wave_normal_chinese_call_maps_contract(provider_key, adapter_c
     assert response.finish_reason.value == "stop"
     assert "reasoning_content" not in response.sanitized_provider_metadata
     assert response.sanitized_provider_metadata["provider_model_id"] == model_id
+
+
+def test_kimi_k26_uses_supported_fast_request_shape():
+    captured = {}
+
+    def handler(request: httpx.Request):
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, json=response_payload(model="kimi-k2.6"))
+
+    adapter = KimiDetectionAdapter(
+        credential_resolver=StaticCredentialResolver("kimi"),
+        transport=httpx.MockTransport(handler),
+    )
+    adapter.invoke(build_request(adapter, provider_model_id="kimi-k2.6"))
+
+    assert "temperature" not in captured["body"]
+    assert captured["body"]["thinking"] == {"type": "disabled"}
+    assert "reasoning_effort" not in captured["body"]
 
 
 @pytest.mark.parametrize(("provider_key", "adapter_cls", "model_id"), PROVIDERS)
