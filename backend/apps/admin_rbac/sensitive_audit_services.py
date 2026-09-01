@@ -234,7 +234,7 @@ def record_sensitive_risk_action(
             "safe_after": safe_after,
         },
     )
-    setattr(request, "_sensitive_audit_recorded", True)
+    request._sensitive_audit_recorded = True
     return log
 
 
