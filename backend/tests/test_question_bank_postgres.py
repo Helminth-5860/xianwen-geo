@@ -1,5 +1,4 @@
 import uuid
-from datetime import timedelta
 
 import pytest
 from django.core.management import call_command
@@ -20,7 +19,6 @@ from apps.questions.generation_services import (
     remove_current_question_bank_items,
 )
 from apps.questions.models import QuestionCategory
-from apps.quotas.services import _create_initialized_account
 from tests.test_distillation import _create as create_distillation
 from tests.test_question_bank import create_job, draft_payload, facts
 
@@ -94,29 +92,20 @@ def test_terminal_transition_requires_exactly_once_hold_settlement():
     assert second.status == "running" and second.quota_hold.status == "open"
 
 
-def test_regeneration_settles_the_original_hold_across_cycle_boundary():
-    user, subject, subscription, distilled, _, workspace = succeeded()
+def test_regeneration_settles_the_original_lifetime_item_hold():
+    user, subject, _, distilled, _, workspace = succeeded()
     second, _ = create_job(user, subject, distilled, version=workspace.version, regenerate=True)
     original = second.quota_hold.allocations.get().account
-    with transaction.atomic():
-        later = _create_initialized_account(
-            subscription=subscription,
-            subject=None,
-            quota_type="question_generated_items",
-            amount=3,
-            cycle_started_at=original.cycle_started_at + timedelta(days=1),
-            cycle_ends_at=original.cycle_ends_at,
-            request_id=uuid.uuid4(),
-            actor=None,
-        )
+    available_while_frozen = original.available
+    assert original.cycle_started_at is None
+    assert original.cycle_ends_at is None
     assert execute_question_generation(job_id=second.pk)["status"] == "succeeded"
     original.refresh_from_db()
-    later.refresh_from_db()
     second.quota_hold.refresh_from_db()
     assert second.quota_hold.consumed_amount == 0
     assert second.quota_hold.released_amount == second.question_limit
     assert original.frozen == 0
-    assert later.available == 3 and later.frozen == 0
+    assert original.available == available_while_frozen + second.question_limit
 
 
 def test_generation_hold_uses_item_quota_and_matches_question_limit():
