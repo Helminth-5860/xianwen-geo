@@ -364,7 +364,9 @@ export default function AdminOperationRecordsPage() {
             prefix={<SearchOutlined />}
             placeholder="代理 / 用户 / IP / 流水号"
             value={auditDraft.q}
-            onChange={(event) => setAuditDraft((current) => ({ ...current, q: event.target.value }))}
+            onChange={(event) =>
+              setAuditDraft((current) => ({ ...current, q: event.target.value }))
+            }
             onPressEnter={applyAuditFilters}
             style={{ width: 300 }}
           />
@@ -610,8 +612,12 @@ export default function AdminOperationRecordsPage() {
               </Descriptions>
 
               <Descriptions title="操作人" bordered column={2} size="small">
-                <Descriptions.Item label="姓名">{selected.actor_name_snapshot || "—"}</Descriptions.Item>
-                <Descriptions.Item label="身份">{selected.actor_role_snapshot || "—"}</Descriptions.Item>
+                <Descriptions.Item label="姓名">
+                  {selected.actor_name_snapshot || "—"}
+                </Descriptions.Item>
+                <Descriptions.Item label="身份">
+                  {selected.actor_role_snapshot || "—"}
+                </Descriptions.Item>
                 <Descriptions.Item label="操作人 ID">
                   {selected.actor_user_id_snapshot || "—"}
                 </Descriptions.Item>
@@ -660,7 +666,9 @@ export default function AdminOperationRecordsPage() {
               </Descriptions>
 
               <Descriptions title="操作环境" bordered column={2} size="small">
-                <Descriptions.Item label="操作 IP">{selected.operation_ip || "—"}</Descriptions.Item>
+                <Descriptions.Item label="操作 IP">
+                  {selected.operation_ip || "—"}
+                </Descriptions.Item>
                 <Descriptions.Item label="登录 IP">
                   {selected.login_ip_snapshot || "—"}
                 </Descriptions.Item>

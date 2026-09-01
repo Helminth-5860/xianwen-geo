@@ -48,7 +48,7 @@ describe("企业级管理员后台", () => {
     expect(page).toContain("敏感审计证据保留 365 天");
     expect(page).toContain("target_owner_name_snapshot");
     expect(page).toContain("BigInt(value)");
-    expect(page).toContain('width={920}');
+    expect(page).toContain("width={920}");
     expect(client).toContain("export type AuditInteger = string | null");
     expect(client).toContain("/admin/sensitive-audit-logs");
   });

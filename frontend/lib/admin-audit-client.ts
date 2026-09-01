@@ -43,10 +43,7 @@ export type SensitiveAuditFilters = Readonly<{
   dateTo?: string;
 }>;
 
-export function getSensitiveAuditLogs(
-  page = 1,
-  filters: SensitiveAuditFilters = { days: 7 },
-) {
+export function getSensitiveAuditLogs(page = 1, filters: SensitiveAuditFilters = { days: 7 }) {
   const query = new URLSearchParams({ page: String(page) });
   if (filters.q?.trim()) query.set("q", filters.q.trim());
   if (filters.actionKey) query.set("action_key", filters.actionKey);
