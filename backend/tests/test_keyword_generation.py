@@ -57,7 +57,7 @@ from apps.subjects.schema_snapshots import (
     materialize_defaults,
     values_digest,
 )
-from apps.users.models import User
+from apps.users.models import Tenant, User
 
 pytestmark = pytest.mark.django_db
 PASSWORD = "Correct-Horse-Battery-2026!"
@@ -76,20 +76,31 @@ def _limits(*, regenerations=2, generation_limit=5):
     return values
 
 
-def _facts(*, regenerations=2, generation_limit=5):
+def _facts(
+    *,
+    regenerations=2,
+    generation_limit=5,
+    user=None,
+    subject_owner=None,
+    tenant: Tenant | None = None,
+):
     suffix = uuid.uuid4().hex[:10]
-    user = User.objects.create_user(
-        phone=f"139{uuid.uuid4().int % 100000000:08d}",
-        nickname="Keyword generation user",
-        password=PASSWORD,
-        account_status=User.AccountStatus.ACTIVE,
-    )
+    if user is None:
+        user = User.objects.create_user(
+            phone=f"139{uuid.uuid4().int % 100000000:08d}",
+            nickname="Keyword generation user",
+            password=PASSWORD,
+            account_status=User.AccountStatus.ACTIVE,
+            tenant=tenant,
+        )
+    subject_owner = subject_owner or user
     subject_type = SubjectType.objects.get(key="enterprise")
     snapshot, digest = build_schema_snapshot(subject_type)
     values = materialize_defaults(snapshot)
     values["name"] = "示例企业"
     subject = Subject.objects.create(
-        user=user,
+        user=subject_owner,
+        tenant=tenant,
         subject_type=subject_type,
         status=Subject.Status.DRAFT,
         draft_values=values,
@@ -110,7 +121,7 @@ def _facts(*, regenerations=2, generation_limit=5):
             field_values_digest=values_digest(values),
             semantic_digest=hashlib.sha256(f"generation-{suffix}".encode()).hexdigest(),
             official_name="示例企业",
-            created_by=user,
+            created_by=subject_owner,
         )
         SubjectName.objects.create(
             subject_version=subject_version,

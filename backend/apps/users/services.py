@@ -1,3 +1,4 @@
+import uuid
 from dataclasses import dataclass
 from functools import lru_cache
 
@@ -172,6 +173,12 @@ def create_registered_user(
             )
             assignment.full_clean()
             assignment.save()
+            from apps.plans.subscription_services import ensure_default_free_subscription
+
+            ensure_default_free_subscription(
+                user=user,
+                request_id=uuid.uuid4(),
+            )
             return user
     except IntegrityError as exc:
         raise AccountAlreadyExists from exc

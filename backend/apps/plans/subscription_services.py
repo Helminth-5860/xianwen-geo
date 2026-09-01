@@ -76,6 +76,7 @@ INTERNAL_TEST_PLAN_ID = uuid.UUID("4ca150d9-b51e-4b16-9dc8-67d594d08ad1")
 INTERNAL_TEST_PLAN_VERSION_ID = uuid.UUID("0ef7b50a-eae8-448a-85cf-57f53b558193")
 INTERNAL_TEST_VALID_DAYS = 36_500
 INTERNAL_TEST_MAX_QUOTA = 9_223_372_036_854_775_807
+DEFAULT_FREE_PLAN_CODE = "free-trial"
 
 
 def _internal_test_snapshot(generated_at) -> dict:
@@ -512,6 +513,83 @@ def current_subscription(user: User, *, now=None):
     if not user.is_test_account:
         return None
     return ensure_internal_test_subscription(user=user, now=moment)
+
+
+@transaction.atomic
+def ensure_default_free_subscription(
+    *, user: User, request_id=None, now=None
+) -> Subscription:
+    """Give an eligible customer the published annual free package exactly once."""
+
+    moment = now or timezone.now()
+    locked_user = User.objects.select_for_update().get(pk=user.pk)
+    _ensure_user_eligible(locked_user)
+    active = (
+        Subscription.objects.select_for_update()
+        .filter(
+            user=locked_user,
+            status=Subscription.Status.ACTIVE,
+            starts_at__lte=moment,
+            ends_at__gt=moment,
+        )
+        .select_related("plan", "plan_version")
+        .first()
+    )
+    if active is not None:
+        return active
+
+    try:
+        plan = Plan.objects.select_for_update().get(
+            code=DEFAULT_FREE_PLAN_CODE,
+            status=Plan.Status.PUBLISHED,
+            is_trial=True,
+        )
+    except Plan.DoesNotExist as exc:
+        raise SubscriptionPlanUnavailable from exc
+    if plan.current_published_version_id is None:
+        raise SubscriptionPlanUnavailable
+    try:
+        version = PlanVersion.objects.select_for_update().get(
+            pk=plan.current_published_version_id,
+            plan=plan,
+            status=PlanVersion.Status.PUBLISHED,
+        )
+    except PlanVersion.DoesNotExist as exc:
+        raise SubscriptionPlanVersionMismatch from exc
+    if Subscription.objects.filter(user=locked_user, is_trial=True).exists():
+        raise SubscriptionTrialAlreadyGranted
+
+    from apps.subjects.subject_services import (
+        SubjectLimitReconciliationRequired,
+        assert_target_subject_limit_locked,
+    )
+
+    try:
+        assert_target_subject_limit_locked(
+            user=locked_user,
+            target_snapshot=version.effective_config,
+        )
+    except SubjectLimitReconciliationRequired as exc:
+        raise SubscriptionSubjectLimitReconciliationRequired from exc
+
+    operation_request_id = request_id or uuid.uuid4()
+    subscription = _create_active_subscription(
+        user=locked_user,
+        application=None,
+        plan=plan,
+        version=version,
+        actor=None,
+        opening_note="新用户注册自动开通免费套餐。",
+        request_id=operation_request_id,
+        now=moment,
+    )
+    _notify(
+        subscription=subscription,
+        notification_type=Notification.NotificationType.SUBSCRIPTION_TRIAL_GRANTED,
+        title="免费套餐已开通",
+        summary="免费套餐及对应额度已自动生效，有效期一年。",
+    )
+    return subscription
 
 
 def scoped_subscriptions(user, context: AdminContext):

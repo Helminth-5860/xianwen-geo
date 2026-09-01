@@ -2,6 +2,7 @@ import uuid
 
 import pytest
 from django.core.exceptions import ValidationError
+from django.core.management import call_command
 from rest_framework.exceptions import NotFound, PermissionDenied
 from rest_framework.test import APIClient
 
@@ -23,6 +24,11 @@ from apps.users.services import create_registered_user
 from tests.admin_session_helpers import authenticate_admin_client
 
 PASSWORD = "Correct-Horse-Battery-2026!"
+
+
+@pytest.fixture(autouse=True)
+def seed_standard_plans():
+    call_command("sync_standard_plans", "--apply", verbosity=0)
 
 
 def tenant(key: str, name: str) -> Tenant:
@@ -238,6 +244,9 @@ def test_user_registration_cannot_upgrade_role_and_supports_optional_admin_assig
     assert created.is_superuser is False
     assert created.customer_assignment.owner_admin == owner
     assert CustomerAssignment.objects.filter(customer=created).count() == 1
+    subscription = created.subscriptions.get(status="active")
+    assert subscription.plan.code == "free-trial"
+    assert subscription.plan_version.valid_days == 365
 
     independent = create_registered_user(
         phone="+8613800003703",
@@ -248,6 +257,7 @@ def test_user_registration_cannot_upgrade_role_and_supports_optional_admin_assig
     assert independent.is_staff is False
     assert independent.is_superuser is False
     assert independent.customer_assignment.owner_admin is None
+    assert independent.subscriptions.get(status="active").plan.code == "free-trial"
 
 
 @pytest.mark.django_db

@@ -31,8 +31,8 @@ const columns: TableProps<AdminUser>["columns"] = [
   { title: "用户", dataIndex: "nickname" },
   { title: "登录手机号", dataIndex: "phone_masked" },
   { title: "所属管理员", render: () => <span title="请进入详情查看归属管理员">进入详情查看</span> },
-  { title: "当前套餐", render: () => <span title="套餐汇总接口待接入">—</span> },
-  { title: "剩余额度", render: () => <span title="额度汇总接口待接入">—</span> },
+  { title: "当前套餐", render: () => <span title="请进入套餐管理查看">进入套餐管理查看</span> },
+  { title: "剩余额度", render: () => <span title="请进入额度管理查看">进入额度管理查看</span> },
   {
     title: "状态",
     dataIndex: "account_status",
@@ -40,13 +40,6 @@ const columns: TableProps<AdminUser>["columns"] = [
       const status = accountStatusLabel[value] ?? { text: "禁用", color: "orange" };
       return <Tag color={status.color}>{status.text}</Tag>;
     },
-  },
-  {
-    title: "测试账号",
-    dataIndex: "is_test_account",
-    render: (enabled: boolean) => (
-      <Tag color={enabled ? "blue" : "default"}>{enabled ? "是" : "否"}</Tag>
-    ),
   },
   {
     title: "注册时间",
@@ -98,7 +91,12 @@ export default function AdminUsersPage() {
             <Button icon={<ReloadOutlined />} onClick={() => void load()} loading={loading}>
               刷新
             </Button>
-            <Button type="primary" icon={<PlusOutlined />} disabled title="创建用户接口待接入">
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              disabled
+              title="客户通过注册页面创建，后台可在此管理套餐与额度"
+            >
               创建用户
             </Button>
           </Space>

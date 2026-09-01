@@ -19,6 +19,7 @@ from apps.keywords.models import (
     KeywordSetVersion,
 )
 from apps.quotas.services import _create_initialized_account
+from apps.users.models import Tenant, User
 from tests.test_keyword_generation import _create, _facts, _subject_account
 
 pytestmark = [
@@ -58,6 +59,36 @@ def test_database_allows_only_one_active_generation_per_subject():
             request_digest="c" * 64,
         )
     assert KeywordGenerationJob.objects.get(pk=first.pk).status == "queued"
+
+
+def test_tenant_member_can_generate_for_the_shared_subject_with_own_subscription():
+    tenant = Tenant.objects.create(key=f"tenant-{uuid.uuid4().hex}", display_name="共享工作区")
+    owner = User.objects.create_user(
+        phone=f"136{uuid.uuid4().int % 100000000:08d}",
+        nickname="主体资料维护人",
+        password="Correct-Horse-Battery-2026!",
+        account_status=User.AccountStatus.ACTIVE,
+        tenant=tenant,
+    )
+    operator = User.objects.create_user(
+        phone=f"135{uuid.uuid4().int % 100000000:08d}",
+        nickname="工作区操作人",
+        password="Correct-Horse-Battery-2026!",
+        account_status=User.AccountStatus.ACTIVE,
+        tenant=tenant,
+    )
+    user, subject, version, _ = _facts(
+        user=operator,
+        subject_owner=owner,
+        tenant=tenant,
+    )
+
+    job, created = _create(user, subject, version)
+
+    assert created is True
+    assert job.user == operator
+    assert job.subject.user == owner
+    assert job.subscription.user == operator
 
 
 def test_job_frozen_facts_and_result_event_evidence_are_database_immutable():

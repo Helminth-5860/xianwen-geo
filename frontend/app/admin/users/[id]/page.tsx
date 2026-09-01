@@ -1,25 +1,13 @@
 "use client";
 
 import { ArrowLeftOutlined } from "@ant-design/icons";
-import {
-  Alert,
-  Button,
-  Card,
-  Descriptions,
-  Input,
-  List,
-  Modal,
-  Space,
-  Tag,
-  Typography,
-} from "antd";
+import { Alert, Button, Card, Descriptions, List, Space, Tag, Typography } from "antd";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import { useAdminCapabilities } from "@/components/admin/admin-capability";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { CustomerAssignmentActions } from "@/components/admin/customer-assignment-actions";
-import { TrialGrantAction } from "@/components/admin/trial-grant-action";
 import {
   getAdmins,
   getCustomerAssignment,
@@ -35,7 +23,6 @@ import {
   freezeAdminUser,
   getAdminUser,
   getAdminUserHistory,
-  setAdminUserTestAccount,
   unfreezeAdminUser,
   userMessage,
 } from "@/lib/auth-client";
@@ -66,8 +53,6 @@ export default function AdminUserDetailPage() {
   const [riskModes, setRiskModes] = useState<Record<string, RiskMode>>({});
   const [assignment, setAssignment] = useState<CustomerAssignment | null>(null);
   const [admins, setAdmins] = useState<AdminProfile[]>([]);
-  const [testAccountDialogOpen, setTestAccountDialogOpen] = useState(false);
-  const [testAccountPassword, setTestAccountPassword] = useState("");
 
   const load = useCallback(async () => {
     if (!userId) return;
@@ -115,27 +100,6 @@ export default function AdminUserDetailPage() {
     }
   };
 
-  const toggleTestAccount = async () => {
-    if (!user || !testAccountPassword || submitting) return;
-    setSubmitting(true);
-    setError("");
-    try {
-      const updated = await setAdminUserTestAccount(
-        userId,
-        !user.is_test_account,
-        testAccountPassword,
-      );
-      setUser(updated);
-      setTestAccountPassword("");
-      setTestAccountDialogOpen(false);
-      await load();
-    } catch (actionError) {
-      setError(userMessage(actionError));
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
   return (
     <main className="admin-page">
       <AdminPageHeader
@@ -160,33 +124,10 @@ export default function AdminUserDetailPage() {
                   {user.account_status === "active" ? "正常" : "禁用"}
                 </Tag>
               </Descriptions.Item>
-              <Descriptions.Item label="测试账号">
-                <Tag color={user.is_test_account ? "blue" : "default"}>
-                  {user.is_test_account ? "是" : "否"}
-                </Tag>
-              </Descriptions.Item>
               <Descriptions.Item label="注册时间">
                 {new Date(user.created_at).toLocaleString("zh-CN")}
               </Descriptions.Item>
             </Descriptions>
-            {capabilities?.commercial_identity === "SUPER_ADMIN" && (
-              <Card size="small" title="内部测试权限" style={{ marginTop: 16 }}>
-                <Space orientation="vertical">
-                  <Text>
-                    {user.is_test_account
-                      ? "当前账号不受套餐和额度限制，业务操作不会扣减额度。"
-                      : "开启后，该普通用户可免套餐使用全部业务功能，且不会扣减额度。"}
-                  </Text>
-                  <Button
-                    danger={user.is_test_account}
-                    type={user.is_test_account ? "default" : "primary"}
-                    onClick={() => setTestAccountDialogOpen(true)}
-                  >
-                    {user.is_test_account ? "关闭测试账号" : "开启测试账号"}
-                  </Button>
-                </Space>
-              </Card>
-            )}
             <UserStatusActions
               user={user}
               submitting={submitting}
@@ -200,42 +141,9 @@ export default function AdminUserDetailPage() {
               }}
               onUnfreeze={() => void act(() => unfreezeAdminUser(userId))}
             />
-            {user.account_status === "active" && (
-              <TrialGrantAction
-                userId={user.id}
-                expectedVersion={user.status_version}
-                onCompleted={() => void load()}
-                onError={setError}
-              />
-            )}
           </>
         )}
       </Card>
-      <Modal
-        title={user?.is_test_account ? "确认关闭测试账号" : "确认开启测试账号"}
-        open={testAccountDialogOpen}
-        okText="确认执行"
-        cancelText="取消"
-        confirmLoading={submitting}
-        okButtonProps={{ disabled: !testAccountPassword }}
-        onOk={() => void toggleTestAccount()}
-        onCancel={() => {
-          if (submitting) return;
-          setTestAccountDialogOpen(false);
-          setTestAccountPassword("");
-        }}
-      >
-        <Space orientation="vertical" style={{ width: "100%" }}>
-          <Text>此操作只改变商业套餐与额度限制，不会绕过登录、安全、权限或数据隔离。</Text>
-          <Input.Password
-            value={testAccountPassword}
-            onChange={(event) => setTestAccountPassword(event.target.value)}
-            placeholder="请输入当前超级管理员密码"
-            aria-label="当前超级管理员密码"
-            autoComplete="current-password"
-          />
-        </Space>
-      </Modal>
       {capabilities?.permission_keys.includes("users.assign") && assignment && (
         <CustomerAssignmentActions
           key={`${assignment.customer_id}:${assignment.version}:${assignment.owner_admin_id}`}

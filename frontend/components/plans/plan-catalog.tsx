@@ -225,7 +225,15 @@ export function PlanCatalog({ currentPlanId = null }: PlanCatalogProps) {
                       联系销售
                     </Button>
                   ) : plan.is_trial ? (
-                    <Alert type="info" title="请联系工作人员确认体验开通。" />
+                    authenticated ? (
+                      <Button block disabled>
+                        注册后已自动开通
+                      </Button>
+                    ) : (
+                      <Button block type="primary" href="/register">
+                        注册免费使用
+                      </Button>
+                    )
                   ) : authenticated ? (
                     <Button block type="primary" onClick={() => openApplication(plan)}>
                       选择套餐

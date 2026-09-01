@@ -3,6 +3,7 @@ from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
 import pytest
+from django.core.management import call_command
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.test import APIClient
 
@@ -20,6 +21,11 @@ from apps.users.services import create_registered_user
 from tests.admin_session_helpers import authenticate_admin_client
 
 PASSWORD = "Correct-Horse-Battery-2026!"
+
+
+@pytest.fixture(autouse=True)
+def seed_standard_plans():
+    call_command("sync_standard_plans", "--apply", verbosity=0)
 
 
 def create_hierarchy():

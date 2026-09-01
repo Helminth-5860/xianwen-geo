@@ -48,6 +48,7 @@ import {
 
 import DistillationPanel from "./distillation-panel";
 import QuestionBankPanel from "./question-bank-panel";
+import styles from "./keyword-center-page.module.css";
 
 export type KeywordCenterStage = "generate" | "custom" | "distill" | "assets" | "questions";
 type RegionMode = "unrestricted" | "subject" | "custom";
@@ -127,10 +128,10 @@ function GenerationControls({
   onRegionSelectionsChange: (value: KeywordRegionSelection[]) => void;
 }>) {
   return (
-    <Space direction="vertical" size="middle" style={{ width: "100%" }}>
-      <div>
+    <div className={styles.controlStack}>
+      <section className={styles.controlBlock}>
         <Typography.Text strong>3. 生成数量</Typography.Text>
-        <div style={{ marginTop: 8 }}>
+        <div className={styles.controlChoices}>
           <Space wrap>
             <Radio.Group
               aria-label="生成数量快捷选择"
@@ -150,17 +151,17 @@ function GenerationControls({
               aria-label="自定义生成数量"
               addonBefore="自定义"
               min={1}
-              max={200}
+              max={100}
               value={targetCount}
               disabled={disabled}
               onChange={(value) => onTargetCountChange(value ?? 1)}
             />
           </Space>
         </div>
-      </div>
-      <div>
+      </section>
+      <section className={styles.controlBlock}>
         <Typography.Text strong>4. 关键词长度</Typography.Text>
-        <div style={{ marginTop: 8 }}>
+        <div className={styles.controlChoices}>
           <Space wrap>
             <Checkbox
               checked={includeShort}
@@ -178,10 +179,10 @@ function GenerationControls({
             </Checkbox>
           </Space>
         </div>
-      </div>
-      <div>
+      </section>
+      <section className={styles.controlBlock}>
         <Typography.Text strong>5. 地域范围</Typography.Text>
-        <div style={{ marginTop: 8 }}>
+        <div className={styles.controlChoices}>
           <Radio.Group
             aria-label="地域范围"
             value={regionMode}
@@ -194,7 +195,7 @@ function GenerationControls({
           </Radio.Group>
         </div>
         {regionMode !== "unrestricted" ? (
-          <div style={{ marginTop: 12 }}>
+          <div className={styles.regionSelector}>
             <KeywordRegionSelector
               mode={regionMode === "subject" ? "subject" : "custom"}
               serviceRegions={serviceRegions}
@@ -204,8 +205,8 @@ function GenerationControls({
             />
           </div>
         ) : null}
-      </div>
-    </Space>
+      </section>
+    </div>
   );
 }
 
@@ -583,15 +584,22 @@ export function KeywordCenterPage({
             : "选择已确认的关键词资产并生成问题草稿";
 
   return (
-    <main className="page-shell">
-      <Link href={`/subjects/${params.id}`}>返回主体档案</Link>
-      <Typography.Title style={{ marginTop: 16 }}>{pageTitle}</Typography.Title>
-      <Typography.Paragraph type="secondary">{pageSubtitle}</Typography.Paragraph>
-      <Typography.Paragraph type="secondary">
-        当前主体：{routeSubject?.official_name || routeSubject?.subject_type.name || "当前主体"}
-      </Typography.Paragraph>
-      <Card className="keyword-center-summary" style={{ marginBottom: 20 }}>
-        <Space wrap className="keyword-center-stats">
+    <main className={`page-shell ${styles.page}`}>
+      <header className={styles.pageHeader}>
+        <div>
+          <Link href={`/subjects/${params.id}`}>返回主体档案</Link>
+          <Typography.Title>{pageTitle}</Typography.Title>
+          <Typography.Paragraph type="secondary">{pageSubtitle}</Typography.Paragraph>
+        </div>
+        <div className={styles.subjectBadge}>
+          <Typography.Text type="secondary">当前主体</Typography.Text>
+          <Typography.Text strong>
+            {routeSubject?.official_name || routeSubject?.subject_type.name || "当前主体"}
+          </Typography.Text>
+        </div>
+      </header>
+      <Card className={`${styles.summaryCard} keyword-center-summary`}>
+        <Space wrap className="keyword-center-stats" size="middle">
           <Tag color="orange">待蒸馏关键词 {pendingKeywordCount}</Tag>
           <Tag color="green">关键词资产 {assets.length}</Tag>
         </Space>
@@ -618,147 +626,153 @@ export function KeywordCenterPage({
       ) : null}
 
       {stage === "generate" ? (
-        <Card title="智能生成设置">
-          <Space direction="vertical" size="large" style={{ width: "100%" }}>
-            <div>
-              <Space wrap style={{ marginBottom: 12 }}>
+        <Card className={styles.generationCard} title="智能生成设置">
+          <div className={styles.generationGrid}>
+            <section className={styles.categoriesPanel}>
+              <div className={styles.sectionHeading}>
                 <Typography.Text strong>1. 关键词类别（可多选）</Typography.Text>
-                <Button
-                  size="small"
-                  disabled={disabled}
-                  onClick={() =>
-                    setBusinessCategories(
-                      keywordBusinessCategoryOptions.map((option) => option.value),
-                    )
-                  }
-                >
-                  全部选择
-                </Button>
-                <Button
-                  size="small"
-                  disabled={disabled || businessCategories.length === 0}
-                  onClick={() => setBusinessCategories([])}
-                >
-                  清空
-                </Button>
-              </Space>
-              <Space direction="vertical" size="small" style={{ width: "100%" }}>
-                {categoryGroups.map((group) => (
-                  <Card key={group.title} size="small">
-                    <Space direction="vertical" size="small" style={{ width: "100%" }}>
-                      <Space wrap>
-                        <Typography.Text strong>{group.title}</Typography.Text>
-                        <Button
-                          size="small"
-                          disabled={disabled}
-                          onClick={() => selectCategoryGroup(group.values)}
-                        >
-                          本组全选
-                        </Button>
-                      </Space>
-                      <Space wrap>
-                        {group.values.map((value) => (
-                          <Checkbox
-                            key={value}
-                            checked={businessCategories.includes(value)}
-                            disabled={disabled}
-                            onChange={(event) =>
-                              toggleBusinessCategory(value, event.target.checked)
-                            }
-                          >
-                            {categoryLabel(value)}
-                          </Checkbox>
-                        ))}
-                      </Space>
-                    </Space>
-                  </Card>
-                ))}
-              </Space>
-            </div>
-
-            <div>
-              <Space wrap style={{ marginBottom: 8 }}>
-                <Typography.Text strong>2. 用户意图（可多选）</Typography.Text>
-                <Button
-                  size="small"
-                  disabled={disabled}
-                  onClick={() =>
-                    setSearchIntents(keywordSearchIntentOptions.map((option) => option.value))
-                  }
-                >
-                  全部选择
-                </Button>
-                <Button
-                  size="small"
-                  disabled={disabled || searchIntents.length === 0}
-                  onClick={() => setSearchIntents([])}
-                >
-                  清空
-                </Button>
-              </Space>
-              <Space wrap>
-                {keywordSearchIntentOptions.map((option) => (
-                  <Checkbox
-                    key={option.value}
-                    checked={searchIntents.includes(option.value)}
+                <Space wrap size="small">
+                  <Button
+                    size="small"
                     disabled={disabled}
-                    onChange={(event) => toggleSearchIntent(option.value, event.target.checked)}
+                    onClick={() =>
+                      setBusinessCategories(
+                        keywordBusinessCategoryOptions.map((option) => option.value),
+                      )
+                    }
                   >
-                    {option.label}
-                  </Checkbox>
+                    全选
+                  </Button>
+                  <Button
+                    size="small"
+                    disabled={disabled || businessCategories.length === 0}
+                    onClick={() => setBusinessCategories([])}
+                  >
+                    清空
+                  </Button>
+                </Space>
+              </div>
+              <div className={styles.categoryGrid}>
+                {categoryGroups.map((group) => (
+                  <div className={styles.categoryGroup} key={group.title}>
+                    <div className={styles.groupHeading}>
+                      <Typography.Text strong>{group.title}</Typography.Text>
+                      <Button
+                        size="small"
+                        type="text"
+                        disabled={disabled}
+                        onClick={() => selectCategoryGroup(group.values)}
+                      >
+                        本组全选
+                      </Button>
+                    </div>
+                    <div className={styles.optionGrid}>
+                      {group.values.map((value) => (
+                        <Checkbox
+                          className={styles.optionItem}
+                          key={value}
+                          checked={businessCategories.includes(value)}
+                          disabled={disabled}
+                          onChange={(event) => toggleBusinessCategory(value, event.target.checked)}
+                        >
+                          {categoryLabel(value)}
+                        </Checkbox>
+                      ))}
+                    </div>
+                  </div>
                 ))}
-              </Space>
-            </div>
+              </div>
+            </section>
 
-            <GenerationControls
-              targetCount={targetCount}
-              includeShort={includeShort}
-              includeLongTail={includeLongTail}
-              regionMode={regionMode}
-              regionSelections={regionSelections}
-              serviceRegions={serviceRegions}
-              disabled={disabled}
-              onTargetCountChange={setTargetCount}
-              onIncludeShortChange={setIncludeShort}
-              onIncludeLongTailChange={setIncludeLongTail}
-              onRegionModeChange={setRegionMode}
-              onRegionSelectionsChange={setRegionSelections}
-            />
-          </Space>
-          <Space wrap style={{ marginTop: 20 }}>
-            <Button
-              type="primary"
-              loading={busy}
-              disabled={disabled}
-              onClick={() => void startGeneration(false)}
-            >
-              AI 生成关键词
-            </Button>
-            <QuotaActionHint
-              quotaType="keyword_generated_items"
-              actionText={`本次最多生成 ${targetCount} 条，按成功新增的关键词条数使用额度`}
-            />
-            {generation ? (
-              <Tag color={generation.status === "succeeded" ? "green" : "blue"}>
-                {generation.status === "superseded"
-                  ? "已有更新结果"
-                  : keywordJobStatusLabel[generation.status]}
-              </Tag>
-            ) : null}
-            {regenerationConfirmation ? (
-              <Popconfirm
-                title="确认再次生成关键词？"
-                description="按本次成功新增并保存的关键词条数使用额度，重复或失败内容不计入。"
-                okText="确认再生成"
-                cancelText="取消"
-                onConfirm={() => void startGeneration(true)}
-              >
-                <Button danger disabled={disabled}>
-                  确认再次生成
+            <aside className={styles.rulesPanel}>
+              <section className={styles.intentBlock}>
+                <div className={styles.sectionHeading}>
+                  <Typography.Text strong>2. 用户意图（可多选）</Typography.Text>
+                  <Space wrap size="small">
+                    <Button
+                      size="small"
+                      disabled={disabled}
+                      onClick={() =>
+                        setSearchIntents(keywordSearchIntentOptions.map((option) => option.value))
+                      }
+                    >
+                      全选
+                    </Button>
+                    <Button
+                      size="small"
+                      disabled={disabled || searchIntents.length === 0}
+                      onClick={() => setSearchIntents([])}
+                    >
+                      清空
+                    </Button>
+                  </Space>
+                </div>
+                <div className={styles.intentGrid}>
+                  {keywordSearchIntentOptions.map((option) => (
+                    <Checkbox
+                      className={styles.optionItem}
+                      key={option.value}
+                      checked={searchIntents.includes(option.value)}
+                      disabled={disabled}
+                      onChange={(event) => toggleSearchIntent(option.value, event.target.checked)}
+                    >
+                      {option.label}
+                    </Checkbox>
+                  ))}
+                </div>
+              </section>
+
+              <GenerationControls
+                targetCount={targetCount}
+                includeShort={includeShort}
+                includeLongTail={includeLongTail}
+                regionMode={regionMode}
+                regionSelections={regionSelections}
+                serviceRegions={serviceRegions}
+                disabled={disabled}
+                onTargetCountChange={setTargetCount}
+                onIncludeShortChange={setIncludeShort}
+                onIncludeLongTailChange={setIncludeLongTail}
+                onRegionModeChange={setRegionMode}
+                onRegionSelectionsChange={setRegionSelections}
+              />
+              <div className={styles.actionBar}>
+                <Button
+                  type="primary"
+                  size="large"
+                  loading={busy}
+                  disabled={disabled}
+                  onClick={() => void startGeneration(false)}
+                >
+                  AI 生成关键词
                 </Button>
-              </Popconfirm>
-            ) : null}
-          </Space>
+                <QuotaActionHint
+                  quotaType="keyword_generated_items"
+                  actionText={`本次最多生成 ${targetCount} 条，按成功新增的关键词条数使用额度`}
+                />
+                {generation ? (
+                  <Tag color={generation.status === "succeeded" ? "green" : "blue"}>
+                    {generation.status === "superseded"
+                      ? "已有更新结果"
+                      : keywordJobStatusLabel[generation.status]}
+                  </Tag>
+                ) : null}
+                {regenerationConfirmation ? (
+                  <Popconfirm
+                    title="确认再次生成关键词？"
+                    description="按本次成功新增并保存的关键词条数使用额度，重复或失败内容不计入。"
+                    okText="确认再生成"
+                    cancelText="取消"
+                    onConfirm={() => void startGeneration(true)}
+                  >
+                    <Button danger disabled={disabled}>
+                      确认再次生成
+                    </Button>
+                  </Popconfirm>
+                ) : null}
+              </div>
+            </aside>
+          </div>
         </Card>
       ) : null}
 
