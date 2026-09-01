@@ -5,6 +5,7 @@ import {
   Button,
   Card,
   Col,
+  Popconfirm,
   Progress,
   Row,
   Space,
@@ -14,7 +15,7 @@ import {
   Typography,
 } from "antd";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { userMessage } from "@/lib/auth-client";
@@ -34,6 +35,7 @@ import {
   type GeoDetectionJob,
   type GeoModelProgress,
 } from "@/lib/geo-detection-client";
+import { adjustedRetest, getReportForDetection } from "@/lib/geo-report-client";
 
 const DETECTION_MAX_RETRY_INTERVAL_MS = 12000;
 const CLOCK_REFRESH_INTERVAL_MS = 5000;
@@ -81,6 +83,7 @@ function requestErrorMessage(reason: unknown, timedOut: boolean) {
 
 export default function DetectionProgressPage() {
   const { detectionId } = useParams<{ detectionId: string }>();
+  const router = useRouter();
   const [job, setJob] = useState<GeoDetectionJob>();
   const [models, setModels] = useState<GeoModelProgress[]>([]);
   const [error, setError] = useState("");
@@ -89,6 +92,8 @@ export default function DetectionProgressPage() {
   const [lastSuccessfulRefreshAt, setLastSuccessfulRefreshAt] = useState<number>();
   const [clock, setClock] = useState(() => Date.now());
   const [retryVersion, setRetryVersion] = useState(0);
+  const [retesting, setRetesting] = useState(false);
+  const [retestError, setRetestError] = useState("");
 
   useEffect(() => {
     const timer = window.setInterval(() => setClock(Date.now()), CLOCK_REFRESH_INTERVAL_MS);
@@ -210,6 +215,34 @@ export default function DetectionProgressPage() {
     setModelsError("");
     setRetryVersion((current) => current + 1);
   };
+  const startRetest = async () => {
+    setRetesting(true);
+    setRetestError("");
+    try {
+      const report = await getReportForDetection(detectionId);
+      const failedModelIds = report.summary.models
+        .filter((model) => model.failed_calls > 0)
+        .map((model) => model.model_id);
+      const questionIds = report.provenance.questions.map(
+        (question) => question.source_question_id,
+      );
+      if (!failedModelIds.length || !questionIds.length) {
+        setRetestError("当前没有需要重新检测的内容。");
+        return;
+      }
+      const created = await adjustedRetest(
+        report.id,
+        questionIds,
+        failedModelIds,
+        crypto.randomUUID(),
+      );
+      router.push(`/geo/detections/${created.detection_id}`);
+    } catch (reason) {
+      setRetestError(userMessage(reason));
+    } finally {
+      setRetesting(false);
+    }
+  };
 
   if (!job && !error) return <Spin fullscreen description="正在恢复检测进度" />;
 
@@ -259,11 +292,17 @@ export default function DetectionProgressPage() {
             <Alert type="error" showIcon title="检测未能完成，本次检测额度已返还" />
           )}
           {job.status === "partial" && (
-            <Alert type="warning" showIcon title="部分模型未完成，已有可用结果，本次按1次检测结算" />
+            <Alert
+              type="warning"
+              showIcon
+              title="部分模型未完成，已有可用结果，本次按1次检测结算"
+              description="你可以先查看已有结果，也可以在服务恢复后只重新检测未完成的模型。"
+            />
           )}
           {job.status === "cancelled" && (
             <Alert type="warning" showIcon title="检测已取消；如未产生有效结果，本次额度已返还" />
           )}
+          {retestError && <Alert type="error" showIcon title={retestError} />}
 
           <Card title="总体进度" extra={refreshing ? "正在刷新" : undefined}>
             <Progress
@@ -323,13 +362,37 @@ export default function DetectionProgressPage() {
           <Card title="检测额度结算" extra={<Tag>{settlementLabels[job.quota.status]}</Tag>}>
             <Row gutter={16}>
               <Col xs={24} sm={8}>
-                <Statistic title="预计／预留" value={job.quota.quota_type === "detection_points" ? Number(job.quota.held > 0) : job.quota.held} suffix="次" />
+                <Statistic
+                  title="预计／预留"
+                  value={
+                    job.quota.quota_type === "detection_points"
+                      ? Number(job.quota.held > 0)
+                      : job.quota.held
+                  }
+                  suffix="次"
+                />
               </Col>
               <Col xs={24} sm={8}>
-                <Statistic title="实际扣除" value={job.quota.quota_type === "detection_points" ? Number(job.quota.consumed > 0) : job.quota.consumed} suffix="次" />
+                <Statistic
+                  title="实际扣除"
+                  value={
+                    job.quota.quota_type === "detection_points"
+                      ? Number(job.quota.consumed > 0)
+                      : job.quota.consumed
+                  }
+                  suffix="次"
+                />
               </Col>
               <Col xs={24} sm={8}>
-                <Statistic title="返还／释放" value={job.quota.quota_type === "detection_points" ? Number(job.quota.consumed === 0 && job.quota.released > 0) : job.quota.released} suffix="次" />
+                <Statistic
+                  title="返还／释放"
+                  value={
+                    job.quota.quota_type === "detection_points"
+                      ? Number(job.quota.consumed === 0 && job.quota.released > 0)
+                      : job.quota.released
+                  }
+                  suffix="次"
+                />
               </Col>
             </Row>
           </Card>
@@ -343,6 +406,17 @@ export default function DetectionProgressPage() {
                 <Button>返回主体</Button>
               </Link>
               <Button onClick={retryNow}>刷新最终状态</Button>
+              {job.status === "partial" && (
+                <Popconfirm
+                  title="重新检测未完成的模型？"
+                  description="已成功结果会保留，本次只检测未完成的模型，并使用 1 次 GEO 检测额度。"
+                  okText="确认重新检测"
+                  cancelText="暂不重检"
+                  onConfirm={() => void startRetest()}
+                >
+                  <Button loading={retesting}>重检未完成模型</Button>
+                </Popconfirm>
+              )}
             </Space>
           )}
         </Space>

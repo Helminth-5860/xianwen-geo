@@ -136,6 +136,19 @@ def execute_model_call_task(self, call_id, dispatch_token=None):
     release_dispatch_lease = True
     try:
         result = execute_model_call(call_id=call_id)
+        if result.get("reason") == "concurrency_limit" and dispatch_token:
+            try:
+                execute_model_call_task.apply_async(
+                    args=[str(call_id), dispatch_token],
+                    queue="geo_detection",
+                    countdown=settings.GEO_DETECTION_CONCURRENCY_RECHECK_SECONDS,
+                )
+                release_dispatch_lease = False
+            except Exception:
+                logger.exception(
+                    "geo detection concurrency deferral failed",
+                    extra={"context": {"model_call_id": str(call_id)}},
+                )
         _enqueue_terminal_followups(call_id=call_id, result=result)
         return result
     except (OperationalError, InterfaceError) as exc:

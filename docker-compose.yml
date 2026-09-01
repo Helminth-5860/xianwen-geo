@@ -214,7 +214,8 @@ services:
         "worker",
         "--loglevel=INFO",
         "--queues=geo_detection",
-        "--concurrency=4",
+        "--concurrency=6",
+        "--prefetch-multiplier=1",
       ]
     environment:
       DJANGO_SETTINGS_MODULE: config.settings
@@ -248,6 +249,7 @@ services:
       GEO_DETECTION_QUEUE_TIMEOUT_SECONDS: ${GEO_DETECTION_QUEUE_TIMEOUT_SECONDS:-900}
       GEO_DETECTION_DISPATCH_BATCH: ${GEO_DETECTION_DISPATCH_BATCH:-100}
       GEO_DETECTION_INTERNAL_MAX_RETRIES: ${GEO_DETECTION_INTERNAL_MAX_RETRIES:-3}
+      GEO_DETECTION_CONCURRENCY_RECHECK_SECONDS: ${GEO_DETECTION_CONCURRENCY_RECHECK_SECONDS:-4}
       PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY: ${PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY:?set a random local plan-change HMAC key}
       ARTICLE_IDEMPOTENCY_HMAC_KEY: ${ARTICLE_IDEMPOTENCY_HMAC_KEY:-local-test-article-idempotency-key-not-for-production}
       IMAGE_IDEMPOTENCY_HMAC_KEY: ${IMAGE_IDEMPOTENCY_HMAC_KEY:-local-test-image-idempotency-key-not-for-production}

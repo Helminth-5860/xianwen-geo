@@ -273,12 +273,6 @@ export const navigationConfig: readonly WorkspaceNavigationItem[] = [
         href: subjectRoute("/video-scripts/new"),
         isActive: (pathname) => pathname.includes("/video-scripts"),
       },
-      {
-        key: "optimization-video-generation",
-        label: "视频生成",
-        href: subjectRoute("/videos/new"),
-        isActive: (pathname) => /^\/subjects\/[^/]+\/videos(?:\/|$)/.test(pathname),
-      },
     ],
   },
   {

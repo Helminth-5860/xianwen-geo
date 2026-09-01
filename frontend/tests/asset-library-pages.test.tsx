@@ -66,9 +66,10 @@ describe("主体资产库页面", () => {
     expect(screen.getByRole("heading", { name: "视频库" })).toBeTruthy();
     expect(screen.getByText("视频仅对当前主体可见")).toBeTruthy();
     expect(await screen.findByText("当前主体还没有已保存的视频。")).toBeTruthy();
-    expect(screen.getByRole("link", { name: "生成第一个视频" }).getAttribute("href")).toBe(
-      "/subjects/subject-1/videos/new",
-    );
+    expect(
+      screen.getByText("视频生成能力已停止使用，已经保存的视频仍可继续查看和下载。"),
+    ).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "生成第一个视频" })).toBeNull();
     expect(listSubjectVideos).toHaveBeenCalledWith("subject-1", 1, 20, expect.any(AbortSignal));
     expect(screen.queryByText(/数据接口|后端/)).toBeNull();
     expect(screen.queryByRole("listitem")).toBeNull();
