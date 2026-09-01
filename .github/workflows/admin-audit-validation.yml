@@ -1,0 +1,104 @@
+name: Admin Audit Validation
+
+on:
+  push:
+    branches:
+      - feature/XW-admin-audit-log-v1-20260831
+
+permissions:
+  contents: read
+
+jobs:
+  audit-only:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 1
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+
+      - name: Install backend test dependencies
+        run: python -m pip install --requirement backend/requirements-dev.txt
+
+      - name: Validate audit backend only
+        working-directory: backend
+        run: |
+          python -m ruff check \
+            apps/admin_rbac/models.py \
+            apps/admin_rbac/risk_services.py \
+            apps/admin_rbac/sensitive_audit_models.py \
+            apps/admin_rbac/sensitive_audit_serializers.py \
+            apps/admin_rbac/sensitive_audit_services.py \
+            apps/admin_rbac/sensitive_audit_views.py \
+            apps/admin_rbac/tasks.py \
+            apps/admin_rbac/urls.py \
+            apps/quotas/views.py \
+            config/celery.py \
+            tests/test_sensitive_audit_logs.py
+          python -m ruff format --check \
+            apps/admin_rbac/models.py \
+            apps/admin_rbac/risk_services.py \
+            apps/admin_rbac/sensitive_audit_models.py \
+            apps/admin_rbac/sensitive_audit_serializers.py \
+            apps/admin_rbac/sensitive_audit_services.py \
+            apps/admin_rbac/sensitive_audit_views.py \
+            apps/admin_rbac/tasks.py \
+            apps/admin_rbac/urls.py \
+            apps/quotas/views.py \
+            config/celery.py \
+            tests/test_sensitive_audit_logs.py
+          DJANGO_SETTINGS_MODULE=config.django_settings.test python manage.py check
+          DJANGO_SETTINGS_MODULE=config.django_settings.test python manage.py makemigrations admin_rbac --check --dry-run
+          python -m pytest -q \
+            tests/test_sensitive_audit_logs.py \
+            tests/test_quotas.py::test_direct_adjustment_keeps_idempotency_secret_out_of_response_and_audit
+
+      - name: Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version-file: frontend/.nvmrc
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Validate audit frontend only
+        working-directory: frontend
+        run: |
+          npx eslint \
+            app/admin/operation-records/page.tsx \
+            components/admin/admin-console-shell.tsx \
+            lib/admin-audit-client.ts \
+            tests/admin-rbac-pages.test.tsx
+          npx prettier --check \
+            app/admin/operation-records/page.tsx \
+            components/admin/admin-console-shell.tsx \
+            lib/admin-audit-client.ts \
+            tests/admin-rbac-pages.test.tsx
+          cat > tsconfig.audit-validation.json <<'EOF'
+          {
+            "extends": "./tsconfig.json",
+            "compilerOptions": {
+              "incremental": false,
+              "noEmit": true
+            },
+            "include": [
+              "next-env.d.ts",
+              "app/admin/operation-records/page.tsx",
+              "components/admin/admin-console-shell.tsx",
+              "lib/admin-audit-client.ts",
+              "tests/admin-rbac-pages.test.tsx"
+            ]
+          }
+          EOF
+          npx tsc -p tsconfig.audit-validation.json
+          npx vitest run tests/admin-rbac-pages.test.tsx
