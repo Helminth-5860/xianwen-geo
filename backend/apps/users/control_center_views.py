@@ -13,12 +13,15 @@ from apps.admin_rbac.sensitive_audit_serializers import SensitiveAuditLogListSer
 from apps.plans.models import PlanLimitDefinition, Subscription
 from apps.quotas.catalog import QUOTA_BY_KEY
 from apps.quotas.models import QuotaLedgerEntry
-from apps.quotas.selectors import CUSTOMER_VISIBLE_QUOTA_TYPES, scoped_accounts, scoped_ledger
+from apps.quotas.selectors import (
+    CUSTOMER_VISIBLE_QUOTA_TYPES,
+    scoped_accounts,
+    scoped_ledger,
+)
 from apps.quotas.serializers import QUOTA_DISPLAY_NAMES, UNIT_DISPLAY_NAMES
 
 from .models import LoginEvent
 from .phone_numbers import mask_phone
-
 
 RECENT_LOGIN_LIMIT = 10
 RECENT_LEDGER_LIMIT = 20
@@ -167,6 +170,7 @@ def _current_quota_rows(request, user, subscription, moment):
             subscription=subscription,
             quota_type__in=CUSTOMER_VISIBLE_QUOTA_TYPES,
             action__in=MANUAL_ADJUSTMENT_ACTIONS,
+            actor__isnull=False,
         )
         .values("quota_type")
         .annotate(amount=Sum("available_delta"))
