@@ -101,6 +101,8 @@ def test_same_tenant_operator_can_distill_subject_owned_by_teammate():
         subject_owner=owner,
         tenant=tenant,
     )
+    subject.status = subject.Status.ACTIVE
+    subject.save(update_fields=["status", "updated_at"])
     generation, _ = create_keyword_generation(operator, subject, subject_version)
     assert execute_keyword_generation(job_id=generation.pk)["status"] == "succeeded"
     keyword_version = KeywordSet.objects.get(subject=subject).current_version
