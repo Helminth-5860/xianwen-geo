@@ -7,6 +7,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 import dj_database_url
+from celery.schedules import crontab  # type: ignore[import-untyped]
 from dj_database_url import DBConfig
 from django.core.exceptions import ImproperlyConfigured
 
@@ -606,6 +607,10 @@ CELERY_BEAT_SCHEDULE = {
     "publishing-recover-interrupted": {
         "task": "publishing.recover_interrupted",
         "schedule": timedelta(seconds=300),
+    },
+    "admin-sensitive-audit-retention": {
+        "task": "admin_rbac.purge_sensitive_audit_logs",
+        "schedule": crontab(hour=3, minute=20),
     },
 }
 CELERY_TASK_ROUTES = {

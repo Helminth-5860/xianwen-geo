@@ -2,6 +2,7 @@ import uuid
 from datetime import timedelta
 
 import pytest
+from django.conf import settings
 from django.core.management import call_command
 from django.db import models
 from django.test import override_settings
@@ -20,6 +21,14 @@ from tests.test_quotas import provision
 def seed_catalogs(db):
     call_command("sync_plan_catalog", "--apply", verbosity=0)
     call_command("sync_admin_rbac", "--apply", verbosity=0)
+
+
+def test_sensitive_audit_retention_is_registered_in_active_beat_schedule():
+    schedule = settings.CELERY_BEAT_SCHEDULE["admin-sensitive-audit-retention"]
+
+    assert schedule["task"] == "admin_rbac.purge_sensitive_audit_logs"
+    assert schedule["schedule"].hour == {3}
+    assert schedule["schedule"].minute == {20}
 
 
 @pytest.mark.django_db
