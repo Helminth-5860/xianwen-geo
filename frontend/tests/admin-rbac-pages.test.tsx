@@ -15,7 +15,7 @@ describe("企业级管理员后台", () => {
     const shell = read("../components/admin/admin-console-shell.tsx");
     expect(shell).toContain("平台总览");
     expect(shell).toContain("模型与接口");
-    expect(shell).toContain("操作记录");
+    expect(shell).toContain("日志中心");
     expect(shell).not.toMatch(/租户|角色模板|高风险审批|统一审计/);
   });
 
@@ -35,8 +35,22 @@ describe("企业级管理员后台", () => {
     expect(read("../app/admin/models/page.tsx")).toContain('title="模型与接口"');
     expect(read("../app/admin/business-data/page.tsx")).toContain('title="业务数据"');
     expect(read("../app/admin/system-status/page.tsx")).toContain('title="系统状态"');
-    expect(read("../app/admin/operation-records/page.tsx")).toContain('title="操作记录"');
+    expect(read("../app/admin/operation-records/page.tsx")).toContain('title="日志中心"');
     expect(read("../app/admin/settings/page.tsx")).toContain('title="系统设置"');
+  });
+
+  it("日志中心保留普通操作记录并提供超级管理员敏感审计证据", () => {
+    const page = read("../app/admin/operation-records/page.tsx");
+    const client = read("../lib/admin-audit-client.ts");
+    expect(page).toContain('label: "操作记录"');
+    expect(page).toContain('label: "审计日志"');
+    expect(page).toContain('commercial_identity === "SUPER_ADMIN"');
+    expect(page).toContain("敏感审计证据保留 365 天");
+    expect(page).toContain("target_owner_name_snapshot");
+    expect(page).toContain("BigInt(value)");
+    expect(page).toContain("width={920}");
+    expect(client).toContain("export type AuditInteger = string | null");
+    expect(client).toContain("/admin/sensitive-audit-logs");
   });
 
   it("前端实现版本冲突和客户归属冲突提示", () => {
