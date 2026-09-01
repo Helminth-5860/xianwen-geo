@@ -159,9 +159,7 @@ def _current_quota_rows(request, user, subscription, moment):
         .values("account_id")
         .annotate(amount=Sum("frozen_delta"))
     )
-    used_by_account = {
-        row["account_id"]: max(-int(row["amount"] or 0), 0) for row in used_rows
-    }
+    used_by_account = {row["account_id"]: max(-int(row["amount"] or 0), 0) for row in used_rows}
 
     manual_rows = (
         scoped_ledger(request.user, request.admin_context)
