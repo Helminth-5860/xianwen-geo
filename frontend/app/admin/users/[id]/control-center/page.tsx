@@ -1,10 +1,11 @@
 "use client";
 
 import { ArrowLeftOutlined } from "@ant-design/icons";
-import { Button } from "antd";
+import { Button, Space, Typography } from "antd";
 import { useParams } from "next/navigation";
 
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
+import { UserControlAdminActions } from "@/components/admin/user-control-admin-actions";
 import { UserControlCenter } from "@/components/admin/user-control-center";
 
 export default function AdminUserControlCenterPage() {
@@ -22,7 +23,13 @@ export default function AdminUserControlCenterPage() {
           </Button>
         }
       />
-      <UserControlCenter userId={userId} />
+      <Space orientation="vertical" size={20} style={{ width: "100%" }}>
+        <UserControlCenter userId={userId} />
+        <section>
+          <Typography.Title level={4}>超级管理员操作</Typography.Title>
+          <UserControlAdminActions userId={userId} />
+        </section>
+      </Space>
     </main>
   );
 }
