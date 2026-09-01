@@ -152,7 +152,8 @@ function QuotaAccountBreakdown({ quota }: { quota: ControlCenterQuota }) {
         },
         {
           title: "套餐基准",
-          render: (_, account) => `${formatAmount(account.entitlement_amount)} ${quota.unit_display_name}`,
+          render: (_, account) =>
+            `${formatAmount(account.entitlement_amount)} ${quota.unit_display_name}`,
         },
         {
           title: "已使用",
@@ -244,7 +245,8 @@ export function UserControlCenter({ userId }: { userId: string }) {
       const requested = BigInt(values.amount);
       const current = BigInt(selectedAccount.available);
       let delta = requested;
-      let action: "grant" | "manual-deduct" = adjustmentMode === "deduct" ? "manual-deduct" : "grant";
+      let action: "grant" | "manual-deduct" =
+        adjustmentMode === "deduct" ? "manual-deduct" : "grant";
 
       if (adjustmentMode === "target") {
         delta = requested - current;
@@ -315,7 +317,10 @@ export function UserControlCenter({ userId }: { userId: string }) {
         </Col>
         <Col xs={24} sm={12} lg={6}>
           <Card size="small">
-            <Statistic title="所属代理 / 管理员" value={data.user.assignment?.owner_name || "平台直管"} />
+            <Statistic
+              title="所属代理 / 管理员"
+              value={data.user.assignment?.owner_name || "平台直管"}
+            />
             <Text type="secondary">{data.user.assignment?.owner_role || "无代理归属"}</Text>
           </Card>
         </Col>
@@ -332,9 +337,13 @@ export function UserControlCenter({ userId }: { userId: string }) {
           <Descriptions.Item label="用户 ID">{data.user.id}</Descriptions.Item>
           <Descriptions.Item label="昵称">{data.user.nickname}</Descriptions.Item>
           <Descriptions.Item label="手机号">{data.user.phone_masked}</Descriptions.Item>
-          <Descriptions.Item label="账号状态">{statusTag(data.user.account_status)}</Descriptions.Item>
+          <Descriptions.Item label="账号状态">
+            {statusTag(data.user.account_status)}
+          </Descriptions.Item>
           <Descriptions.Item label="注册时间">{formatDate(data.user.created_at)}</Descriptions.Item>
-          <Descriptions.Item label="资料更新时间">{formatDate(data.user.updated_at)}</Descriptions.Item>
+          <Descriptions.Item label="资料更新时间">
+            {formatDate(data.user.updated_at)}
+          </Descriptions.Item>
           <Descriptions.Item label="所属租户">
             {data.user.tenant?.display_name || "未绑定租户"}
           </Descriptions.Item>
@@ -365,7 +374,8 @@ export function UserControlCenter({ userId }: { userId: string }) {
                     {formatAmount(quota.available)} {quota.unit_display_name}
                   </Title>
                   <Text type="secondary">
-                    套餐 {formatAmount(quota.entitlement_amount)} · 人工调整 {formatSignedAmount(quota.manual_adjustment_amount)}
+                    套餐 {formatAmount(quota.entitlement_amount)} · 人工调整{" "}
+                    {formatSignedAmount(quota.manual_adjustment_amount)}
                   </Text>
                 </Card>
               </Col>
@@ -392,13 +402,16 @@ export function UserControlCenter({ userId }: { userId: string }) {
         pagination={false}
         scroll={{ x: 1150 }}
         expandable={{ expandedRowRender: (quota) => <QuotaAccountBreakdown quota={quota} /> }}
-        locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无额度" /> }}
+        locale={{
+          emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无额度" />,
+        }}
         columns={[
           { title: "项目", dataIndex: "display_name", fixed: "left", width: 160 },
           {
             title: "套餐基础额度",
             width: 140,
-            render: (_, quota) => `${formatAmount(quota.entitlement_amount)} ${quota.unit_display_name}`,
+            render: (_, quota) =>
+              `${formatAmount(quota.entitlement_amount)} ${quota.unit_display_name}`,
           },
           {
             title: "人工调整",
@@ -479,7 +492,8 @@ export function UserControlCenter({ userId }: { userId: string }) {
                 { title: "模型", dataIndex: "model_key" },
                 {
                   title: "默认选中",
-                  render: (_, item) => (item.selected_by_default ? <Tag color="green">是</Tag> : <Tag>否</Tag>),
+                  render: (_, item) =>
+                    item.selected_by_default ? <Tag color="green">是</Tag> : <Tag>否</Tag>,
                   width: 120,
                 },
               ]}
@@ -503,8 +517,12 @@ export function UserControlCenter({ userId }: { userId: string }) {
             <Descriptions.Item label="来源">
               {sourceLabel(data.subscription.source_type, data.subscription.is_trial)}
             </Descriptions.Item>
-            <Descriptions.Item label="生效时间">{formatDate(data.subscription.starts_at)}</Descriptions.Item>
-            <Descriptions.Item label="到期时间">{formatDate(data.subscription.ends_at)}</Descriptions.Item>
+            <Descriptions.Item label="生效时间">
+              {formatDate(data.subscription.starts_at)}
+            </Descriptions.Item>
+            <Descriptions.Item label="到期时间">
+              {formatDate(data.subscription.ends_at)}
+            </Descriptions.Item>
             <Descriptions.Item label="开通备注" span={3}>
               {data.subscription.opening_note || "无"}
             </Descriptions.Item>
@@ -583,7 +601,8 @@ export function UserControlCenter({ userId }: { userId: string }) {
             },
             {
               title: "变化前 → 变化后",
-              render: (_, item) => `${formatAmount(item.available_before)} → ${formatAmount(item.available_after)}`,
+              render: (_, item) =>
+                `${formatAmount(item.available_before)} → ${formatAmount(item.available_after)}`,
               width: 220,
             },
             { title: "操作人", dataIndex: "actor_name", width: 130 },
@@ -598,7 +617,9 @@ export function UserControlCenter({ userId }: { userId: string }) {
     <Space orientation="vertical" size={16} style={{ width: "100%" }}>
       <Card title="账号与归属" size="small">
         <Descriptions bordered column={{ xs: 1, md: 2 }}>
-          <Descriptions.Item label="账号状态">{statusTag(data.user.account_status)}</Descriptions.Item>
+          <Descriptions.Item label="账号状态">
+            {statusTag(data.user.account_status)}
+          </Descriptions.Item>
           <Descriptions.Item label="状态版本">{data.user.status_version}</Descriptions.Item>
           <Descriptions.Item label="所属代理 / 管理员">
             {data.user.assignment?.owner_name || "平台直管"}
@@ -651,7 +672,9 @@ export function UserControlCenter({ userId }: { userId: string }) {
         pagination={false}
         dataSource={[...data.recent_audit]}
         scroll={{ x: 1100 }}
-        locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无敏感操作" /> }}
+        locale={{
+          emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无敏感操作" />,
+        }}
         columns={[
           { title: "时间", render: (_, item) => formatDate(item.created_at), width: 180 },
           { title: "操作人", dataIndex: "actor_name_snapshot", width: 140 },
@@ -663,14 +686,19 @@ export function UserControlCenter({ userId }: { userId: string }) {
           },
           {
             title: "额度变化",
-            render: (_, item) => (item.quota_delta === null ? "—" : formatSignedAmount(item.quota_delta)),
+            render: (_, item) =>
+              item.quota_delta === null ? "—" : formatSignedAmount(item.quota_delta),
             width: 120,
           },
           { title: "操作 IP", render: (_, item) => item.operation_ip || "暂无", width: 150 },
           {
             title: "结果",
             render: (_, item) =>
-              item.outcome === "success" ? <Tag color="green">成功</Tag> : <Tag color="red">失败</Tag>,
+              item.outcome === "success" ? (
+                <Tag color="green">成功</Tag>
+              ) : (
+                <Tag color="red">失败</Tag>
+              ),
             width: 90,
           },
           { title: "原因", render: (_, item) => item.safe_reason || item.failure_reason || "—" },
@@ -681,8 +709,12 @@ export function UserControlCenter({ userId }: { userId: string }) {
 
   return (
     <Space orientation="vertical" size={16} style={{ width: "100%" }}>
-      {error ? <Alert type="error" showIcon title={error} closable onClose={() => setError("")} /> : null}
-      {success ? <Alert type="success" showIcon title={success} closable onClose={() => setSuccess("")} /> : null}
+      {error ? (
+        <Alert type="error" showIcon title={error} closable onClose={() => setError("")} />
+      ) : null}
+      {success ? (
+        <Alert type="success" showIcon title={success} closable onClose={() => setSuccess("")} />
+      ) : null}
 
       <Card loading={loading}>
         <Row gutter={[20, 16]} align="middle" justify="space-between">
@@ -693,15 +725,25 @@ export function UserControlCenter({ userId }: { userId: string }) {
                   {data.user.nickname}
                 </Title>
                 {statusTag(data.user.account_status)}
-                {data.subscription ? <Tag color="blue">{data.subscription.plan_name} V{data.subscription.plan_version_no}</Tag> : <Tag>无套餐</Tag>}
+                {data.subscription ? (
+                  <Tag color="blue">
+                    {data.subscription.plan_name} V{data.subscription.plan_version_no}
+                  </Tag>
+                ) : (
+                  <Tag>无套餐</Tag>
+                )}
               </Space>
               <Text type="secondary">
                 {data.user.phone_masked} · 用户 ID {data.user.id}
               </Text>
               <Text type="secondary">
-                {data.user.assignment?.owner_name ? `所属：${data.user.assignment.owner_name}` : "平台直管"}
+                {data.user.assignment?.owner_name
+                  ? `所属：${data.user.assignment.owner_name}`
+                  : "平台直管"}
                 {data.subscription ? ` · 套餐到期 ${formatDate(data.subscription.ends_at)}` : ""}
-                {data.user.login.last_success_at ? ` · 最近登录 ${formatDate(data.user.login.last_success_at)}` : ""}
+                {data.user.login.last_success_at
+                  ? ` · 最近登录 ${formatDate(data.user.login.last_success_at)}`
+                  : ""}
               </Text>
             </Space>
           </Col>
@@ -781,7 +823,10 @@ export function UserControlCenter({ userId }: { userId: string }) {
                 name="amount"
                 label={adjustmentMode === "target" ? "目标余额" : "调整数量"}
                 rules={[
-                  { required: true, message: adjustmentMode === "target" ? "请输入目标余额" : "请输入调整数量" },
+                  {
+                    required: true,
+                    message: adjustmentMode === "target" ? "请输入目标余额" : "请输入调整数量",
+                  },
                   { pattern: /^\d+$/, message: "必须输入非负整数" },
                 ]}
               >

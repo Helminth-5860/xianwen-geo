@@ -21,11 +21,7 @@ import {
   userMessage,
   type AdminUser,
 } from "@/lib/auth-client";
-import {
-  getAdminSubscription,
-  terminateSubscription,
-  type Subscription,
-} from "@/lib/plans-client";
+import { getAdminSubscription, terminateSubscription, type Subscription } from "@/lib/plans-client";
 import { getRiskActions, type RiskMode } from "@/lib/risk-client";
 
 const { Paragraph, Text } = Typography;
@@ -146,7 +142,9 @@ export function UserControlAdminActions({ userId, onChanged }: Props) {
 
   return (
     <Space orientation="vertical" size={16} style={{ width: "100%" }}>
-      {error ? <Alert type="error" showIcon title={error} closable onClose={() => setError("")} /> : null}
+      {error ? (
+        <Alert type="error" showIcon title={error} closable onClose={() => setError("")} />
+      ) : null}
       {success ? (
         <Alert type="success" showIcon title={success} closable onClose={() => setSuccess("")} />
       ) : null}
@@ -190,7 +188,8 @@ export function UserControlAdminActions({ userId, onChanged }: Props) {
         {subscription ? (
           <Space orientation="vertical" size={12} style={{ width: "100%" }}>
             <Text>
-              当前套餐：{subscription.plan_name} V{subscription.plan_version_no} · 状态 {subscription.status}
+              当前套餐：{subscription.plan_name} V{subscription.plan_version_no} · 状态{" "}
+              {subscription.status}
             </Text>
             <Space wrap>
               <SubscriptionChangeAction
