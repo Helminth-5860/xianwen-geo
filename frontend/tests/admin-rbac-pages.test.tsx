@@ -39,6 +39,20 @@ describe("企业级管理员后台", () => {
     expect(read("../app/admin/settings/page.tsx")).toContain('title="系统设置"');
   });
 
+  it("日志中心保留普通操作记录并提供超级管理员敏感审计证据", () => {
+    const page = read("../app/admin/operation-records/page.tsx");
+    const client = read("../lib/admin-audit-client.ts");
+    expect(page).toContain('label: "操作记录"');
+    expect(page).toContain('label: "审计日志"');
+    expect(page).toContain('commercial_identity === "SUPER_ADMIN"');
+    expect(page).toContain("敏感审计证据保留 365 天");
+    expect(page).toContain("target_owner_name_snapshot");
+    expect(page).toContain("BigInt(value)");
+    expect(page).toContain('width={920}');
+    expect(client).toContain("export type AuditInteger = string | null");
+    expect(client).toContain("/admin/sensitive-audit-logs");
+  });
+
   it("前端实现版本冲突和客户归属冲突提示", () => {
     const admin = read("../app/admin/admins/[id]/page.tsx");
     const role = read("../app/admin/roles/[id]/page.tsx");
