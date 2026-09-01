@@ -26,7 +26,7 @@ def seed_catalogs(db):
 @override_settings(ROOT_URLCONF="tests.audit_api_urls")
 def test_quota_grant_creates_sensitive_audit_evidence():
     requester, user, subscription = provision()
-    account = QuotaAccount.objects.get(subscription=subscription, quota_type="detection_points")
+    account = QuotaAccount.objects.get(subscription=subscription, quota_type="geo_detection_runs")
     before = account.available
     raw_idempotency_key = "audit-success-key-0001"
     response = authenticate_admin_client(APIClient(), requester).post(
@@ -66,7 +66,7 @@ def test_quota_grant_creates_sensitive_audit_evidence():
 @override_settings(ROOT_URLCONF="tests.audit_api_urls")
 def test_failed_manual_deduct_is_audited_without_ledger_entry():
     requester, user, subscription = provision(phone="13800138001")
-    account = QuotaAccount.objects.get(subscription=subscription, quota_type="detection_points")
+    account = QuotaAccount.objects.get(subscription=subscription, quota_type="geo_detection_runs")
     before = account.available
     amount = before + 1
     response = authenticate_admin_client(APIClient(), requester).post(
