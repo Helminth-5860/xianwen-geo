@@ -1,4 +1,4 @@
-import { get } from "./auth-client";
+import { get, post } from "./auth-client";
 
 export type ControlCenterQuotaAccount = Readonly<{
   id: string;
@@ -161,8 +161,30 @@ export type AdminUserControlCenter = Readonly<{
   recent_audit: readonly ControlCenterAuditEntry[];
 }>;
 
+export type ControlCenterQuotaAdjustmentAction = "grant" | "manual-deduct";
+
 export function getAdminUserControlCenter(userId: string) {
   return get<AdminUserControlCenter>(`/admin/users/${userId}/control-center`, {
     cache: "no-store",
   });
+}
+
+export function adjustControlCenterQuota(input: {
+  accountId: string;
+  accountVersion: number;
+  action: ControlCenterQuotaAdjustmentAction;
+  amount: string;
+  reason: string;
+  idempotencyKey: string;
+}) {
+  return post<unknown>(
+    `/admin/quota-accounts/${input.accountId}/adjust/${input.action}`,
+    {
+      expected_version: input.accountVersion,
+      amount: input.amount,
+      reason: input.reason,
+      confirmed: true,
+    },
+    { "Idempotency-Key": input.idempotencyKey },
+  );
 }
