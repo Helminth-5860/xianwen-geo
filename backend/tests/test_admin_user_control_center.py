@@ -2,13 +2,22 @@ import uuid
 from datetime import time, timedelta
 
 import pytest
+from django.db import transaction
 from django.test import override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
 
+from apps.admin_rbac.permissions import resolve_admin_context
 from apps.plans.models import Plan, PlanVersion, Subscription
 from apps.quotas.catalog import QUOTA_BY_KEY
-from apps.quotas.models import QuotaAccount, QuotaHold, QuotaHoldGroup, QuotaLedgerEntry
+from apps.quotas.idempotency import derive_idempotency_digests
+from apps.quotas.models import QuotaLedgerEntry
+from apps.quotas.services import (
+    _create_initialized_account,
+    adjust_quota_account,
+    consume_hold,
+    freeze_quota,
+)
 from apps.users.models import User
 from tests.admin_session_helpers import authenticate_admin_client
 
@@ -59,100 +68,62 @@ def create_subscription(user, plan, version, *, source_type=Subscription.SourceT
 
 def create_quota_facts(user, subscription):
     quota_type = "geo_detection_runs"
-    definition = QUOTA_BY_KEY[quota_type]
-    account = QuotaAccount.objects.create(
-        user=user,
-        subscription=subscription,
-        quota_type=quota_type,
-        scope=QuotaAccount.Scope.SUBSCRIPTION,
-        unit=definition.unit,
-        entitlement_amount=60,
-        available=47,
-        frozen=3,
-        ledger_sequence=2,
-        version=3,
-    )
-
+    assert QUOTA_BY_KEY[quota_type].scope == "subscription"
+    with transaction.atomic():
+        account = _create_initialized_account(
+            subscription=subscription,
+            subject=None,
+            quota_type=quota_type,
+            amount=60,
+            cycle_started_at=None,
+            cycle_ends_at=None,
+            request_id=uuid.uuid4(),
+            actor=None,
+        )
     business_id = uuid.uuid4()
-    group = QuotaHoldGroup.objects.create(
-        user=user,
-        quota_type=quota_type,
+    hold = freeze_quota(
+        account_id=account.pk,
+        amount=18,
         business_type="control_center_test",
         business_id=business_id,
-        requested_amount=15,
-        consumed_amount=15,
-        status=QuotaHoldGroup.Status.SETTLED,
-        freeze_idempotency_key_digest=uuid.uuid4().hex,
-        freeze_idempotency_scope_digest=uuid.uuid4().hex,
-        freeze_request_digest=uuid.uuid4().hex,
-        settled_at=timezone.now(),
-    )
-    hold = QuotaHold.objects.create(
-        group=group,
-        account=account,
-        user=user,
-        subscription=subscription,
-        quota_type=quota_type,
-        business_type="control_center_test",
-        business_id=business_id,
-        requested_amount=15,
-        consumed_amount=15,
-        status=QuotaHold.Status.SETTLED,
-        freeze_idempotency_key_digest=uuid.uuid4().hex,
-        freeze_idempotency_scope_digest=uuid.uuid4().hex,
-        freeze_request_digest=uuid.uuid4().hex,
-        settled_at=timezone.now(),
-    )
-    consume = QuotaLedgerEntry.objects.create(
-        account=account,
-        hold=hold,
-        user=user,
-        subscription=subscription,
-        quota_type=quota_type,
-        sequence=1,
-        action=QuotaLedgerEntry.Action.CONSUME,
-        available_before=42,
-        available_delta=0,
-        available_after=42,
-        frozen_before=18,
-        frozen_delta=-15,
-        frozen_after=3,
-        account_version_before=1,
-        account_version_after=2,
-        business_type="control_center_test",
-        business_id=business_id,
-        safe_reason="真实业务消费",
+        idempotency_key=f"control-center-freeze-{uuid.uuid4()}",
         request_id=uuid.uuid4(),
-        idempotency_key_digest=uuid.uuid4().hex,
-        idempotency_scope_digest=uuid.uuid4().hex,
-        request_digest=uuid.uuid4().hex,
+    )
+    consume_hold(
+        hold_id=hold.pk,
+        amount=15,
+        idempotency_key=f"control-center-consume-{uuid.uuid4()}",
+        request_id=uuid.uuid4(),
+    )
+    consume = QuotaLedgerEntry.objects.get(
+        account=account,
+        action=QuotaLedgerEntry.Action.CONSUME,
+        business_type="control_center_test",
+        business_id=business_id,
     )
     actor = create_superuser("13700137000")
-    grant = QuotaLedgerEntry.objects.create(
-        account=account,
-        user=user,
-        subscription=subscription,
-        quota_type=quota_type,
-        sequence=2,
-        action=QuotaLedgerEntry.Action.GRANT,
-        available_before=42,
-        available_delta=5,
-        available_after=47,
-        frozen_before=3,
-        frozen_delta=0,
-        frozen_after=3,
-        account_version_before=2,
-        account_version_after=3,
-        business_type="admin_adjustment",
-        safe_reason="客户增购额度",
-        actor=actor,
-        request_id=uuid.uuid4(),
-        idempotency_key_digest=uuid.uuid4().hex,
-        idempotency_scope_digest=uuid.uuid4().hex,
-        request_digest=uuid.uuid4().hex,
+    account.refresh_from_db()
+    reason = "客户增购额度"
+    digests = derive_idempotency_digests(
+        f"control-center-grant-{uuid.uuid4()}",
+        operation="grant",
+        user_id=account.user_id,
+        account_id=account.pk,
+        business_type="quota_adjustment",
+        business_id=account.pk,
+        request_payload={"amount": 5, "reason": reason},
     )
-    account.last_ledger_entry = grant
-    account.save(update_fields=["last_ledger_entry", "updated_at"])
+    account, grant = adjust_quota_account(
+        requester=actor,
+        admin_context=resolve_admin_context(actor),
+        account_id=account.pk,
+        expected_version=account.version,
+        action=QuotaLedgerEntry.Action.GRANT,
+        amount=5,
+        reason=reason,
+        digests=digests,
+        request_id=uuid.uuid4(),
+    )
     return account, consume, grant
 
 
