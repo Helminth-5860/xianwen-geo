@@ -18,6 +18,7 @@ from .admin_views import (
     AdminUserTestAccountView,
     AdminUserUnfreezeView,
 )
+from .control_center_views import AdminUserControlCenterView
 from .views import (
     CsrfTokenView,
     LogoutView,
@@ -60,6 +61,11 @@ urlpatterns = [
     ),
     path("admin/users", AdminUserListView.as_view(), name="admin-user-list"),
     path("admin/users/<uuid:user_id>", AdminUserDetailView.as_view(), name="admin-user-detail"),
+    path(
+        "admin/users/<uuid:user_id>/control-center",
+        AdminUserControlCenterView.as_view(),
+        name="admin-user-control-center",
+    ),
     path(
         "admin/users/<uuid:user_id>/history",
         AdminUserHistoryView.as_view(),
