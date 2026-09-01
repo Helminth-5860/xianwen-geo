@@ -1,4 +1,4 @@
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
 from apps.plans.models import Subscription
@@ -28,6 +28,18 @@ class Command(BaseCommand):
             )
             return
 
+        system_actor = (
+            User.objects.filter(
+                is_active=True,
+                account_status=User.AccountStatus.ACTIVE,
+                is_superuser=True,
+            )
+            .order_by("created_at", "id")
+            .first()
+        )
+        if customers.filter(is_test_account=True).exists() and system_actor is None:
+            raise CommandError("无法确认旧测试授权的终止操作人，请先配置平台超级管理员。")
+
         granted = 0
         normalized = 0
         unchanged = 0
@@ -35,7 +47,7 @@ class Command(BaseCommand):
             with transaction.atomic():
                 customer = User.objects.select_for_update().get(pk=customer_id)
                 if customer.is_test_account:
-                    terminate_internal_test_subscription(user=customer)
+                    terminate_internal_test_subscription(user=customer, actor=system_actor)
                     customer.is_test_account = False
                     customer.save(update_fields=("is_test_account", "updated_at"))
                     normalized += 1

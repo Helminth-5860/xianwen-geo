@@ -1,6 +1,7 @@
 import uuid
 
 import pytest
+from django.core.management import call_command
 from rest_framework.test import APIClient
 
 from apps.admin_rbac.models import AuditEvent
@@ -8,6 +9,7 @@ from apps.plans.models import Plan, Subscription
 from apps.plans.subscription_services import (
     current_subscription,
     effective_entitlement_snapshot,
+    ensure_internal_test_subscription,
 )
 from apps.quotas.models import QuotaAccount, QuotaLedgerEntry
 from apps.quotas.services import consume_hold, freeze_quota
@@ -74,6 +76,28 @@ def test_only_super_admin_can_toggle_test_account_and_change_is_audited():
     subscription.refresh_from_db()
     assert user.is_test_account is False
     assert subscription.status == Subscription.Status.TERMINATED
+
+
+@pytest.mark.django_db
+def test_default_free_sync_replaces_internal_test_access_without_deleting_user():
+    actor = _super_admin()
+    user = _user()
+    user.is_test_account = True
+    user.save(update_fields=("is_test_account", "updated_at"))
+    internal = ensure_internal_test_subscription(user=user, actor=actor)
+    call_command("sync_standard_plans", "--apply", verbosity=0)
+
+    call_command("sync_default_free_subscriptions", "--apply", verbosity=0)
+
+    user.refresh_from_db()
+    internal.refresh_from_db()
+    current = current_subscription(user)
+    assert user.is_test_account is False
+    assert internal.status == Subscription.Status.TERMINATED
+    assert internal.terminated_by == actor
+    assert current is not None
+    assert current.plan.code == "free-trial"
+    assert current.plan_version.valid_days == 365
 
 
 @pytest.mark.django_db
