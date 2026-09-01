@@ -192,12 +192,15 @@ def record_sensitive_risk_action(
     target_user = evidence["target_user"] or subject
     target_snapshot = _user_snapshot(target_user)
     owner_snapshot = _owner_snapshot(target_user)
-    reason = evidence["reason"] or str(
-        payload.get("reason")
-        or payload.get("opening_note")
-        or payload.get("unavailable_reason")
-        or ""
-    )[:500]
+    reason = (
+        evidence["reason"]
+        or str(
+            payload.get("reason")
+            or payload.get("opening_note")
+            or payload.get("unavailable_reason")
+            or ""
+        )[:500]
+    )
     operation_ip = client_ip_address(request) or None
 
     # 管理员会话在 security.validate_admin_session() 中绑定登录时的 IP 指纹；
