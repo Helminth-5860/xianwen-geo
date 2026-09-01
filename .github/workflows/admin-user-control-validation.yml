@@ -1,6 +1,6 @@
 name: Admin User Control Validation
 
-# One-shot validation for the isolated super-admin user control center only.
+# One-shot validation for the isolated super-admin user control center only. Final focused pass.
 on:
   push:
     branches:
