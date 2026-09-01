@@ -25,6 +25,7 @@ from .security_views import (
     SuperuserIpAllowlistView,
     SuperuserSecurityView,
 )
+from .sensitive_audit_views import SensitiveAuditLogDetailView, SensitiveAuditLogListView
 from .views import (
     AdminDetailView,
     AdminListCreateView,
@@ -148,5 +149,15 @@ urlpatterns = [
         "admin/audit-events/<uuid:event_id>",
         AuditEventDetailView.as_view(),
         name="audit-event-detail",
+    ),
+    path(
+        "admin/sensitive-audit-logs",
+        SensitiveAuditLogListView.as_view(),
+        name="sensitive-audit-log-list",
+    ),
+    path(
+        "admin/sensitive-audit-logs/<uuid:log_id>",
+        SensitiveAuditLogDetailView.as_view(),
+        name="sensitive-audit-log-detail",
     ),
 ]

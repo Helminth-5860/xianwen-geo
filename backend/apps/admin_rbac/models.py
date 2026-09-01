@@ -349,6 +349,7 @@ class AdminSecurityEvent(models.Model):  # noqa: DJ008
         ]
 
 
-# Imported here so Django discovers the XW-0107 models under this application.
+# Imported here so Django discovers auxiliary models under this application.
 from .risk_models import AuditEvent, RiskAction, RiskPolicy  # noqa: E402,F401
 from .sales_contact_models import SalesContactConfiguration  # noqa: E402,F401
+from .sensitive_audit_models import SensitiveAuditLog  # noqa: E402,F401
