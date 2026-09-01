@@ -1,6 +1,6 @@
 "use client";
 
-import { KeywordCenterPage } from "../page";
+import { KeywordCenterPage } from "../keyword-center-page";
 
 export default function KeywordDistillationPage() {
   return <KeywordCenterPage stage="distill" />;

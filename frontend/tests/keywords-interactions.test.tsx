@@ -4,7 +4,9 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import SmartKeywordPage, { KeywordCenterPage } from "@/app/subjects/[id]/keywords/page";
+import SmartKeywordPage, {
+  KeywordCenterPage,
+} from "@/app/subjects/[id]/keywords/keyword-center-page";
 
 const api = vi.hoisted(() => ({
   appendKeywordCandidates: vi.fn(),

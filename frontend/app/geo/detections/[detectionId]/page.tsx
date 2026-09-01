@@ -18,6 +18,13 @@ import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { userMessage } from "@/lib/auth-client";
+import {
+  DETECTION_POLL_INTERVAL_MS,
+  DETECTION_QUEUED_MODELS_POLL_INTERVAL_MS,
+  DETECTION_REQUEST_TIMEOUT_MS,
+  DETECTION_RUNNING_POLL_INTERVAL_MS,
+  DETECTION_STALE_QUEUE_MS,
+} from "@/lib/detection-ui-constants";
 import { aiModelDisplayName } from "@/lib/product-copy";
 import {
   getDetectionJob,
@@ -27,12 +34,6 @@ import {
   type GeoDetectionJob,
   type GeoModelProgress,
 } from "@/lib/geo-detection-client";
-
-export const DETECTION_POLL_INTERVAL_MS = 3000;
-export const DETECTION_RUNNING_POLL_INTERVAL_MS = 2000;
-export const DETECTION_REQUEST_TIMEOUT_MS = 9000;
-export const DETECTION_QUEUED_MODELS_POLL_INTERVAL_MS = 15000;
-export const DETECTION_STALE_QUEUE_MS = 60000;
 
 const DETECTION_MAX_RETRY_INTERVAL_MS = 12000;
 const CLOCK_REFRESH_INTERVAL_MS = 5000;

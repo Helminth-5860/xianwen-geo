@@ -4,10 +4,11 @@ import { cleanup, render, screen, waitFor, within } from "@testing-library/react
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
-import GeoDetectionIndexPage, {
+import GeoDetectionIndexPage from "../app/geo/detections/page";
+import {
   DETECTION_QUESTION_PAGE_SIZE,
   DETECTION_RESULT_PAGE_SIZE,
-} from "../app/geo/detections/page";
+} from "../lib/detection-ui-constants";
 import type { GeoDetectionJob } from "../lib/geo-detection-client";
 
 const push = vi.fn();

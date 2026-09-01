@@ -29,6 +29,10 @@ import { useSubjectWorkspace } from "@/components/subject-workspace-context";
 import { aiModelPresentation } from "@/lib/ai-model-presentation";
 import { userMessage } from "@/lib/auth-client";
 import {
+  DETECTION_QUESTION_PAGE_SIZE,
+  DETECTION_RESULT_PAGE_SIZE,
+} from "@/lib/detection-ui-constants";
+import {
   createDetection,
   estimateDetection,
   getDetectionHistory,
@@ -46,9 +50,6 @@ import {
 import type { SubjectSummary } from "@/lib/subjects-client";
 
 const { Paragraph, Text, Title } = Typography;
-
-export const DETECTION_QUESTION_PAGE_SIZE = 20;
-export const DETECTION_RESULT_PAGE_SIZE = 20;
 
 const detectionStatusLabels: Readonly<Record<GeoDetectionJob["status"], string>> = {
   queued: "等待检测",

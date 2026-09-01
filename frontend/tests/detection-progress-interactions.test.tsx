@@ -4,13 +4,14 @@ import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
-import DetectionProgressPage, {
+import DetectionProgressPage from "../app/geo/detections/[detectionId]/page";
+import {
   DETECTION_POLL_INTERVAL_MS,
   DETECTION_QUEUED_MODELS_POLL_INTERVAL_MS,
   DETECTION_REQUEST_TIMEOUT_MS,
   DETECTION_RUNNING_POLL_INTERVAL_MS,
   DETECTION_STALE_QUEUE_MS,
-} from "../app/geo/detections/[detectionId]/page";
+} from "../lib/detection-ui-constants";
 import type { GeoDetectionJob, GeoModelProgress } from "../lib/geo-detection-client";
 
 vi.mock("next/navigation", () => ({ useParams: () => ({ detectionId: "detection-42" }) }));
