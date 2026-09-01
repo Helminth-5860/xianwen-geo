@@ -272,6 +272,51 @@ def test_expired_active_is_transitioned_before_new_formal_subscription():
 
 
 @pytest.mark.django_db
+def test_formal_activation_replaces_active_free_trial_and_issues_new_quota():
+    admin = superuser("13900139000")
+    user = customer()
+    trial_plan, _ = published_plan(admin, code="automatic-free-upgrade", trial=True)
+    trial = grant_trial(
+        requester=admin,
+        admin_context=resolve_admin_context(admin),
+        user_id=user.pk,
+        expected_status_version=user.status_version,
+        plan_id=trial_plan.pk,
+        opening_note="系统自动开通",
+        request_id=uuid.uuid4(),
+    )
+    plan, version = published_plan(admin, code="professional")
+    application = application_for(user, plan, version)
+
+    subscription, activated, flags = activate_application(
+        requester=admin,
+        admin_context=resolve_admin_context(admin),
+        application_id=application.pk,
+        expected_version=application.version,
+        selected_plan_version_id=None,
+        confirm_unavailable=False,
+        unavailable_reason="",
+        confirm_version_override=False,
+        override_reason="",
+        opening_note="客户已确认开通",
+        request_id=uuid.uuid4(),
+    )
+
+    trial.refresh_from_db()
+    assert trial.status == Subscription.Status.TERMINATED
+    assert trial.termination_reason == "正式套餐已开通，免费体验自动结束。"
+    assert SubscriptionEvent.objects.filter(
+        subscription=trial, event_type=SubscriptionEvent.EventType.TERMINATED
+    ).exists()
+    assert subscription.status == Subscription.Status.ACTIVE
+    assert subscription.source_application == application
+    assert subscription.quota_accounts.exists()
+    assert activated.status == PlanApplication.Status.ACTIVATED
+    assert flags["trial_replaced"] is True
+    assert Subscription.objects.filter(user=user, status=Subscription.Status.ACTIVE).count() == 1
+
+
+@pytest.mark.django_db
 def test_trial_is_server_selected_and_never_repeatable():
     admin = superuser("13900139000")
     user = customer()

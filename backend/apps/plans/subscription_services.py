@@ -260,15 +260,19 @@ def _notify(
     )
 
 
-def _expire_stale_active(*, user: User, now, request_id) -> None:
+def _expire_stale_active(
+    *, user: User, now, request_id, allow_trial_replacement: bool = False
+) -> Subscription | None:
     active = (
         Subscription.objects.select_for_update()
         .filter(user=user, status=Subscription.Status.ACTIVE)
         .first()
     )
     if active is None:
-        return
+        return None
     if active.ends_at > now:
+        if allow_trial_replacement and active.is_trial:
+            return active
         raise SubscriptionAlreadyActive
     active.status = Subscription.Status.EXPIRED
     active.expired_at = now
@@ -286,6 +290,45 @@ def _expire_stale_active(*, user: User, now, request_id) -> None:
         notification_type=Notification.NotificationType.SUBSCRIPTION_EXPIRED,
         title="套餐已到期",
         summary="您的套餐订阅已到期。",
+    )
+    return None
+
+
+def _replace_active_trial(*, subscription: Subscription, actor, request_id, now) -> None:
+    from apps.quotas.services import subscription_has_unsettled_holds
+
+    if (
+        subscription_has_unsettled_holds(subscription)
+        or subscription.quota_accounts.filter(frozen__gt=0).exists()
+    ):
+        raise SubscriptionAlreadyActive
+    subscription.status = Subscription.Status.TERMINATED
+    subscription.terminated_at = now
+    subscription.terminated_by = actor
+    subscription.termination_reason = "正式套餐已开通，免费体验自动结束。"
+    subscription.version += 1
+    subscription.save(
+        update_fields=[
+            "status",
+            "terminated_at",
+            "terminated_by",
+            "termination_reason",
+            "version",
+            "updated_at",
+        ]
+    )
+    _subscription_event(
+        subscription=subscription,
+        event_type=SubscriptionEvent.EventType.TERMINATED,
+        from_status=Subscription.Status.ACTIVE,
+        actor=actor,
+        request_id=request_id,
+    )
+    _notify(
+        subscription=subscription,
+        notification_type=Notification.NotificationType.SUBSCRIPTION_TERMINATED,
+        title="免费体验已结束",
+        summary="您的正式套餐已开通，免费体验已自动结束。",
     )
 
 
@@ -516,9 +559,7 @@ def current_subscription(user: User, *, now=None):
 
 
 @transaction.atomic
-def ensure_default_free_subscription(
-    *, user: User, request_id=None, now=None
-) -> Subscription:
+def ensure_default_free_subscription(*, user: User, request_id=None, now=None) -> Subscription:
     """Give an eligible customer the published annual free package exactly once."""
 
     moment = now or timezone.now()
@@ -640,7 +681,12 @@ def activate_application(
     user = User.objects.select_for_update().get(pk=application.applicant_id)
     _ensure_user_eligible(user)
     now = timezone.now()
-    _expire_stale_active(user=user, now=now, request_id=request_id)
+    active_trial = _expire_stale_active(
+        user=user,
+        now=now,
+        request_id=request_id,
+        allow_trial_replacement=True,
+    )
 
     selected_id = selected_plan_version_id or application.requested_plan_version_id
     is_override = selected_id != application.requested_plan_version_id
@@ -680,6 +726,13 @@ def activate_application(
         assert_target_subject_limit_locked(user=user, target_snapshot=version.effective_config)
     except SubjectLimitReconciliationRequired as exc:
         raise SubscriptionSubjectLimitReconciliationRequired from exc
+    if active_trial is not None:
+        _replace_active_trial(
+            subscription=active_trial,
+            actor=requester,
+            request_id=request_id,
+            now=now,
+        )
     note = normalize_note(opening_note)
     subscription = _create_active_subscription(
         user=user,
@@ -723,6 +776,7 @@ def activate_application(
             "override_reason_recorded": bool(override_note),
             "unavailable_confirmation": needs_unavailable_confirmation,
             "unavailable_reason_recorded": bool(unavailable_note),
+            "trial_replaced": active_trial is not None,
         },
     )
 

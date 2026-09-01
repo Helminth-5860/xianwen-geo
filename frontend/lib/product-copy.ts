@@ -163,6 +163,11 @@ const exactErrorMessages: Readonly<Record<string, string>> = Object.freeze({
   SUBJECT_REQUIRED_FIELDS_INCOMPLETE: "企业资料尚未填写完整，请补充必填信息。",
   SUBJECT_REVIEW_PENDING: "企业资料正在确认中，请稍候。",
   SUBJECT_REVIEW_REJECTED: "企业资料未通过确认，请根据提示修改后重新保存。",
+  SUBSCRIPTION_ALREADY_ACTIVE: "该客户已有生效中的正式套餐，请在客户额度中心调整套餐。",
+  SUBSCRIPTION_CONFIRMATION_REQUIRED:
+    "该套餐当前不可公开选择，如仍需开通，请在“特殊情况”中确认并填写原因。",
+  SUBSCRIPTION_NOTE_INVALID: "开通备注格式不正确，请修改后重试。",
+  SUBJECT_LIMIT_RECONCILIATION_REQUIRED: "该客户当前主体数量超过新套餐上限，请先处理主体后再开通。",
   COMPETITOR_LIMIT_REACHED: "当前主体最多设置 3 家核心竞品。",
   COMPETITOR_DUPLICATE: "这家竞品已设置，请勿重复添加。",
   COMPETITOR_IS_SUBJECT: "不能将当前主体设置为自己的竞品。",

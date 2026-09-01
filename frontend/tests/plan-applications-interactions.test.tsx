@@ -147,7 +147,7 @@ describe("套餐申请真实交互", () => {
     render(<PlanCatalog />);
     const buttons = await screen.findAllByRole("button", { name: "选择套餐" });
     expect(buttons).toHaveLength(1);
-    expect(screen.getByText("请联系工作人员确认体验开通。")).toBeTruthy();
+    expect(screen.getByText("注册后已自动开通")).toBeTruthy();
     await userEvent.click(buttons[0]);
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByText("标准套餐")).toBeTruthy();
@@ -228,20 +228,49 @@ describe("套餐申请真实交互", () => {
     );
     await userEvent.click(await screen.findByRole("button", { name: "开通订阅" }));
     expect(await screen.findByText("确认开通订阅")).toBeTruthy();
-    await userEvent.click(screen.getByLabelText("确认离线套餐或退役版本仍需开通"));
-    await userEvent.type(screen.getByLabelText("特殊状态开通原因"), "客户已书面确认");
+    expect(
+      await screen.findByText(
+        "客户当前使用免费套餐时，系统会自动切换到正式套餐，并立即发放对应额度。",
+      ),
+    ).toBeTruthy();
+    await userEvent.type(screen.getByLabelText("开通备注"), "客户已确认开通");
     await userEvent.click(screen.getByRole("button", { name: "确认开通" }));
     await waitFor(() =>
       expect(openSubscriptionFromApplication).toHaveBeenCalledWith(
         "application-1",
         1,
         expect.objectContaining({
-          confirmUnavailable: true,
-          unavailableReason: "客户已书面确认",
+          confirmUnavailable: false,
+          openingNote: "客户已确认开通",
         }),
       ),
     );
     await waitFor(() => expect(getAdminPlanApplication).toHaveBeenCalledTimes(2));
     expect(screen.queryByText(/approval-1/)).toBeNull();
+  });
+
+  it("开通失败时保留申请详情并允许继续处理", async () => {
+    openSubscriptionFromApplication.mockRejectedValueOnce(
+      new Error("该客户已有生效中的正式套餐，请在客户额度中心调整套餐。"),
+    );
+    const context = {
+      permission_keys: ["subscriptions.open"],
+      menu_keys: ["menu.admin.plan-applications"],
+    } as never;
+    render(
+      <AdminCapabilityContext.Provider value={context}>
+        <AdminPlanApplicationDetailPage />
+      </AdminCapabilityContext.Provider>,
+    );
+
+    await userEvent.click(await screen.findByRole("button", { name: "开通订阅" }));
+    await userEvent.click(screen.getByRole("button", { name: "确认开通" }));
+
+    expect(
+      await screen.findByText("该客户已有生效中的正式套餐，请在客户额度中心调整套餐。"),
+    ).toBeTruthy();
+    expect(screen.getByText("申请编号")).toBeTruthy();
+    expect(screen.getByText("application-1")).toBeTruthy();
+    expect(screen.getByRole("dialog")).toBeTruthy();
   });
 });
