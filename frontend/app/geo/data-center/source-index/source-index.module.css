@@ -52,9 +52,10 @@
   flex-direction: column;
   gap: 5px;
   padding: 14px 16px;
-  border: 1px solid #edf1f6;
+  border: 1px solid var(--xw-glass-border);
   border-radius: 12px;
-  background: #f8fafc;
+  background:
+    linear-gradient(138deg, rgb(255 255 255 / 42%), transparent 48%), var(--xw-glass-stable);
 }
 
 .liveMetrics strong {

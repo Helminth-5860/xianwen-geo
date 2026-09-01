@@ -1,0 +1,151 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" fill="none">
+  <defs>
+    <linearGradient id="ice" x1="70" y1="930" x2="1760" y2="80" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8DDBFF" stop-opacity="0" />
+      <stop offset="0.2" stop-color="#BDEBFF" stop-opacity="0.9" />
+      <stop offset="0.46" stop-color="#FFFFFF" stop-opacity="1" />
+      <stop offset="0.74" stop-color="#A9C4FF" stop-opacity="0.72" />
+      <stop offset="1" stop-color="#D9C8FF" stop-opacity="0" />
+    </linearGradient>
+    <linearGradient
+      id="lavender"
+      x1="320"
+      y1="1030"
+      x2="1740"
+      y2="160"
+      gradientUnits="userSpaceOnUse"
+    >
+      <stop stop-color="#C9F3FF" stop-opacity="0" />
+      <stop offset="0.3" stop-color="#A9E2FF" stop-opacity="0.72" />
+      <stop offset="0.68" stop-color="#C9B8FF" stop-opacity="0.82" />
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0" />
+    </linearGradient>
+    <radialGradient
+      id="pearl"
+      cx="0"
+      cy="0"
+      r="1"
+      gradientTransform="translate(950 460) rotate(24) scale(980 390)"
+      gradientUnits="userSpaceOnUse"
+    >
+      <stop stop-color="#FFFFFF" stop-opacity="0.68" />
+      <stop offset="0.42" stop-color="#BDE8FF" stop-opacity="0.18" />
+      <stop offset="1" stop-color="#B9A8FF" stop-opacity="0" />
+    </radialGradient>
+    <filter
+      id="wideBlur"
+      x="-20%"
+      y="-35%"
+      width="140%"
+      height="170%"
+      color-interpolation-filters="sRGB"
+    >
+      <feGaussianBlur stdDeviation="24" />
+    </filter>
+    <filter
+      id="softBlur"
+      x="-15%"
+      y="-25%"
+      width="130%"
+      height="150%"
+      color-interpolation-filters="sRGB"
+    >
+      <feGaussianBlur stdDeviation="6" />
+    </filter>
+    <filter
+      id="pearlBlur"
+      x="-20%"
+      y="-40%"
+      width="140%"
+      height="180%"
+      color-interpolation-filters="sRGB"
+    >
+      <feGaussianBlur stdDeviation="58" />
+    </filter>
+  </defs>
+
+  <ellipse cx="950" cy="460" rx="920" ry="340" fill="url(#pearl)" filter="url(#pearlBlur)" />
+
+  <g filter="url(#wideBlur)" opacity="0.96">
+    <path
+      d="M-170 1000C160 846 318 478 668 436C1010 395 1042 702 1435 580C1693 500 1830 268 2090 218"
+      stroke="url(#ice)"
+      stroke-width="176"
+      stroke-linecap="round"
+    />
+    <path
+      d="M-140 912C210 766 370 382 720 354C1050 328 1110 598 1456 492C1710 414 1833 210 2070 144"
+      stroke="url(#lavender)"
+      stroke-width="116"
+      stroke-linecap="round"
+    />
+    <path
+      d="M-110 246C228 78 494 126 720 254C1022 424 1205 438 1444 286C1650 155 1840 118 2050 226"
+      stroke="url(#ice)"
+      stroke-width="132"
+      stroke-linecap="round"
+      opacity="0.82"
+    />
+  </g>
+
+  <g filter="url(#softBlur)" opacity="0.98">
+    <path
+      d="M-170 1010C166 854 326 492 674 448C1004 407 1068 694 1434 586C1698 508 1834 278 2070 226"
+      stroke="url(#ice)"
+      stroke-width="44"
+      stroke-linecap="round"
+    />
+    <path
+      d="M-130 923C224 772 380 399 724 368C1046 339 1121 595 1458 503C1714 433 1840 220 2060 159"
+      stroke="url(#lavender)"
+      stroke-width="30"
+      stroke-linecap="round"
+    />
+    <path
+      d="M-90 262C242 101 495 145 716 270C1020 442 1200 451 1448 306C1661 181 1839 139 2030 236"
+      stroke="url(#ice)"
+      stroke-width="38"
+      stroke-linecap="round"
+      opacity="0.88"
+    />
+  </g>
+
+  <g opacity="0.92">
+    <path
+      d="M-160 998C174 844 333 493 678 453C1006 415 1071 693 1438 591C1699 518 1838 287 2068 235"
+      stroke="white"
+      stroke-opacity="0.94"
+      stroke-width="5"
+      stroke-linecap="round"
+    />
+    <path
+      d="M-126 918C228 771 385 405 726 376C1041 350 1127 594 1460 511C1714 448 1844 231 2058 170"
+      stroke="#EAF8FF"
+      stroke-opacity="0.96"
+      stroke-width="3.5"
+      stroke-linecap="round"
+    />
+    <path
+      d="M-88 267C247 111 495 154 712 277C1017 450 1197 459 1450 315C1664 194 1838 152 2025 245"
+      stroke="white"
+      stroke-opacity="0.92"
+      stroke-width="4"
+      stroke-linecap="round"
+    />
+  </g>
+
+  <g opacity="0.55">
+    <path
+      d="M-150 1031C180 879 347 523 686 480C1012 439 1085 712 1445 615C1702 545 1842 314 2072 262"
+      stroke="#FFFFFF"
+      stroke-width="1.6"
+      stroke-linecap="round"
+    />
+    <path
+      d="M-104 290C248 132 507 178 727 302C1026 470 1209 486 1462 342C1672 222 1842 182 2035 278"
+      stroke="#F4F7FF"
+      stroke-width="1.4"
+      stroke-linecap="round"
+    />
+  </g>
+</svg>

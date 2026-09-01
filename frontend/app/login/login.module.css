@@ -5,29 +5,22 @@
   display: grid;
   grid-template-rows: auto 1fr auto;
   color: var(--xw-text);
-  background: linear-gradient(
-    125deg,
-    var(--xw-bg) 0%,
-    var(--xw-surface-subtle) 26%,
-    var(--xw-glass-ai-fallback) 52%,
-    var(--xw-bg) 76%,
-    var(--xw-surface) 100%
-  );
-  background-size: 180% 180%;
-  animation: surfaceShift 20s ease-in-out infinite alternate;
+  background:
+    radial-gradient(ellipse at 18% 28%, var(--xw-aurora-ice), transparent 42%),
+    radial-gradient(ellipse at 80% 24%, var(--xw-aurora-lavender), transparent 44%), transparent;
 }
 
 .ambient {
   position: absolute;
   inset: -12%;
   pointer-events: none;
-  opacity: 0.42;
-  filter: blur(72px);
+  opacity: 0.68;
+  filter: blur(56px);
   background:
-    radial-gradient(circle at 18% 30%, rgba(52, 160, 238, 0.08) 0, transparent 34%),
-    radial-gradient(circle at 77% 27%, rgba(99, 78, 238, 0.065) 0, transparent 32%),
-    radial-gradient(circle at 58% 82%, rgba(135, 54, 232, 0.05) 0, transparent 30%);
-  animation: ambientDrift 24s ease-in-out infinite alternate;
+    radial-gradient(circle at 18% 30%, var(--xw-aurora-ice) 0, transparent 36%),
+    radial-gradient(circle at 77% 27%, var(--xw-aurora-lavender) 0, transparent 34%),
+    radial-gradient(circle at 58% 82%, var(--xw-aurora-blue) 0, transparent 32%);
+  animation: ambientDrift 38s ease-in-out infinite alternate;
 }
 
 .header {
@@ -92,14 +85,20 @@
 .card {
   position: relative;
   padding: 30px 30px 26px;
-  border: 1px solid var(--xw-border);
+  border: 1px solid var(--xw-glass-border);
   border-radius: 22px;
-  background: var(--xw-glass-strong);
+  background:
+    linear-gradient(138deg, rgb(255 255 255 / 48%), transparent 30%),
+    radial-gradient(circle at 86% 10%, var(--xw-glass-refraction-lavender), transparent 46%),
+    linear-gradient(316deg, var(--xw-glass-refraction-blue), transparent 46%),
+    var(--xw-glass-liquid);
   box-shadow:
-    var(--xw-shadow-md),
-    inset 0 1px 0 var(--xw-border-subtle);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
+    0 26px 76px rgb(40 72 132 / 14%),
+    0 0 0 1px rgb(255 255 255 / 18%),
+    inset 0 1px 0 var(--xw-glass-specular),
+    inset 0 -1px 0 rgb(80 118 188 / 10%);
+  backdrop-filter: blur(28px) saturate(136%);
+  -webkit-backdrop-filter: blur(28px) saturate(136%);
 }
 
 .card :global(.ant-alert) {

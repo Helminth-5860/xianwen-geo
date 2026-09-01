@@ -276,10 +276,11 @@
   align-items: center;
   gap: 7px;
   padding: 7px 8px;
-  border: 1px solid #dfe9f6;
+  border: 1px solid var(--xw-glass-border);
   border-radius: 8px;
   outline: 0;
-  background: rgb(249 252 255 / 86%);
+  background:
+    linear-gradient(138deg, rgb(255 255 255 / 42%), transparent 48%), var(--xw-glass-stable);
   color: inherit;
   text-align: left;
   cursor: pointer;
@@ -342,9 +343,10 @@
 }
 .reportBody :global(.ant-select-selector) {
   min-height: 32px !important;
-  border-color: #dce7f5 !important;
+  border-color: var(--xw-glass-border) !important;
   border-radius: 8px !important;
-  background: rgb(250 253 255 / 88%) !important;
+  background:
+    linear-gradient(138deg, rgb(255 255 255 / 42%), transparent 48%), var(--xw-glass-stable) !important;
   font-size: 10px !important;
 }
 
@@ -591,7 +593,7 @@
   min-height: 500px;
   background:
     radial-gradient(circle at 50% 55%, rgb(91 91 255 / 12%), transparent 20rem),
-    linear-gradient(180deg, rgb(253 255 255 / 95%), rgb(244 249 255 / 92%));
+    linear-gradient(180deg, rgb(255 255 255 / 54%), rgb(234 243 255 / 38%)), var(--xw-glass-surface);
 }
 .twinHeader {
   position: relative;
@@ -621,9 +623,10 @@
 }
 .modelFocus :global(.ant-select-selector) {
   min-height: 31px !important;
-  border-color: #d5e1f3 !important;
+  border-color: var(--xw-glass-border) !important;
   border-radius: 8px !important;
-  background: rgb(255 255 255 / 85%) !important;
+  background:
+    linear-gradient(138deg, rgb(255 255 255 / 42%), transparent 48%), var(--xw-glass-stable) !important;
   font-size: 9px !important;
 }
 
@@ -644,7 +647,8 @@
   padding: 8px 9px;
   border: 1px solid rgb(191 210 242 / 75%);
   border-radius: 8px;
-  background: rgb(255 255 255 / 74%);
+  background:
+    linear-gradient(138deg, rgb(255 255 255 / 38%), transparent 48%), var(--xw-glass-floating);
   box-shadow: 0 8px 20px rgb(62 91 145 / 6%);
   backdrop-filter: blur(10px);
 }
@@ -675,7 +679,7 @@
   height: 7px;
   border: 1px solid #6d91e7;
   border-radius: 50%;
-  background: #fff;
+  background: var(--xw-glass-stable);
 }
 .legendSignal {
   width: 15px;
@@ -690,9 +694,10 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid #d6e2f3;
+  border: 1px solid var(--xw-glass-border);
   border-radius: 8px;
-  background: rgb(255 255 255 / 86%);
+  background:
+    linear-gradient(138deg, rgb(255 255 255 / 42%), transparent 48%), var(--xw-glass-floating);
   box-shadow: 0 8px 18px rgb(63 91 144 / 8%);
 }
 .stageControls button {
@@ -712,7 +717,7 @@
   border-bottom: 0;
 }
 .stageControls button:hover {
-  background: #f2f6ff;
+  background: color-mix(in srgb, var(--xw-primary-soft) 72%, transparent);
   color: #3f67dd;
 }
 
@@ -1051,9 +1056,9 @@
   padding: 3px 6px;
   border: 1px solid rgb(200 214 240 / 72%);
   border-radius: 6px;
-  background: rgb(255 255 255 / 76%);
+  background:
+    linear-gradient(138deg, rgb(255 255 255 / 38%), transparent 48%), var(--xw-glass-stable);
   box-shadow: 0 5px 13px rgb(55 80 129 / 6%);
-  backdrop-filter: blur(7px);
 }
 .nodeLabel strong {
   max-width: 88px;
@@ -1751,9 +1756,10 @@
   gap: 7px;
   margin: 7px auto 0;
   padding: 6px 9px;
-  border: 1px solid #dce8f8;
+  border: 1px solid var(--xw-glass-border);
   border-radius: 8px;
-  background: rgb(246 250 255 / 84%);
+  background:
+    linear-gradient(138deg, rgb(255 255 255 / 40%), transparent 48%), var(--xw-glass-stable);
   color: #7c899c;
   font-size: 8px;
 }
@@ -1776,7 +1782,15 @@
   padding: 70px 20px;
   border: 1px solid #dce6f2;
   border-radius: 12px;
-  background: #fff;
+  background:
+    linear-gradient(138deg, rgb(255 255 255 / 54%), transparent 38%),
+    radial-gradient(circle at 86% 12%, var(--xw-glass-refraction-lavender), transparent 48%),
+    var(--xw-glass-surface);
+  box-shadow:
+    var(--xw-shadow-glass),
+    inset 0 1px 0 var(--xw-glass-border-highlight);
+  backdrop-filter: blur(20px) saturate(126%);
+  -webkit-backdrop-filter: blur(20px) saturate(126%);
 }
 
 @media (prefers-reduced-motion: reduce) {

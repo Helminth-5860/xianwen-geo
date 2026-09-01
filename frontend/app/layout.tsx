@@ -20,6 +20,7 @@ import "./product-shell.css";
 import "./xw-tokens.css";
 import "./assistant-widget.css";
 import "./website-audit.css";
+import "./aurora-liquid-glass.css";
 
 export const metadata: Metadata = {
   title: "显问 GEO 智能体系统",

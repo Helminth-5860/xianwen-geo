@@ -23,7 +23,8 @@
 .entityMetric {
   padding: 10px;
   border-radius: 8px;
-  background: #f6f8fb;
+  background:
+    linear-gradient(138deg, rgb(255 255 255 / 42%), transparent 48%), var(--xw-glass-stable);
 }
 
 .entityMetric strong,

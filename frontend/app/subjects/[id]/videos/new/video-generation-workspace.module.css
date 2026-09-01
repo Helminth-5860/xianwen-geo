@@ -38,18 +38,20 @@
 
 .uploadPanel {
   padding: 16px;
-  border: 1px dashed #b9c7da;
+  border: 1px dashed var(--xw-glass-border);
   border-radius: 10px;
-  background: #f8fafc;
+  background:
+    linear-gradient(138deg, rgb(255 255 255 / 42%), transparent 48%), var(--xw-glass-stable);
 }
 
 .quotaPanel {
   display: grid;
   gap: 14px;
   padding: 18px;
-  border: 1px solid #e6ebf2;
+  border: 1px solid var(--xw-glass-border);
   border-radius: 12px;
-  background: #f8fafc;
+  background:
+    linear-gradient(138deg, rgb(255 255 255 / 44%), transparent 48%), var(--xw-glass-surface);
 }
 
 .quotaValue {

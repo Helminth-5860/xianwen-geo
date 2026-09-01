@@ -7,10 +7,10 @@ const ACCENT_COLORS: Record<
   Record<ColorTheme, Readonly<{ primary: string; primarySoft: string; primaryStrong: string }>>
 > = {
   light: {
-    blue: { primary: "#2f76df", primarySoft: "rgb(222 238 255 / 66%)", primaryStrong: "#245db6" },
-    green: { primary: "#147a68", primarySoft: "#e7f6f1", primaryStrong: "#0d5f52" },
-    purple: { primary: "#6d4fd1", primarySoft: "#f0ecfb", primaryStrong: "#5536b8" },
-    orange: { primary: "#b9500d", primarySoft: "#fff0e3", primaryStrong: "#923b06" },
+    blue: { primary: "#2879e8", primarySoft: "rgb(176 220 255 / 34%)", primaryStrong: "#1e5eba" },
+    green: { primary: "#147a68", primarySoft: "rgb(188 238 225 / 34%)", primaryStrong: "#0d5f52" },
+    purple: { primary: "#6d4fd1", primarySoft: "rgb(221 209 255 / 36%)", primaryStrong: "#5536b8" },
+    orange: { primary: "#b9500d", primarySoft: "rgb(255 216 181 / 34%)", primaryStrong: "#923b06" },
   },
   dark: {
     blue: { primary: "#6ea8ff", primarySoft: "#1c3154", primaryStrong: "#9cc3ff" },
@@ -22,25 +22,25 @@ const ACCENT_COLORS: Record<
 
 const BASE_COLORS = {
   light: {
-    background: "#f3f7fd",
-    surface: "rgb(255 255 255 / 72%)",
-    surfaceSubtle: "rgb(247 250 255 / 64%)",
-    surfaceElevated: "rgb(255 255 255 / 90%)",
+    background: "#edf5ff",
+    surface: "rgb(255 255 255 / 48%)",
+    surfaceSubtle: "rgb(244 249 255 / 36%)",
+    surfaceElevated: "rgb(255 255 255 / 64%)",
     text: "#172033",
     textSecondary: "#536178",
     textTertiary: "#7c899d",
-    border: "rgb(150 177 214 / 30%)",
-    borderStrong: "rgb(126 157 199 / 42%)",
+    border: "rgb(129 165 214 / 28%)",
+    borderStrong: "rgb(111 151 207 / 44%)",
     positive: "#25835a",
     warning: "#b66a19",
     danger: "#c14d56",
-    shadow: "0 22px 64px rgb(46 78 122 / 10%)",
+    shadow: "0 24px 72px rgb(48 82 143 / 12%)",
   },
   dark: {
-    background: "#0b1220",
-    surface: "#111b2e",
-    surfaceSubtle: "#162238",
-    surfaceElevated: "#18253c",
+    background: "#091426",
+    surface: "rgb(21 36 59 / 58%)",
+    surfaceSubtle: "rgb(25 43 70 / 46%)",
+    surfaceElevated: "rgb(27 44 70 / 70%)",
     text: "#edf3ff",
     textSecondary: "#b4c1d4",
     textTertiary: "#8493a9",
