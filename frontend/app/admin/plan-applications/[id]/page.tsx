@@ -5,7 +5,9 @@ import {
   Button,
   Card,
   Checkbox,
+  Collapse,
   Descriptions,
+  Form,
   Input,
   Modal,
   Space,
@@ -38,16 +40,19 @@ export default function AdminPlanApplicationDetailPage() {
   const [overrideVersion, setOverrideVersion] = useState("");
   const [overrideConfirmed, setOverrideConfirmed] = useState(false);
   const [overrideReason, setOverrideReason] = useState("");
-  const [error, setError] = useState("");
+  const [openingNote, setOpeningNote] = useState("");
+  const [loadingError, setLoadingError] = useState("");
+  const [actionError, setActionError] = useState("");
+  const [activating, setActivating] = useState(false);
   useEffect(() => {
     void Promise.all([getAdminPlanApplication(id), getRiskActions()])
       .then(([application, actions]) => {
         setItem(application);
         setModes(Object.fromEntries(actions.map((action) => [action.key, action.current_mode])));
       })
-      .catch((reason) => setError(userMessage(reason)));
+      .catch((reason) => setLoadingError(userMessage(reason)));
   }, [id]);
-  if (error) return <Alert type="error" showIcon title={error} />;
+  if (loadingError) return <Alert type="error" showIcon title={loadingError} />;
   if (!item) return <Spin description="正在加载套餐申请" />;
   const canContact = capabilities?.permission_keys.includes("plan_applications.contact") ?? false;
   const canClose = capabilities?.permission_keys.includes("plan_applications.close") ?? false;
@@ -103,7 +108,13 @@ export default function AdminPlanApplicationDetailPage() {
             </RiskActionButton>
           )}
           {canOpen && (item.status === "pending" || item.status === "contacted") && (
-            <Button type="primary" onClick={() => setActivateOpen(true)}>
+            <Button
+              type="primary"
+              onClick={() => {
+                setActionError("");
+                setActivateOpen(true);
+              }}
+            >
               开通订阅
             </Button>
           )}
@@ -112,57 +123,118 @@ export default function AdminPlanApplicationDetailPage() {
       <Modal
         title="确认开通订阅"
         open={activateOpen}
-        onCancel={() => setActivateOpen(false)}
+        confirmLoading={activating}
+        onCancel={() => {
+          setActionError("");
+          setActivateOpen(false);
+        }}
         onOk={async () => {
+          if (unavailable && !unavailableReason.trim()) {
+            setActionError("请填写特殊状态开通原因。");
+            return;
+          }
+          if (overrideVersion.trim() && (!overrideConfirmed || !overrideReason.trim())) {
+            setActionError("更换申请版本时，请确认操作并填写原因。");
+            return;
+          }
+          setActivating(true);
+          setActionError("");
           try {
             await openSubscriptionFromApplication(item.id, item.version, {
-              selectedPlanVersionId: overrideVersion || null,
+              selectedPlanVersionId: overrideVersion.trim() || null,
               confirmUnavailable: unavailable,
-              unavailableReason,
+              unavailableReason: unavailableReason.trim(),
               confirmVersionOverride: overrideConfirmed,
-              overrideReason,
+              overrideReason: overrideReason.trim(),
+              openingNote: openingNote.trim(),
             });
             setItem(await getAdminPlanApplication(id));
             setActivateOpen(false);
           } catch (reason) {
-            setError(userMessage(reason));
+            setActionError(userMessage(reason));
+          } finally {
+            setActivating(false);
           }
         }}
         okText="确认开通"
       >
         <Space orientation="vertical" style={{ width: "100%" }}>
-          <Alert type="warning" showIcon title="确认后将立即开通，并写入操作记录。" />
-          <Checkbox
-            checked={unavailable}
-            onChange={(event) => setUnavailable(event.target.checked)}
-          >
-            确认离线套餐或退役版本仍需开通
-          </Checkbox>
-          <Input
-            aria-label="特殊状态开通原因"
-            value={unavailableReason}
-            onChange={(event) => setUnavailableReason(event.target.value)}
+          <Alert
+            type="warning"
+            showIcon
+            title={`确认后将立即为客户开通“${String(item.public_plan_snapshot.name)}”`}
+            description="客户当前使用免费套餐时，系统会自动切换到正式套餐，并立即发放对应额度。"
           />
-          {canOverride && (
-            <>
-              <Input
-                aria-label="替换套餐版本 ID"
-                value={overrideVersion}
-                onChange={(event) => setOverrideVersion(event.target.value)}
+          {actionError && <Alert type="error" showIcon title={actionError} />}
+          <Form layout="vertical" style={{ width: "100%" }}>
+            <Form.Item label="开通备注（选填）">
+              <Input.TextArea
+                aria-label="开通备注"
+                value={openingNote}
+                placeholder="例如：客户已确认开通专业版"
+                maxLength={500}
+                autoSize={{ minRows: 2, maxRows: 4 }}
+                onChange={(event) => setOpeningNote(event.target.value)}
               />
-              <Checkbox
-                checked={overrideConfirmed}
-                onChange={(event) => setOverrideConfirmed(event.target.checked)}
-              >
-                确认替换申请绑定版本
-              </Checkbox>
-              <Input
-                aria-label="替换版本原因"
-                value={overrideReason}
-                onChange={(event) => setOverrideReason(event.target.value)}
-              />
-            </>
-          )}
+            </Form.Item>
+          </Form>
+          <Collapse
+            ghost
+            items={[
+              {
+                key: "special",
+                label: "特殊情况（通常无需填写）",
+                children: (
+                  <Form layout="vertical">
+                    <Checkbox
+                      checked={unavailable}
+                      onChange={(event) => setUnavailable(event.target.checked)}
+                    >
+                      确认开通已下架套餐或历史版本
+                    </Checkbox>
+                    <Form.Item label="特殊状态开通原因" style={{ marginTop: 12 }}>
+                      <Input
+                        aria-label="特殊状态开通原因"
+                        value={unavailableReason}
+                        disabled={!unavailable}
+                        placeholder="请说明仍需开通的原因"
+                        maxLength={500}
+                        onChange={(event) => setUnavailableReason(event.target.value)}
+                      />
+                    </Form.Item>
+                    {canOverride && (
+                      <>
+                        <Form.Item label="更换后的套餐版本编号">
+                          <Input
+                            aria-label="更换后的套餐版本编号"
+                            value={overrideVersion}
+                            placeholder="仅在需要更换申请版本时填写"
+                            onChange={(event) => setOverrideVersion(event.target.value)}
+                          />
+                        </Form.Item>
+                        <Checkbox
+                          checked={overrideConfirmed}
+                          onChange={(event) => setOverrideConfirmed(event.target.checked)}
+                        >
+                          确认更换申请绑定版本
+                        </Checkbox>
+                        <Form.Item label="更换版本原因" style={{ marginTop: 12 }}>
+                          <Input
+                            aria-label="更换版本原因"
+                            value={overrideReason}
+                            disabled={!overrideVersion.trim()}
+                            placeholder="请说明更换版本的原因"
+                            maxLength={500}
+                            onChange={(event) => setOverrideReason(event.target.value)}
+                          />
+                        </Form.Item>
+                      </>
+                    )}
+                  </Form>
+                ),
+              },
+            ]}
+          />
         </Space>
       </Modal>
     </main>
