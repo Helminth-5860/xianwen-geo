@@ -139,7 +139,7 @@ export function UserControlAdminActions({ userId, onChanged }: Props) {
   if (loading && !user) {
     return (
       <Card size="small">
-        <Spin description="正在加载管理员控制项" />
+        <Spin tip="正在加载管理员控制项" />
       </Card>
     );
   }
@@ -214,7 +214,7 @@ export function UserControlAdminActions({ userId, onChanged }: Props) {
             type="info"
             showIcon
             title="当前没有生效套餐"
-            description="本控制中心不会通过测试账号或人工试用入口制造虚假权益。正式套餐开通继续使用现有套餐申请/开通链路，待注册免费体验自动发放逻辑完成后会直接反映在这里。"
+            description="免费体验由注册流程自动发放；正式套餐继续使用现有套餐开通链路。本控制中心不提供开发期测试账号或人工发放免费体验入口。"
           />
         )}
       </Card>
