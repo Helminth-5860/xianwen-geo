@@ -245,7 +245,7 @@ def save_keyword_draft(
         _replace_draft_rows(keyword_set, normalized)
         return keyword_set, True
 
-    if keyword_set.user_id != user.pk or keyword_set.version != expected_version:
+    if keyword_set.version != expected_version:
         raise KeywordVersionConflict
     current_payload = _draft_payload(keyword_set)
     new_payload = _new_payload(normalized)

@@ -89,6 +89,49 @@ def test_tenant_member_can_generate_for_the_shared_subject_with_own_subscription
     assert job.user == operator
     assert job.subject.user == owner
     assert job.subscription.user == operator
+    assert execute_keyword_generation(job_id=job.pk) == {"status": "succeeded"}
+
+    keyword_set = KeywordSet.objects.get(subject=subject)
+    keyword_set.refresh_from_db()
+    assert keyword_set.user == operator
+    assert keyword_set.current_version.user == operator
+    assert keyword_set.current_version.created_by == operator
+
+
+def test_keyword_set_guard_rejects_user_from_another_tenant():
+    subject_tenant = Tenant.objects.create(
+        key=f"tenant-{uuid.uuid4().hex}", display_name="主体工作区"
+    )
+    other_tenant = Tenant.objects.create(
+        key=f"tenant-{uuid.uuid4().hex}", display_name="其他工作区"
+    )
+    owner = User.objects.create_user(
+        phone=f"134{uuid.uuid4().int % 100000000:08d}",
+        nickname="主体负责人",
+        password="Correct-Horse-Battery-2026!",
+        account_status=User.AccountStatus.ACTIVE,
+        tenant=subject_tenant,
+    )
+    outsider = User.objects.create_user(
+        phone=f"133{uuid.uuid4().int % 100000000:08d}",
+        nickname="其他工作区成员",
+        password="Correct-Horse-Battery-2026!",
+        account_status=User.AccountStatus.ACTIVE,
+        tenant=other_tenant,
+    )
+    _, subject, version, _ = _facts(
+        user=owner,
+        subject_owner=owner,
+        tenant=subject_tenant,
+    )
+
+    with pytest.raises(DatabaseError), transaction.atomic():
+        KeywordSet.objects.create(
+            user=outsider,
+            subject=subject,
+            draft_subject_version=version,
+            version=1,
+        )
 
 
 def test_job_frozen_facts_and_result_event_evidence_are_database_immutable():
