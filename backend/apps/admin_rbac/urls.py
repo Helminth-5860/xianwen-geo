@@ -1,5 +1,6 @@
 from django.urls import path
 
+from .business_data_views import BusinessDataView
 from .risk_views import (
     AuditEventDetailView,
     AuditEventListView,
@@ -137,6 +138,7 @@ urlpatterns = [
         CustomerAssignmentView.as_view(),
         name="customer-assignment",
     ),
+    path("admin/business-data", BusinessDataView.as_view(), name="business-data"),
     path("admin/risk-actions", RiskActionListView.as_view(), name="risk-action-list"),
     path("admin/risk-policies", RiskPolicyListView.as_view(), name="risk-policy-list"),
     path(
