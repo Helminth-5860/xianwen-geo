@@ -10,6 +10,7 @@ from .views import (
     ArticleChannelAdaptationsView,
     ArticleDetailView,
     ArticleDraftView,
+    ArticleExportDownloadView,
     ArticleExportView,
     ArticleFullOptimizeView,
     ArticleGenerateView,
@@ -161,4 +162,9 @@ urlpatterns = [
         name="subject-publication-checks",
     ),
     path("articles/<uuid:article_id>/exports", ArticleExportView.as_view(), name="article-export"),
+    path(
+        "article-exports/<uuid:export_id>/download",
+        ArticleExportDownloadView.as_view(),
+        name="article-export-download",
+    ),
 ]

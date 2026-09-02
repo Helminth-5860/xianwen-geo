@@ -35,6 +35,7 @@ class SourcePackConfirmSerializer(StrictSerializer):
 
 class ArticleCreateSerializer(StrictSerializer):
     article_type_id = serializers.UUIDField(required=False, allow_null=True)
+    primary_channel_id = serializers.UUIDField(required=False, allow_null=True)
     custom_type = serializers.CharField(
         max_length=100, required=False, allow_blank=True, default=""
     )
@@ -63,6 +64,18 @@ class OptimizationSerializer(StrictSerializer):
     selection = serializers.CharField(
         max_length=20_000, required=False, allow_blank=True, default=""
     )
+    selection_start = serializers.IntegerField(min_value=0, required=False, allow_null=True)
+    selection_end = serializers.IntegerField(min_value=0, required=False, allow_null=True)
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        start = attrs.get("selection_start")
+        end = attrs.get("selection_end")
+        if (start is None) != (end is None):
+            raise serializers.ValidationError("selection range must be complete")
+        if start is not None and end is not None and end <= start:
+            raise serializers.ValidationError("selection range must not be empty")
+        return attrs
 
 
 class ComparisonChoiceSerializer(StrictSerializer):

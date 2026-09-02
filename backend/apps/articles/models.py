@@ -200,6 +200,13 @@ class Article(models.Model):  # noqa: DJ008
     template_version = models.ForeignKey(
         ArticleTemplateVersion, null=True, blank=True, on_delete=models.PROTECT
     )
+    primary_channel = models.ForeignKey(
+        "articles.PublishingChannel",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="primary_articles",
+    )
     custom_type = models.CharField(max_length=100, blank=True)
     title = models.CharField(max_length=500, blank=True)
     content = models.TextField(blank=True)

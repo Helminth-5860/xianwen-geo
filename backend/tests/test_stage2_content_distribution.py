@@ -33,6 +33,7 @@ from apps.articles.services import (
     _runtime,
     _system_prompt,
     article_for_user,
+    article_text_length,
     check_publication_link,
     confirm_source_pack,
     create_article,
@@ -78,6 +79,7 @@ class _ArticleAdapter:
 
     def __init__(self, body=None, *, fail=False):
         self.body = body
+        self.bodies = list(body) if isinstance(body, list) else None
         self.fail = fail
         self.requests = []
 
@@ -88,10 +90,11 @@ class _ArticleAdapter:
                 AIAdapterErrorCategory.TIMEOUT,
                 stable_code="AI_STAGE2_TEST_TIMEOUT",
             )
+        body = self.bodies.pop(0) if self.bodies is not None else self.body
         return AIAdapterResponse(
             request_id=request.request_id,
             identity=self.descriptor.identity,
-            output=StructuredContentOutput(content=copy.deepcopy(self.body)),
+            output=StructuredContentOutput(content=copy.deepcopy(body)),
             usage=AIUsage(input_tokens=17, output_tokens=29, total_tokens=46),
             finish_reason=AIFinishReason.STOP,
         )
@@ -152,7 +155,7 @@ def _article_setup(stage2_facts):
 def _body(item_id):
     return {
         "title": "品牌事实指南",
-        "content": "这是一篇严格基于已确认主体资料生成的文章。",
+        "content": "这是一篇严格基于已确认主体资料生成的文章。" * 80,
         "citations": [{"source_item_id": str(item_id), "paragraph_index": 0}],
         "moderation": "passed",
         "quality": _quality(84),
@@ -279,7 +282,68 @@ def test_body_generation_is_grounded_idempotent_and_consumes_exactly_one(stage2_
     assert account.frozen == 0
     request_payload = adapter.requests[0].payload.user_payload
     assert request_payload["frozen_source_pack"] == pack.frozen_snapshot
+    assert request_payload["authorized_input"]["primary_channel"]["key"] == "general"
+    assert request_payload["authorized_input"]["target_length"] == {
+        "minimum": 1500,
+        "maximum": 2500,
+    }
     assert "credential" not in repr(request_payload).lower()
+
+
+def test_deep_article_retries_short_output_and_consumes_only_after_target_is_met(stage2_facts):
+    user, _, subscription, _, item, article = _article_setup(stage2_facts)
+    article.content_depth = "deep"
+    article.save(update_fields=("content_depth", "updated_at"))
+    runtime = get_runtime_snapshot(model_key="deepseek", require_available=True)
+    short = _body(item.pk)
+    short["content"] = "内容过短。"
+    complete = _body(item.pk)
+    complete["content"] = "已确认资料形成的深度内容。" * 260
+    adapter = _ArticleAdapter([short, complete])
+    account = QuotaAccount.objects.get(
+        subscription=subscription, subject__isnull=True, quota_type="article_generations"
+    )
+    initial_available = account.available
+
+    with patch("apps.articles.services._runtime", return_value=(runtime, adapter)):
+        job, _ = create_generation_job(
+            user=user,
+            article_id=article.pk,
+            operation="body",
+            idempotency_key="stage2-deep-length-retry-0001",
+            request_id=uuid.uuid4(),
+        )
+        assert execute_generation_job(job_id=job.pk) == {"status": "succeeded"}
+
+    article.refresh_from_db()
+    account.refresh_from_db()
+    job.refresh_from_db()
+    assert len(adapter.requests) == 2
+    assert article_text_length(article.content) >= 3000
+    assert account.available == initial_available - 1
+    assert account.frozen == 0
+    assert job.usage_summary["request_count"] == 2
+
+
+def test_local_optimization_requires_a_real_current_selection(stage2_facts):
+    user, _, _, _, _, article = _article_setup(stage2_facts)
+    article.content = "第一段内容。第二段需要优化。"
+    article.save(update_fields=("content", "updated_at"))
+
+    with pytest.raises(ContentError, match="ARTICLE_LOCAL_SELECTION_REQUIRED"):
+        create_generation_job(
+            user=user,
+            article_id=article.pk,
+            operation="local_optimize",
+            idempotency_key="stage2-local-selection-0001",
+            request_id=uuid.uuid4(),
+            extra={
+                "instruction": "表达更自然",
+                "selection": "并不存在的内容",
+                "selection_start": 0,
+                "selection_end": 8,
+            },
+        )
 
 
 def test_ready_outline_must_be_confirmed_before_body_job(stage2_facts):
@@ -638,3 +702,11 @@ def test_export_uses_private_storage_and_body_cannot_replace_ai_evidence(stage2_
     )
     assert download_url.startswith("mock://download/")
     assert "credential" not in download_url.lower()
+
+    client = APIClient()
+    client.force_authenticate(user=user)
+    response = client.get(f"/api/v1/article-exports/{export.pk}/download")
+    assert response.status_code == 200
+    assert response["Content-Type"] == "text/markdown; charset=utf-8"
+    assert response["Content-Disposition"].startswith("attachment;")
+    assert b"# " in b"".join(response.streaming_content)

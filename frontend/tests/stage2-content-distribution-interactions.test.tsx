@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -116,8 +116,8 @@ const articleType: ArticleType = {
 
 const channel: PublishingChannel = {
   id: "channel-1",
-  key: "website",
-  name: "企业官网",
+  key: "wechat",
+  name: "微信公众号",
   official_url: "https://example.com/official",
   channel_type: "owned_media",
   description: "仅提供导航和适配，不代替发布。",
@@ -329,6 +329,7 @@ describe("Stage 2 content production, distribution, and sharing", () => {
       content_depth: "standard",
       title: "品牌事实指南",
       source_pack_id: "pack-1",
+      primary_channel_id: "channel-1",
     });
     expect(await screen.findByText("3. 当前唯一稿与质量建议")).toBeTruthy();
     expect(screen.getByRole("heading", { name: "文章生成" })).toBeTruthy();
@@ -373,7 +374,7 @@ describe("Stage 2 content production, distribution, and sharing", () => {
     await userEvent.click(screen.getByText("直接生成正文"));
     await userEvent.click(screen.getByRole("button", { name: "生成正文（成功扣 1 文章额度）" }));
     expect(articleApi.generateArticle).toHaveBeenCalledWith("article-1");
-    expect(await screen.findByText("AI 文章生成服务暂时不可用，请稍后重新生成。")).toBeTruthy();
+    expect(await screen.findByText("文章生成服务暂时不可用，请稍后重新生成。")).toBeTruthy();
     expect(screen.getByText(/正文生成 · 未完成 · 文章额度未扣除/)).toBeTruthy();
   });
 
@@ -522,15 +523,61 @@ describe("Stage 2 content production, distribution, and sharing", () => {
     render(<ArticleWorkspace subjectId="subject-1" initialTopic="渠道文章" />);
     await screen.findByText("品牌故事");
     await userEvent.click(screen.getByRole("button", { name: "核验并确认参考资料" }));
-    const checkbox = await screen.findByRole("checkbox", { name: /企业官网/ });
+    const checkbox = await screen.findByRole("checkbox", { name: /微信公众号/ });
     await userEvent.click(checkbox);
     await userEvent.click(screen.getByRole("button", { name: "批量生成 1 个独立渠道稿" }));
     expect(articleApi.createChannelAdaptations).toHaveBeenCalledWith("article-1", ["channel-1"]);
     expect(await screen.findByText(/已提交 1 个独立渠道稿/)).toBeTruthy();
-    expect(screen.getByText(/系统不代替登录或发布/)).toBeTruthy();
+    expect(screen.getByText(/不会代替用户登录或发布/)).toBeTruthy();
     expect(screen.getByRole("link", { name: "打开官方平台" }).getAttribute("href")).toBe(
       channel.official_url,
     );
+  });
+
+  it("only enables local optimization for a real text selection and submits that range", async () => {
+    articleApi.optimizeArticle.mockResolvedValue({
+      ...failedJob,
+      id: "local-optimize-job",
+      operation: "local_optimize",
+      status: "succeeded",
+      safe_error_code: "",
+      finished_at: "2026-08-27T01:03:00Z",
+    });
+    render(<ArticleWorkspace subjectId="subject-1" initialTopic="局部优化文章" />);
+    await screen.findByText("品牌故事");
+    await userEvent.click(screen.getByRole("button", { name: "核验并确认参考资料" }));
+
+    const button = screen.getByRole("button", { name: "优化所选内容" });
+    expect(button.hasAttribute("disabled")).toBe(true);
+    const editor = screen.getByRole("textbox", { name: "文章正文" }) as HTMLTextAreaElement;
+    editor.setSelectionRange(2, 8);
+    fireEvent.select(editor);
+    expect(button.hasAttribute("disabled")).toBe(false);
+    await userEvent.click(button);
+
+    expect(articleApi.optimizeArticle).toHaveBeenCalledWith(
+      "article-1",
+      "local",
+      "按质量建议提升表达与结构",
+      { text: readyArticle.content.slice(2, 8), start: 2, end: 8 },
+    );
+  });
+
+  it("creates a real download for the latest saved article", async () => {
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    articleApi.createArticleExport.mockResolvedValue({
+      download_url: "https://api.example.com/api/v1/article-exports/export-1/download",
+      filename: "品牌事实指南.txt",
+    });
+    render(<ArticleWorkspace subjectId="subject-1" initialTopic="导出文章" />);
+    await screen.findByText("品牌故事");
+    await userEvent.click(screen.getByRole("button", { name: "核验并确认参考资料" }));
+    await userEvent.click(screen.getByRole("button", { name: "导出纯文本" }));
+
+    expect(articleApi.createArticleExport).toHaveBeenCalledWith("article-1", "txt");
+    expect(click).toHaveBeenCalledOnce();
+    expect(await screen.findByText("纯文本已开始下载。")).toBeTruthy();
+    click.mockRestore();
   });
 
   it("creates one-time-token report links, validates passwords, and closes shares", async () => {

@@ -59,6 +59,7 @@ export type Article = Readonly<{
   custom_type: string;
   template_version_id: string | null;
   source_pack_id: string | null;
+  primary_channel?: PublishingChannel | null;
   title: string;
   content: string;
   status: "draft" | "generating" | "reviewing" | "ready" | "rejected";
@@ -173,6 +174,7 @@ export const createArticle = (
     content_depth: Article["content_depth"];
     title: string;
     source_pack_id: string;
+    primary_channel_id: string;
   },
 ) => post<Article>(`/subjects/${subjectId}/articles`, input);
 
@@ -229,10 +231,20 @@ export const recheckQuality = (articleId: string) =>
     { "Idempotency-Key": crypto.randomUUID() },
   );
 
-export const optimizeArticle = (articleId: string, mode: "local" | "full", instruction: string) =>
+export const optimizeArticle = (
+  articleId: string,
+  mode: "local" | "full",
+  instruction: string,
+  selection: Readonly<{ text: string; start: number; end: number }> | null = null,
+) =>
   post<ArticleJob>(
     `/articles/${articleId}/optimize/${mode}`,
-    { instruction, selection: "" },
+    {
+      instruction,
+      selection: selection?.text ?? "",
+      selection_start: selection?.start ?? null,
+      selection_end: selection?.end ?? null,
+    },
     { "Idempotency-Key": crypto.randomUUID() },
   );
 
@@ -263,7 +275,7 @@ export const getChannelAdaptations = (articleId: string) =>
   get<{ items: ChannelAdaptation[] }>(`/articles/${articleId}/channel-adaptations`);
 
 export const createArticleExport = (articleId: string, format: string) =>
-  post<{ download_url: string }>(`/articles/${articleId}/exports`, { format });
+  post<{ download_url: string; filename: string }>(`/articles/${articleId}/exports`, { format });
 
 export const checkPublication = (
   subjectId: string,

@@ -6,7 +6,6 @@ import {
   Card,
   Checkbox,
   Col,
-  Divider,
   Input,
   List,
   Radio,
@@ -68,12 +67,14 @@ const ARTICLE_ERROR_MESSAGES: Readonly<Record<string, string>> = {
   ARTICLE_GENERATION_IN_PROGRESS: "当前文章正在生成，请稍候。",
   ARTICLE_OUTLINE_NOT_CONFIRMED: "请先保存并确认大纲，再生成正文。",
   ARTICLE_OUTLINE_VERSION_CONFLICT: "大纲已被更新，请刷新页面后重新确认。",
-  ARTICLE_PROVIDER_SCHEMA_INVALID: "AI 生成的文章内容不完整，请重新生成。",
-  ARTICLE_PROVIDER_TIMEOUT: "AI 生成时间较长，本次额度已释放，请重新生成。",
+  ARTICLE_PROVIDER_SCHEMA_INVALID: "生成的文章内容不完整，请重新生成。",
+  ARTICLE_DEPTH_TARGET_NOT_MET: "文章未达到所选篇幅要求，本次额度已释放，请重新生成。",
+  ARTICLE_LOCAL_SELECTION_REQUIRED: "请先在正文中选择需要优化的内容。",
+  ARTICLE_PROVIDER_TIMEOUT: "文章生成时间较长，本次额度已释放，请重新生成。",
   ARTICLE_PROVIDER_RATE_LIMITED: "当前使用人数较多，本次额度已释放，请稍后重新生成。",
-  ARTICLE_PROVIDER_TEMPORARY: "AI 服务连接暂时不稳定，本次额度已释放，请重新生成。",
+  ARTICLE_PROVIDER_TEMPORARY: "文章生成服务暂时不稳定，本次额度已释放，请重新生成。",
   ARTICLE_PROVIDER_REJECTED: "本次文章未能生成，额度已释放，请调整内容后重新生成。",
-  ARTICLE_PROVIDER_UNAVAILABLE: "AI 文章生成服务暂时不可用，请稍后重新生成。",
+  ARTICLE_PROVIDER_UNAVAILABLE: "文章生成服务暂时不可用，请稍后重新生成。",
   ARTICLE_QUEUE_UNAVAILABLE: "文章生成服务暂时繁忙，请稍后重新生成。",
   ARTICLE_SOURCE_PACK_NOT_READY: "资料包尚未确认，请先完成资料确认。",
   ARTICLE_SUBJECT_NOT_READY: "当前主体资料尚未正式可用，请先保存主体资料。",
@@ -86,9 +87,43 @@ const ARTICLE_SOURCE_LABELS: Readonly<Record<string, string>> = {
 };
 
 const ARTICLE_DEPTH_LABELS: Readonly<Record<Article["content_depth"], string>> = {
-  concise: "简洁",
-  standard: "标准",
-  deep: "深度",
+  concise: "简短（800～1200字）",
+  standard: "标准（1500～2500字）",
+  deep: "深度（3000～5000字）",
+};
+
+const ARTICLE_QUALITY_DIMENSION_LABELS: Readonly<Record<string, string>> = {
+  subject_consistency: "主体信息一致性",
+  factual_reliability: "事实可信度",
+  topic_relevance: "主题相关度",
+  structural_completeness: "结构完整度",
+  readability: "阅读流畅度",
+  keyword_naturalness: "关键词自然度",
+};
+
+const ARTICLE_QUALITY_GRADE_LABELS: Readonly<Record<string, string>> = {
+  excellent: "优秀",
+  good: "良好",
+  fair: "尚可",
+  optimization_recommended: "建议优化",
+};
+
+const PRIMARY_CHANNEL_KEYS = new Set(["general", "wechat", "baijiahao", "toutiao", "zhihu"]);
+
+const CHANNEL_WRITING_GUIDES: Readonly<Record<string, string>> = {
+  general: "适合官网、内容库和后续改编，表达专业自然，结构完整。",
+  wechat: "采用自然导语和清晰分节，段落适合手机阅读，结尾完整收束。",
+  baijiahao: "标题和主题清楚，重点信息便于搜索理解，事实表达具体。",
+  toutiao: "开头直接进入主题，信息密度较高，段落简短，阅读节奏明快。",
+  zhihu: "围绕问题展开，结论先行，重视分析过程、依据和可信表达。",
+};
+
+const EXPORT_LABELS: Readonly<Record<string, string>> = {
+  word: "Word 文档",
+  pdf: "PDF 文档",
+  txt: "纯文本",
+  markdown: "排版稿",
+  html: "网页文件",
 };
 
 const ARTICLE_REVIEW_LABELS: Readonly<Record<Article["moderation_status"], string>> = {
@@ -127,6 +162,14 @@ const CHANNEL_ADAPTATION_STATUS_LABELS: Readonly<Record<ChannelAdaptation["statu
   ready: "已生成",
   failed: "生成未完成",
 };
+
+function textByCharacterRange(value: string, start: number, end: number): string {
+  return Array.from(value).slice(start, end).join("");
+}
+
+function characterOffset(value: string, browserOffset: number): number {
+  return Array.from(value.slice(0, browserOffset)).length;
+}
 
 function articleJobQuotaLabel(job: ArticleJob): string {
   if (!job.billing.quota_type) return "首次免费";
@@ -168,6 +211,7 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
   const [selectedDocuments, setSelectedDocuments] = useState<string[]>([]);
   const [selectedWebSources, setSelectedWebSources] = useState<string[]>([]);
   const [selectedChannels, setSelectedChannels] = useState<string[]>([]);
+  const [selectedPrimaryChannel, setSelectedPrimaryChannel] = useState("");
   const [depth, setDepth] = useState<Article["content_depth"]>("standard");
   const [mode, setMode] = useState<"direct" | "outline">("outline");
   const [pack, setPack] = useState<SourcePack>();
@@ -190,6 +234,7 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
   const [jobError, setJobError] = useState<JobError>();
   const [notice, setNotice] = useState("");
   const [saveToLibrary, setSaveToLibrary] = useState(true);
+  const [textSelection, setTextSelection] = useState({ start: 0, end: 0 });
 
   const applyArticle = useCallback((next: Article) => {
     setArticle(next);
@@ -215,6 +260,13 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
       setTypes(typeData.items);
       setSelectedType((current) => current || typeData.items[0]?.id || "");
       setChannels(channelData.items);
+      setSelectedPrimaryChannel(
+        (current) =>
+          current ||
+          channelData.items.find((item) => item.key === "general")?.id ||
+          channelData.items.find((item) => PRIMARY_CHANNEL_KEYS.has(item.key))?.id ||
+          "",
+      );
       setDocuments(
         parsed.flatMap(({ document, result }) =>
           result.current_confirmed_version
@@ -306,6 +358,25 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
     () => types.find((item) => item.id === selectedType),
     [selectedType, types],
   );
+  const primaryChannels = useMemo(
+    () => channels.filter((item) => PRIMARY_CHANNEL_KEYS.has(item.key)),
+    [channels],
+  );
+  const activePrimaryChannel = useMemo(
+    () => channels.find((item) => item.id === selectedPrimaryChannel),
+    [channels, selectedPrimaryChannel],
+  );
+  const selectedText = useMemo(() => {
+    const { start, end } = textSelection;
+    const characterLength = Array.from(content).length;
+    if (start < 0 || end <= start || end > characterLength) return "";
+    return textByCharacterRange(content, start, end);
+  }, [content, textSelection]);
+  const adaptationChannels = useMemo(
+    () =>
+      channels.filter((item) => item.key !== "general" && item.id !== article?.primary_channel?.id),
+    [article?.primary_channel?.id, channels],
+  );
   const hasActiveJob = jobs.some((job) => ["queued", "running"].includes(job.status));
   const outlineStatus = article?.outline?.status ?? "empty";
   const outlineIsGenerating = outlineStatus === "generating";
@@ -332,6 +403,7 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
       content_depth: depth,
       title,
       source_pack_id: confirmedPack.id,
+      primary_channel_id: selectedPrimaryChannel,
     });
     applyArticle(created);
     setNotice("参考资料已确认，文章草稿已创建。只有主动生成正文才会使用文章额度。");
@@ -358,7 +430,7 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
         setPack(confirmed);
         await createDraft(confirmed);
       } else {
-        setNotice("参考资料中存在关键信息冲突，请选择正确内容后再确认。AI 不会自行猜测。");
+        setNotice("参考资料中存在关键信息冲突，请选择正确内容后再确认，系统不会自行猜测。");
       }
     } catch (reason) {
       setError(articleUserMessage(reason));
@@ -486,16 +558,25 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
     }
   };
 
+  const persistCurrentDraft = async () => {
+    if (!article) return undefined;
+    let currentArticle = article;
+    if (outline !== (article.outline?.text ?? "")) {
+      await saveOutline(article, outline, false);
+      currentArticle = await getArticle(article.id);
+    }
+    if (title !== currentArticle.title || content !== currentArticle.content) {
+      currentArticle = await saveArticleDraft(currentArticle, title, content);
+    }
+    applyArticle(currentArticle);
+    return currentArticle;
+  };
+
   const saveDraft = async () => {
     if (!article) return false;
     setBusy(true);
     try {
-      let currentArticle = article;
-      if (outline !== (article.outline?.text ?? "")) {
-        await saveOutline(article, outline, false);
-        currentArticle = await getArticle(article.id);
-      }
-      applyArticle(await saveArticleDraft(currentArticle, title, content));
+      await persistCurrentDraft();
       setNotice("当前修改已保存到内容库。");
       return true;
     } catch (reason) {
@@ -534,13 +615,51 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
     }
   };
 
+  const optimize = async (mode: "local" | "full") => {
+    if (!article) return;
+    if (mode === "local" && !selectedText.trim()) {
+      setError("请先在正文中选择需要优化的内容。");
+      return;
+    }
+    await submitJob(
+      mode === "local" ? "local_optimize" : "full_optimize",
+      async () => {
+        const currentArticle = await persistCurrentDraft();
+        if (!currentArticle) throw new Error("ARTICLE_VERSION_CONFLICT");
+        return optimizeArticle(
+          currentArticle.id,
+          mode,
+          optimizationInstruction,
+          mode === "local"
+            ? { text: selectedText, start: textSelection.start, end: textSelection.end }
+            : null,
+        );
+      },
+      mode === "local"
+        ? "已开始优化所选内容，完成后可对比并决定是否采用。"
+        : "已开始优化整篇文章，完成后可对比并决定是否采用。",
+    );
+  };
+
   const exportArticle = async (format: string) => {
     if (!article) return;
+    setBusy(true);
+    setError("");
     try {
-      const result = await createArticleExport(article.id, format);
-      window.location.assign(result.download_url);
+      const currentArticle = await persistCurrentDraft();
+      if (!currentArticle) return;
+      const result = await createArticleExport(currentArticle.id, format);
+      const link = document.createElement("a");
+      link.href = result.download_url;
+      link.download = result.filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setNotice(`${EXPORT_LABELS[format] ?? "文章文件"}已开始下载。`);
     } catch (reason) {
       setError(articleUserMessage(reason));
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -562,16 +681,36 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
         <Steps
           current={!pack ? 0 : !article ? 1 : article.status === "draft" ? 2 : 3}
           items={[
-            { title: "选择资料" },
+            { title: "选择渠道与资料" },
             { title: "确认参考资料" },
             { title: "生成与编辑" },
-            { title: "分发与检测" },
+            { title: "保存与导出" },
           ]}
         />
 
         {!article && (
-          <Card title="1. 文章类型与参考资料">
+          <Card title="1. 发布渠道、文章类型与参考资料">
             <Space orientation="vertical" size="middle" style={{ width: "100%" }}>
+              <Typography.Text strong>准备发布到哪里</Typography.Text>
+              <Select
+                aria-label="发布渠道"
+                value={selectedPrimaryChannel || undefined}
+                placeholder="选择文章的主要发布渠道"
+                style={{ width: "100%" }}
+                options={primaryChannels.map((item) => ({ value: item.id, label: item.name }))}
+                onChange={setSelectedPrimaryChannel}
+              />
+              {activePrimaryChannel && (
+                <Alert
+                  type="info"
+                  title={`${activePrimaryChannel.name}写作特点`}
+                  description={
+                    CHANNEL_WRITING_GUIDES[activePrimaryChannel.key] ??
+                    "系统会按照所选平台的阅读习惯组织标题、段落和表达方式。"
+                  }
+                />
+              )}
+              <Typography.Text strong>选择文章类型</Typography.Text>
               <Select
                 aria-label="文章类型"
                 value={selectedType || undefined}
@@ -600,9 +739,9 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
                 aria-label="内容深度"
                 value={depth}
                 options={[
-                  { label: "简洁", value: "concise" },
-                  { label: "标准", value: "standard" },
-                  { label: "深度", value: "deep" },
+                  { label: ARTICLE_DEPTH_LABELS.concise, value: "concise" },
+                  { label: ARTICLE_DEPTH_LABELS.standard, value: "standard" },
+                  { label: ARTICLE_DEPTH_LABELS.deep, value: "deep" },
                 ]}
                 onChange={(event) => setDepth(event.target.value)}
               />
@@ -625,7 +764,12 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
                 options={webSources.map((item) => ({ value: item.id, label: item.label }))}
                 onChange={setSelectedWebSources}
               />
-              <Button type="primary" loading={busy} disabled={!selectedType} onClick={preparePack}>
+              <Button
+                type="primary"
+                loading={busy}
+                disabled={!selectedType || !selectedPrimaryChannel}
+                onClick={preparePack}
+              >
                 核验并确认参考资料
               </Button>
               {pack?.conflicts.map((conflict, conflictIndex) => (
@@ -661,6 +805,7 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
                 <Space wrap>
                   <Tag color="blue">{article.article_type?.name ?? article.custom_type}</Tag>
                   <Tag>{ARTICLE_DEPTH_LABELS[article.content_depth]}</Tag>
+                  <Tag color="purple">{article.primary_channel?.name ?? "通用型"}</Tag>
                   <Tag color={article.moderation_status === "passed" ? "green" : "orange"}>
                     {ARTICLE_REVIEW_LABELS[article.moderation_status]}
                   </Tag>
@@ -777,7 +922,16 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
                   aria-label="文章正文"
                   rows={18}
                   value={content}
-                  onChange={(event) => setContent(event.target.value)}
+                  onChange={(event) => {
+                    setContent(event.target.value);
+                    setTextSelection({ start: 0, end: 0 });
+                  }}
+                  onSelect={(event) =>
+                    setTextSelection({
+                      start: characterOffset(content, event.currentTarget.selectionStart),
+                      end: characterOffset(content, event.currentTarget.selectionEnd),
+                    })
+                  }
                 />
                 <Space wrap>
                   <Button type="primary" onClick={() => void saveDraft()} disabled={hasActiveJob}>
@@ -801,22 +955,22 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
                     <Row gutter={[16, 16]}>
                       <Col xs={24} md={8}>
                         <Statistic
-                          title="文章质量（仅建议）"
+                          title="文章综合表现"
                           value={article.quality.total_score}
-                          suffix={article.quality.grade}
+                          suffix={ARTICLE_QUALITY_GRADE_LABELS[article.quality.grade] ?? ""}
                         />
                       </Col>
                       {Object.entries(article.quality.dimensions).map(([key, value]) => (
                         <Col xs={12} md={8} key={key}>
                           <Statistic
-                            title={`${key} · 权重 ${article.quality?.weights[key]}%`}
+                            title={ARTICLE_QUALITY_DIMENSION_LABELS[key] ?? "文章表现"}
                             value={value}
                           />
                         </Col>
                       ))}
                     </Row>
                     <List
-                      header="修改建议（低分不阻止导出或分发）"
+                      header="改进建议"
                       dataSource={[...article.quality.suggestions]}
                       renderItem={(item) => <List.Item>{item}</List.Item>}
                     />
@@ -825,34 +979,34 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
               </Space>
             </Card>
 
-            <Card title="4. 临时优化对比">
+            <Card title="4. 智能优化与版本对比">
               <Space orientation="vertical" style={{ width: "100%" }}>
                 <Input
                   value={optimizationInstruction}
+                  placeholder="例如：表达更自然，补充有依据的细节，适配当前发布渠道"
                   onChange={(event) => setOptimizationInstruction(event.target.value)}
+                />
+                <Alert
+                  type={selectedText ? "success" : "info"}
+                  showIcon
+                  title={
+                    selectedText
+                      ? `已选择 ${selectedText.replace(/\s+/g, "").length} 字，可进行局部优化`
+                      : "如需局部优化，请先在上方正文中选择一段内容"
+                  }
                 />
                 <Space wrap>
                   <Button
-                    onClick={() =>
-                      void submitJob(
-                        "local_optimize",
-                        () => optimizeArticle(article.id, "local", optimizationInstruction),
-                        "局部优化已提交；成功消耗一次局部 AI 修改次数。",
-                      )
-                    }
-                    disabled={hasActiveJob}
+                    onClick={() => void optimize("local")}
+                    loading={busy}
+                    disabled={busy || hasActiveJob || !selectedText.trim()}
                   >
-                    局部优化
+                    优化所选内容
                   </Button>
                   <Button
-                    onClick={() =>
-                      void submitJob(
-                        "full_optimize",
-                        () => optimizeArticle(article.id, "full", optimizationInstruction),
-                        "整篇优化已提交；成功扣 1 个文章额度。",
-                      )
-                    }
-                    disabled={hasActiveJob}
+                    onClick={() => void optimize("full")}
+                    loading={busy}
+                    disabled={busy || hasActiveJob}
                   >
                     整篇优化
                   </Button>
@@ -883,21 +1037,40 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
               </Space>
             </Card>
 
-            <Card title="5. 导出与渠道适配">
+            <Card title="5. 保存与导出">
               <Space orientation="vertical" size="middle" style={{ width: "100%" }}>
+                <Typography.Text type="secondary">
+                  导出前会自动保存页面中的最新内容，下载文件使用当前文章标题命名。
+                </Typography.Text>
                 <Space wrap>
                   {(["word", "pdf", "txt", "markdown", "html"] as const).map((format) => (
-                    <Button key={format} onClick={() => void exportArticle(format)}>
-                      导出 {format.toUpperCase()}
+                    <Button
+                      key={format}
+                      loading={busy}
+                      disabled={hasActiveJob || article.moderation_status !== "passed"}
+                      onClick={() => void exportArticle(format)}
+                    >
+                      导出{EXPORT_LABELS[format]}
                     </Button>
                   ))}
                 </Space>
-                <Divider />
+                {article.moderation_status !== "passed" && (
+                  <Alert type="warning" showIcon title="文章审核通过后即可下载文件。" />
+                )}
+              </Space>
+            </Card>
+
+            <Card title="6. 生成其他平台版本">
+              <Space orientation="vertical" size="middle" style={{ width: "100%" }}>
+                <Typography.Text type="secondary">
+                  当前文章已经按照{article.primary_channel?.name ?? "通用型"}
+                  生成。如需发布到其他平台，可在这里生成独立版本。
+                </Typography.Text>
                 <Checkbox.Group
                   value={selectedChannels}
-                  options={channels.map((channel) => ({
+                  options={adaptationChannels.map((channel) => ({
                     value: channel.id,
-                    label: `${channel.name}（1 文章额度）`,
+                    label: `${channel.name}（使用 1 次文章额度）`,
                   }))}
                   onChange={(values) => setSelectedChannels(values as string[])}
                 />
@@ -926,12 +1099,12 @@ export default function ArticleWorkspace({ subjectId, initialTopic }: Props) {
                     >
                       <List.Item.Meta
                         title={`${item.channel.name} · ${CHANNEL_ADAPTATION_STATUS_LABELS[item.status]}`}
-                        description={`${item.title || "生成中"} · 质量 ${item.quality_score ?? "-"}`}
+                        description={`${item.title || "生成中"} · 文章表现 ${item.quality_score ?? "-"} 分`}
                       />
                     </List.Item>
                   )}
                 />
-                <Alert type="info" title="系统不代替登录或发布，也不会把适配稿标记为已发布。" />
+                <Alert type="info" title="这里仅生成适合对应平台的文章，不会代替用户登录或发布。" />
               </Space>
             </Card>
           </>

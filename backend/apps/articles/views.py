@@ -4,7 +4,8 @@ import logging
 from functools import partial
 
 from django.db import transaction
-from django.http import Http404
+from django.http import FileResponse, Http404
+from django.urls import reverse
 from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_protect
@@ -15,6 +16,7 @@ from rest_framework.views import APIView
 from apps.core.error_codes import ErrorCode
 from apps.core.responses import error_response
 from apps.documents.exceptions import FileStorageUnavailable
+from apps.documents.storage import storage_provider
 from apps.quotas.exceptions import QuotaError
 from apps.subjects.permissions import IsAvailableAuthenticatedUser
 from apps.subjects.subject_services import subject_for_user_or_404
@@ -22,6 +24,7 @@ from apps.subjects.subject_services import subject_for_user_or_404
 from .models import (
     Article,
     ArticleComparisonCandidate,
+    ArticleExport,
     ArticleGenerationJob,
     ArticleModerationReview,
     ArticleType,
@@ -204,7 +207,7 @@ class SubjectArticleListCreateView(APIView):
         page = max(1, int(request.query_params.get("page", "1")))
         page_size = min(100, max(1, int(request.query_params.get("page_size", "20"))))
         query = Article.objects.filter(subject=subject, user=request.user).select_related(
-            "article_type", "template_version", "source_pack"
+            "article_type", "template_version", "primary_channel", "source_pack"
         )
         if request.query_params.get("library") == "1":
             query = query.filter(autosaved_at__isnull=False).exclude(content="")
@@ -349,6 +352,13 @@ class ArticleOptimizeView(APIView):
     def post(self, request, article_id):
         serializer = OptimizationSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        if (
+            self.operation == "local_optimize"
+            and not serializer.validated_data["selection"].strip()
+        ):
+            return _content_error(
+                ContentError("ARTICLE_LOCAL_SELECTION_REQUIRED", status=422), request
+            )
         return _generation_response(request, article_id, self.operation, serializer.validated_data)
 
 
@@ -618,7 +628,7 @@ class ArticleExportView(APIView):
         serializer = ArticleExportSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
-            export, url = create_article_export(
+            export, _ = create_article_export(
                 user=request.user, article_id=article_id, **serializer.validated_data
             )
         except ContentError as exc:
@@ -633,9 +643,58 @@ class ArticleExportView(APIView):
                     "id": str(export.pk),
                     "article_id": str(export.article_id),
                     "format": export.format,
-                    "download_url": url,
+                    "download_url": request.build_absolute_uri(
+                        reverse("article-export-download", args=(export.pk,))
+                    ),
+                    "filename": _export_filename(export),
                     "created_at": export.created_at,
                 },
                 status=HTTP_201_CREATED,
+            )
+        )
+
+
+def _export_filename(export: ArticleExport) -> str:
+    extension = {
+        "word": "docx",
+        "pdf": "pdf",
+        "txt": "txt",
+        "markdown": "md",
+        "html": "html",
+    }[export.format]
+    title = "".join(
+        char for char in (export.article.title or "未命名文章") if char not in '\\/:*?"<>|'
+    ).strip()[:80]
+    return f"{title or '未命名文章'}.{extension}"
+
+
+class ArticleExportDownloadView(APIView):
+    permission_classes = [IsAvailableAuthenticatedUser]
+
+    def get(self, request, export_id):
+        try:
+            export = ArticleExport.objects.select_related("article").get(
+                pk=export_id, user=request.user
+            )
+            stream = storage_provider().open_object(export.object_key)
+        except ArticleExport.DoesNotExist as exc:
+            raise Http404 from exc
+        except FileStorageUnavailable:
+            return _content_error(
+                ContentError("ARTICLE_EXPORT_STORAGE_UNAVAILABLE", status=503), request
+            )
+        content_type = {
+            "word": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "pdf": "application/pdf",
+            "txt": "text/plain; charset=utf-8",
+            "markdown": "text/markdown; charset=utf-8",
+            "html": "text/html; charset=utf-8",
+        }[export.format]
+        return _no_store(
+            FileResponse(
+                stream,
+                as_attachment=True,
+                filename=_export_filename(export),
+                content_type=content_type,
             )
         )
