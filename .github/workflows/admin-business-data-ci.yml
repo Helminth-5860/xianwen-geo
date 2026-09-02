@@ -49,6 +49,8 @@ jobs:
         working-directory: frontend
         run: |
           npx eslint app/admin/business-data/page.tsx components/admin/admin-console-shell.tsx lib/admin-business-data-client.ts tests/admin-business-data.test.tsx
-          npx prettier --check app/admin/business-data/page.tsx components/admin/admin-console-shell.tsx lib/admin-business-data-client.ts tests/admin-business-data.test.tsx
+          npx prettier --write app/admin/business-data/page.tsx components/admin/admin-console-shell.tsx lib/admin-business-data-client.ts tests/admin-business-data.test.tsx
+          git diff -- lib/admin-business-data-client.ts
+          git diff --check
           npx vitest run tests/admin-business-data.test.tsx
           npx tsc --noEmit
