@@ -1,12 +1,7 @@
 import { get } from "./auth-client";
 
 export type BusinessDataResource =
-  | "subjects"
-  | "questions"
-  | "detections"
-  | "reports"
-  | "articles"
-  | "images";
+  "subjects" | "questions" | "detections" | "reports" | "articles" | "images";
 
 export type BusinessDataItem = Readonly<{
   id: string;
@@ -44,7 +39,10 @@ export async function getAdminBusinessData(
     signal?: AbortSignal;
   }>,
 ): Promise<BusinessDataResult> {
-  const search = new URLSearchParams({ resource: params.resource, page: String(params.page ?? 1) });
+  const search = new URLSearchParams({
+    resource: params.resource,
+    page: String(params.page ?? 1),
+  });
   if (params.query?.trim()) search.set("q", params.query.trim());
   return get<BusinessDataResult>(`/admin/business-data?${search.toString()}`, {
     signal: params.signal,

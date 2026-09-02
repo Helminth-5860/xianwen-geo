@@ -9,7 +9,14 @@ describe("后台业务数据查询中心", () => {
     const page = read("../app/admin/business-data/page.tsx");
     const client = read("../lib/admin-business-data-client.ts");
 
-    for (const resource of ["subjects", "questions", "detections", "reports", "articles", "images"]) {
+    for (const resource of [
+      "subjects",
+      "questions",
+      "detections",
+      "reports",
+      "articles",
+      "images",
+    ]) {
       expect(page).toContain(`key: "${resource}"`);
     }
     expect(page).toContain("getAdminBusinessData");
@@ -22,6 +29,7 @@ describe("后台业务数据查询中心", () => {
   it("业务数据入口与页面都限制超级管理员", () => {
     const page = read("../app/admin/business-data/page.tsx");
     const shell = read("../components/admin/admin-console-shell.tsx");
+
     expect(page).toContain('commercial_identity === "SUPER_ADMIN"');
     expect(page).toContain("仅超级管理员可查看");
     expect(shell).toMatch(/href: "\/admin\/business-data"[\s\S]*?superOnly: true/);
@@ -30,6 +38,7 @@ describe("后台业务数据查询中心", () => {
   it("页面不展示正文、原始模型响应、存储路径或密钥", () => {
     const page = read("../app/admin/business-data/page.tsx");
     const client = read("../lib/admin-business-data-client.ts");
+
     expect(page).toContain("不会展示文章正文、模型原始响应、存储路径或密钥");
     expect(client).not.toMatch(/object_key|content:\s*string|prompt|credential|provider_response/);
   });
