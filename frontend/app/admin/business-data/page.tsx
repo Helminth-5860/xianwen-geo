@@ -142,8 +142,11 @@ export default function AdminBusinessDataPage() {
   useEffect(() => {
     if (!isSuperuser) return;
     const controller = new AbortController();
-    void load(controller.signal);
-    return () => controller.abort();
+    const timer = window.setTimeout(() => void load(controller.signal), 0);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
   }, [isSuperuser, load]);
 
   const columns = useMemo<TableProps<BusinessDataItem>["columns"]>(
@@ -341,7 +344,11 @@ export default function AdminBusinessDataPage() {
             emptyText: (
               <Empty
                 image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description={query ? "没有找到匹配的业务数据" : `暂无${resources.find((x) => x.key === resource)?.label ?? "业务"}数据`}
+                description={
+                  query
+                    ? "没有找到匹配的业务数据"
+                    : `暂无${resources.find((item) => item.key === resource)?.label ?? "业务"}数据`
+                }
               />
             ),
           }}
