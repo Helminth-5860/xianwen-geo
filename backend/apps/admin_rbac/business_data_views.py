@@ -148,9 +148,8 @@ def _common_search(prefix_user: str, prefix_subject: str, keyword: str) -> Q:
     )
     parsed_uuid = _parse_uuid(keyword)
     if parsed_uuid:
-        conditions |= (
-            Q(**{f"{prefix_user}__id": parsed_uuid})
-            | Q(**{f"{prefix_subject}__id": parsed_uuid})
+        conditions |= Q(**{f"{prefix_user}__id": parsed_uuid}) | Q(
+            **{f"{prefix_subject}__id": parsed_uuid}
         )
     return conditions
 
@@ -282,9 +281,7 @@ def _reports(keyword: str):
         parsed_uuid = _parse_uuid(keyword)
         if parsed_uuid:
             conditions |= (
-                Q(pk=parsed_uuid)
-                | Q(job_id=parsed_uuid)
-                | Q(baseline_report_id=parsed_uuid)
+                Q(pk=parsed_uuid) | Q(job_id=parsed_uuid) | Q(baseline_report_id=parsed_uuid)
             )
         queryset = queryset.filter(conditions)
     return queryset
@@ -360,9 +357,7 @@ def _images(keyword: str):
         parsed_uuid = _parse_uuid(keyword)
         if parsed_uuid:
             conditions |= (
-                Q(pk=parsed_uuid)
-                | Q(generation_job_id=parsed_uuid)
-                | Q(article_id=parsed_uuid)
+                Q(pk=parsed_uuid) | Q(generation_job_id=parsed_uuid) | Q(article_id=parsed_uuid)
             )
         queryset = queryset.filter(conditions)
     return queryset
