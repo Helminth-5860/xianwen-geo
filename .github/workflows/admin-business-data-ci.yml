@@ -1,0 +1,54 @@
+name: Admin Business Data CI
+
+on:
+  push:
+    branches:
+      - feature/XW-admin-business-data-v1-20260902
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 1
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
+      - run: python -m pip install --requirement backend/requirements-dev.txt
+      - name: Ruff
+        working-directory: backend
+        run: |
+          python -m ruff check apps/admin_rbac/business_data_views.py tests/test_admin_business_data.py
+          python -m ruff format --check apps/admin_rbac/business_data_views.py tests/test_admin_business_data.py
+      - name: Backend tests
+        working-directory: backend
+        run: python -m pytest -q tests/test_admin_business_data.py
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 1
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version-file: frontend/.nvmrc
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+        working-directory: frontend
+      - name: Frontend checks
+        working-directory: frontend
+        run: |
+          npx eslint app/admin/business-data/page.tsx components/admin/admin-console-shell.tsx lib/admin-business-data-client.ts tests/admin-business-data.test.tsx
+          npx prettier --check app/admin/business-data/page.tsx components/admin/admin-console-shell.tsx lib/admin-business-data-client.ts tests/admin-business-data.test.tsx
+          npx vitest run tests/admin-business-data.test.tsx
+          npx tsc --noEmit
