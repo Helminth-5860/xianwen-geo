@@ -1,12 +1,7 @@
 import { get } from "./auth-client";
 
 export type BusinessDataResource =
-  | "subjects"
-  | "questions"
-  | "detections"
-  | "reports"
-  | "articles"
-  | "images";
+  "subjects" | "questions" | "detections" | "reports" | "articles" | "images";
 
 export type BusinessDataItem = Readonly<{
   id: string;
