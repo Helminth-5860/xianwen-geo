@@ -11,6 +11,46 @@ permissions:
 jobs:
   backend:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16.14-bookworm
+        env:
+          POSTGRES_DB: business_data_test
+          POSTGRES_USER: business_data_test
+          POSTGRES_PASSWORD: business-data-test-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U business_data_test -d business_data_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7.0.15-alpine3.20
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      APP_ENV: local
+      DJANGO_SETTINGS_MODULE: config.settings
+      DJANGO_SECRET_KEY: business-data-test-only-django-key-with-more-than-fifty-characters-000000
+      DJANGO_DEBUG: "false"
+      ALLOWED_HOSTS: localhost,127.0.0.1
+      CSRF_TRUSTED_ORIGINS: http://localhost:3000
+      CORS_ALLOWED_ORIGINS: http://localhost:3000
+      DATABASE_URL: postgresql://business_data_test:business-data-test-password@127.0.0.1:5432/business_data_test
+      REDIS_URL: redis://127.0.0.1:6379/0
+      CELERY_BROKER_URL: redis://127.0.0.1:6379/1
+      SMS_PROVIDER: mock
+      SMS_VERIFICATION_HMAC_KEY: business-data-test-only-sms-hmac-key-with-more-than-fifty-characters-000000
+      QUOTA_IDEMPOTENCY_HMAC_KEY: business-data-test-only-quota-hmac-key-with-more-than-fifty-characters-000000
+      PLAN_CHANGE_IDEMPOTENCY_HMAC_KEY: business-data-test-only-plan-change-hmac-key-with-more-than-fifty-characters-000000
+      WEB_IMPORT_IDEMPOTENCY_HMAC_KEY: business-data-test-only-web-import-hmac-key-with-more-than-fifty-characters-000000
+      RUN_MIGRATIONS: "false"
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
@@ -28,9 +68,9 @@ jobs:
         run: |
           python -m ruff check apps/admin_rbac/business_data_views.py tests/test_admin_business_data.py
           python -m ruff format --check apps/admin_rbac/business_data_views.py tests/test_admin_business_data.py
-      - name: Backend tests
+      - name: PostgreSQL backend tests
         working-directory: backend
-        run: python -m pytest -q tests/test_admin_business_data.py
+        run: python -m pytest tests/test_admin_business_data.py --ds=config.settings -q -p no:cacheprovider
 
   frontend:
     runs-on: ubuntu-latest
@@ -49,8 +89,6 @@ jobs:
         working-directory: frontend
         run: |
           npx eslint app/admin/business-data/page.tsx components/admin/admin-console-shell.tsx lib/admin-business-data-client.ts tests/admin-business-data.test.tsx
-          npx prettier --write app/admin/business-data/page.tsx components/admin/admin-console-shell.tsx lib/admin-business-data-client.ts tests/admin-business-data.test.tsx
-          git diff -- lib/admin-business-data-client.ts
-          git diff --check
+          npx prettier --check app/admin/business-data/page.tsx components/admin/admin-console-shell.tsx lib/admin-business-data-client.ts tests/admin-business-data.test.tsx
           npx vitest run tests/admin-business-data.test.tsx
           npx tsc --noEmit
