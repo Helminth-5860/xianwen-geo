@@ -28,14 +28,7 @@ def make_superuser():
 
 
 def make_subject_type():
-    return SubjectType.objects.create(
-        key="business-data-company",
-        name="企业",
-        description="",
-        status=SubjectType.Status.ACTIVE,
-        schema_version=1,
-        version=1,
-    )
+    return SubjectType.objects.get(key="enterprise")
 
 
 def make_subject(*, user, subject_type, name, index):
@@ -135,10 +128,10 @@ def test_business_data_all_six_resource_queries_compile_and_validate_inputs():
         "/api/v1/admin/business-data",
         {"resource": "unknown"},
     )
-    assert invalid_resource.status_code == 400
+    assert invalid_resource.status_code == 422
 
     invalid_page = client.get(
         "/api/v1/admin/business-data",
         {"resource": "subjects", "page": 0},
     )
-    assert invalid_page.status_code == 400
+    assert invalid_page.status_code == 422
