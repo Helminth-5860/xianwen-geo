@@ -5,8 +5,10 @@ import {
   Button,
   Card,
   Checkbox,
+  Input,
   Pagination,
   Popconfirm,
+  Select,
   Space,
   Tag,
   Typography,
@@ -23,6 +25,7 @@ import {
   getQuestionBankDraft,
   getQuestionGenerationJob,
   questionGenerationErrorMessage,
+  saveQuestionBankDraft,
   type QuestionBankDraft,
   type QuestionBankVersion,
   type QuestionDraftItem,
@@ -66,6 +69,12 @@ export default function QuestionBankPanel({ subjectId, upstreamDirty }: Props) {
   const [confirmRegeneration, setConfirmRegeneration] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [manualText, setManualText] = useState("");
+  const [manualCategoryId, setManualCategoryId] = useState("");
+  const [manualKeywordIds, setManualKeywordIds] = useState<string[]>([]);
+  const [manualQuestionType, setManualQuestionType] = useState<"natural" | "brand_directed">(
+    "natural",
+  );
   const active = Boolean(job && ["queued", "running", "retry_wait"].includes(job.status));
 
   const reload = useCallback(async () => {
@@ -87,6 +96,11 @@ export default function QuestionBankPanel({ subjectId, upstreamDirty }: Props) {
       nextAssets
         .filter((asset) => asset.enabled && asset.usable_for_questions)
         .map((asset) => asset.id),
+    );
+    setManualCategoryId((current) =>
+      nextDraft.catalog.categories.some((category) => category.id === current)
+        ? current
+        : (nextDraft.catalog.categories[0]?.id ?? ""),
     );
     setQuestionPage(1);
     setKeywordPage(1);
@@ -210,6 +224,57 @@ export default function QuestionBankPanel({ subjectId, upstreamDirty }: Props) {
     }
   };
 
+  const addManualQuestion = async () => {
+    const text = manualText.trim();
+    const category = draft?.catalog.categories.find((item) => item.id === manualCategoryId);
+    if (!draft?.current_distillation_set) {
+      setError("请先完成关键词蒸馏，再手动添加问题");
+      return;
+    }
+    if (!text) {
+      setError("请输入要添加的问题");
+      return;
+    }
+    if (!category) {
+      setError("请选择问题分类");
+      return;
+    }
+    if (items.some((item) => item.text.trim().toLocaleLowerCase() === text.toLocaleLowerCase())) {
+      setError("这个问题已经在当前问题列表中");
+      return;
+    }
+    setBusy(true);
+    try {
+      const next = await saveQuestionBankDraft(subjectId, draft.version, [
+        ...items,
+        {
+          id: `manual-${crypto.randomUUID()}`,
+          text,
+          primary_category: { id: category.id, key: category.key, name: category.name },
+          tag_ids: [],
+          keyword_ids: manualKeywordIds,
+          priority: "medium",
+          question_type: manualQuestionType,
+          participates_in_scoring: true,
+          ai_reason: "手动添加",
+          sort_order: items.length,
+        },
+      ]);
+      setDraft(next);
+      setItems(next.items.map((item) => ({ ...item })));
+      setManualText("");
+      setManualKeywordIds([]);
+      setQuestionPage(Math.max(1, Math.ceil(next.items.length / QUESTION_PAGE_SIZE)));
+      setError("");
+      setNotice("问题已加入待保存列表，确认后会进入问题管理");
+    } catch (reason) {
+      setError(userMessage(reason));
+      setNotice("");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const disabled = !draft?.can_write || busy || active;
   const questionPageCount = Math.max(1, Math.ceil(items.length / QUESTION_PAGE_SIZE));
   const effectiveQuestionPage = Math.min(questionPage, questionPageCount);
@@ -224,6 +289,15 @@ export default function QuestionBankPanel({ subjectId, upstreamDirty }: Props) {
   );
   const hasUnconfirmedGeneratedResult = Boolean(
     draft?.source_result_id && draft.source_result_id !== currentVersion?.source_result_id,
+  );
+  const hasUnconfirmedChanges = Boolean(
+    items.length &&
+    (!currentVersion ||
+      hasUnconfirmedGeneratedResult ||
+      currentVersion.item_count !== items.length ||
+      items.some(
+        (item) => !currentVersion.items?.some((currentItem) => currentItem.text === item.text),
+      )),
   );
 
   return (
@@ -290,6 +364,66 @@ export default function QuestionBankPanel({ subjectId, upstreamDirty }: Props) {
           </Space>
         </Card>
 
+        <Card size="small" title="手动添加问题">
+          <Space direction="vertical" size="small" style={{ width: "100%" }}>
+            <Typography.Text type="secondary">
+              可直接补充真实客户会搜索的问题。自然搜索问题不要写主体名称，例如“广州天河 GEO 找谁”。
+            </Typography.Text>
+            <Input.TextArea
+              aria-label="手动问题内容"
+              value={manualText}
+              maxLength={1000}
+              autoSize={{ minRows: 2, maxRows: 5 }}
+              placeholder="例如：广州天河 AI 搜索优化谁家好？"
+              onChange={(event) => setManualText(event.target.value)}
+            />
+            <Space wrap style={{ width: "100%" }}>
+              <Select
+                aria-label="手动问题分类"
+                value={manualCategoryId || undefined}
+                placeholder="选择问题分类"
+                style={{ minWidth: 180 }}
+                options={(draft?.catalog.categories ?? []).map((category) => ({
+                  value: category.id,
+                  label: category.name,
+                }))}
+                onChange={setManualCategoryId}
+              />
+              <Select
+                aria-label="手动问题类型"
+                value={manualQuestionType}
+                style={{ minWidth: 160 }}
+                options={[
+                  { value: "natural", label: "自然搜索问题" },
+                  { value: "brand_directed", label: "主体相关问题" },
+                ]}
+                onChange={setManualQuestionType}
+              />
+              <Select
+                aria-label="手动问题关联关键词"
+                mode="multiple"
+                allowClear
+                value={manualKeywordIds}
+                placeholder="关联关键词（可选）"
+                style={{ minWidth: 240 }}
+                options={keywordAssets.map((keyword) => ({
+                  value: keyword.id,
+                  label: keyword.text,
+                }))}
+                onChange={setManualKeywordIds}
+              />
+              <Button
+                type="primary"
+                disabled={disabled || upstreamDirty || !draft?.current_distillation_set}
+                loading={busy}
+                onClick={() => void addManualQuestion()}
+              >
+                添加到问题列表
+              </Button>
+            </Space>
+          </Space>
+        </Card>
+
         <Space wrap>
           <Button
             type="primary"
@@ -323,7 +457,7 @@ export default function QuestionBankPanel({ subjectId, upstreamDirty }: Props) {
           ) : null}
         </Space>
 
-        <Card size="small" title="生成结果">
+        <Card size="small" title="待保存问题">
           <Space direction="vertical" size="small" style={{ width: "100%" }}>
             {visibleQuestions.map((item) => (
               <Card key={item.id} size="small">
@@ -350,7 +484,7 @@ export default function QuestionBankPanel({ subjectId, upstreamDirty }: Props) {
             ))}
             {!items.length ? (
               <Typography.Text type="secondary">
-                尚未生成问题。请选择关键词资产后，点击上方“AI 生成问题”。
+                暂无问题，可手动添加，也可选择关键词资产后智能生成。
               </Typography.Text>
             ) : null}
             {items.length > QUESTION_PAGE_SIZE ? (
@@ -367,7 +501,7 @@ export default function QuestionBankPanel({ subjectId, upstreamDirty }: Props) {
           </Space>
         </Card>
 
-        {items.length > 0 && hasUnconfirmedGeneratedResult ? (
+        {hasUnconfirmedChanges ? (
           <Popconfirm
             title="保存到问题管理"
             description="将当前问题草稿确认为正式问题库，并进入问题管理。"

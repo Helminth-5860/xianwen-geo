@@ -88,9 +88,13 @@ def _safe_event(job, event_type, *, code="", summary=None):
     )
 
 
-def _subject_values(subject_version):
+def _subject_values(subject, subject_version):
     values = copy.deepcopy(subject_version.field_values)
     values["official_name"] = subject_version.official_name
+    profile = getattr(subject, "business_profile", None)
+    if profile is not None:
+        values["brand_name"] = profile.brand_name
+        values["subject_aliases"] = profile.subject_aliases
     return values
 
 
@@ -305,7 +309,7 @@ def create_question_generation_job(
     # Preserve the existing immutable evidence shape while charging by the
     # number of novel questions that are actually stored.
     billing_mode = "regeneration"
-    subject_values = _subject_values(distillation_set.subject_version)
+    subject_values = _subject_values(subject, distillation_set.subject_version)
     keywords = _effective_keywords(distillation_set)
     if not keywords:
         raise QuestionBankValuesInvalid
@@ -568,6 +572,7 @@ def _finalize_success(job_id, generation, response):
             tag_ids={uuid.UUID(row["id"]) for row in job.input_tags},
             keyword_ids={uuid.UUID(row["id"]) for row in job.input_keywords},
             limit=job.question_limit,
+            subject_values=job.input_subject_values,
         )
         output = [item.payload() for item in normalized]
         previous_matching = (
@@ -755,17 +760,39 @@ def save_question_bank_draft(*, user_id, subject_id, expected_version, items):
     if subject.status != subject.Status.ACTIVE:
         raise QuestionBankInputConflict
     subscription = _lock_effective_subscription(user)
-    try:
-        workspace = (
-            QuestionBankWorkspace.objects.select_for_update()
-            .select_related("subject", "draft_distillation_set")
-            .get(subject=subject)
+    workspace = (
+        QuestionBankWorkspace.objects.select_for_update()
+        .select_related("subject", "draft_distillation_set")
+        .filter(subject=subject)
+        .first()
+    )
+    created = workspace is None
+    if created:
+        if expected_version != 0 or subject.current_version_id is None:
+            raise QuestionBankVersionConflict
+        try:
+            distillation_workspace = (
+                DistillationWorkspace.objects.select_for_update()
+                .select_related("current_set")
+                .get(subject=subject)
+            )
+        except DistillationWorkspace.DoesNotExist as exc:
+            raise QuestionBankInputConflict from exc
+        current_set = distillation_workspace.current_set
+        if current_set is None or current_set.subject_version_id != subject.current_version_id:
+            raise QuestionBankInputConflict
+        workspace = QuestionBankWorkspace.objects.create(
+            user=user,
+            subject=subject,
+            draft_subject_version_id=subject.current_version_id,
+            draft_distillation_set=current_set,
+            draft_source_result=None,
+            version=1,
         )
-    except QuestionBankWorkspace.DoesNotExist as exc:
-        raise QuestionBankValuesInvalid from exc
-    if workspace.version != expected_version:
-        raise QuestionBankVersionConflict
-    _assert_workspace_input_current(workspace, subject)
+    else:
+        if workspace.version != expected_version:
+            raise QuestionBankVersionConflict
+        _assert_workspace_input_current(workspace, subject)
     category_ids, tag_ids, keyword_ids = _current_catalog_and_keywords(workspace)
     limit = (
         effective_entitlement_snapshot(subscription).get("limits", {}).get("question_bank_limit")
@@ -808,8 +835,9 @@ def save_question_bank_draft(*, user_id, subject_id, expected_version, items):
     if old == new:
         return workspace, False
     _replace_draft(workspace, normalized)
-    workspace.version += 1
-    workspace.save(update_fields=("version", "updated_at"))
+    if not created:
+        workspace.version += 1
+        workspace.save(update_fields=("version", "updated_at"))
     return workspace, True
 
 

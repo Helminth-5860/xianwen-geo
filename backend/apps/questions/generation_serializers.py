@@ -29,7 +29,7 @@ class QuestionDraftItemInputSerializer(StrictSerializer):
 
 
 class QuestionDraftSaveSerializer(StrictSerializer):
-    expected_version = serializers.IntegerField(min_value=1)
+    expected_version = serializers.IntegerField(min_value=0)
     items = QuestionDraftItemInputSerializer(many=True, allow_empty=False)
 
 

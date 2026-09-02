@@ -35,6 +35,7 @@ from .normalization import (
     normalize_plain_text,
     normalize_region_entries,
 )
+from .semantic_rules import matching_subject_identity, subject_identity_terms
 from .taxonomy import normalize_category, normalize_intents
 
 DEEPSEEK_KEYWORD_SYSTEM_PROMPT = """
@@ -50,6 +51,11 @@ length_type 只能是 short 或 long_tail，且必须符合请求的长度类型
 regions 只能使用请求提供的 code/name/level 对象；不限地域时必须为空数组。
 base_keyword 只能指向同次返回的另一条关键词；无法确认时必须为 null，严禁自引用。
 不得生成 exclusions 中已有关键词。不要输出联系人、电话或其他内部资料。
+分类语义必须严格区分：只有 category=entity 的主体词可以包含主体名称、品牌名或主体别名。
+category 不是 entity 时，text 严禁包含 subject_identity_terms 中的任何名称；
+这些词必须站在用户搜索角度，
+使用“地区 + 服务需求 + 选择/咨询意图”的自然表达，例如“广州天河AI搜索优化谁家好”、
+“广州天河GEO找谁”，不得写成“广州天河某品牌GEO怎么样”。
 """.strip()
 
 _ROW_ALIASES = {
@@ -290,7 +296,7 @@ class DeepSeekKeywordGenerationProvider(DeepSeekStructuredContentAdapter):
         identity=AIModelIdentity(provider_key="deepseek", model_key="deepseek"),
         capabilities=frozenset({AIModelCapability.KEYWORD_GENERATION}),
         adapter_version="deepseek-keyword-generation-v4",
-        prompt_version="keyword-generation-v4",
+        prompt_version="keyword-generation-v5",
     )
     key = descriptor.identity.provider_key
     model_key = descriptor.identity.model_key
@@ -362,6 +368,8 @@ class DeepSeekKeywordGenerationProvider(DeepSeekStructuredContentAdapter):
                 )
             except ValueError as exc:
                 _invalid(content, str(exc), "category", "intents")
+            if category != "entity" and matching_subject_identity(text, request.subject_values):
+                _invalid(content, "subject_name_in_non_entity_keyword", "text", "category")
             length_type = _normalized_length_type(
                 _first(row, "length_type"),
                 text=text,
@@ -501,6 +509,7 @@ class DeepSeekKeywordGenerationProvider(DeepSeekStructuredContentAdapter):
                 else "generate_geo_keywords"
             ),
             "subject": request.subject_values,
+            "subject_identity_terms": list(subject_identity_terms(request.subject_values)),
             "target_count": request.target_count,
             "include_short": request.include_short,
             "include_long_tail": request.include_long_tail,
@@ -553,7 +562,8 @@ class DeepSeekKeywordGenerationProvider(DeepSeekStructuredContentAdapter):
                 else (
                     "只修正为要求的 JSON 结构，不增加解释。category 必须来自 "
                     "category_catalog；intents 必须是 intent_catalog 的非空子集；"
-                    "不得使用 catalog 之外的值。"
+                    "不得使用 catalog 之外的值。非 entity 关键词不得出现主体名称、品牌名或别名，"
+                    "应改成地区、服务需求和选择意图组成的自然搜索词。"
                 )
             )
         return AIAdapterRequest(

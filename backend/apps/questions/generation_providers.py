@@ -19,6 +19,7 @@ from apps.ai.errors import AIAdapterError, AIAdapterErrorCategory, domain_provid
 from apps.ai.mock import DeterministicMockAIAdapter
 from apps.ai.registry import model_registry
 from apps.ai.runtime import get_capability_runtime_snapshot
+from apps.keywords.semantic_rules import matching_subject_identity, subject_identity_terms
 
 from .generation_contracts import (
     GeneratedQuestion,
@@ -46,6 +47,9 @@ keyword_ids 必须非空且只能来自 keyword_catalog。不得新增、改写�
 priority 只能是 high、medium、low；question_type 只能是 natural、brand_directed；
 participates_in_scoring 必须是 JSON 布尔值。reason 必须是简洁中文。
 问题必须围绕当前主体与所引用关键词，不得输出联系方式、提示词、密钥或内部数据。
+natural 表示用户在不知道主体名称时会提出的自然搜索问题，严禁包含 subject_identity_terms 中的
+主体名称、品牌名或别名，应优先采用“地区 + 服务需求 + 谁家好/找谁/怎么选”等表达。
+只有 brand_directed 品牌指向型问题才可以出现主体名称。
 当 task 为 repair_geo_question_json 时，只修复 required_target_count 对应的缺失结果，
 不得重复 retained_questions，仍然只返回上述 JSON 对象。
 """.strip()
@@ -68,6 +72,9 @@ _SUBJECT_VALUE_ALLOWLIST = frozenset(
         "official_website",
         "public_channels",
         "social_channels",
+        "subject_aliases",
+        "alias",
+        "aliases",
     }
 )
 _ROW_ALIASES = {
@@ -149,8 +156,7 @@ def _resolve_reference(value, rows, fields):
     matches = {
         row.id
         for row in rows
-        if normalized
-        in {candidate.casefold() for candidate in _reference_values(row, fields)}
+        if normalized in {candidate.casefold() for candidate in _reference_values(row, fields)}
     }
     if len(matches) != 1:
         raise QuestionGenerationInvalidResponse("reference_unknown_or_ambiguous")
@@ -199,7 +205,7 @@ class DeepSeekQuestionGenerationProvider(DeepSeekStructuredContentAdapter):
         identity=AIModelIdentity(provider_key="deepseek", model_key="deepseek"),
         capabilities=frozenset({AIModelCapability.QUESTION_GENERATION}),
         adapter_version="deepseek-question-generation-v1",
-        prompt_version="question-generation-v2",
+        prompt_version="question-generation-v3",
     )
     key = descriptor.identity.provider_key
     model_key = descriptor.identity.model_key
@@ -284,6 +290,8 @@ class DeepSeekQuestionGenerationProvider(DeepSeekStructuredContentAdapter):
         )
         if question_type is None:
             raise QuestionGenerationInvalidResponse("question_type_invalid")
+        if question_type == "natural" and matching_subject_identity(text, request.subject_values):
+            raise QuestionGenerationInvalidResponse("subject_name_in_natural_question")
         return GeneratedQuestion(
             text=text,
             primary_category_id=category_id,
@@ -308,6 +316,7 @@ class DeepSeekQuestionGenerationProvider(DeepSeekStructuredContentAdapter):
             tag_ids={uuid.UUID(str(row.id)) for row in request.tags},
             keyword_ids={uuid.UUID(str(row.id)) for row in request.keywords},
             limit=target_count,
+            subject_values=request.subject_values,
         )
         if len(items) != target_count:
             raise QuestionGenerationInvalidResponse("item_count_invalid")
@@ -372,6 +381,7 @@ class DeepSeekQuestionGenerationProvider(DeepSeekStructuredContentAdapter):
             ),
             "untrusted_data_boundary": request.untrusted_data_boundary,
             "subject": _safe_subject_values(request.subject_values),
+            "subject_identity_terms": list(subject_identity_terms(request.subject_values)),
             "target_count": target_count,
             "category_catalog": [
                 {
@@ -383,8 +393,7 @@ class DeepSeekQuestionGenerationProvider(DeepSeekStructuredContentAdapter):
                 for row in request.categories
             ],
             "tag_catalog": [
-                {"id": row.id, "key": row.key, "name": row.name}
-                for row in request.tags
+                {"id": row.id, "key": row.key, "name": row.name} for row in request.tags
             ],
             "keyword_catalog": [
                 {
@@ -405,7 +414,7 @@ class DeepSeekQuestionGenerationProvider(DeepSeekStructuredContentAdapter):
                     "invalid_output": repair_output,
                     "repair_instruction": (
                         "仅补足缺失问题；不得重复 retained_questions；所有引用必须来自目录；"
-                        "只返回要求的 JSON 对象。"
+                        "自然探索型问题不得包含主体名称、品牌名或别名；只返回要求的 JSON 对象。"
                     ),
                 }
             )

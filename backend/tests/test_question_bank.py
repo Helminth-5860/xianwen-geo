@@ -522,7 +522,7 @@ def test_available_deepseek_provider_preflight_and_provenance_are_used_by_servic
     assert job.provider_key == "deepseek"
     assert job.model_key == "deepseek"
     assert job.adapter_version == "deepseek-question-generation-v1"
-    assert job.prompt_version == "question-generation-v2"
+    assert job.prompt_version == "question-generation-v3"
     ensure_available.assert_called_once()
 
 
@@ -588,6 +588,49 @@ def test_api_generation_draft_confirm_versions_and_owner_scope(
     other.force_authenticate(outsider)
     assert other.get(f"/api/v1/question-bank-jobs/{job_id}").status_code == 404
     assert other.get(f"/api/v1/subjects/{subject.pk}/question-banks/draft").status_code == 404
+
+
+def test_api_allows_manual_question_before_ai_generation_without_using_generation_quota():
+    user, subject, _, subscription, distilled = facts(limit=3)
+    client = APIClient()
+    client.force_authenticate(user)
+    initial = client.get(f"/api/v1/subjects/{subject.pk}/question-banks/draft")
+    data = initial.json()["data"]
+    category_id = data["catalog"]["categories"][0]["id"]
+    keyword_id = _effective_keywords(distilled)[0]["id"]
+    ledger_count = QuotaLedgerEntry.objects.filter(subscription=subscription).count()
+
+    saved = client.patch(
+        f"/api/v1/subjects/{subject.pk}/question-banks/draft",
+        {
+            "expected_version": 0,
+            "items": [
+                {
+                    "text": "广州天河 GEO 服务找谁？",
+                    "primary_category_id": category_id,
+                    "tag_ids": [],
+                    "keyword_ids": [keyword_id],
+                    "priority": "medium",
+                    "question_type": "natural",
+                    "participates_in_scoring": True,
+                    "ai_reason": "手动添加",
+                }
+            ],
+        },
+        format="json",
+    )
+
+    assert saved.status_code == 200
+    assert saved.json()["data"]["version"] == 1
+    assert saved.json()["data"]["items"][0]["text"] == "广州天河 GEO 服务找谁?"
+    assert QuestionGenerationJob.objects.filter(subject=subject).count() == 0
+    assert QuotaLedgerEntry.objects.filter(subscription=subscription).count() == ledger_count
+    confirmed = client.post(
+        f"/api/v1/subjects/{subject.pk}/question-banks/confirm",
+        {"expected_version": 1},
+        format="json",
+    )
+    assert confirmed.status_code == 201
 
 
 def test_api_bulk_remove_is_owner_scoped_and_optimistically_locked():

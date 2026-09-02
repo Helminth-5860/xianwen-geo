@@ -14,6 +14,7 @@ const api = vi.hoisted(() => ({
   getQuestionBankDraft: vi.fn(),
   createQuestionGeneration: vi.fn(),
   getQuestionGenerationJob: vi.fn(),
+  saveQuestionBankDraft: vi.fn(),
   confirmQuestionBank: vi.fn(),
   getCurrentQuestionBank: vi.fn(),
   removeCurrentQuestionBankItems: vi.fn(),
@@ -206,6 +207,43 @@ describe("问题生成与问题管理", () => {
     expect(keywordApi.updateKeywordAsset.mock.invocationCallOrder[0]).toBeLessThan(
       api.createQuestionGeneration.mock.invocationCallOrder[0],
     );
+  });
+
+  it("支持手动补充客户搜索问题并加入待保存列表", async () => {
+    api.saveQuestionBankDraft.mockResolvedValue({
+      ...draft,
+      version: 2,
+      items: [
+        questionItem,
+        {
+          ...questionItem,
+          id: "manual-question-1",
+          text: "广州天河 GEO 找谁?",
+          priority: "medium",
+          ai_reason: "手动添加",
+          sort_order: 1,
+        },
+      ],
+    });
+    render(<QuestionBankPanel subjectId="subject-1" upstreamDirty={false} />);
+
+    await userEvent.type(await screen.findByLabelText("手动问题内容"), "广州天河 GEO 找谁？");
+    await userEvent.click(screen.getByRole("button", { name: "添加到问题列表" }));
+
+    await waitFor(() => expect(api.saveQuestionBankDraft).toHaveBeenCalledTimes(1));
+    expect(api.saveQuestionBankDraft).toHaveBeenCalledWith(
+      "subject-1",
+      1,
+      expect.arrayContaining([
+        expect.objectContaining({
+          text: "广州天河 GEO 找谁？",
+          question_type: "natural",
+          participates_in_scoring: true,
+        }),
+      ]),
+    );
+    expect(await screen.findByText("问题已加入待保存列表，确认后会进入问题管理")).toBeTruthy();
+    expect(screen.getByText("广州天河 GEO 找谁?")).toBeTruthy();
   });
 
   it("阻止上游未保存状态，并在任务成功后显示中文结果", async () => {
@@ -404,9 +442,7 @@ describe("问题生成与问题管理", () => {
     expect(await screen.findByText("问题生成")).toBeTruthy();
     await userEvent.click(screen.getByRole("button", { name: "AI 生成问题" }));
     expect(
-      await screen.findByText(
-        "该主体已有生成结果，请确认再次生成；成功新增的问题将按条使用额度",
-      ),
+      await screen.findByText("该主体已有生成结果，请确认再次生成；成功新增的问题将按条使用额度"),
     ).toBeTruthy();
     await userEvent.click(screen.getByRole("button", { name: "确认再次生成" }));
     await userEvent.click(await screen.findByRole("button", { name: "确认重生成" }));

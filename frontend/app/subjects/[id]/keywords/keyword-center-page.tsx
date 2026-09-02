@@ -652,6 +652,9 @@ export function KeywordCenterPage({
                   </Button>
                 </Space>
               </div>
+              <Typography.Paragraph type="secondary">
+                “主体/实体”用于主体名称和品牌词；其他类别会按客户搜索习惯生成，不会带入主体名称。
+              </Typography.Paragraph>
               <div className={styles.categoryGrid}>
                 {categoryGroups.map((group) => (
                   <div className={styles.categoryGroup} key={group.title}>

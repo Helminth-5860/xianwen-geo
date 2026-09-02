@@ -597,6 +597,92 @@ def test_deepseek_keyword_provider_fails_after_exactly_one_repair_request():
     }
 
 
+def test_non_entity_keyword_with_subject_name_is_replaced_by_natural_user_intent():
+    captured = []
+
+    def handler(request):
+        payload = json.loads(request.content)
+        captured.append(json.loads(payload["messages"][1]["content"]))
+        text = "广州天河显问科技 GEO 找谁" if len(captured) == 1 else "广州天河 GEO 找谁"
+        return httpx.Response(
+            200,
+            json={
+                "id": f"provider-request-intent-{len(captured)}",
+                "model": "deepseek-chat",
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "items": [
+                                        {
+                                            "text": text,
+                                            "category": "service",
+                                            "intents": ["recommendation", "local"],
+                                            "length_type": "general",
+                                            "regions": [],
+                                            "base_keyword": None,
+                                            "notes": "",
+                                            "relevance_score": 95,
+                                            "priority": "high",
+                                            "ai_reason": "本地服务选择需求",
+                                        }
+                                    ]
+                                },
+                                ensure_ascii=False,
+                            )
+                        },
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 10, "total_tokens": 20},
+            },
+        )
+
+    provider = DeepSeekKeywordGenerationProvider(
+        credential_resolver=CredentialResolver(),
+        transport=httpx.MockTransport(handler),
+        runtime_resolver=runtime_snapshot,
+    )
+    request = replace(
+        generation_request(),
+        categories=("service",),
+        intents=("recommendation", "local"),
+        historical_exclusions=(),
+    )
+
+    response = provider.generate(request)
+
+    assert len(captured) == 2
+    assert captured[0]["subject_identity_terms"] == ["显问科技"]
+    assert captured[1]["task"] == "repair_geo_keyword_json"
+    assert response.items[0].text == "广州天河 GEO 找谁"
+    assert response.items[0].business_category == "service"
+
+
+def test_entity_keyword_can_keep_subject_name():
+    provider = DeepSeekKeywordGenerationProvider()
+    request = replace(generation_request(), categories=("entity",), historical_exclusions=())
+    content = {
+        "items": [
+            {
+                "text": "显问科技",
+                "category": "entity",
+                "intents": ["navigational"],
+                "length_type": "general",
+                "regions": [],
+                "base_keyword": None,
+                "notes": "",
+                "relevance_score": 100,
+                "priority": "high",
+                "ai_reason": "主体名称",
+            }
+        ]
+    }
+
+    assert provider._items(content, request)[0].text == "显问科技"
+
+
 @pytest.mark.django_db
 def test_deepseek_keyword_capability_rows_are_seeded_disabled():
     runtime = AICapabilityRuntimeConfig.objects.get(

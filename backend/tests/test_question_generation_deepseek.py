@@ -147,9 +147,7 @@ def test_deepseek_question_provider_uses_capability_runtime_and_normalizes_finit
     captured = []
 
     def handler(request):
-        assert request.headers["Authorization"] == (
-            "Bearer test-only-question-provider-credential"
-        )
+        assert request.headers["Authorization"] == ("Bearer test-only-question-provider-credential")
         payload = json.loads(request.content)
         captured.append(json.loads(payload["messages"][1]["content"]))
         assert payload["model"] == "deepseek-chat"
@@ -251,6 +249,31 @@ def test_deepseek_question_provider_fails_after_exactly_one_repair_request():
         provider.generate(generation_request())
 
     assert request_count == 2
+
+
+def test_natural_question_with_subject_name_is_replaced_by_customer_search_question():
+    captured = []
+
+    def handler(request):
+        payload = json.loads(request.content)
+        captured.append(json.loads(payload["messages"][1]["content"]))
+        text = (
+            "广州天河显问科技 GEO 服务怎么样？" if len(captured) == 1 else "广州天河 GEO 服务找谁？"
+        )
+        return provider_response([question_row(text, "企业 GEO 优化")], len(captured))
+
+    provider = DeepSeekQuestionGenerationProvider(
+        credential_resolver=CredentialResolver(),
+        transport=httpx.MockTransport(handler),
+        runtime_resolver=runtime_snapshot,
+    )
+
+    response = provider.generate(generation_request())
+
+    assert len(captured) == 2
+    assert captured[0]["subject_identity_terms"] == ["显问科技"]
+    assert captured[1]["task"] == "repair_geo_question_json"
+    assert response.questions[0].text == "广州天河 GEO 服务找谁?"
 
 
 def test_deepseek_question_provider_fails_closed_without_capability_runtime():

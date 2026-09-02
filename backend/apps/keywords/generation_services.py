@@ -182,6 +182,7 @@ SAFE_SUBJECT_FIELD_KEYS = frozenset(
         "description",
         "website",
         "other_public_urls",
+        "alias",
     }
 )
 
@@ -197,6 +198,7 @@ def _subject_values(subject, subject_version) -> dict[str, Any]:
     if profile is not None:
         values["primary_business"] = profile.primary_business
         values["brand_name"] = profile.brand_name
+        values["subject_aliases"] = profile.subject_aliases
         values["social_channels"] = copy.deepcopy(profile.social_channels)
     return values
 

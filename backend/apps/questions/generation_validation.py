@@ -2,6 +2,8 @@ import unicodedata
 import uuid
 from dataclasses import dataclass
 
+from apps.keywords.semantic_rules import matching_subject_identity
+
 from .generation_exceptions import QuestionBankValuesInvalid, QuestionGenerationInvalidResponse
 
 
@@ -55,7 +57,9 @@ def _ids(values, allowed):
     return result
 
 
-def validate_generated_questions(*, response, category_ids, tag_ids, keyword_ids, limit):
+def validate_generated_questions(
+    *, response, category_ids, tag_ids, keyword_ids, limit, subject_values=None
+):
     if not response.questions or len(response.questions) > limit:
         raise QuestionGenerationInvalidResponse
     normalized = []
@@ -72,6 +76,8 @@ def validate_generated_questions(*, response, category_ids, tag_ids, keyword_ids
         if item.priority not in {"high", "medium", "low"}:
             raise QuestionGenerationInvalidResponse
         if item.question_type not in {"natural", "brand_directed"}:
+            raise QuestionGenerationInvalidResponse
+        if item.question_type == "natural" and matching_subject_identity(text, subject_values):
             raise QuestionGenerationInvalidResponse
         if type(item.participates_in_scoring) is not bool:
             raise QuestionGenerationInvalidResponse
