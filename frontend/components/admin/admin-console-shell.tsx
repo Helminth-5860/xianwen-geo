@@ -68,6 +68,7 @@ const routes: ConsoleRoute[] = [
     label: "业务数据",
     icon: <DatabaseOutlined />,
     menuKeys: ["menu.admin.operations", "menu.admin.users"],
+    superOnly: true,
   },
   {
     href: "/admin/paid-media-inquiries",
