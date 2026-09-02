@@ -205,7 +205,11 @@ def _questions(keyword: str):
         conditions = (
             Q(text__icontains=keyword)
             | Q(primary_category_name__icontains=keyword)
-            | _common_search("question_bank_version__user", "question_bank_version__subject", keyword)
+            | _common_search(
+                "question_bank_version__user",
+                "question_bank_version__subject",
+                keyword,
+            )
         )
         parsed_uuid = _parse_uuid(keyword)
         if parsed_uuid:
@@ -277,7 +281,11 @@ def _reports(keyword: str):
         conditions = _common_search("user", "subject", keyword)
         parsed_uuid = _parse_uuid(keyword)
         if parsed_uuid:
-            conditions |= Q(pk=parsed_uuid) | Q(job_id=parsed_uuid) | Q(baseline_report_id=parsed_uuid)
+            conditions |= (
+                Q(pk=parsed_uuid)
+                | Q(job_id=parsed_uuid)
+                | Q(baseline_report_id=parsed_uuid)
+            )
         queryset = queryset.filter(conditions)
     return queryset
 
@@ -306,8 +314,10 @@ def _articles(keyword: str):
         "user__tenant", "subject__current_version", "subject__subject_type", "article_type"
     ).order_by("-updated_at", "-id")
     if keyword:
-        conditions = Q(title__icontains=keyword) | Q(custom_type__icontains=keyword) | _common_search(
-            "user", "subject", keyword
+        conditions = (
+            Q(title__icontains=keyword)
+            | Q(custom_type__icontains=keyword)
+            | _common_search("user", "subject", keyword)
         )
         parsed_uuid = _parse_uuid(keyword)
         if parsed_uuid:
@@ -349,7 +359,11 @@ def _images(keyword: str):
         conditions = _common_search("user", "subject", keyword)
         parsed_uuid = _parse_uuid(keyword)
         if parsed_uuid:
-            conditions |= Q(pk=parsed_uuid) | Q(generation_job_id=parsed_uuid) | Q(article_id=parsed_uuid)
+            conditions |= (
+                Q(pk=parsed_uuid)
+                | Q(generation_job_id=parsed_uuid)
+                | Q(article_id=parsed_uuid)
+            )
         queryset = queryset.filter(conditions)
     return queryset
 
