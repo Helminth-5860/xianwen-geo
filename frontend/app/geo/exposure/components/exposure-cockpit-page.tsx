@@ -12,7 +12,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { GeoReport } from "@/lib/geo-report-client";
 
 import styles from "../exposure-command-center.module.css";
-import type { ExposureCockpitData, ExposureMapLevel, RegionExposure } from "../types";
+import type { ExposureCockpitData, ExposureMapScope, RegionExposure } from "../types";
 import { CompetitorIndexPanel } from "./competitor-index-panel";
 import { ExposureTimeline } from "./exposure-timeline";
 import { GeoExposureMap } from "./map/geo-exposure-map";
@@ -32,6 +32,13 @@ function shortTime(timestamp: string | undefined) {
   return new Date(timestamp).toLocaleTimeString("zh-CN", { hour12: false });
 }
 
+function eventBelongsToScope(code: string, scope: ExposureMapScope | undefined) {
+  if (!scope) return true;
+  return scope.level === "province"
+    ? code.slice(0, 2) === scope.code.slice(0, 2)
+    : code.slice(0, 4) === scope.code.slice(0, 4);
+}
+
 export function ExposureCockpitPage({
   data,
   reports,
@@ -45,15 +52,39 @@ export function ExposureCockpitPage({
   selectedReportId: string;
   onReportChange: (reportId: string) => void;
 }>) {
-  const [level, setLevel] = useState<ExposureMapLevel>("country");
+  const [navigationPath, setNavigationPath] = useState<readonly ExposureMapScope[]>([]);
   const [selectedModel, setSelectedModel] = useState("");
   const [lockedRegion, setLockedRegion] = useState<RegionExposure | null>(null);
   const [mode, setMode] = useState<"live" | "replay">("live");
   const [playing, setPlaying] = useState(true);
   const [speed, setSpeed] = useState<1 | 2>(1);
-  const [progress, setProgress] = useState(100);
+  const [progress, setProgress] = useState(0);
   const [liveIndex, setLiveIndex] = useState(0);
-  const currentMap = data.maps[level];
+  const [livePulseSequence, setLivePulseSequence] = useState(0);
+  const [liveClock, setLiveClock] = useState(() => new Date().toISOString());
+  const selectedScope = navigationPath.at(-1);
+  const level = !selectedScope
+    ? "country"
+    : selectedScope.level === "province"
+      ? "province"
+      : "city";
+  const currentMap = useMemo(() => {
+    const template = data.maps[level];
+    if (!selectedScope) return template;
+    const knownScope = template.code === selectedScope.code;
+    return {
+      ...template,
+      parentCode: navigationPath.at(-2)?.code ?? "100000",
+      code: selectedScope.code,
+      name: selectedScope.name,
+      boundaryUrl: `/geo-boundaries/${selectedScope.code}`,
+      regions: knownScope ? template.regions : [],
+      events: data.maps.country.events.filter((event) =>
+        eventBelongsToScope(event.targetRegionCode, selectedScope),
+      ),
+      hasRegionalFacts: knownScope && template.hasRegionalFacts,
+    };
+  }, [data.maps, level, navigationPath, selectedScope]);
   const events = useMemo(
     () =>
       [...currentMap.events]
@@ -66,17 +97,27 @@ export function ExposureCockpitPage({
   );
 
   useEffect(() => {
-    if (!playing || mode !== "live" || events.length <= 1) return;
+    if (!playing || mode !== "live") return;
     let frame = 0;
     let previous = performance.now();
+    let previousPaint = 0;
     let elapsed = 0;
     const interval = speed === 2 ? 1_450 : 2_900;
     const advance = (now: number) => {
       elapsed += now - previous;
       previous = now;
-      if (elapsed >= interval) {
-        elapsed %= interval;
-        setLiveIndex((current) => (current + 1) % events.length);
+      if (now - previousPaint < 50) {
+        frame = requestAnimationFrame(advance);
+        return;
+      }
+      previousPaint = now;
+      const cycleLength = interval * Math.max(events.length, 1);
+      setProgress(((elapsed % cycleLength) / cycleLength) * 100);
+      setLiveClock(new Date().toISOString());
+      if (events.length) {
+        const sequence = Math.floor(elapsed / interval);
+        setLivePulseSequence(sequence);
+        setLiveIndex(sequence % events.length);
       }
       frame = requestAnimationFrame(advance);
     };
@@ -136,10 +177,12 @@ export function ExposureCockpitPage({
           cumulativeIntensity: 0,
         });
 
-  const changeLevel = (nextLevel: ExposureMapLevel) => {
-    setLevel(nextLevel);
+  const changeNavigationPath = (nextPath: readonly ExposureMapScope[]) => {
+    setNavigationPath(nextPath);
     setLockedRegion(null);
     setLiveIndex(0);
+    setLivePulseSequence(0);
+    setProgress(0);
   };
 
   return (
@@ -204,10 +247,11 @@ export function ExposureCockpitPage({
           data={currentMap}
           visibleEvents={visibleEvents}
           activeEvent={activeEvent}
-          eventPlaybackKey={`${mode}-${level}-${mode === "live" ? liveIndex : Math.round(progress)}`}
+          eventPlaybackKey={`${mode}-${currentMap.code}-${mode === "live" ? livePulseSequence : Math.round(progress)}`}
           lockedRegion={lockedRegion}
           onLockedRegionChange={setLockedRegion}
-          onLevelChange={changeLevel}
+          navigationPath={navigationPath}
+          onNavigationPathChange={changeNavigationPath}
         />
 
         <aside className={styles.rightRail}>
@@ -227,12 +271,12 @@ export function ExposureCockpitPage({
         mode={mode}
         speed={speed}
         progress={progress}
-        currentTime={shortTime(activeEvent?.timestamp)}
+        currentTime={shortTime(mode === "live" ? liveClock : activeEvent?.timestamp)}
         onPlayingChange={setPlaying}
         onModeChange={(nextMode) => {
           setMode(nextMode);
           setPlaying(nextMode === "live");
-          setProgress(nextMode === "live" ? 100 : 0);
+          setProgress(0);
         }}
         onSpeedChange={setSpeed}
         onProgressChange={(nextProgress) => {

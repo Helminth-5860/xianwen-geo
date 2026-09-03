@@ -22,6 +22,7 @@ import type {
   ExposureEvent,
   ExposureMapData,
   ExposureMapLevel,
+  ExposureMapScope,
   GeoJsonCollection,
   GeoJsonFeature,
   GeoPosition,
@@ -36,19 +37,13 @@ const BOUNDARY_SURFACE_ID = "exposure-boundary-surface";
 const BOUNDARY_SELECTED_ID = "exposure-boundary-selected";
 const BOUNDARY_LINE_ID = "exposure-boundary-line";
 
-const LEVEL_LABELS: Record<ExposureMapLevel, string> = {
-  country: "全国视图",
-  province: "省级视图（广东）",
-  city: "市级视图（广州）",
-};
-
 const LEVEL_CAMERA: Record<
   ExposureMapLevel,
   Readonly<{ pitch: number; bearing: number; maxZoom: number; extrusion: number }>
 > = {
-  country: { pitch: 31, bearing: -4, maxZoom: 3.7, extrusion: 18_000 },
-  province: { pitch: 20, bearing: -2, maxZoom: 6.5, extrusion: 3_200 },
-  city: { pitch: 7, bearing: 0, maxZoom: 9.8, extrusion: 480 },
+  country: { pitch: 50, bearing: -8, maxZoom: 3.6, extrusion: 220_000 },
+  province: { pitch: 46, bearing: -6, maxZoom: 6.4, extrusion: 46_000 },
+  city: { pitch: 42, bearing: -4, maxZoom: 9.5, extrusion: 11_000 },
 };
 
 type DeckConstructors = Readonly<{
@@ -74,9 +69,15 @@ type MapRuntimeState = Readonly<{
   visibleEvents: readonly ExposureEvent[];
   activeEvent: ExposureEvent | null;
   lockedRegion: RegionExposure | null;
+  navigationPath: readonly ExposureMapScope[];
   onLockedRegionChange: (region: RegionExposure | null) => void;
-  onLevelChange: (level: ExposureMapLevel) => void;
+  onNavigationPathChange: (path: readonly ExposureMapScope[]) => void;
 }>;
+
+function levelLabel(data: ExposureMapData) {
+  if (data.level === "country") return "全国视图";
+  return `${data.level === "province" ? "省级" : "市级"}视图（${data.name.replace(/[省市]$/, "")}）`;
+}
 
 function emptyRegion(
   data: ExposureMapData,
@@ -102,6 +103,29 @@ function emptyRegion(
     latestHitAt: null,
     cumulativeIntensity: 0,
   };
+}
+
+function regionsFromCollection(data: ExposureMapData, collection: GeoJsonCollection | null) {
+  const boundaryRegions =
+    collection?.features
+      .map((feature, index) =>
+        emptyRegion(
+          data,
+          collection,
+          String(feature.properties.adcode ?? index),
+          feature.properties.name ?? "当前区域",
+        ),
+      )
+      .filter((region) => region.name !== "市辖区") ?? [];
+  const byCode = new Map(boundaryRegions.map((region) => [region.code, region]));
+  for (const region of data.regions) byCode.set(region.code, region);
+  return { boundaryRegions, allRegions: [...byCode.values()] };
+}
+
+function sourceVisibleInScope(data: ExposureMapData) {
+  if (data.level === "country" || data.sourceCity.code === "100000") return true;
+  if (data.level === "province") return data.sourceCity.code.slice(0, 2) === data.code.slice(0, 2);
+  return data.sourceCity.code.slice(0, 4) === data.code.slice(0, 4);
 }
 
 function visitCoordinates(value: unknown, visit: (point: GeoPosition) => void) {
@@ -143,8 +167,8 @@ function fitMap(
   map.fitBounds(boundsForFeatures(features), {
     padding: compact ? 88 : level === "country" ? 44 : 58,
     maxZoom: compact ? 10.4 : camera.maxZoom,
-    pitch: compact ? 3 : camera.pitch,
-    bearing: compact ? 0 : camera.bearing,
+    pitch: compact ? Math.max(28, camera.pitch - 5) : camera.pitch,
+    bearing: compact ? camera.bearing : camera.bearing,
     duration: 1_250,
     curve: 1.26,
     essential: true,
@@ -183,9 +207,9 @@ function installOrUpdateBoundary(
       type: "fill",
       source: BOUNDARY_SOURCE_ID,
       paint: {
-        "fill-color": "#7aa6e8",
-        "fill-opacity": 0.12,
-        "fill-translate": [0, 12],
+        "fill-color": "#346fc5",
+        "fill-opacity": 0.2,
+        "fill-translate": [0, 20],
         "fill-translate-anchor": "viewport",
       },
     });
@@ -196,8 +220,8 @@ function installOrUpdateBoundary(
       paint: {
         "fill-extrusion-base": 0,
         "fill-extrusion-height": camera.extrusion,
-        "fill-extrusion-color": "#a9c9f3",
-        "fill-extrusion-opacity": 0.56,
+        "fill-extrusion-color": "#658dc8",
+        "fill-extrusion-opacity": 0.92,
         "fill-extrusion-vertical-gradient": true,
       },
     });
@@ -206,16 +230,8 @@ function installOrUpdateBoundary(
       type: "fill",
       source: BOUNDARY_SOURCE_ID,
       paint: {
-        "fill-color": [
-          "interpolate",
-          ["linear"],
-          ["coalesce", ["get", "adcode"], 0],
-          100000,
-          "#f9fcff",
-          900000,
-          "#e2efff",
-        ],
-        "fill-opacity": 0.9,
+        "fill-color": "#c6ddfb",
+        "fill-opacity": 0.94,
       },
     });
     map.addLayer({
@@ -223,16 +239,16 @@ function installOrUpdateBoundary(
       type: "fill",
       source: BOUNDARY_SOURCE_ID,
       filter: ["==", "adcode", -1],
-      paint: { "fill-color": "#cfe3ff", "fill-opacity": 0.68 },
+      paint: { "fill-color": "#72a9f5", "fill-opacity": 0.88 },
     });
     map.addLayer({
       id: BOUNDARY_LINE_ID,
       type: "line",
       source: BOUNDARY_SOURCE_ID,
       paint: {
-        "line-color": "#84b8f3",
-        "line-width": ["interpolate", ["linear"], ["zoom"], 2, 0.8, 9, 1.5],
-        "line-opacity": 0.82,
+        "line-color": "#f4f9ff",
+        "line-width": ["interpolate", ["linear"], ["zoom"], 2, 1.05, 9, 1.85],
+        "line-opacity": 0.96,
       },
     });
   } else {
@@ -286,12 +302,18 @@ function buildDeckLayers(
 ) {
   const { ArcLayer, ScatterplotLayer, TextLayer } = constructors;
   const { data, visibleEvents, activeEvent } = runtime;
+  const { boundaryRegions, allRegions } = regionsFromCollection(data, runtime.collection);
   const historicalCodes = new Set(
     visibleEvents
       .filter((event) => event.id !== activeEvent?.id)
       .map((event) => event.targetRegionCode),
   );
-  const historicalRegions = data.regions.filter((region) => historicalCodes.has(region.code));
+  const historicalRegions = allRegions.filter((region) => historicalCodes.has(region.code));
+  const historicalEvents = visibleEvents
+    .filter(
+      (event) => event.id !== activeEvent?.id && event.sourceRegionCode !== event.targetRegionCode,
+    )
+    .slice(-8);
   const crossRegion =
     activeEvent && activeEvent.sourceRegionCode !== activeEvent.targetRegionCode
       ? activeEvent
@@ -308,8 +330,9 @@ function buildDeckLayers(
   );
   const pulseOpacity = Math.round(188 * (1 - arrivalProgress));
   const labelCharacters = Array.from(
-    new Set(data.regions.flatMap((region) => Array.from(region.name))),
+    new Set(boundaryRegions.flatMap((region) => Array.from(region.name))),
   );
+  const sourceRegions = sourceVisibleInScope(data) ? [data.sourceCity] : [];
   const cityLabelOffsets: Readonly<Record<string, readonly [number, number]>> = {
     "440103": [-21, -15],
     "440104": [18, -14],
@@ -326,16 +349,16 @@ function buildDeckLayers(
   return [
     new ScatterplotLayer<RegionExposure>({
       id: "neutral-regions",
-      data: [...data.regions],
+      data: boundaryRegions,
       pickable: true,
       radiusUnits: "pixels",
-      getRadius: 3.3,
+      getRadius: 2.8,
       radiusMinPixels: 2.5,
       radiusMaxPixels: 5,
       getPosition: (region) => region.coordinates,
-      getFillColor: [100, 116, 139, 118],
+      getFillColor: [44, 101, 185, 132],
       stroked: true,
-      getLineColor: [230, 240, 252, 210],
+      getLineColor: [245, 250, 255, 225],
       getLineWidth: 1.2,
       lineWidthUnits: "pixels",
       onHover: onRegionHover,
@@ -358,41 +381,69 @@ function buildDeckLayers(
     }),
     new ScatterplotLayer<RegionExposure>({
       id: "source-idle-halo",
-      data: [data.sourceCity],
+      data: sourceRegions,
       pickable: false,
       radiusUnits: "pixels",
-      getRadius: progress < 0.2 && activeEvent ? 14 + progress * 22 : 11,
+      getRadius: progress < 0.22 && activeEvent ? 20 + progress * 36 : 14,
       getPosition: (region) => region.coordinates,
-      getFillColor: [255, 86, 76, activeEvent && progress < 0.22 ? 48 : 19],
+      getFillColor: activeEvent && progress < 0.22 ? [255, 77, 66, 92] : [43, 111, 246, 42],
     }),
     new ScatterplotLayer<RegionExposure>({
       id: "source-core",
-      data: [data.sourceCity],
+      data: sourceRegions,
       pickable: true,
       radiusUnits: "pixels",
       getRadius: activeEvent && progress < 0.22 ? 6.2 : 4.5,
       getPosition: (region) => region.coordinates,
-      getFillColor: [21, 31, 52, 245],
+      getFillColor: activeEvent ? [255, 78, 66, 255] : [28, 98, 225, 245],
       stroked: true,
-      getLineColor: [255, 106, 96, 120],
+      getLineColor: [255, 255, 255, 238],
       getLineWidth: 2,
       lineWidthUnits: "pixels",
       onHover: onRegionHover,
       onClick: () => runtime.onLockedRegionChange(data.sourceCity),
     }),
+    new ArcLayer<ExposureEvent>({
+      id: "historical-arcs",
+      data: historicalEvents,
+      greatCircle: true,
+      numSegments: 72,
+      getSourcePosition: (event) => event.sourceCoordinates,
+      getTargetPosition: (event) => event.targetCoordinates,
+      getSourceColor: [237, 105, 91, 72],
+      getTargetColor: [246, 145, 112, 34],
+      getWidth: 1.15,
+      widthUnits: "pixels",
+      getHeight: data.level === "country" ? 0.48 : data.level === "province" ? 0.28 : 0.16,
+    }),
+    crossRegion
+      ? new ArcLayer<ExposureEvent>({
+          id: `active-arc-glow-${crossRegion.id}`,
+          data: [crossRegion],
+          greatCircle: true,
+          numSegments: 96,
+          getSourcePosition: (event) => event.sourceCoordinates,
+          getTargetPosition: (event) => event.targetCoordinates,
+          getSourceColor: [255, 76, 62, Math.round(arcOpacity * 0.3)],
+          getTargetColor: [255, 149, 84, Math.round(arcOpacity * 0.18)],
+          getWidth: 9,
+          widthUnits: "pixels",
+          getHeight: data.level === "country" ? 0.58 : data.level === "province" ? 0.34 : 0.2,
+        })
+      : null,
     crossRegion
       ? new ArcLayer<ExposureEvent>({
           id: `active-arc-${crossRegion.id}`,
           data: [crossRegion],
           greatCircle: true,
-          numSegments: 72,
+          numSegments: 96,
           getSourcePosition: (event) => event.sourceCoordinates,
           getTargetPosition: (event) => event.targetCoordinates,
           getSourceColor: [255, 91, 78, arcOpacity],
           getTargetColor: [255, 126, 105, Math.round(arcOpacity * 0.72)],
-          getWidth: 2.1,
+          getWidth: 3.1,
           widthUnits: "pixels",
-          getHeight: data.level === "country" ? 0.48 : data.level === "province" ? 0.28 : 0.14,
+          getHeight: data.level === "country" ? 0.58 : data.level === "province" ? 0.34 : 0.2,
         })
       : null,
     crossRegion && progress >= 0.08 && progress <= 0.72
@@ -401,12 +452,12 @@ function buildDeckLayers(
           data: [crossRegion],
           pickable: false,
           radiusUnits: "pixels",
-          getRadius: 5.5,
+          getRadius: 8,
           getPosition: (event) => particlePosition(event, travelProgress),
           getFillColor: [255, 255, 255, 255],
           stroked: true,
           getLineColor: [255, 72, 64, 255],
-          getLineWidth: 3,
+          getLineWidth: 5,
           lineWidthUnits: "pixels",
           updateTriggers: { getPosition: Math.round(progress * 1_000) },
         })
@@ -445,9 +496,28 @@ function buildDeckLayers(
           },
         })
       : null,
+    (hasArrived && activeEvent) || localHit
+      ? new ScatterplotLayer<ExposureEvent>({
+          id: `arrival-outer-ring-${activeEvent?.id ?? localHit?.id}`,
+          data: activeEvent ? [activeEvent] : localHit ? [localHit] : [],
+          pickable: false,
+          radiusUnits: "pixels",
+          getRadius: 13 + arrivalProgress * 48,
+          getPosition: (event) => event.targetCoordinates,
+          filled: false,
+          stroked: true,
+          getLineColor: [255, 119, 86, Math.round(pulseOpacity * 0.62)],
+          getLineWidth: 1.4,
+          lineWidthUnits: "pixels",
+          updateTriggers: {
+            getRadius: Math.round(progress * 1_000),
+            getLineColor: pulseOpacity,
+          },
+        })
+      : null,
     new TextLayer<RegionExposure>({
       id: "region-labels",
-      data: [...data.regions],
+      data: boundaryRegions,
       pickable: false,
       getPosition: (region) => region.coordinates,
       getText: (region) => region.name,
@@ -461,7 +531,7 @@ function buildDeckLayers(
       characterSet: labelCharacters,
       fontSettings: { sdf: true, fontSize: 64, buffer: 6, radius: 3, cutoff: 0.25 },
       outlineWidth: 3,
-      outlineColor: [247, 251, 255, 245],
+      outlineColor: [235, 245, 255, 250],
     }),
   ].filter(Boolean);
 }
@@ -472,29 +542,34 @@ export function GeoExposureMap({
   activeEvent,
   eventPlaybackKey,
   lockedRegion,
+  navigationPath,
   onLockedRegionChange,
-  onLevelChange,
+  onNavigationPathChange,
 }: Readonly<{
   data: ExposureMapData;
   visibleEvents: readonly ExposureEvent[];
   activeEvent: ExposureEvent | null;
   eventPlaybackKey: string;
   lockedRegion: RegionExposure | null;
+  navigationPath: readonly ExposureMapScope[];
   onLockedRegionChange: (region: RegionExposure | null) => void;
-  onLevelChange: (level: ExposureMapLevel) => void;
+  onNavigationPathChange: (path: readonly ExposureMapScope[]) => void;
 }>) {
   const hostRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const deckRef = useRef<DeckRuntime | null>(null);
   const frameRef = useRef<number | null>(null);
+  const cameraFrameRef = useRef<number | null>(null);
+  const cameraPauseUntilRef = useRef(0);
   const runtimeRef = useRef<MapRuntimeState>({
     data,
     collection: null,
     visibleEvents,
     activeEvent,
     lockedRegion,
+    navigationPath,
     onLockedRegionChange,
-    onLevelChange,
+    onNavigationPathChange,
   });
   const [collection, setCollection] = useState<GeoJsonCollection | null>(null);
   const [boundaryUrl, setBoundaryUrl] = useState("");
@@ -514,15 +589,17 @@ export function GeoExposureMap({
       visibleEvents,
       activeEvent,
       lockedRegion,
+      navigationPath,
       onLockedRegionChange,
-      onLevelChange,
+      onNavigationPathChange,
     };
   }, [
     activeEvent,
     currentCollection,
     data,
     lockedRegion,
-    onLevelChange,
+    navigationPath,
+    onNavigationPathChange,
     onLockedRegionChange,
     visibleEvents,
   ]);
@@ -598,7 +675,7 @@ export function GeoExposureMap({
         bearing: LEVEL_CAMERA.country.bearing,
         minZoom: 1.8,
         maxZoom: 12,
-        maxPitch: 48,
+        maxPitch: 58,
         attributionControl: false,
         dragRotate: false,
         renderWorldCopies: false,
@@ -641,22 +718,7 @@ export function GeoExposureMap({
       const selectFeature = (event: MapLayerMouseEvent) => {
         const feature = boundaryFeature(event);
         if (!feature) return;
-        const runtime = runtimeRef.current;
-        const code = String(feature.properties?.adcode ?? "");
-        const name = String(feature.properties?.name ?? "当前区域");
-        if (runtime.data.level === "country" && code === "440000") {
-          runtime.onLevelChange("province");
-          return;
-        }
-        if (runtime.data.level === "province" && code === "440100") {
-          runtime.onLevelChange("city");
-          return;
-        }
-        const region = emptyRegion(runtime.data, runtime.collection, code, name);
-        runtime.onLockedRegionChange(region);
-        if (runtime.data.level === "city") {
-          fitMap(map, [feature as unknown as GeoJsonFeature], "city", true);
-        }
+        selectRegion(feature as unknown as GeoJsonFeature);
       };
       const hoverFeature = (event: MapLayerMouseEvent) => {
         const feature = boundaryFeature(event);
@@ -680,36 +742,56 @@ export function GeoExposureMap({
         if (features.length) return;
         const runtime = runtimeRef.current;
         runtime.onLockedRegionChange(null);
-        if (runtime.data.level !== "country") runtime.onLevelChange("country");
       };
-      const semanticZoom = () => {
+      function selectRegion(feature: GeoJsonFeature) {
         const runtime = runtimeRef.current;
-        const center = map.getCenter();
-        if (
-          runtime.data.level === "country" &&
-          map.getZoom() >= 4.15 &&
-          center.lng >= 108.8 &&
-          center.lng <= 117.4 &&
-          center.lat >= 19.5 &&
-          center.lat <= 25.7
-        ) {
-          runtime.onLevelChange("province");
+        const code = String(feature.properties.adcode ?? "");
+        const name = feature.properties.name ?? "当前区域";
+        const region = emptyRegion(runtime.data, runtime.collection, code, name);
+        const isSameOutline = code === runtime.data.code;
+        const childLevel = feature.properties.level;
+        if (runtime.data.level === "country") {
+          runtime.onNavigationPathChange([{ code, name, level: "province" }]);
         } else if (
           runtime.data.level === "province" &&
-          map.getZoom() >= 7.2 &&
-          center.lng >= 112.6 &&
-          center.lng <= 114.1 &&
-          center.lat >= 22.5 &&
-          center.lat <= 23.9
+          childLevel !== "district" &&
+          !isSameOutline
         ) {
-          runtime.onLevelChange("city");
+          runtime.onNavigationPathChange([
+            ...runtime.navigationPath,
+            { code, name, level: "city" },
+          ]);
+        } else {
+          runtime.onLockedRegionChange(region);
+          fitMap(map, [feature], runtime.data.level, true);
         }
+      }
+      const semanticZoom = (event: { originalEvent?: unknown }) => {
+        if (
+          !event.originalEvent ||
+          map.getZoom() < LEVEL_CAMERA[runtimeRef.current.data.level].maxZoom
+        ) {
+          return;
+        }
+        const canvas = map.getCanvas();
+        const features = map.queryRenderedFeatures(
+          [canvas.clientWidth / 2, canvas.clientHeight / 2],
+          { layers: [BOUNDARY_SURFACE_ID] },
+        );
+        const feature = features[0] as unknown as GeoJsonFeature | undefined;
+        if (feature) selectRegion(feature);
+      };
+      const markInteraction = () => {
+        cameraPauseUntilRef.current = performance.now() + 8_000;
       };
       map.on("click", BOUNDARY_SURFACE_ID, selectFeature);
       map.on("mousemove", BOUNDARY_SURFACE_ID, hoverFeature);
       map.on("mouseleave", BOUNDARY_SURFACE_ID, clearHover);
       map.on("click", clearSelectionOnBlank);
       map.on("zoomend", semanticZoom);
+      map.on("dragstart", markInteraction);
+      map.on("wheel", markInteraction);
+      map.on("touchstart", markInteraction);
     });
     return () => {
       cancelled = true;
@@ -719,6 +801,7 @@ export function GeoExposureMap({
   useEffect(
     () => () => {
       if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
+      if (cameraFrameRef.current !== null) cancelAnimationFrame(cameraFrameRef.current);
       deckRef.current?.overlay.finalize();
       deckRef.current = null;
       mapRef.current?.remove();
@@ -745,26 +828,71 @@ export function GeoExposureMap({
   }, [lockedRegion?.code, mapReady]);
 
   useEffect(() => {
+    const map = mapRef.current;
+    if (!mapReady || !map || activeEvent) return;
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reducedMotion) return;
+    let previousPaint = 0;
+    const startedAt = performance.now();
+    const animateCamera = (now: number) => {
+      if (
+        now - previousPaint >= 50 &&
+        now >= cameraPauseUntilRef.current &&
+        document.visibilityState === "visible" &&
+        !map.isMoving()
+      ) {
+        previousPaint = now;
+        const base = LEVEL_CAMERA[runtimeRef.current.data.level].bearing;
+        map.setBearing(base + Math.sin((now - startedAt) / 5_200) * 3.2);
+      }
+      cameraFrameRef.current = requestAnimationFrame(animateCamera);
+    };
+    cameraFrameRef.current = requestAnimationFrame(animateCamera);
+    return () => {
+      if (cameraFrameRef.current !== null) cancelAnimationFrame(cameraFrameRef.current);
+      cameraFrameRef.current = null;
+    };
+  }, [activeEvent, data.level, mapReady]);
+
+  useEffect(() => {
     const deck = deckRef.current;
-    if (!deck || !mapReady) return;
+    const map = mapRef.current;
+    if (!deck || !mapReady || !map) return;
     if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
     const duration =
       activeEvent?.sourceRegionCode === activeEvent?.targetRegionCode ? 1_550 : 2_750;
     const startedAt = performance.now();
+    if (activeEvent && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      const midpoint: GeoPosition = [
+        (activeEvent.sourceCoordinates[0] + activeEvent.targetCoordinates[0]) / 2,
+        (activeEvent.sourceCoordinates[1] + activeEvent.targetCoordinates[1]) / 2,
+      ];
+      map.easeTo({
+        center: [midpoint[0], midpoint[1]],
+        zoom: Math.min(map.getZoom() + 0.28, LEVEL_CAMERA[data.level].maxZoom),
+        pitch: Math.min(56, LEVEL_CAMERA[data.level].pitch + 3),
+        bearing: LEVEL_CAMERA[data.level].bearing + 3,
+        duration: 760,
+        essential: true,
+      });
+    }
     const animate = (now: number) => {
       const progress = activeEvent ? clamp((now - startedAt) / duration) : 1;
       deck.overlay.setProps({
         layers: buildDeckLayers(deck.constructors, runtimeRef.current, progress, hoverSetterRef),
       });
       if (progress < 1) frameRef.current = requestAnimationFrame(animate);
-      else frameRef.current = null;
+      else {
+        frameRef.current = null;
+        if (currentCollection) fitMap(map, currentCollection.features, data.level);
+      }
     };
     frameRef.current = requestAnimationFrame(animate);
     return () => {
       if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
       frameRef.current = null;
     };
-  }, [activeEvent, eventPlaybackKey, mapReady, visibleEvents]);
+  }, [activeEvent, currentCollection, data.level, eventPlaybackKey, mapReady, visibleEvents]);
 
   const accessibleRegions = useMemo(
     () =>
@@ -776,26 +904,32 @@ export function GeoExposureMap({
   );
 
   const selectAccessibleRegion = (code: string, name: string) => {
-    if (data.level === "country" && code === "440000") onLevelChange("province");
-    else if (data.level === "province" && code === "440100") onLevelChange("city");
-    else if (data.level === "city") {
-      const region = emptyRegion(data, currentCollection, code, name);
-      onLockedRegionChange(region);
-      const feature = currentCollection?.features.find(
-        (item) => String(item.properties.adcode) === code,
-      );
-      if (feature && mapRef.current) fitMap(mapRef.current, [feature], "city", true);
+    const feature = currentCollection?.features.find(
+      (item) => String(item.properties.adcode) === code,
+    );
+    if (data.level === "country") {
+      onNavigationPathChange([{ code, name, level: "province" }]);
+    } else if (
+      data.level === "province" &&
+      feature?.properties.level !== "district" &&
+      code !== data.code
+    ) {
+      onNavigationPathChange([...navigationPath, { code, name, level: "city" }]);
+    } else {
+      onLockedRegionChange(emptyRegion(data, currentCollection, code, name));
+      if (feature && mapRef.current) fitMap(mapRef.current, [feature], data.level, true);
     }
   };
 
   const returnOneLevel = () => {
-    if (data.level === "city" && lockedRegion) {
+    if (lockedRegion) {
       onLockedRegionChange(null);
       if (currentCollection && mapRef.current) {
-        fitMap(mapRef.current, currentCollection.features, "city");
+        fitMap(mapRef.current, currentCollection.features, data.level);
       }
-    } else if (data.level === "city") onLevelChange("province");
-    else if (data.level === "province") onLevelChange("country");
+    } else {
+      onNavigationPathChange(navigationPath.slice(0, -1));
+    }
   };
 
   const updatedAt = new Date(
@@ -807,7 +941,7 @@ export function GeoExposureMap({
       <header className={styles.mapHeader}>
         <div>
           <h2 id="exposure-map-title">{data.name}曝光态势地图</h2>
-          <span className={styles.levelBadge}>{LEVEL_LABELS[data.level]}</span>
+          <span className={styles.levelBadge}>{levelLabel(data)}</span>
           {!data.events.length ? (
             <span className={styles.neutralBadge}>暂无地域传播事件</span>
           ) : null}
@@ -816,44 +950,40 @@ export function GeoExposureMap({
       </header>
 
       <nav className={styles.mapBreadcrumb} aria-label="地图层级">
-        {data.level === "country" ? (
+        {!navigationPath.length ? (
           <strong>全国</strong>
         ) : (
-          <button type="button" onClick={() => onLevelChange("country")}>
+          <button type="button" onClick={() => onNavigationPathChange([])}>
             全国
           </button>
         )}
-        {data.level !== "country" ? <span>›</span> : null}
-        {data.level === "province" ? (
-          <strong>广东省</strong>
-        ) : data.level === "city" ? (
-          <button type="button" onClick={() => onLevelChange("province")}>
-            广东省
-          </button>
-        ) : null}
-        {data.level === "city" ? <span>›</span> : null}
-        {data.level === "city" && lockedRegion ? (
-          <>
-            <button
-              type="button"
-              onClick={() => {
-                onLockedRegionChange(null);
-                if (currentCollection && mapRef.current) {
-                  fitMap(mapRef.current, currentCollection.features, "city");
-                }
-              }}
-            >
-              广州市
-            </button>
+        {navigationPath.map((scope, index) => {
+          const last = index === navigationPath.length - 1 && !lockedRegion;
+          return (
+            <span className={styles.breadcrumbPart} key={scope.code}>
+              <span>›</span>
+              {last ? (
+                <strong>{scope.name}</strong>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => onNavigationPathChange(navigationPath.slice(0, index + 1))}
+                >
+                  {scope.name}
+                </button>
+              )}
+            </span>
+          );
+        })}
+        {lockedRegion ? (
+          <span className={styles.breadcrumbPart}>
             <span>›</span>
             <strong>{lockedRegion.name}</strong>
-          </>
-        ) : data.level === "city" ? (
-          <strong>广州市</strong>
+          </span>
         ) : null}
       </nav>
 
-      {data.level !== "country" || lockedRegion ? (
+      {navigationPath.length || lockedRegion ? (
         <button
           type="button"
           className={styles.mapBackButton}

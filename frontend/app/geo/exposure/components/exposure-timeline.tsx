@@ -35,7 +35,10 @@ export function ExposureTimeline({
   };
 
   return (
-    <section className={`${styles.panel} ${styles.timelinePanel}`} aria-labelledby="timeline-title">
+    <section
+      className={`${styles.panel} ${styles.timelinePanel} ${playing ? styles.timelineRunning : ""}`}
+      aria-labelledby="timeline-title"
+    >
       <div className={styles.timelineTitle}>
         <h2 id="timeline-title">时间轴</h2>
         <span className={mode === "live" ? styles.livePill : styles.replayPill}>
@@ -59,9 +62,16 @@ export function ExposureTimeline({
           {currentTime}
         </output>
         <div className={styles.eventTicks} aria-hidden="true">
-          {events.map((event) => (
-            <i key={event.id} style={{ left: `${eventPosition(event.timestamp)}%` }} />
-          ))}
+          {events.map((event) => {
+            const position = eventPosition(event.timestamp);
+            return (
+              <i
+                key={event.id}
+                className={position <= progress ? styles.eventTickReached : undefined}
+                style={{ left: `${position}%` }}
+              />
+            );
+          })}
         </div>
         <input
           aria-label="曝光回放时间"

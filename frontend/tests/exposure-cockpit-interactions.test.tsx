@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -10,6 +10,7 @@ import { createDemonstrationMaps, createNeutralMaps } from "../app/geo/exposure/
 import type {
   ExposureEvent,
   ExposureMapLevel,
+  ExposureMapScope,
   GeoJsonCollection,
   RegionExposure,
 } from "../app/geo/exposure/types";
@@ -20,7 +21,12 @@ const boundaryByLevel: Record<ExposureMapLevel, GeoJsonCollection> = {
     features: [
       {
         type: "Feature",
-        properties: { adcode: 440000, name: "广东省", center: [113.2, 23.1] },
+        properties: {
+          adcode: 440000,
+          name: "广东省",
+          center: [113.2, 23.1],
+          level: "province",
+        },
         geometry: {
           type: "Polygon",
           coordinates: [
@@ -34,6 +40,27 @@ const boundaryByLevel: Record<ExposureMapLevel, GeoJsonCollection> = {
           ],
         },
       },
+      {
+        type: "Feature",
+        properties: {
+          adcode: 510000,
+          name: "四川省",
+          center: [104.0665, 30.5723],
+          level: "province",
+        },
+        geometry: {
+          type: "Polygon",
+          coordinates: [
+            [
+              [97, 26],
+              [108, 26],
+              [108, 34],
+              [97, 34],
+              [97, 26],
+            ],
+          ],
+        },
+      },
     ],
   },
   province: {
@@ -41,7 +68,12 @@ const boundaryByLevel: Record<ExposureMapLevel, GeoJsonCollection> = {
     features: [
       {
         type: "Feature",
-        properties: { adcode: 440100, name: "广州市", center: [113.26, 23.13] },
+        properties: {
+          adcode: 440100,
+          name: "广州市",
+          center: [113.26, 23.13],
+          level: "city",
+        },
         geometry: {
           type: "Polygon",
           coordinates: [
@@ -62,7 +94,12 @@ const boundaryByLevel: Record<ExposureMapLevel, GeoJsonCollection> = {
     features: [
       {
         type: "Feature",
-        properties: { adcode: 440106, name: "天河区", center: [113.36, 23.12] },
+        properties: {
+          adcode: 440106,
+          name: "天河区",
+          center: [113.36, 23.12],
+          level: "district",
+        },
         geometry: {
           type: "Polygon",
           coordinates: [
@@ -80,19 +117,88 @@ const boundaryByLevel: Record<ExposureMapLevel, GeoJsonCollection> = {
   },
 };
 
+const sichuanBoundary: GeoJsonCollection = {
+  type: "FeatureCollection",
+  features: [
+    {
+      type: "Feature",
+      properties: {
+        adcode: 510100,
+        name: "成都市",
+        center: [104.0665, 30.5723],
+        level: "city",
+      },
+      geometry: {
+        type: "Polygon",
+        coordinates: [
+          [
+            [102.9, 30],
+            [104.9, 30],
+            [104.9, 31.4],
+            [102.9, 31.4],
+            [102.9, 30],
+          ],
+        ],
+      },
+    },
+  ],
+};
+
+const chengduBoundary: GeoJsonCollection = {
+  type: "FeatureCollection",
+  features: [
+    {
+      type: "Feature",
+      properties: {
+        adcode: 510107,
+        name: "武侯区",
+        center: [104.0434, 30.6418],
+        level: "district",
+      },
+      geometry: {
+        type: "Polygon",
+        coordinates: [
+          [
+            [103.9, 30.5],
+            [104.2, 30.5],
+            [104.2, 30.8],
+            [103.9, 30.8],
+            [103.9, 30.5],
+          ],
+        ],
+      },
+    },
+  ],
+};
+
 function MapHarness() {
   const maps = createDemonstrationMaps("2026-09-02T08:00:00Z");
-  const [level, setLevel] = useState<ExposureMapLevel>("country");
+  const [navigationPath, setNavigationPath] = useState<readonly ExposureMapScope[]>([]);
   const [lockedRegion, setLockedRegion] = useState<RegionExposure | null>(null);
+  const scope = navigationPath.at(-1);
+  const level: ExposureMapLevel = !scope
+    ? "country"
+    : scope.level === "province"
+      ? "province"
+      : "city";
+  const data = scope
+    ? {
+        ...maps[level],
+        code: scope.code,
+        name: scope.name,
+        boundaryUrl: `/geo-boundaries/${scope.code}`,
+      }
+    : maps.country;
   return (
     <GeoExposureMap
-      data={maps[level]}
-      visibleEvents={maps[level].events}
-      activeEvent={maps[level].events[0] ?? null}
+      data={data}
+      visibleEvents={data.events}
+      activeEvent={data.events[0] ?? null}
       eventPlaybackKey={`test-${level}`}
       lockedRegion={lockedRegion}
       onLockedRegionChange={setLockedRegion}
-      onLevelChange={setLevel}
+      navigationPath={navigationPath}
+      onNavigationPathChange={setNavigationPath}
     />
   );
 }
@@ -130,20 +236,26 @@ describe("曝光态势地图与时间轴", () => {
       "fetch",
       vi.fn((input: string | URL | Request) => {
         const url = String(input);
-        const level: ExposureMapLevel = url.includes("guangzhou")
+        const boundary = url.includes("510100")
+          ? chengduBoundary
+          : url.includes("510000")
+            ? sichuanBoundary
+            : null;
+        const level: ExposureMapLevel = url.includes("440100")
           ? "city"
-          : url.includes("guangdong")
+          : url.includes("440000")
             ? "province"
             : "country";
         return Promise.resolve({
           ok: true,
-          json: () => Promise.resolve(boundaryByLevel[level]),
+          json: () => Promise.resolve(boundary ?? boundaryByLevel[level]),
         } as Response);
       }),
     );
   });
 
   afterEach(() => {
+    cleanup();
     vi.unstubAllGlobals();
   });
 
@@ -178,6 +290,21 @@ describe("曝光态势地图与时间轴", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "广东省" }));
     expect(await screen.findByRole("heading", { name: "广东省曝光态势地图" })).toBeTruthy();
+  });
+
+  it("全国任意省市都可逐级进入，不依赖广东固定路径", async () => {
+    render(<MapHarness />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "四川省区域" }));
+    expect(await screen.findByRole("heading", { name: "四川省曝光态势地图" })).toBeTruthy();
+
+    fireEvent.click(await screen.findByRole("button", { name: "成都市区域" }));
+    expect(await screen.findByRole("heading", { name: "成都市曝光态势地图" })).toBeTruthy();
+
+    fireEvent.click(await screen.findByRole("button", { name: "武侯区区域" }));
+    expect(
+      within(screen.getByRole("navigation", { name: "地图层级" })).getByText("武侯区"),
+    ).toBeTruthy();
   });
 
   it("时间轴拖动会返回真实进度并保留播放与速度控制", async () => {

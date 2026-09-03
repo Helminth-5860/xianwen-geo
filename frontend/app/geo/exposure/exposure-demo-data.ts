@@ -123,8 +123,10 @@ function buildEvents(
 function createMaps(
   baseTime: string,
   includeSampleEvents: boolean,
+  sourceOverride?: RegionExposure,
+  realEvents: readonly ExposureEvent[] = [],
 ): Record<ExposureMapLevel, ExposureMapData> {
-  const source = sourceRegion();
+  const source = sourceOverride ?? sourceRegion();
   return {
     country: {
       level: "country",
@@ -140,7 +142,7 @@ function createMaps(
             countryRegions.filter((item) => item.code !== "440100"),
             baseTime,
           )
-        : [],
+        : realEvents,
       hasRegionalFacts: false,
       updatedAt: baseTime,
     },
@@ -158,7 +160,7 @@ function createMaps(
             provinceRegions.filter((item) => item.intensity > 0 && item.code !== "440100"),
             baseTime,
           )
-        : [],
+        : realEvents.filter((event) => event.targetRegionCode.startsWith("44")),
       hasRegionalFacts: false,
       updatedAt: baseTime,
     },
@@ -170,7 +172,7 @@ function createMaps(
       boundaryUrl: "/geo-boundaries/guangzhou.json",
       sourceCity: source,
       regions: buildRegions(cityRegions),
-      events: [],
+      events: realEvents.filter((event) => event.targetRegionCode.startsWith("4401")),
       hasRegionalFacts: false,
       updatedAt: baseTime,
     },
@@ -178,8 +180,12 @@ function createMaps(
 }
 
 /** 生产页面使用：没有可核验地域事件时，所有城市保持中性状态。 */
-export function createNeutralMaps(baseTime: string) {
-  return createMaps(baseTime, false);
+export function createNeutralMaps(
+  baseTime: string,
+  source?: RegionExposure,
+  events: readonly ExposureEvent[] = [],
+) {
+  return createMaps(baseTime, false, source, events);
 }
 
 /** 仅供交互测试和独立演示使用，不会进入真实报告页面。 */

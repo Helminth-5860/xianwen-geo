@@ -2,6 +2,12 @@ import type { GeoReport, ReportQuestionPage } from "@/lib/geo-report-client";
 
 export type ExposureMapLevel = "country" | "province" | "city";
 
+export type ExposureMapScope = Readonly<{
+  code: string;
+  name: string;
+  level: "province" | "city";
+}>;
+
 export type ExposureRegionStatus = "neutral" | "historical" | "active";
 
 export type GeoPosition = readonly [longitude: number, latitude: number];
@@ -94,6 +100,7 @@ export type ExposureAdapterInput = Readonly<{
   reports: readonly GeoReport[];
   questions: ReportQuestionPage | null;
   subjectName: string;
+  subjectRegionText?: string;
 }>;
 
 export type GeoJsonGeometry = Readonly<{
@@ -109,6 +116,7 @@ export type GeoJsonFeature = Readonly<{
     center?: number[];
     centroid?: number[];
     level?: string;
+    childrenNum?: number;
   }>;
   geometry: GeoJsonGeometry;
 }>;

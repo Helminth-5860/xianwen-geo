@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+
 import type { TrendingQuestionItem } from "../types";
 import styles from "../exposure-command-center.module.css";
 
@@ -20,11 +22,24 @@ export function TrendingQuestionsPanel({
   selectedRegionName: string | null;
   regionalFactsAvailable: boolean;
 }>) {
+  const [offset, setOffset] = useState(0);
   const filtered = regionalFactsAvailable
     ? items.filter(
         (item) => !selectedModel || item.model.toLowerCase().includes(selectedModel.toLowerCase()),
       )
     : [];
+  useEffect(() => {
+    if (filtered.length <= 4) return;
+    const timer = window.setInterval(
+      () => setOffset((current) => (current + 1) % filtered.length),
+      2_600,
+    );
+    return () => window.clearInterval(timer);
+  }, [filtered.length]);
+  const visible = Array.from(
+    { length: Math.min(8, filtered.length) },
+    (_, index) => filtered[(offset + index) % filtered.length],
+  ).filter((item): item is TrendingQuestionItem => Boolean(item));
   return (
     <section
       className={`${styles.panel} ${styles.questionsPanel}`}
@@ -36,8 +51,8 @@ export function TrendingQuestionsPanel({
         </h2>
         <span className={styles.livePill}>实时</span>
       </header>
-      <ol className={styles.questionList}>
-        {filtered.slice(0, 8).map((item, index) => (
+      <ol className={`${styles.questionList} ${styles.questionStream}`} key={offset}>
+        {visible.map((item, index) => (
           <li key={item.id}>
             <span className={styles.questionRank}>{index + 1}</span>
             <span className={styles.questionText} title={item.question}>

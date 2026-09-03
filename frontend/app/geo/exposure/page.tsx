@@ -87,9 +87,10 @@ export default function GeoExposurePage() {
             reports: activeState.reports,
             questions,
             subjectName,
+            subjectRegionText: subject?.service_regions,
           })
         : null,
-    [activeState, questions, report, subjectName],
+    [activeState, questions, report, subject?.service_regions, subjectName],
   );
 
   if (subjectLoading || (subject && !activeState)) {
