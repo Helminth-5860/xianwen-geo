@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ExposureTimeline } from "../app/geo/exposure/components/exposure-timeline";
 import { GeoExposureMap } from "../app/geo/exposure/components/map/geo-exposure-map";
-import { createDemonstrationMaps } from "../app/geo/exposure/exposure-demo-data";
+import { createDemonstrationMaps, createNeutralMaps } from "../app/geo/exposure/exposure-demo-data";
 import type {
   ExposureEvent,
   ExposureMapLevel,
@@ -89,6 +89,7 @@ function MapHarness() {
       data={maps[level]}
       visibleEvents={maps[level].events}
       activeEvent={maps[level].events[0] ?? null}
+      eventPlaybackKey={`test-${level}`}
       lockedRegion={lockedRegion}
       onLockedRegionChange={setLockedRegion}
       onLevelChange={setLevel}
@@ -99,11 +100,11 @@ function MapHarness() {
 const timelineEvents: readonly ExposureEvent[] = [
   {
     id: "event-1",
-    sourceCityCode: "440100",
-    sourceCityName: "广州",
+    sourceRegionCode: "440100",
+    sourceRegionName: "广州",
     sourceCoordinates: [113.264385, 23.129112],
-    targetCityCode: "440300",
-    targetCityName: "深圳",
+    targetRegionCode: "440300",
+    targetRegionName: "深圳",
     targetCoordinates: [114.057868, 22.543099],
     model: "DeepSeek",
     keyword: "深圳 GEO 优化",
@@ -111,6 +112,7 @@ const timelineEvents: readonly ExposureEvent[] = [
     estimatedExposure: 3200,
     score: 80,
     timestamp: "2026-09-02T07:30:00Z",
+    origin: "sample",
   },
 ];
 
@@ -145,6 +147,19 @@ describe("曝光态势地图与时间轴", () => {
     vi.unstubAllGlobals();
   });
 
+  it("生产地图没有真实区域事件时保持中性色，不预置演示红点", () => {
+    const maps = createNeutralMaps("2026-09-02T08:00:00Z");
+
+    expect(maps.country.events).toEqual([]);
+    expect(maps.province.events).toEqual([]);
+    expect(maps.city.events).toEqual([]);
+    expect(
+      Object.values(maps)
+        .flatMap((map) => map.regions)
+        .every((region) => region.latestHitAt === null),
+    ).toBe(true);
+  });
+
   it("支持从全国钻取到广东省和广州市，并可返回上一级", async () => {
     render(<MapHarness />);
 
@@ -153,7 +168,13 @@ describe("曝光态势地图与时间轴", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "广州市区域" }));
     expect(await screen.findByRole("heading", { name: "广州市曝光态势地图" })).toBeTruthy();
-    expect(screen.getByText("区级曝光数据尚未接入，当前仅展示真实行政区边界。")).toBeTruthy();
+    expect(screen.getByText("当前仅展示真实行政区边界，暂无区级曝光记录。")).toBeTruthy();
+
+    fireEvent.click(await screen.findByRole("button", { name: "天河区区域" }));
+    expect(
+      within(screen.getByRole("navigation", { name: "地图层级" })).getByText("天河区"),
+    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "返回上一级" })).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "广东省" }));
     expect(await screen.findByRole("heading", { name: "广东省曝光态势地图" })).toBeTruthy();

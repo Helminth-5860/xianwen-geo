@@ -2,6 +2,8 @@ import type { GeoReport, ReportQuestionPage } from "@/lib/geo-report-client";
 
 export type ExposureMapLevel = "country" | "province" | "city";
 
+export type ExposureRegionStatus = "neutral" | "historical" | "active";
+
 export type GeoPosition = readonly [longitude: number, latitude: number];
 
 export type RegionExposure = Readonly<{
@@ -19,11 +21,11 @@ export type RegionExposure = Readonly<{
 
 export type ExposureEvent = Readonly<{
   id: string;
-  sourceCityCode: string;
-  sourceCityName: string;
+  sourceRegionCode: string;
+  sourceRegionName: string;
   sourceCoordinates: GeoPosition;
-  targetCityCode: string;
-  targetCityName: string;
+  targetRegionCode: string;
+  targetRegionName: string;
   targetCoordinates: GeoPosition;
   model: string;
   keyword: string;
@@ -31,6 +33,7 @@ export type ExposureEvent = Readonly<{
   estimatedExposure: number;
   score: number;
   timestamp: string;
+  origin: "real" | "sample";
 }>;
 
 export type ExposureMapData = Readonly<{

@@ -18,9 +18,43 @@
   padding: clamp(12px, 1.15vw, 22px);
   overflow: hidden;
   background:
-    radial-gradient(circle at 55% 39%, rgb(188 217 255 / 30%), transparent 34%),
-    radial-gradient(circle at 97% 5%, rgb(215 208 255 / 26%), transparent 25%),
-    linear-gradient(155deg, rgb(249 252 255 / 88%), rgb(243 248 255 / 74%));
+    radial-gradient(ellipse at 51% 43%, rgb(139 187 255 / 24%), transparent 34%),
+    radial-gradient(ellipse at 86% 10%, rgb(179 166 255 / 24%), transparent 31%),
+    radial-gradient(ellipse at 9% 86%, rgb(126 218 255 / 20%), transparent 30%),
+    linear-gradient(145deg, #f7faff 0%, #eef5ff 48%, #e8f1ff 100%);
+  isolation: isolate;
+}
+
+.page::before,
+.page::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  pointer-events: none;
+}
+
+.page::before {
+  inset: 0;
+  opacity: 0.34;
+  background-image:
+    linear-gradient(rgb(84 133 207 / 5.5%) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(84 133 207 / 5.5%) 1px, transparent 1px),
+    radial-gradient(circle, rgb(72 125 213 / 10%) 0 1px, transparent 1.2px);
+  background-size:
+    42px 42px,
+    42px 42px,
+    19px 19px;
+  mask-image: radial-gradient(ellipse at 52% 46%, #000 0 30%, transparent 76%);
+}
+
+.page::after {
+  width: 70%;
+  height: 58%;
+  left: 17%;
+  top: 17%;
+  border-radius: 50%;
+  background: radial-gradient(ellipse, rgb(91 146 230 / 15%), transparent 66%);
+  filter: blur(34px);
 }
 
 .statePage {
@@ -31,6 +65,8 @@
 }
 
 .cockpitHeader {
+  position: relative;
+  z-index: 3;
   min-width: 0;
   min-height: 54px;
   margin-bottom: clamp(10px, 0.8vw, 15px);
@@ -161,7 +197,7 @@
 
 .cockpitGrid {
   display: grid;
-  grid-template-columns: minmax(220px, 0.86fr) minmax(500px, 2.25fr) minmax(250px, 0.98fr);
+  grid-template-columns: minmax(210px, 0.7fr) minmax(650px, 3fr) minmax(235px, 0.82fr);
   gap: clamp(10px, 0.85vw, 16px);
   min-width: 0;
   min-height: clamp(560px, calc(100vh - 285px), 720px);
@@ -183,15 +219,15 @@
   position: relative;
   min-width: 0;
   box-sizing: border-box;
-  border: 1px solid var(--cockpit-line);
+  border: 1px solid rgb(116 158 219 / 21%);
   border-radius: 14px;
   background:
-    linear-gradient(145deg, rgb(255 255 255 / 74%), rgb(247 251 255 / 54%)), var(--cockpit-card);
+    linear-gradient(145deg, rgb(255 255 255 / 62%), rgb(239 247 255 / 46%)), rgb(247 251 255 / 52%);
   box-shadow:
-    0 9px 26px rgb(53 94 153 / 6%),
+    0 15px 35px rgb(53 94 153 / 8%),
     inset 0 1px 0 rgb(255 255 255 / 90%);
-  backdrop-filter: blur(14px) saturate(108%);
-  -webkit-backdrop-filter: blur(14px) saturate(108%);
+  backdrop-filter: blur(18px) saturate(112%);
+  -webkit-backdrop-filter: blur(18px) saturate(112%);
 }
 
 .panelHeader {
@@ -404,6 +440,13 @@
 
 .mapPanel {
   overflow: hidden;
+  border-color: rgb(111 161 228 / 16%);
+  background: rgb(229 241 255 / 13%);
+  box-shadow:
+    0 18px 46px rgb(55 104 173 / 10%),
+    inset 0 1px 0 rgb(255 255 255 / 72%);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .mapHeader {
@@ -416,8 +459,9 @@
   padding: 0 clamp(14px, 1.05vw, 20px);
   justify-content: space-between;
   gap: 12px;
-  border-bottom: 1px solid rgb(122 157 207 / 12%);
-  background: linear-gradient(180deg, rgb(255 255 255 / 72%), rgb(255 255 255 / 18%));
+  border-bottom: 1px solid rgb(122 157 207 / 11%);
+  background: linear-gradient(180deg, rgb(248 252 255 / 72%), rgb(239 247 255 / 23%));
+  backdrop-filter: blur(13px);
 }
 
 .mapHeader > div {
@@ -451,6 +495,20 @@
   background: rgb(255 250 232 / 88%);
 }
 
+.neutralBadge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 23px;
+  padding: 0 9px;
+  color: #657793;
+  border: 1px solid rgb(112 137 173 / 23%);
+  border-radius: 999px;
+  background: rgb(240 245 251 / 65%);
+  font-size: 11px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
 .updatedAt {
   color: #7587a2;
   font-size: clamp(10px, 0.7vw, 12px);
@@ -469,9 +527,9 @@
   color: #7586a1;
   border: 1px solid rgb(120 157 215 / 18%);
   border-radius: 8px;
-  background: rgb(255 255 255 / 72%);
-  box-shadow: 0 5px 15px rgb(55 92 145 / 5%);
-  backdrop-filter: blur(8px);
+  background: rgb(243 249 255 / 62%);
+  box-shadow: 0 7px 19px rgb(55 92 145 / 7%);
+  backdrop-filter: blur(13px);
 }
 
 .mapBreadcrumb button,
@@ -481,6 +539,22 @@
   border: 0;
   background: none;
   font-size: 11px;
+  cursor: pointer;
+}
+
+.mapBackButton {
+  position: absolute;
+  z-index: 6;
+  top: 64px;
+  right: 64px;
+  min-height: 31px;
+  padding: 0 10px;
+  color: #345c94;
+  border: 1px solid rgb(101 145 207 / 24%);
+  border-radius: 8px;
+  background: rgb(245 250 255 / 70%);
+  box-shadow: 0 6px 16px rgb(44 85 143 / 7%);
+  backdrop-filter: blur(12px);
   cursor: pointer;
 }
 
@@ -495,13 +569,9 @@
   overflow: hidden;
   touch-action: none;
   background:
-    radial-gradient(ellipse at 50% 50%, rgb(191 218 255 / 36%), transparent 43%),
-    repeating-radial-gradient(
-      circle at 50% 55%,
-      transparent 0 49px,
-      rgb(95 149 227 / 6%) 50px 51px
-    ),
-    linear-gradient(150deg, rgb(255 255 255 / 34%), rgb(236 245 255 / 42%));
+    radial-gradient(ellipse at 50% 55%, rgb(132 181 247 / 21%), transparent 39%),
+    radial-gradient(ellipse at 49% 47%, rgb(255 255 255 / 42%), transparent 62%),
+    linear-gradient(155deg, rgb(237 247 255 / 74%), rgb(219 234 255 / 56%));
 }
 
 .mapViewport::before,
@@ -514,12 +584,16 @@
 .mapViewport::before {
   inset: 0;
   z-index: 0;
-  opacity: 0.4;
-  background-image:
-    linear-gradient(rgb(95 140 210 / 5%) 1px, transparent 1px),
-    linear-gradient(90deg, rgb(95 140 210 / 5%) 1px, transparent 1px);
-  background-size: 34px 34px;
-  mask-image: radial-gradient(circle at center, #000, transparent 68%);
+  opacity: 0.38;
+  background:
+    radial-gradient(circle at 19% 22%, rgb(255 255 255 / 90%) 0 1px, transparent 1.6px),
+    radial-gradient(circle at 78% 33%, rgb(92 149 231 / 25%) 0 1px, transparent 1.5px),
+    radial-gradient(circle at 66% 82%, rgb(255 255 255 / 85%) 0 1px, transparent 1.5px);
+  background-size:
+    37px 37px,
+    51px 51px,
+    29px 29px;
+  mask-image: radial-gradient(ellipse at center, #000, transparent 82%);
 }
 
 .mapViewport::after {
@@ -528,23 +602,107 @@
   left: 15%;
   bottom: 3%;
   border-radius: 50%;
-  background: radial-gradient(ellipse, rgb(70 120 205 / 17%), transparent 68%);
-  filter: blur(12px);
+  background: radial-gradient(ellipse, rgb(65 119 202 / 20%), transparent 68%);
+  filter: blur(17px);
 }
 
 .mapRadar {
+  display: none;
+}
+
+.mapViewport :global(.maplibregl-map),
+.mapViewport :global(.maplibregl-canvas-container),
+.mapViewport :global(.mapboxgl-map),
+.mapViewport :global(.mapboxgl-canvas-container) {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.mapViewport :global(.maplibregl-canvas),
+.mapViewport :global(.mapboxgl-canvas) {
+  position: absolute;
+  left: 0;
+  top: 0;
+  outline: none;
+  cursor: grab;
+}
+
+.mapViewport :global(.maplibregl-canvas:active),
+.mapViewport :global(.mapboxgl-canvas:active) {
+  cursor: grabbing;
+}
+
+.mapViewport :global(.maplibregl-control-container),
+.mapViewport :global(.mapboxgl-control-container) {
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  pointer-events: none;
+}
+
+.mapViewport :global(.maplibregl-ctrl-top-left),
+.mapViewport :global(.mapboxgl-ctrl-top-left) {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.vacuumGrid {
   position: absolute;
   z-index: 0;
-  width: min(76%, 680px);
-  aspect-ratio: 1;
-  left: 50%;
-  top: 55%;
-  border: 1px solid rgb(94 143 218 / 9%);
+  inset: 6% 3% 2%;
+  opacity: 0.23;
+  background-image:
+    linear-gradient(rgb(67 121 201 / 11%) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(67 121 201 / 11%) 1px, transparent 1px);
+  background-size: 34px 34px;
+  mask-image: radial-gradient(ellipse at 50% 56%, #000 8%, transparent 73%);
+  transform: perspective(560px) rotateX(57deg) translateY(19%);
+  transform-origin: 50% 70%;
+}
+
+.hudArcTop,
+.hudArcBottom {
+  position: absolute;
+  z-index: 1;
+  width: 48%;
+  aspect-ratio: 2.7;
+  pointer-events: none;
+  border: 1px solid rgb(70 128 214 / 8%);
+  border-left-color: transparent;
+  border-right-color: transparent;
   border-radius: 50%;
-  transform: translate(-50%, -50%);
-  box-shadow:
-    0 0 0 55px rgb(94 143 218 / 3.5%),
-    0 0 0 110px rgb(94 143 218 / 2.5%);
+}
+
+.hudArcTop {
+  top: 14%;
+  left: 7%;
+  transform: rotate(-9deg);
+}
+
+.hudArcBottom {
+  right: 5%;
+  bottom: 11%;
+  transform: rotate(12deg);
+}
+
+.mapEnergyBase {
+  position: absolute;
+  z-index: 1;
+  width: 76%;
+  height: 25%;
+  left: 12%;
+  bottom: 4%;
+  pointer-events: none;
+  border-radius: 50%;
+  background:
+    radial-gradient(ellipse, rgb(85 143 226 / 17%), transparent 62%),
+    linear-gradient(90deg, transparent, rgb(132 180 242 / 8%), transparent);
+  filter: blur(8px);
 }
 
 .geoSvg {
@@ -737,7 +895,7 @@
   color: #4d607f;
   border: 1px solid rgb(112 151 211 / 20%);
   border-radius: 10px;
-  background: rgb(255 255 255 / 74%);
+  background: rgb(241 248 255 / 68%);
   box-shadow: 0 7px 18px rgb(39 81 145 / 6%);
   backdrop-filter: blur(9px);
   font-size: 11px;
@@ -750,7 +908,9 @@
 }
 
 .legendSource,
-.legendTarget {
+.legendTarget,
+.legendNeutral,
+.legendHistorical {
   width: 9px;
   height: 9px;
   display: inline-block;
@@ -761,7 +921,17 @@
 }
 
 .legendTarget {
-  opacity: 0.58;
+  opacity: 1;
+}
+
+.legendNeutral {
+  background: #7b8ba3;
+  box-shadow: 0 0 0 2px rgb(114 133 159 / 13%);
+}
+
+.legendHistorical {
+  background: rgb(229 137 116 / 32%);
+  box-shadow: 0 0 0 2px rgb(229 137 116 / 9%);
 }
 
 .legendArc {
@@ -780,7 +950,17 @@
   justify-content: center;
   gap: 8px;
   color: #60728e;
-  background: rgb(247 251 255 / 72%);
+  background: rgb(235 245 255 / 78%);
+}
+
+.accessibleMapRegions {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .mapStatus button {

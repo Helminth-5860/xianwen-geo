@@ -27,6 +27,13 @@ export function ExposureTimeline({
   onSpeedChange: (speed: 1 | 2) => void;
   onProgressChange: (progress: number) => void;
 }>) {
+  const firstEventAt = events[0] ? Date.parse(events[0].timestamp) : 0;
+  const lastEventAt = events.at(-1) ? Date.parse(events.at(-1)!.timestamp) : firstEventAt;
+  const eventPosition = (timestamp: string) => {
+    if (lastEventAt <= firstEventAt) return 0;
+    return ((Date.parse(timestamp) - firstEventAt) / (lastEventAt - firstEventAt)) * 100;
+  };
+
   return (
     <section className={`${styles.panel} ${styles.timelinePanel}`} aria-labelledby="timeline-title">
       <div className={styles.timelineTitle}>
@@ -52,11 +59,8 @@ export function ExposureTimeline({
           {currentTime}
         </output>
         <div className={styles.eventTicks} aria-hidden="true">
-          {events.map((event, index) => (
-            <i
-              key={event.id}
-              style={{ left: `${events.length <= 1 ? 0 : (index / (events.length - 1)) * 100}%` }}
-            />
+          {events.map((event) => (
+            <i key={event.id} style={{ left: `${eventPosition(event.timestamp)}%` }} />
           ))}
         </div>
         <input

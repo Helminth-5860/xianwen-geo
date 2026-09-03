@@ -67,39 +67,58 @@ export function ExposureCockpitPage({
 
   useEffect(() => {
     if (!playing || mode !== "live" || events.length <= 1) return;
-    const timer = window.setInterval(
-      () => setLiveIndex((current) => (current + 1) % events.length),
-      speed === 2 ? 1350 : 2700,
-    );
-    return () => window.clearInterval(timer);
+    let frame = 0;
+    let previous = performance.now();
+    let elapsed = 0;
+    const interval = speed === 2 ? 1_450 : 2_900;
+    const advance = (now: number) => {
+      elapsed += now - previous;
+      previous = now;
+      if (elapsed >= interval) {
+        elapsed %= interval;
+        setLiveIndex((current) => (current + 1) % events.length);
+      }
+      frame = requestAnimationFrame(advance);
+    };
+    frame = requestAnimationFrame(advance);
+    return () => cancelAnimationFrame(frame);
   }, [events.length, mode, playing, speed]);
 
   useEffect(() => {
     if (!playing || mode !== "replay") return;
-    const timer = window.setInterval(() => {
-      setProgress((current) => {
-        const next = current + (speed === 2 ? 1.6 : 0.8);
-        if (next >= 100) {
-          window.clearInterval(timer);
-          setPlaying(false);
-          return 100;
-        }
-        return next;
-      });
-    }, 120);
-    return () => window.clearInterval(timer);
+    let frame = 0;
+    let previous = performance.now();
+    const advance = (now: number) => {
+      const elapsed = now - previous;
+      if (elapsed >= 70) {
+        previous = now;
+        setProgress((current) => {
+          const next = current + (elapsed / 1_000) * (speed === 2 ? 15 : 7.5);
+          if (next >= 100) {
+            setPlaying(false);
+            return 100;
+          }
+          return next;
+        });
+      }
+      frame = requestAnimationFrame(advance);
+    };
+    frame = requestAnimationFrame(advance);
+    return () => cancelAnimationFrame(frame);
   }, [mode, playing, speed]);
 
-  const replayIndex = events.length
-    ? Math.min(events.length - 1, Math.floor((progress / 100) * events.length))
-    : -1;
+  const firstEventAt = events[0] ? Date.parse(events[0].timestamp) : 0;
+  const lastEventAt = events.at(-1) ? Date.parse(events.at(-1)!.timestamp) : firstEventAt;
+  const replayCutoff = firstEventAt + (lastEventAt - firstEventAt) * (progress / 100);
+  const liveEventIndex = events.length ? liveIndex % events.length : -1;
+  const replayVisibleEvents = events.filter((event) => Date.parse(event.timestamp) <= replayCutoff);
   const activeEvent =
     events.length === 0
       ? null
       : mode === "live"
-        ? events[liveIndex % events.length]
-        : events[Math.max(0, replayIndex)];
-  const visibleEvents = mode === "live" ? events : events.slice(0, Math.max(0, replayIndex + 1));
+        ? events[liveEventIndex]
+        : (replayVisibleEvents.at(-1) ?? null);
+  const visibleEvents = mode === "live" ? events.slice(0, liveEventIndex + 1) : replayVisibleEvents;
   const panelRegion =
     lockedRegion ??
     (level === "country"
@@ -182,10 +201,10 @@ export function ExposureCockpitPage({
         </aside>
 
         <GeoExposureMap
-          key={currentMap.level}
           data={currentMap}
           visibleEvents={visibleEvents}
           activeEvent={activeEvent}
+          eventPlaybackKey={`${mode}-${level}-${mode === "live" ? liveIndex : Math.round(progress)}`}
           lockedRegion={lockedRegion}
           onLockedRegionChange={setLockedRegion}
           onLevelChange={changeLevel}

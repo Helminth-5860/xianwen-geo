@@ -1,6 +1,6 @@
 import type { GeoReport, ReportModel } from "@/lib/geo-report-client";
 
-import { createDemonstrationMaps } from "./exposure-demo-data";
+import { createNeutralMaps } from "./exposure-demo-data";
 import type {
   CompetitorIndexItem,
   ExposureAdapterInput,
@@ -139,6 +139,6 @@ export function adaptExposureData(input: ExposureAdapterInput): ExposureCockpitD
       trend: buildTrend(input.reports),
     },
     questions,
-    maps: createDemonstrationMaps(input.report.generated_at),
+    maps: createNeutralMaps(input.report.generated_at),
   };
 }

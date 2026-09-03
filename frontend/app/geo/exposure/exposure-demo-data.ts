@@ -18,12 +18,14 @@ type RegionSeed = Readonly<{
 const countryRegions: readonly RegionSeed[] = [
   { code: "110100", name: "北京", coordinates: [116.407526, 39.90403], intensity: 84 },
   { code: "310100", name: "上海", coordinates: [121.473701, 31.230416], intensity: 78 },
+  { code: "440100", name: "广州", coordinates: GUANGZHOU, intensity: 100 },
   { code: "440300", name: "深圳", coordinates: [114.057868, 22.543099], intensity: 92 },
   { code: "510100", name: "成都", coordinates: [104.066541, 30.572269], intensity: 64 },
   { code: "420100", name: "武汉", coordinates: [114.305393, 30.593099], intensity: 71 },
 ];
 
 const provinceRegions: readonly RegionSeed[] = [
+  { code: "440100", name: "广州", coordinates: GUANGZHOU, intensity: 100 },
   { code: "440300", name: "深圳", coordinates: [114.057868, 22.543099], intensity: 92 },
   { code: "441900", name: "东莞", coordinates: [113.751765, 23.020536], intensity: 81 },
   { code: "440600", name: "佛山", coordinates: [113.121416, 23.021548], intensity: 77 },
@@ -31,6 +33,19 @@ const provinceRegions: readonly RegionSeed[] = [
   { code: "441300", name: "惠州", coordinates: [114.416196, 23.111847], intensity: 63 },
   { code: "442000", name: "中山", coordinates: [113.392782, 22.517646], intensity: 59 },
   { code: "440700", name: "江门", coordinates: [113.081901, 22.578738], intensity: 54 },
+  { code: "440800", name: "湛江", coordinates: [110.364977, 21.274898], intensity: 0 },
+  { code: "440900", name: "茂名", coordinates: [110.925456, 21.662999], intensity: 0 },
+  { code: "441700", name: "阳江", coordinates: [111.982232, 21.857958], intensity: 0 },
+  { code: "441800", name: "清远", coordinates: [113.056031, 23.681763], intensity: 0 },
+  { code: "440200", name: "韶关", coordinates: [113.597522, 24.810403], intensity: 0 },
+  { code: "441600", name: "河源", coordinates: [114.700447, 23.743538], intensity: 0 },
+  { code: "441400", name: "梅州", coordinates: [116.122238, 24.288615], intensity: 0 },
+  { code: "440500", name: "汕头", coordinates: [116.681972, 23.354091], intensity: 0 },
+  { code: "445100", name: "潮州", coordinates: [116.622603, 23.65695], intensity: 0 },
+  { code: "445200", name: "揭阳", coordinates: [116.372831, 23.549993], intensity: 0 },
+  { code: "441500", name: "汕尾", coordinates: [115.375278, 22.786211], intensity: 0 },
+  { code: "445300", name: "云浮", coordinates: [112.044491, 22.915094], intensity: 0 },
+  { code: "441200", name: "肇庆", coordinates: [112.465091, 23.047191], intensity: 0 },
 ];
 
 const cityRegions: readonly RegionSeed[] = [
@@ -89,11 +104,11 @@ function buildEvents(
   const models = ["DeepSeek", "豆包", "通义千问", "Kimi", "文心一言"];
   return regions.map((region, index) => ({
     id: `${level}-${region.code}-${index}`,
-    sourceCityCode: "440100",
-    sourceCityName: "广州",
+    sourceRegionCode: "440100",
+    sourceRegionName: "广州",
     sourceCoordinates: GUANGZHOU,
-    targetCityCode: region.code,
-    targetCityName: region.name,
+    targetRegionCode: region.code,
+    targetRegionName: region.name,
     targetCoordinates: region.coordinates,
     model: models[index % models.length],
     keyword: `${region.name} GEO 优化`,
@@ -101,11 +116,13 @@ function buildEvents(
     estimatedExposure: Math.round(1600 + region.intensity * 42),
     score: region.intensity,
     timestamp: eventTime(baseTime, (regions.length - index) * 3),
+    origin: "sample",
   }));
 }
 
-export function createDemonstrationMaps(
+function createMaps(
   baseTime: string,
+  includeSampleEvents: boolean,
 ): Record<ExposureMapLevel, ExposureMapData> {
   const source = sourceRegion();
   return {
@@ -117,7 +134,13 @@ export function createDemonstrationMaps(
       boundaryUrl: "/geo-boundaries/china.json",
       sourceCity: source,
       regions: buildRegions(countryRegions),
-      events: buildEvents("country", countryRegions, baseTime),
+      events: includeSampleEvents
+        ? buildEvents(
+            "country",
+            countryRegions.filter((item) => item.code !== "440100"),
+            baseTime,
+          )
+        : [],
       hasRegionalFacts: false,
       updatedAt: baseTime,
     },
@@ -129,7 +152,13 @@ export function createDemonstrationMaps(
       boundaryUrl: "/geo-boundaries/guangdong.json",
       sourceCity: source,
       regions: buildRegions(provinceRegions),
-      events: buildEvents("province", provinceRegions, baseTime),
+      events: includeSampleEvents
+        ? buildEvents(
+            "province",
+            provinceRegions.filter((item) => item.intensity > 0 && item.code !== "440100"),
+            baseTime,
+          )
+        : [],
       hasRegionalFacts: false,
       updatedAt: baseTime,
     },
@@ -139,16 +168,21 @@ export function createDemonstrationMaps(
       code: "440100",
       name: "广州市",
       boundaryUrl: "/geo-boundaries/guangzhou.json",
-      sourceCity: {
-        ...source,
-        code: "440106",
-        name: "天河区",
-        coordinates: cityRegions[0].coordinates,
-      },
+      sourceCity: source,
       regions: buildRegions(cityRegions),
       events: [],
       hasRegionalFacts: false,
       updatedAt: baseTime,
     },
   };
+}
+
+/** 生产页面使用：没有可核验地域事件时，所有城市保持中性状态。 */
+export function createNeutralMaps(baseTime: string) {
+  return createMaps(baseTime, false);
+}
+
+/** 仅供交互测试和独立演示使用，不会进入真实报告页面。 */
+export function createDemonstrationMaps(baseTime: string) {
+  return createMaps(baseTime, true);
 }
