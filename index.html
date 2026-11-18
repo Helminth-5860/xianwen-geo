@@ -586,7 +586,7 @@ function loop(ts){let now=ts*.001,dt=clamp(now-prevTime,0,.043);prevTime=now;if(
 const joyNode=$('joy'),stickNode=$('stick');
 function moveStick(){let limit=joyNode.getBoundingClientRect().width*.31;stickNode.style.transform=`translate(calc(-50% + ${joy.x*limit}px),calc(-50% + ${joy.y*limit}px))`}
 function moveJoy(e){let r=joyNode.getBoundingClientRect(),cx=r.left+r.width*.5,cy=r.top+r.height*.5,dx=e.clientX-cx,dy=e.clientY-cy,limit=r.width*.35,mag=len(dx,dy);joy.x=mag>limit?dx/mag:dx/limit;joy.y=mag>limit?dy/mag:dy/limit;moveStick()}
-joyNode.addEventListener('pointerdown',e=>{e.preventDefault();joy.pointer=e.pointerId;joyNode.setPointerCapture(e.pointerId);moveJoy(e)});joyNode.addEventListener('pointermove',e=>{if(e.pointerId===joy.pointer){e.preventDefault();moveJoy(e)}});
+joyNode.addEventListener('pointerdown',e=>{e.preventDefault();joy.pointer=e.pointerId;try{joyNode.setPointerCapture(e.pointerId)}catch(_){/* pointer fallback */}moveJoy(e)});joyNode.addEventListener('pointermove',e=>{if(e.pointerId===joy.pointer){e.preventDefault();moveJoy(e)}});
 function stopJoy(e){if(joy.pointer===e.pointerId){joy.pointer=null;joy.x=0;joy.y=0;moveStick()}}
 joyNode.addEventListener('pointerup',stopJoy);joyNode.addEventListener('pointercancel',stopJoy);joyNode.addEventListener('lostpointercapture',stopJoy);
 $('start').addEventListener('click',startGame);$('again').addEventListener('click',startGame);
@@ -820,5 +820,8 @@ const V3_HUD=updateHUD;
 updateHUD=function(){V3_HUD();if(!hero)return;for(const skill of ['flame','frost','dash']){let node=$(skill),duration=skill==='flame'?6.8:skill==='frost'?9.2:5.4;let cd=hero['cd'+skill[0].toUpperCase()+skill.slice(1)]||0;node.style.setProperty('--charge',String(clamp(cd/duration,0,1)));node.classList.toggle('ready',cd<=0)}};
 // One audio toggle provides explicit mute control and preserves mobile audio policy.
 const soundBtn=document.getElementById('soundToggle');if(soundBtn){soundBtn.addEventListener('click',()=>{CIN.muted=!CIN.muted;soundBtn.textContent=CIN.muted?'♪̸':'♫';soundBtn.setAttribute('aria-label',CIN.muted?'开启音效':'关闭音效');if(!CIN.muted)sfx('buy')});}
+
+// Unlock original synthesised audio after the first genuine touch, within the browser gesture.
+document.addEventListener('pointerdown',()=>{if(CIN.muted)return;try{const AC=window.AudioContext||window.webkitAudioContext;if(AC&&!CIN.audio)CIN.audio=new AC();if(CIN.audio?.state==='suspended')CIN.audio.resume()}catch(_){ }},{once:true});
 
 </script></body></html>
